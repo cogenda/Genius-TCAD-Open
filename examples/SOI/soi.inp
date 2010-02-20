@@ -1,0 +1,94 @@
+#==============================================================================
+# Genius example: SOI heat effect simulation
+# We simulate drain-source current of SOI transistor
+# with DDML1 and lattice temperature corrected DDML2 solver.
+#==============================================================================
+
+
+GLOBAL  T=300 Z.width=1  DopingScale=2e17
+
+
+MESH   Type=S_TRI3  Triangle="pzA"
+
+X.MESH WIDTH=0.5 H1=0.1   H2=0.020
+X.MESH WIDTH=0.5 H1=0.020 H2=0.020
+X.MESH WIDTH=0.5 H1=0.020 H2=0.1
+
+Y.MESH N.SPACES=2 Y.TOP=-0.02 Y.BOTTOM=0
+Y.MESH DEPTH=0.1 H1=0.020 H2=0.020
+Y.MESH DEPTH=0.3 H1=0.05
+Y.MESH DEPTH=1   H1=0.2
+
+ELIMINATE DIRECTION=Y  X.MIN=0.4 X.MAX=1.1 Y.TOP=0.1
+ELIMINATE DIRECTION=Y  Y.TOP=0.5
+
+REGION Label=Gate_Ox   Y.TOP=-0.02 Y.BOTTOM=0.0     Material=SiO2
+REGION Label=Device    Y.TOP=0.0   Y.BOTTOM=0.1     Material=Si
+REGION Label=Buried_Ox Y.TOP=0.1   Y.BOTTOM=0.4     Material=SiO2
+REGION Label=Bulk      Y.TOP=0.4   Y.BOTTOM=1.4     Material=Si
+
+REGION Label=Source X.MIN=0.0 X.MAX=0.3   Y.BOTTOM=0.0   Y.TOP=-0.02 Material=Elec
+REGION Label=Drain  X.MIN=1.2 X.MAX=1.5   Y.BOTTOM=0.0   Y.TOP=-0.02 Material=Elec
+REGION Label=Gate   X.MIN=0.5 X.MAX=1.0   Y.BOTTOM=-0.01 Y.TOP=-0.02 Material=Elec
+FACE   Label=Substrate Location=BOTTOM
+
+#------------------------------------------------------------------------------
+# doping profile
+DOPING  Type=analytic
+PROFILE Ion=Acceptor N.PEAK=1E16   Type=Uniform X.MIN=0.0 X.MAX=1.5\
+        Y.TOP=0.0    Y.BOTTOM=1.4
+PROFILE Ion=Donor    Type=analytic N.PEAK=2E17 X.MIN=0.0 X.MAX=0.5 X.CHAR=0.05 \
+        Y.TOP=0.0    Y.BOTTOM=0.1  Y.CHAR=0.01
+PROFILE Ion=Donor    Type=analytic N.PEAK=2E17 X.MIN=1.0 X.MAX=1.5 X.CHAR=0.05 \
+        Y.TOP=0.0    Y.BOTTOM=0.1  Y.CHAR=0.01
+
+#------------------------------------------------------------------------------
+vsource Type = VDC    ID = GND    Tdelay=0   Vconst=0
+vsource Type = VDC    ID = VCC    Tdelay=0   Vconst=5
+vsource Type = VDC    ID = VGATE  Tdelay=0   Vconst=5
+
+#------------------------------------------------------------------------------
+# specify boundary condition.
+boundary Type = InsulatorInterface ID=Device_to_Gate_Ox   QF=0
+contact  Type = GateContact        ID=Gate  WorkFunction=4.17  Heat.Transfer=0
+contact  Type = OhmicContact       ID=Source Heat.Transfer=1e4
+contact  Type = OhmicContact       ID=Drain  Heat.Transfer=1e4
+boundary Type = InsulatorInterface ID=Buried_Ox_to_Device QF=0
+boundary Type = InsulatorInterface ID=Bulk_to_Buried_Ox   QF=0
+boundary Type = OhmicContact       ID=Substrate  Heat.Transfer=1e4
+
+PMI     Region=Device Type=Mobility  Model=Lucent
+PMI     Region=Bulk   Type=Mobility  Model=Constant
+
+#------------------------------------------------------------------------------
+# compute a initial distrubution of p and n
+
+#REFINE.C  Region=Device Variable=Doping Measure=SignedLog cell.fraction=0.2
+
+METHOD   Type = Poisson     NS=Basic  LS=GMRES
+SOLVE    Type = EQUILIBRIUM
+EXPORT   CGNSFile=soi_init.cgns  VTKFile=soi_init.vtu
+
+# set gate bias by dcsweep method
+METHOD   Type = DDML1   NS=Basic  LS=LU
+SOLVE    Type=DCSWEEP VScan=Gate VStart=0.0 VStep=0.1 VStop=5
+EXPORT   CGNSFile=gate.cgns
+
+# add source-drain bias. we use ddm solver without lattice heating here.
+IMPORT   CGNSFile=gate.cgns
+METHOD   Type = DDML1    NS=Basic  LS=LU Toler.relax=1e5 Maxit=15
+ATTACH   Electrode=Gate   Vapp=VGATE
+SOLVE    Type=DCSWEEP VScan=Drain VStart=0.0 VStep=0.05 VStop=5.0 OUT=drain_nh
+#EXPORT   VTKFile=soi_noheat.vtu
+
+IMPORT   CGNSFile=gate.cgns
+ATTACH   Electrode=Gate Vapp=VGATE
+# we use ddm solver with lattice heating here.
+METHOD   Type = DDML2   NS=Basic  LS=umfpack Toler.relax=1e6 Maxit=15
+SOLVE    Type=DCSWEEP VScan=Drain VStart=0.0 VStep=0.05 VStop=5.0 OUT=drain_ht
+EXPORT   VTKFile=soi_heat.vtu
+
+END
+
+
+

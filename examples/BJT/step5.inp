@@ -1,0 +1,41 @@
+#==============================================================================
+# Genius example: NPN Transistor AC sweep Simulation
+# This example is intended to be run in serial
+#==============================================================================
+
+# set 100um width
+GLOBAL    T=300 DopingScale=1e18  Z.width=100
+
+#------------------------------------------------------------------------------
+vsource Type = VDC    ID = GND  Tdelay=0 Vconst=0
+vsource Type = VDC    ID = VCC  Tdelay=0 Vconst=3.0
+vsource Type = VDC    ID = Vb   Tdelay=0 Vconst=0.7
+
+#------------------------------------------------------------------------------
+# specify boundary condition.
+boundary Type = OhmicContact    ID=Base      Res=1000 Cap=0 Ind=0
+boundary Type = OhmicContact    ID=Emitter   Res=0    Cap=0 Ind=0
+boundary Type = OhmicContact    ID=Collector Res=1000 Cap=0 Ind=0
+
+#------------------------------------------------------------------------------
+# drive command, specify the solving process.
+
+# import bias.cgns computed in step 2.
+IMPORT   CGNSFile=bias.cgns
+
+# set electrode potential
+ATTACH   Electrode=Emitter       VApp=GND
+ATTACH   Electrode=Base          VApp=Vb
+ATTACH   Electrode=Collector     VApp=VCC
+
+# call EBML3 to give an exact initial value for AC sweep.
+METHOD   Type = EBML3  NS=LineSearch LS=TFQMR
+SOLVE    Type=STEADYSTATE
+
+# Do AC sweep. Here we use LU as a very strong preconditioner
+METHOD   Type=DDMAC   LS=GMRES PC=LU
+SOLVE    Type=ACSWEEP    ACScan=Base  F.Start=1e5 F.Multiple=1.1  F.Stop = 4e9 out=ac
+
+EXPORT   VTK=ac.vtu
+
+END

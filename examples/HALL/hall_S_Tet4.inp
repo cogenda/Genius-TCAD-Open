@@ -1,0 +1,53 @@
+#==============================================================================
+# Genius example: 3D HALL device
+#==============================================================================
+
+GLOBAL    T=300 DopingScale=1e18
+MagneticField Bz=1
+
+#------------------------------------------------------------------------------
+# Create an initial simulation mesh
+# one can also use S_Prism6 S_HEX8 or S_Tet4 mesh generator
+MESH      Type = S_tri3 Tri="pzAY"
+
+X.MESH    x.min=0.0  x.max=4.0   N.SPACES=40
+
+Y.MESH    y.min=0.0  y.max=0.1  N.SPACES=12
+Y.MESH    y.min=0.1  y.max=1.0  H1=0.025/4 ratio=1.1
+
+#Z.MESH    z.min=0.0  z.max=0.1   N.SPACES=2
+
+#------------------------------------------------------------------------------
+# Specify region and boundary faces
+REGION    Label=Silicon  Material=Si
+FACE      Label=Anode   Location=LEFT	Y.MIN=0.0 Y.MAX=0.1 Z.MIN=0.0 Z.MAX=1.0
+FACE      Label=Cathode Location=RIGHT	Y.MIN=0.0 Y.MAX=0.1 Z.MIN=0.0 Z.MAX=1.0
+
+#------------------------------------------------------------------------------
+DOPING Type=Analytic
+
+PROFILE   Type=Uniform    Ion=Acceptor     N.PEAK=1E18  X.MIN=0.0 X.MAX=4.0  \
+          Y.min=0.1 Y.max=1.0        Z.MIN=0.0 Z.MAX=1.0
+
+PROFILE   Type=Analytic   Ion=Donor     N.PEAK=1E18  X.MIN=0.0 X.MAX=4.0  \
+          Y.min=0.0 Y.max=0.1 Y.CHAR=0.1       Z.MIN=0.0 Z.MAX=1.0
+#------------------------------------------------------------------------------
+# boundary condition
+BOUNDARY ID=Anode   Type=Ohmic
+BOUNDARY ID=Cathode Type=Ohmic
+
+# get initial condition by poison solver
+METHOD    Type=Poisson NS=Basic
+SOLVE
+
+
+# compute diode forward IV
+PMI       Region=Silicon type=mob model=Constant
+METHOD    Type=HALL NS=Basic LS=LU damping=potential relative.tol=1e-4 toler.relax=1e5
+SOLVE     Type=EQ
+#HOOK      Load=probe string<regions>=Silicon real<x>=2.0 real<y>=0.05 real<z>=0.0
+SOLVE     Type=DCSWEEP Vscan=Anode Vstart=0.0 Vstep=0.02 Vstop=1.0 out.prefix=iv
+
+# export result
+EXPORT   VTKFILE=hall.vtk
+

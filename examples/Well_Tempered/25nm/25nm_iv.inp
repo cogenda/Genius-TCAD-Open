@@ -1,0 +1,35 @@
+#==============================================================================
+# 25nm NMOS Source-Drain IV curve calculation
+#==============================================================================
+
+GLOBAL  Z.width=1  DopingScale=2e20
+
+#------------------------------------------------------------------------------
+# voltage sources are needed here.
+vsource Type = VDC    ID = GND    Tdelay=0   Vconst=0
+vsource Type = VDC    ID = VCC    Tdelay=0   Vconst=0.1
+
+
+#------------------------------------------------------------------------------
+# specify boundary condition.
+boundary  Type = OhmicContact        ID = source Res=0 Cap=0 Ind=0
+boundary  Type = OhmicContact        ID = drain  Res=0 Cap=0 Ind=0
+boundary  Type = OhmicContact        ID = gate   Res=0 Cap=0 Ind=0
+boundary  Type = OhmicContact        ID = bulk   Res=0 Cap=0 Ind=0
+
+IMPORT   TIF="25nm.tif"
+
+# set gate voltage to 0.1V
+ATTACH   Electrode=drain             VApp=VCC
+
+# specify physical model, use Lucent mobility here.
+PMI Region=r5  Type=mobility Model=Lombardi
+
+METHOD   Type = DDML1  NS=Basic LS=LU
+SOLVE    Type=STEADYSTATE
+EXPORT   CGNSFile=t1.cgns
+
+METHOD   Type=EBML3 NS=Basic LS=LU
+SOLVE    Type=DCSWEEP VScan=gate  out=iv1  VStart=0 VStep=0.025 VStop=1.0
+
+END

@@ -1,0 +1,38 @@
+#==============================================================================
+# GENIUS Example. Do IV Scan at Vdrain=0.1V in Transiet mode
+#==============================================================================
+
+GLOBAL    T=300 DopingScale=1e18 Z.Width=1.0
+
+# Create an initial simulation mesh
+
+# voltage sources are needed here.
+Vsource Type = VDC    ID = VD    Tdelay=0   Vconst=0.1
+VSOURCE Type=VPulse ID=VG Vlo=0 Vhi=1.5 Tdelay=1e-5 Tr=1e-5 Tf=1e-5 Pw=4e-5 Pr=1 
+
+# Load mesh
+IMPORT    cgnsfile=nmos_tri.cgns
+
+BOUNDARY ID=SUB Type=Ohmic
+BOUNDARY ID=GATE Type=Gate Work=4.17
+CONTACT  Type = OhmicContact       ID = NSource Res=0 Cap=0 Ind=0
+CONTACT  Type = OhmicContact       ID = NDrain  Res=0 Cap=0 Ind=0
+
+# Load Trap PMI, and specify interface traps
+PMI region=NSilicon type=Trap string<Type>=Interface string<interface>=GIF string<chargetype>=Acceptor double<IF.Density>=3e11 double<energy>=0.2
+Model     Region=NSilicon H.Mob=false Trap=true
+METHOD    Type=DDML1 NS=Basic LS=LU maxiteration=20 Damping=Potential
+SOLVE     Type=STEADY
+
+PMI       Region=NSilicon Type=Mobility Model=Lucent
+Model     Region=NSilicon H.Mob=true Mob.force=EQF Trap=true
+SOLVE     Type=STEADY
+
+# Ramp up drain voltage
+SOLVE     Type=DC  Vscan=NDrain Vstart=0.0 Vstep=0.02 Vstop=0.1
+
+# Ramp up gate voltage in transient mode
+ATTACH    Electrode=GATE Type=Voltage VApp=VG
+METHOD    Type=DDML1 NS=Basic LS=LU maxiteration=20 Damping=Potential
+SOLVE     Type=Transient TStart=0 TStep=1e-12 TStepMax=1e-6 TStop=15e-5  out.prefix=tr10u
+

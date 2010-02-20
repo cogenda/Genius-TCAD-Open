@@ -1,0 +1,44 @@
+#==============================================================================
+# GSS example: 1.5 Micron N-Channel MOSFET
+# We fix the gate and source bias voltage as 3V.
+# and do AC sweep for the gate.
+#==============================================================================
+
+GLOBAL    T=300 DopingScale=1e18  Z.Width=2.0
+
+#------------------------------------------------------------------------------
+# voltage sources are needed here.
+vsource Type = VDC    ID = GND    Tdelay=0   Vconst=0
+vsource Type = VDC    ID = VCC    Tdelay=0   Vconst=5
+vsource Type = VDC    ID = VGATE  Tdelay=0   Vconst=5
+vsource Type = VSIN   ID = Vs   Tdelay=0 Vamp=0.1 Freq=1e6  # 1MHz
+
+#------------------------------------------------------------------------------
+# specify boundary condition.
+BOUNDARY ID=SUB Type=Ohmic
+BOUNDARY ID=GATE Type=Gate Work=4.17
+CONTACT  Type = OhmicContact       ID = NSource Res=0    Cap=0 Ind=0
+CONTACT  Type = OhmicContact       ID = NDrain  Res=100  Cap=0 Ind=0
+
+
+#------------------------------------------------------------------------------
+# drive command, specify the solving process.
+IMPORT   CGNSFile=nmos_iv.cgns        #import data computed by step2
+
+#------------------------------------------------------------------------------
+# specify physical model.
+PMI       Region=NSilicon Type=Mobility Model=HP
+Model     Region=NSilicon H.Mob=true Mob.force=EQF
+
+ATTACH   Electrode=GATE    Vapp=VGATE
+ATTACH   Electrode=NDrain   Vapp=VCC
+
+METHOD   Type = DDML1  NS=LineSearch LS=LU
+SOLVE    Type=STEADYSTATE
+
+METHOD   Type = DDMAC   LS=GMRES
+SOLVE    Type=ACSWEEP    ACScan=GATE F.Start=1e5 F.Multiple=1.1  F.Stop = 2e9
+
+
+
+

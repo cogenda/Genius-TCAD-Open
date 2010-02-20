@@ -1,0 +1,43 @@
+#==============================================================================
+# GENIUS example: Schottky diode AC sweep
+#==============================================================================
+
+GLOBAL    T=300 DopingScale=1e18
+
+# Create an initial simulation mesh
+MESH      Type = S_Hex8
+X.MESH    WIDTH=3.0  N.SPACES=10
+Y.MESH    DEPTH=3.0  N.SPACES=10
+Z.MESH    WIDTH=1.0  N.SPACES=3
+
+
+# Specify regions and boundaries
+REGION    Label=Silicon  Material=Si
+FACE      Label=Anode   Location=TOP   #x.min=0 x.max=1.0 z.min=0.0 z.max=1.0
+FACE      Label=Cathode Location=BOTTOM    
+
+# the schottky diode is uniform doped
+DOPING Type=Analytic
+PROFILE   Type=Uniform    Ion=Donor     N.PEAK=1E18  X.MIN=0.0 X.MAX=3.0  \
+          Y.min=0.0 Y.max=3.0        Z.MIN=0.0 Z.MAX=3.0
+
+# boundary condition
+BOUNDARY ID=Anode Type=Schottky WorkFunction=4.9 #Res=1000
+BOUNDARY ID=Cathode Type=Ohmic
+
+# get initial condition
+METHOD    Type=Poisson
+SOLVE
+
+# use EBML3 solver to get DC bias state
+MODEL     Region=Silicon Mobility.Force=EQF #EB.LEVEL=Tl
+METHOD    Type=EBML3 NS=Basic LS=LU #PC=LU
+SOLVE     TYpe=EQ
+SOLVE     TYpe=DCSWEEP Vscan=Anode Vstart=0.0 Vstep=0.05 Vstop=0.6 out.prefix=schottky_diode_iv0
+
+# do AC sweep
+METHOD    Type=DDMAC  LS=GMRES PC=LU
+SOLVE     Type=ACSWEEP acscan=Anode  F.Start=1e4 F.stop=2e9 out=sch_ac
+
+
+EXPORT    CGNSFILE=sch_diode.cgns VTKFILE=sch_diode.vtu

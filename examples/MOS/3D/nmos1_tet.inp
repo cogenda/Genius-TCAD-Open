@@ -1,0 +1,78 @@
+#==============================================================================
+# GENIUS Example. Build NMOS with TET mesh
+#==============================================================================
+
+GLOBAL    T=300 DopingScale=1e18
+
+
+# Create an initial simulation mesh
+
+int z_div = 10;
+
+MESH      Type = S_tet4  tetgen="pzAq"
+X.MESH    WIDTH=0.6  N.SPACES=5
+X.MESH    WIDTH=1.8  N.SPACES=15
+X.MESH    WIDTH=0.6  N.SPACES=5
+
+Y.MESH    Y.TOP=0.025 DEPTH=0.025 N.SPACES=2
+Y.MESH    DEPTH=2.0  N.SPACES=15
+
+Z.MESH    WIDTH=1  N.SPACES=z_div
+
+# Eliminate some unnecessary substrate nodes
+ELIMINATE    Direction=Y  iY.TOP=2
+ELIMINATE    Direction=Y  iY.TOP=2
+ELIMINATE    Direction=Z  Z.FRONT=0
+
+SPREAD    Location=Left  Width=0.625 Upper=0 Lower=2 Thickness=0.1 Encroach=1
+SPREAD    Location=Right Width=0.625 Upper=0 Lower=2 Thickness=0.1 Encroach=1
+
+#SPREAD3D    x.min=0         x.max=0.625  Upper=0 Lower=2 Thickness=0.1 Encroach=1
+#SPREAD3D    x.min=3-0.625   x.max=3      Upper=0 Lower=2 Thickness=0.1 Encroach=1
+
+# Specify oxide and silicon regions
+REGION    Label=NSilicon  Material=Si
+REGION    Label=NOxide    IY.MAX=2 Material=Ox
+REGION    Label=NSource   X.MAX=0.5  IY.MAX=2 Material=Elec iZ.min=0 iz.max=z_div
+REGION    Label=NDrain    X.MIN=2.5  IY.MAX=2 Material=Elec iZ.min=0 iz.max=z_div
+
+FACE      Label=SUB   Location=BOTTOM
+FACE      Label=GATE  Location=Top  X.MIN=0.625 X.MAX=2.375  iZ.min=0 iz.max=z_div
+
+DOPING    Type=analytic
+PROFILE   Type=Uniform Ion=Acceptor  N.PEAK=3E15 X.MIN=0.0  \
+          X.MAX=3.0 Y.TOP=0 Y.BOTTOM=2.5 Z.MIN=0 Z.MAX=3.0
+PROFILE   Type=analytic   Ion=Acceptor  N.PEAK=2E16 X.MIN=0.0  \
+          X.MAX=3.0 Y.TOP=0 Y.CHAR=0.25 Z.MIN=0 Z.MAX=3.0
+PROFILE   Type=analytic   Ion=Donor  N.PEAK=2E20  Y.Junction=0.34   \
+          X.MIN=0.0  X.MAX=0.5   XY.RATIO=.75   Z.MIN=0 Z.MAX=3.0
+PROFILE   Type=analytic   Ion=Donor  N.PEAK=2E20  Y.Junction=0.34   \
+          X.MIN=2.5  X.MAX=3.0   XY.RATIO=.75   Z.MIN=0 Z.MAX=3.0
+
+# voltage sources are needed here.
+Vsource Type = VDC    ID = GND    Tdelay=0   Vconst=0
+Vsource Type = VDC    ID = VCC    Tdelay=0   Vconst=0.3
+Vsource Type = VDC    ID = VGATE  Tdelay=0   Vconst=5
+
+
+BOUNDARY ID=SUB Type=Ohmic
+BOUNDARY ID=GATE Type=Gate Work=4.17
+CONTACT  Type = OhmicContact       ID = NSource Res=0 Cap=0 Ind=0
+CONTACT  Type = OhmicContact       ID = NDrain  Res=0 Cap=0 Ind=0
+
+METHOD    Type=Poisson
+SOLVE
+
+
+REFINE.C  Variable=Doping cell.fraction=0.2 region=NSilicon
+METHOD    Type=Poisson
+SOLVE
+
+REFINE.C  Variable=Potential cell.fraction=0.1 region=NSilicon
+
+METHOD    Type=Poisson
+SOLVE
+
+EXPORT   gdml.surface=nmos.gdml VTKFILE=nmos3.vtu cgnsfile=nmos3.cgns
+
+

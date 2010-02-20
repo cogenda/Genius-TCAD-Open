@@ -1,0 +1,29 @@
+#==============================================================================
+# Genius example: PN Diode simulation
+# On this step, we will do mixed-type transient calculation with NGSPICE
+#==============================================================================
+
+GLOBAL    T=300 DopingScale=1e18  Z.Width=1
+
+#------------------------------------------------------------------------------
+# load spice circuit netlist
+CIRCUIT NETLIST=diode_ckt.cir
+
+#------------------------------------------------------------------------------
+# Import CGNS file generated at first step
+IMPORT   CGNSFile=pn2d.cgns
+
+
+#------------------------------------------------------------------------------
+# specify boundary condition.
+boundary  Type = OhmicContact      ID = Anode
+boundary  Type = OhmicContact      ID = Cathode
+
+
+#Model  Region=Silicon H.Mob=false Mob.force=ESimple EB.level=tl
+METHOD Type=DDML1M  NS=Basic LS=LU Damping=Potential maxit=30 #Fermi=On
+SOLVE  Type=Op
+#SOLVE  Type=DCSweep Vscan=Vpp Vstart=0.0 Vstep=0.1 Vstop=2.5 out.prefix=diode_mix
+SOLVE  Type=tran tstart=0.0 tstep=0.001e-6 tstepmax=0.01e-6 tstop=6e-6 out.prefix=diode_mix
+
+EXPORT VTKFILE=diode.vtu

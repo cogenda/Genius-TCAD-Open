@@ -1,0 +1,56 @@
+== COPYRIGHT NOTICE ==
+                    GNU GENERAL PUBLIC LICENSE
+
+ The Genius Semiconductor Device Simulator (Open-Source Edition) is 
+ Copyright (C) 2008 Cogenda Pte Ltd
+ Contact: contact@cogenda.com
+
+ You may use, distribute and copy Genius (Open-Source Edition) under the 
+ terms of GNU General Public License version 3. If you do not receive a
+ copy of the GPLv3 license in this package, you may obtain a copy at
+ http://www.gnu.org/licenses/gpl-3.0.txt
+
+== THIRD PARTY COPYRIGHT NOTICES ==
+
+The SOFTWARE incorporates some or all of the following software that is owned and controlled by third parties:
+
+ADOL-C. Automatic Differentiation of Algorithms Written in C/C++. Copyright © 1996-2006. Technical University Dresden. Department of Mathematics. Institute of Scientific Computing. Distributed under Common Public License version 1.0
+
+ANN. Approximate Nearest Neighbor Library Version 1.0. Copyright © 1997-2005 University of Maryland and Sunil Arya and David Mount.  All Rights Reserved. Distributed under the GNU Lesser General Public License (LGPL).
+
+BigDigits. Multiple-precision arithmetic library Version 2.2. Copyright © 2001-8 D.I. Management Services Pty Limited, all rights reserved. Distributed under the terms of the owner's license.
+
+CGNS. CFD General Notation System. Distributed under zlib/libpng License.
+
+CIDER1b1. A mixed-level circuit and device simulator. Copyright © 1991-1994. Regents of the University of California. All rights reserved. Distributed under BSD License.
+
+Cuba.  A library for multidimensional numerical integration Version 1.4. Copyright © 2008 Thomas Hahn. All Rights Reserved. Distributed under the GNU Lesser General Public License (LGPL).
+
+HYPRE. High Performance Preconditioners. Copyright © 2006. Regents of the University of California. Produced at the Lawrence Livermore National Laboratory. Distributed under GNU Lesser General Public License version 2.1
+
+LIBMESH Finite Element Library. Copyright © 2002-2007. Benjamin S. Kirk and John W. Peterson et al. Distributed under GNU Lesser General Public License version 2.1
+
+METIS. Multilevel Partitioning Algorithms. Copyright © 1997-2007. Regents of the University of Minnesota. Distributed with the kind permission of Dr George Karypis. Department of Computer Science & Engineering. University of Minnesota.
+
+MUMPS. Multifrontal Massively Parallel Sparse Direct Solver. Copyright © 1996-2008. Supported by the following institutions CERFACS, ENSEEIHT-IRIT, and INRIA. Distribution in the public domain.
+
+NGSPICE. Mixed-level/mixed-signal circuit simulator. Refer to copyright notices for Spice3f5, Cider1b1 and Xspice. Distributed under BSD License.
+
+PETSc. Portable, Extensible Toolkit for Scientific Computation. Copyright © 1995-2004. University of Chicago. Distributed under the terms of the owners license.
+
+SIP v4.10. Copyright © 2010 Riverbank Computer Limited. Distributed under the SIP license.
+
+SPICE3f5. Simulation Program with Integrated Circuit Emphasis. Copyright © 1985-1991. The Regents of the University of California. All rights reserved. Distributed under BSD License.
+
+SUPERLU/SUPERLU_DIST. Sparse Gaussian Elimination on High Performance Computers. Copyright © 2003. The Regents of the University of California, through Lawrence Berkeley National Laboratory. Distributed under BSD License.
+
+Triangle. A Two-Dimensional Quality Mesh Generator and Delaunay Triangulator.  Copyright © Jonathan Richard Shewchuk. Distributed under the author's non-commerical license. 
+
+TNT. Template Numerical Toolkit. National Institute of Standards and Technology (NIST). Distribution in the public domain.
+
+UMFPACK v4.3. Unsymmetric Multifrontal Sparse LU Factorization Package. Copyright © 1994-2007 by Timothy A. Davis, University of Florida. All Rights Reserved. Distributed under GNU Lesser General Public License.
+
+VTK. The Visualization Toolkit. Copyright © 1993-2008 Ken Martin, Will Schroeder, Bill Lorensen. All rights reserved. Distributed under the terms of the owners license.
+
+ALL COPYRIGHTS REMAIN THE PROPERTY OF THEIR RESPECTIVE OWNERS.
+

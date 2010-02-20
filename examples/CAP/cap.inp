@@ -1,0 +1,45 @@
+#==============================================================================
+# Genius example: AC small signal sweep to a SiO2 capacitance
+# This file is intended for testing AC solver
+# The result is exactly the same as analytic result achieved by cap.cc 
+#==============================================================================
+
+GLOBAL    T=300 
+
+# Create an initial simulation mesh
+# The cap has a size of 1um*1um*1um
+MESH      Type=S_HEX8
+X.MESH    WIDTH=1.0    N.SPACES=1 
+Y.MESH    DEPTH=1.0    N.SPACES=1
+Z.MESH    WIDTH=1.0    N.SPACES=1
+
+
+# Region material set to SiO2
+REGION    Label=SiO2    Material=SiO2
+FACE      Label=Elec1   Location=TOP
+FACE      Label=Elec2   Location=BOTTOM
+
+
+#------------------------------------------------------------------------------
+# voltage sources.
+vsource Type = VDC    ID = GND  Tdelay=0 Vconst=0.0
+vsource Type = VDC    ID = VCC  Tdelay=0 Vconst=1.0
+
+
+#------------------------------------------------------------------------------
+# specify boundary condition.
+boundary Type=GateContact      ID=Elec1   WorkFunction=4.7 Res=1000 Cap=0 Ind=0
+boundary Type=GateContact      ID=Elec2   WorkFunction=4.7 Res=0 Cap=0 Ind=0
+
+#------------------------------------------------------------------------------
+# compute a biased state.
+ATTACH   Electrode=Elec1 Vapp=VCC
+METHOD   Type=Poisson LS=LU
+SOLVE
+
+# Use DDMAC to get the frequency response to this capacitance.
+# The result marches exactly with analytic value get from cap.cc
+METHOD   Type=DDMAC    LS=BCGS
+SOLVE    Type=ACSWEEP  ACScan=Elec1 out=ivac  F.Start=1e6 F.Multiple=1.1  F.Stop = 1e7
+
+END

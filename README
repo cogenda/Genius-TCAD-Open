@@ -1,0 +1,30 @@
+This is the open-source edition of the Genius Semiconductor Device Simulator.
+Genius is a commerical product of Cogenda Pte Ltd, Singapore.
+
+Features:
+ - 2D semiconductor device simulation
+ - Drift-diffusion model;
+ - Temperature corrected DD and lattice heating;
+ - Energy-balance model;
+ - A range of mobility models;
+ - A range of Impact-ionization models;
+ - Band-to-band tunneling;
+ - Carrier trapping at defects;
+ - Raytracing optics
+ - 2D finite-element optics
+ - DC, transient, small signal AC and mixed device/circuit simulation modes;
+ - Flexible programming interface for user-defined material models
+ - Flexible programming interface for user-defined pre-processing, post-processing and monitoring modules.
+ - Interfaces to popular TCAD, CFD and visualization file formats such as TIF, CGNS, and VTK.
+
+The open-source edition differs from the commercial version in the following aspects:
+ - Parallel computation capability is removed.
+ - Support for 3D device structure is removed.
+ - Uses the Triangle 2D mesh generator, instead of a proprietary mesh generator.
+ - Only a basic set of material models are provided.
+
+
+Contacts:
+Cogenda Pte Ltd
+http://www.cogenda.com
+contact@cogenda.com

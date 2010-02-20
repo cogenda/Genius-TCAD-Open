@@ -1,0 +1,356 @@
+#                                               -*- Autoconf -*-
+# Process this file with autoconf to produce a configure script.
+
+
+
+AC_PREREQ(2.59)
+AC_INIT(GENIUS, 0.5.2, gongding@cogenda.com)
+AC_CONFIG_SRCDIR([src/main.cc])
+
+
+# Create a configuration header
+AC_CONFIG_HEADERS([config.h])
+
+GENIUS_DIR=`(pwd)`
+
+AC_MSG_RESULT(---------------------------------------------)
+AC_MSG_RESULT(----------- Configuring GENIUS --------------)
+AC_MSG_RESULT(---------------------------------------------)
+
+AC_CANONICAL_TARGET
+
+#--------------------------------------------------------------------------
+# Checks for programs.
+#--------------------------------------------------------------------------
+
+dnl Determine a C compiler to use.  If CC is not already set, checks for
+dnl gcc, cc, and other C compilers.  Then sets the CC variable to the result.
+AC_ARG_WITH([cc],
+	    AC_HELP_STRING([--with-cc=CC],
+                           [C compiler to use]),
+	    [CC="$withval"],
+	    [])
+AC_PROG_CC(mpicc icc gcc cc)
+
+dnl Determines a C++ compiler to use.  First checks if the variable CXX is
+dnl already set.  If not, then searches under g++, c++, and other names.
+AC_ARG_WITH([cxx],
+	    AC_HELP_STRING([--with-cxx=CXX],
+                           [C++ compiler to use]),
+	    [CXX="$withval"],
+	    [])
+AC_PROG_CXX(mpicxx icpc g++ CC)
+
+AC_ARG_WITH([fc],
+	    AC_HELP_STRING([--with-fc=FC],
+                           [fortran90 compiler to use]),
+	    [FC="$withval"],
+	    [])
+AC_PROG_FC(mpif90 ifort gfortran)
+
+
+dnl Determines lex tool
+AC_PROG_LEX
+if test "$LEX" != flex ;  then
+ AC_MSG_ERROR(ERROR: Can't find flex!)
+fi
+
+dnl Determines yacc tool
+AC_PROG_YACC
+if test "$YACC" != "bison -y" ;  then
+ AC_MSG_ERROR(ERROR: Can't find bison!)
+fi
+
+
+dnl Determines strip tool
+AC_CHECK_PROG(STRIP,strip,strip,:)
+
+
+AC_PROG_MAKE_SET
+
+AC_CHECK_PROG(AR, ar, ar, :)
+
+
+
+dnl See aclocal.m4 for the definition of this function.  It can
+dnl figure out which version of a particular compiler, e.g. GCC 4.0,
+dnl you are using.
+DETERMINE_CXX_BRAND
+
+
+dnl See aclocal.m4 for the definition of this as well.  It uses the
+dnl output of DETERMINE_CXX_BRAND to set special flags for idiosyncratic
+dnl compilers.  For example, newer versions of GCC have additional C++ debugging
+dnl flags like _GLIBCXX_DEBUG_PEDANTIC which were not present in older versions.
+SET_CXX_FLAGS
+
+
+dnl The AC_SUBST(foo) command creates an output variable from a shell variable.
+dnl This command also causes AC_OUTPUT to replace all instances of @VAR@ with
+dnl the value of the shell variable VAR in the output files (e.g. one or more Makefiles).
+AC_SUBST(host)
+AC_SUBST(GXX_VERSION)
+AC_SUBST(CXXFLAGS_OPT)
+AC_SUBST(CXXFLAGS_DBG)
+AC_SUBST(CXXFLAGS_DVL)
+AC_SUBST(CFLAGS_OPT)
+AC_SUBST(CFLAGS_DBG)
+AC_SUBST(CFLAGS_DVL)
+AC_SUBST(LDFLAGS)
+AC_SUBST(CXXDEPFLAG)
+AC_SUBST(CXXSHAREDFLAG)
+AC_SUBST(DLLFLAG)
+AC_SUBST(RPATHFLAG)
+AC_SUBST(PROFILING_FLAGS)
+AC_SUBST(STRIP)
+
+dnl --------------------------------------------------------------
+dnl Check for important type sizes
+dnl --------------------------------------------------------------
+AC_CHECK_SIZEOF(short int)
+AC_CHECK_SIZEOF(int)
+AC_CHECK_SIZEOF(long int)
+AC_CHECK_SIZEOF(float)
+AC_CHECK_SIZEOF(double)
+AC_CHECK_SIZEOF(void *)
+
+
+
+#--------------------------------------------------------------------------
+# get executable extensions
+#--------------------------------------------------------------------------
+AC_EXEEXT
+
+
+#---------------------------------------------------------------------------
+# get CGNS header path and library
+#---------------------------------------------------------------------------
+for d in         \
+    "/usr"       \
+    "/usr/local" \
+    "$HOME"    \
+    "$HOME/local" ; do
+    if test -f "$d/include/cgnslib.h" && test -f "$d/lib/libcgns.a"; then
+      CGNSDIR=`(cd $d; pwd)`
+      break
+    fi
+done
+
+AC_MSG_CHECKING([if CGNS directory was specified])
+AC_ARG_WITH(cgns,
+  [  --with-cgns=CGNSdir     directory containing CGNS distribution.
+                          $CGNSdir/include for header
+                          $CGNSdir/lib for library],
+  CGNSDIR=$withval)
+if test ! -z "$CGNSDIR" || test ! "$CGNSDIR" = "no"; then
+  AC_MSG_RESULT($CGNSDIR)
+  if test ! -f "$CGNSDIR/include/cgnslib.h"; then
+    AC_MSG_ERROR($CGNSDIR directory does not contain cgnslib.h)
+  fi
+fi
+
+
+
+#---------------------------------------------------------------------------
+# check if gsl library installed
+#---------------------------------------------------------------------------
+AC_ARG_ENABLE(gsl,
+              AC_HELP_STRING([--enable-gsl=no],
+                             [use gsl Fermi function]),
+              enablegsl=$enableval,
+              enablegsl=no)
+
+if  test "$enablegsl" = "yes"; then
+  AC_CHECK_HEADERS([gsl/gsl_sf_fermi_dirac.h],AC_DEFINE([HAVE_GSL],[],[Use GSL to compute Fermi Integral]))
+  AC_CHECK_LIB([gsl -lgslcblas], [gsl_sf_fermi_dirac_half],[LIBS="$LIBS -lgsl -lgslcblas"])
+fi
+
+
+#---------------------------------------------------------------------------
+# check if PETSC installed
+#---------------------------------------------------------------------------
+CONFIGURE_PETSC
+
+
+
+dnl -------------------------------------------------------------
+dnl ANN: approximate nearest neighbor -- enabled by default
+dnl -------------------------------------------------------------
+AC_ARG_ENABLE(ann,
+              AC_HELP_STRING([--enable-ann=yes],
+                             [build with ANN approximate nearest neighbor library suppport]),
+              enableann=$enableval,
+              enableann=yes)
+
+if (test "$enableann" != no) ; then
+   CONFIGURE_ANN
+fi
+
+
+
+dnl -------------------------------------------------------------
+dnl Metis Partitioning -- enabled by default
+dnl -------------------------------------------------------------
+AC_ARG_ENABLE(metis,
+              AC_HELP_STRING([--enable-metis=yes],
+                             [build with Metis graph partitioning suppport]),
+              enablemetis=$enableval,
+              enablemetis=yes)
+
+if (test "$enablemetis" != no) ; then
+   CONFIGURE_METIS
+fi
+
+
+dnl -------------------------------------------------------------
+dnl VTK -- Mesh I/O API is enabled by default
+dnl -------------------------------------------------------------
+AC_ARG_ENABLE(vtk,
+              AC_HELP_STRING([--enable-vtk=yes],
+                             [build with VTK file I/O support]),
+              enablevtk=$enableval,
+              enablevtk=yes)
+
+if (test "$enablevtk" != no) ; then
+   CONFIGURE_VTK
+fi
+
+
+dnl --------------------------------------------------------------
+dnl VISIT -- real time display. disabled by default
+dnl --------------------------------------------------------------
+AC_ARG_ENABLE(visit,
+              AC_HELP_STRING([--enable-visit=no],
+                             [build visit hook for real time display]),
+              enablevisit=$enableval,
+              enablevisit=no)
+
+if test "$enablevisit" != no ; then
+  AC_DEFINE(ENABLE_VISIT, 1,
+           [Flag indicating if the visit hook should be built])
+  AC_SUBST(enablevisit)
+  AC_MSG_RESULT(<<< Configuring with visit support >>>)
+fi
+
+
+
+
+
+# Checks for header files.
+AC_HEADER_STDC
+AC_CHECK_HEADERS([fcntl.h float.h fenv.h limits.h stddef.h stdlib.h string.h stdio.h assert.h sys/time.h ])
+AC_CXX_HAVE_LOCALE
+AC_CXX_HAVE_SSTREAM
+
+
+
+AC_ARG_ENABLE(unordered-containers,
+              AC_HELP_STRING([--enable-unordered-containers],
+                             [Use unordered_map/unordered_set if available]),
+              enableunorderedcontainers=$enableval,
+              enableunorderedcontainers=yes)
+
+  if test "$enableunorderedcontainers" != no ; then
+    dnl Just checking for the headers is insufficient in all cases... we need to see if the compiler can actually compile a test code.
+    dnl AC_CHECK_HEADERS(unordered_map,[],[AC_CHECK_HEADERS(tr1/unordered_map,[],[AC_CHECK_HEADERS(hash_map, [], [AC_CHECK_HEADERS(ext/hash_map)])])])
+    dnl AC_CHECK_HEADERS(unordered_set,[],[AC_CHECK_HEADERS(tr1/unordered_set,[],[AC_CHECK_HEADERS(hash_set, [], [AC_CHECK_HEADERS(ext/hash_set)])])])
+
+    dnl The following routines, defined in aclocal.m4, check to see if the compiler can compile programs using
+    dnl various non-standard hash containers.
+    ACX_TR1_UNORDERED_MAP
+    ACX_TR1_UNORDERED_SET
+    ACX_UNORDERED_MAP
+    ACX_UNORDERED_SET
+    ACX_EXT_HASH_MAP
+    ACX_EXT_HASH_SET
+    ACX_HASH_MAP
+    ACX_HASH_SET
+  fi
+
+
+# Checks for typedefs, structures, and compiler characteristics.
+AC_HEADER_STDBOOL
+AC_C_CONST
+AC_C_INLINE
+AC_TYPE_SIZE_T
+AC_HEADER_TIME
+
+# Checks for library functions.
+AC_FUNC_MALLOC
+AC_FUNC_REALLOC
+AC_FUNC_STRTOD
+AC_CHECK_FUNCS([memset pow sqrt])
+
+
+#---------------------------------------------------------------------------
+# Checks for system define
+#---------------------------------------------------------------------------
+case $host_os in
+  *cygwin* )
+  	SYSTEM=CYGWIN;
+        AC_DEFINE([CYGWIN],,[Define to use CYGWIN env]);;
+  *linux* )
+        SYSTEM=LINUX;
+        AC_DEFINE([LINUX],,[Define to use LINUX env]);;
+  *darwin* )
+        SYSTEM=DARWIN;
+        AC_DEFINE([DARWIN],,[Define to use DARWIN env]);;
+esac
+
+
+#---------------------------------------------------------------------------
+# Checks for system libraries.
+#---------------------------------------------------------------------------
+if (test "$SYSTEM" != CYGWIN) ; then
+   AC_CHECK_LIB([dl], [dlopen])
+fi
+
+
+#---------------------------------------------------------------------------
+# check for X11
+#---------------------------------------------------------------------------
+if (test "$SYSTEM" != CYGWIN) ; then
+  AC_PATH_X
+  AC_PATH_XTRA
+  if ! test "$x_includes" = ""; then
+    X11INCS=-I$x_includes
+    AC_DEFINE([HAVE_X11],,[Define to use X11 graphic function])
+    enablex=yes
+  fi
+
+  if ! test "$x_libraries" = ""; then
+    X11LIBS="-L$x_libraries -lX11"
+  else
+    AC_CHECK_LIB([X11], [XFlush],[X11LIBS="-lX11"])
+  fi
+
+  AC_SUBST(enablex)
+  AC_SUBST(X11INCS)
+  AC_SUBST(X11LIBS)
+fi
+
+
+#---------------------------------------------------------------------------
+# get TIFF header path and library
+#---------------------------------------------------------------------------
+if (test "$SYSTEM" != CYGWIN) ; then
+  AC_CHECK_HEADERS([tiffio.h],[AC_DEFINE([HAVE_TIFF],,[Use tiff to save screen])])
+  AC_CHECK_LIB([tiff], [TIFFOpen],[LIBS="$LIBS -ltiff"])
+fi
+
+AC_PROG_MAKE_SET
+AC_SUBST(GENIUS_DIR)
+AC_SUBST(SYSTEM)
+AC_SUBST(CGNSDIR)
+AC_SUBST(INSTLIST)
+AC_SUBST(BIN_INSTALL_DIR)
+AC_SUBST(LIB_INSTALL_DIR)
+
+
+AC_CONFIG_FILES([make.defs])
+AC_OUTPUT
+
+
+AC_MSG_RESULT(---------------------------------------------)
+AC_MSG_RESULT(--------- Done Configuring GENIUS -----------)
+AC_MSG_RESULT(---------------------------------------------)

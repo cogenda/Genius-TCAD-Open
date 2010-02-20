@@ -1,0 +1,35 @@
+#==============================================================================
+# Genius example: EEPROM cell read Simulation
+#==============================================================================
+
+GLOBAL    T=300  DopingScale=1e20  Z.width=1    
+
+#------------------------------------------------------------------------------
+CONTACT   Type = GateContact        ID = Gate        WorkFunction=4.7
+# the floating gate is charged
+CONTACT   Type = FloatMetal         ID = Flt_Gate    QF=-2e-15 
+boundary  Type = OhmicContact       ID = Substrate   Res=0 Cap=0 Ind=0
+boundary  Type = InsulatorInterface ID = Oxide_to_Silicon QF=0
+
+#------------------------------------------------------------------------------
+vsource Type = VDC    ID = GND    Tdelay=0   Vconst=0
+vsource Type = VDC    ID = VCC    Tdelay=0   Vconst=0.1
+vsource Type = VPULSE ID = VGATE  Tdelay=0.2e-9   Tr=20e-12 Tf=20e-12 \
+                                  pw=2e-9 pr=4e-9  Vhi=5 Vlo=0
+
+#------------------------------------------------------------------------------
+IMPORT   CGNSFile = eeprom_init.cgns
+
+# specify physical model, use Lucent mobility here.
+PMI      Region=Silicon Type=Mobility Model=Lucent
+Model     Region=Silicon H.Mob=true Mob.force=ESimple
+
+ATTACH   Electrode=Drain  VApp=VCC
+ATTACH   Electrode=Gate   VApp=VGATE
+
+# the computation time is a bit long...
+METHOD   Type=DDML1  NS=Basic LS=BCGS Damping=Potential MaxIt=15
+SOLVE    Type=TRANSIENT  TStart=0 TStep=2e-12  TStepMax=1e-10  TStop=4e-9 
+
+END
+

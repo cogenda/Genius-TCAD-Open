@@ -1,0 +1,45 @@
+#==============================================================================
+# GSS example: 1.5 Micron N-Channel MOSFET
+# We fix the gate and source bias voltage as 3V.
+# A 1MHz VSIN source is added to gate. And transient solver is employed.
+# For testing gate displacement current.
+#==============================================================================
+
+set Carrier     = pn
+set Z.width     = 2
+set LatticeTemp = 3e2
+set DopingScale = 1e18
+
+#------------------------------------------------------------------------------
+# voltage sources are needed here.
+vsource Type = VDC    ID = GND    Tdelay=0   Vconst=0
+vsource Type = VDC    ID = VCC    Tdelay=0   Vconst=5
+vsource Type = VDC    ID = VGATE  Tdelay=0   Vconst=5
+vsource Type = VSIN   ID = Vs   Tdelay=0 Vamp=0.1 Freq=1e6  # 1MHz
+
+#------------------------------------------------------------------------------
+# specify boundary condition.
+boundary Type = InsulatorInterface ID = IF_NOxide_to_NSilicon QF=0
+boundary Type = GateContact        ID = NGate        WorkFunction=4.17
+boundary Type = OhmicContact       ID = NSubstrate   Res=0 Cap=0 Ind=0
+CONTACT  Type = OhmicContact       ID = NSource Res=0 Cap=0 Ind=0
+CONTACT  Type = OhmicContact       ID = NDrain  Res=100 Cap=0 Ind=0
+
+#------------------------------------------------------------------------------
+# specify physical model.
+PMIS region=NSilicon mobility=Lucent
+
+#------------------------------------------------------------------------------
+# drive command, specify the solving process.
+IMPORT   CoreFile=nmos_open.cgns
+ATTACH   Electrode=NDrain  VApp=VCC
+ATTACH   Electrode=NGate    VApp=VGATE  VApp=Vs
+METHOD   Type = DDML1E   Scheme = Newton  NS=LineSearch LS=GMRES
+SOLVE    Type=STEADYSTATE
+SOLVE    Type=TRANSIENT   ODE.formula=BDF2  IVRecord=NGate   IVRecord=NDrain IVFile=iv.txt  \
+         TStart = 0 TStep=1e-8  TStop = 3e-6
+
+END
+
+
+

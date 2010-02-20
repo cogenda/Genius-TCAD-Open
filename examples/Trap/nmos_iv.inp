@@ -1,0 +1,40 @@
+#==============================================================================
+# GENIUS Example. Do IV Scan at Vdrain=0.1V
+#==============================================================================
+
+GLOBAL    T=300 DopingScale=1e18 Z.Width=1.0
+
+
+# voltage sources are needed here.
+Vsource Type = VDC    ID = VDS    Tdelay=0   Vconst=0.1
+
+# Load mesh
+IMPORT    cgnsfile=nmos_tri.cgns
+
+BOUNDARY ID=SUB Type=Ohmic
+BOUNDARY ID=GATE Type=Gate Work=4.17
+CONTACT  Type = OhmicContact       ID = NSource Res=0 Cap=0 Ind=0
+CONTACT  Type = OhmicContact       ID = NDrain  Res=0 Cap=0 Ind=0
+
+# Load Trap PMIS, Specify interface trap
+PMI region=NSilicon type=Trap string<Type>=Interface string<interface>=GIF string<chargetype>=Acceptor double<IF.Density>=3e11 double<energy>=0.2 print=1
+
+Model     Region=NSilicon H.Mob=false Trap=true
+METHOD    Type=DDML1 NS=Basic LS=LU maxiteration=40 Damping=Potential
+SOLVE     Type=STEADY
+
+PMI       Region=NSilicon Type=Mobility Model=Lucent
+Model     Region=NSilicon H.Mob=true Mob.force=EQF Trap=true
+
+METHOD    Type=DDML1 NS=Basic LS=LU maxiteration=20 Damping=Potential
+
+# Ramp up drain voltage
+SOLVE     Type=DC  Vscan=NDrain Vstart=0.0 Vstep=0.02 Vstop=0.1 
+
+# Scan gate voltage
+ATTACH    Electrode=NDrain Type=Voltage VApp=VDS
+SOLVE     Type=DC  Vscan=GATE Vstart=0.0 Vstep=0.05 Vstop=1.5 out.prefix=gate_iv
+
+EXPORT   VTKFILE=nmos_iv.vtk
+
+

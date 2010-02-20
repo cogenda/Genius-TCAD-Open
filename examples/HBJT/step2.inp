@@ -1,0 +1,28 @@
+#==============================================================================
+# Genius example: SiGe HBJT simulation
+# On the first step, we will calculate IV curve with Vc=2V.
+#==============================================================================
+
+GLOBAL    T=300 DopingScale=1e20  Z.width=100
+
+#------------------------------------------------------------------------------
+VSOURCE Type=VDC ID=VCC Tdelay=0 Vconst=2
+
+#------------------------------------------------------------------------------
+# specify boundary condition.
+boundary Type = OhmicContact    ID=Emitter    Res=0 Cap=0 Ind=0
+boundary Type = OhmicContact    ID=Base       Res=1000 Cap=0 Ind=0
+boundary Type = OhmicContact    ID=Collector  Res=1000 Cap=0 Ind=0
+
+#------------------------------------------------------------------------------
+# drive command, specify the solving process.
+IMPORT   CGNSFile = hbjt.cgns
+
+ATTACH   Electrode=Collector Vapp=VCC
+
+METHOD   Type=DDML1   NS=Basic LS=LU Damping=Potential Toler.relax=5e5
+SOLVE    Type=STEADYSTATE
+SOLVE    Type=DCSWEEP VScan=Base OUT=iv2 VStart=0.0 VStep=0.02 VStop=0.8
+
+EXPORT   CGNSFile=bias.cgns
+

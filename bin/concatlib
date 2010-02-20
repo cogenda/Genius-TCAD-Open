@@ -1,0 +1,28 @@
+#!/bin/bash
+
+archive=$1
+shift
+libs=$@
+WORKDIR=libTmpXDDOI
+
+if [[ -d ${WORKDIR} ]]
+then
+  rm -rf ${WORKDIR}
+fi
+mkdir ${WORKDIR}
+cd ${WORKDIR}
+
+for lib in ${libs}
+do
+  ar x ../${lib}
+done
+
+if [[ -f __.SYMDEF ]]
+then
+  rm __.SYMDEF
+fi
+
+ar rs ../${archive} *
+cd ..
+rm -rf ${WORKDIR}
+

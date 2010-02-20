@@ -1,0 +1,59 @@
+#==============================================================================
+# Genius example: Thyristor simulation
+# we will generate Thyristor simulation model.
+# Then the generated CGNS file will be used on later steps.
+#==============================================================================
+
+GLOBAL    T=300 DopingScale=1e19
+
+#------------------------------------------------------------------------------
+# Create an initial simulation mesh
+MESH     Type=S_TRI3 Triangle="pzA"
+X.MESH    WIDTH=3.0  N.SPACES=30
+Y.MESH    DEPTH=5.0  N.SPACES=50
+
+# Specify impurity profiles
+DOPING Type=Analytic
+PROFILE   Type=Uniform    Ion=Acceptor     N.PEAK=1E17  X.MIN=0.0 X.MAX=3.0  \
+          Y.TOP=0.0 Y.BOTTOM=1.0
+PROFILE   Type=Uniform    Ion=Donor        N.PEAK=1E14  X.MIN=0.0 X.MAX=3.0  \
+          Y.TOP=1.0 Y.BOTTOM=4.5
+PROFILE   Type=Analytic   Ion=Acceptor     N.PEAK=1E18  X.MIN=0.0 X.MAX=3.0  \
+          Y.TOP=4.5 Y.BOTTOM=5.0        X.CHAR=0.2   Y.CHAR=0.4
+PROFILE   Type=Analytic   Ion=Donor          N.PEAK=1E18  X.MIN=0.0 X.MAX=0.5  \
+          Y.TOP=0.0 Y.BOTTOM=0.2        X.CHAR=0.2   Y.CHAR=0.2
+PROFILE   Type=Analytic   Ion=Acceptor       N.PEAK=1E18  X.MIN=2.5 X.MAX=3.0  \
+          Y.TOP=0.0 Y.BOTTOM=0.2        X.CHAR=0.2   Y.CHAR=0.2
+          
+# Region and electrode statements
+REGION    Label=Si Material=Si
+FACE      Label=Cathode   Location=TOP   X.MIN=0.0 X.MAX=0.5
+FACE      Label=Anode     Location=BOTTOM
+FACE      Label=Gate      Location=TOP   X.MIN=2.5 X.MAX=3.0
+
+#------------------------------------------------------------------------------
+# no voltage source is needed here.
+
+#------------------------------------------------------------------------------
+# specify boundary condition.
+boundary Type = OhmicContact      ID=Anode   Res=0 Cap=0 Ind=0
+boundary Type = OhmicContact      ID=Cathode Res=0 Cap=0 Ind=0
+boundary Type = OhmicContact      ID=Gate    Res=0 Cap=0 Ind=0
+
+#------------------------------------------------------------------------------
+# drive command, specify the solving process.
+REFINE.C  Variable=Doping error.fraction=0.7 Measure=signedlog
+
+
+# get initial condition by poisson's equation
+METHOD    Type=Poisson NS=Basic
+SOLVE
+
+#compute equilibrium state on the refined mesh
+METHOD   Type=DDML1   NS=Basic LS=GMRES
+SOLVE    Type=EQUILIBRIUM  
+
+# export mesh and solution
+EXPORT  CGNSFile=Thyristor.cgns
+
+END

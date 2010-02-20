@@ -1,0 +1,32 @@
+#==============================================================================
+# Genius example: MESFET
+# here, we solve the IV curve at Vgs=0V.
+#==============================================================================
+
+GLOBAL    T=300 DopingScale=2e17  Z.Width=1.0
+
+#------------------------------------------------------------------------------
+# gate voltage source 
+vsource Type = VDC    ID = VGATE  Tdelay=0 Vconst=0.0
+
+#------------------------------------------------------------------------------
+# specify boundary condition.
+boundary Type=OhmicContact      ID=SOURCE Res=0 Cap=0 Ind=0
+boundary Type=OhmicContact      ID=DRAIN  Res=0 Cap=0 Ind=0
+boundary Type=SchottkyContact   ID=GATE   Res=0 Cap=0 Ind=0 Workfunction=4.9
+
+
+#------------------------------------------------------------------------------
+# drive command, specify the solving process.
+IMPORT   CGNSFile=mesfet.cgns
+
+PMI   Region=MESFET Type=Mobility Model=Hypertang
+Model Region=MESFET H.Mob=true Mob.force=ESimple
+
+# set gate bias, we change the drain voltage. 
+#ATTACH   Electrode=GATE    VApp=VGATE
+
+METHOD   Type=EBML3    NS=Basic LS=GMRES
+SOLVE    Type=DCSWEEP  VScan=DRAIN  out=iv0 VStart=0.0 VStep=0.02 VStop=2 
+
+END

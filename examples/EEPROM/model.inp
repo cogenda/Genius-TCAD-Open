@@ -1,0 +1,58 @@
+#==============================================================================
+# GENIUS example: EEPROM Simulation
+# This example is intended for testing charged float gate 
+#==============================================================================
+
+GLOBAL    T=300 DopingScale=2e20  Z.Width=1.0
+
+# create EEPROM with TRI3 mesh generator
+MESH     Type = S_Tri3   Triangle="pzADq"
+X.MESH    WIDTH=0.4  H1=0.1   H2=0.1
+X.MESH    WIDTH=0.4  H1=0.1   H2=0.025
+X.MESH    WIDTH=0.25 H1=0.025 H2=0.05
+X.MESH    WIDTH=0.25 H1=0.05  H2=0.025
+X.MESH    WIDTH=0.5  H1=0.025 H2=0.1
+
+Y.MESH    DEPTH=0.050 N.SPACES=1 Y.TOP=-0.125
+Y.MESH    DEPTH=0.040 N.SPACES=2
+Y.MESH    DEPTH=0.025 N.SPACES=2
+Y.MESH    DEPTH=0.010 N.SPACES=1
+Y.MESH    DEPTH=2.5 H1=0.01 RATIO=1.1
+
+ELIMINATE Direction=Y X.MIN=0.6 X.MAX=1.5 Y.TOP=1.0
+ELIMINATE Direction=Y Y.TOP=1.5
+
+# region and material define
+REGION Label=Silicon   Material=Si
+REGION Label=Oxide     Y.TOP=-0.125 Y.BOTTOM=0.0                  Material=SiO2
+REGION Label=Flt_Gate  X.MIN=0.5 X.MAX=1.4 IY.MIN=3 IY.MAX=5      Material=PolySi
+REGION Label=Drain     X.MIN=1.5 Y.TOP=-0.125 Y.BOTTOM=0.0        Material=Elec
+REGION Label=Gate      X.MIN=0.5 X.MAX=1.4 IY.MIN=0  IY.MAX=1     Material=Elec
+REGION Label=Source    X.MAX=0.3 Y.TOP=-0.125 Y.BOTTOM=0.0        Material=Elec
+FACE   Label=Substrate Location=BOTTOM
+
+# Define profiles
+DOPING    Type=analytic
+PROFILE Ion=Acceptor N.PEAK=6E16 Type=Uniform Y.TOP=0 Y.BOTTOM=3.75 X.MIN=0.0 X.MAX=1.8
+PROFILE Ion=Donor    N.PEAK=2E20 Type=analytic   Y.TOP=0 Y.BOTTOM=0.0 Y.JUNCTION=0.632 \
+        X.MIN=0.0 X.MAX=0.74 X.CHAR=3.2951E-2
+PROFILE Ion=Donor    N.PEAK=2E20 Type=analytic   Y.TOP=0 Y.BOTTOM=0.0 Y.JUNCTION=0.332 \
+        X.MIN=1.4 X.MAX=1.8  X.CHAR=3.2951E-2
+
+# set boundary condition
+CONTACT   Type = GateContact        ID = Gate        WorkFunction=4.7
+CONTACT   Type = FloatMetal         ID = Flt_Gate    QF=-1e-15          # the floating gate is charged
+boundary  Type = OhmicContact       ID = Substrate   Res=0 Cap=0 Ind=0
+
+# refine by doping
+REFINE.C  Variable=Doping Measure=SignedLog cell.fraction=0.1
+
+# refine by potential
+METHOD    Type=Poisson
+SOLVE
+REFINE.C  region=Silicon Variable=potential cell.fraction=0.1
+
+METHOD    Type=Poisson
+SOLVE
+
+EXPORT   CGNSFile = eeprom_init.cgns  VTKFile = eeprom_init.vtu

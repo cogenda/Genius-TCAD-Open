@@ -1,0 +1,4 @@
+#!/bin/sh
+# usage: touch_all dir
+# can be used to force all the source code to be rebuild
+find $1  -exec touch {} ';'

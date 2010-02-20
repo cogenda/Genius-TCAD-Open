@@ -1,0 +1,51 @@
+#==============================================================================
+# GENIUS Example. Build NMOS with HEX mesh
+#==============================================================================
+
+# Create an initial simulation mesh
+
+GLOBAL    T=300 DopingScale=1e20
+
+MESH      Type = S_Hex8
+X.MESH    WIDTH=0.6  N.SPACES=5
+X.MESH    WIDTH=0.4  N.SPACES=10
+X.MESH    WIDTH=1.0  N.SPACES=10
+X.MESH    WIDTH=0.4  N.SPACES=10
+X.MESH    WIDTH=0.6  N.SPACES=5
+
+Y.MESH    Y.TOP=0.025 DEPTH=0.025 N.SPACES=2
+Y.MESH    DEPTH=0.2  N.SPACES=8
+Y.MESH    DEPTH=0.3  N.SPACES=6
+Y.MESH    DEPTH=0.5  N.SPACES=5
+Y.MESH    DEPTH=1.0  N.SPACES=5
+
+Z.MESH    WIDTH=0.1  N.SPACES=3
+
+
+# Specify oxide and silicon regions
+REGION    Label=NSilicon  Material=Si
+REGION    Label=NOxide    IY.MAX=2 Material=Ox
+REGION    Label=NSource   X.MAX=0.5  IY.MAX=2 Material=Elec iZ.min=0 iz.max=3
+REGION    Label=NDrain    X.MIN=2.5  IY.MAX=2 Material=Elec iZ.min=0 iz.max=3
+
+FACE      Label=SUB   Location=BOTTOM    
+FACE      Label=GATE  Location=Top  X.MIN=0.7 X.MAX=2.3  iZ.min=0 iz.max=3
+
+
+DOPING    Type=analytic
+PROFILE   Type=Uniform Ion=Acceptor  N.PEAK=3E15 X.MIN=0.0  \
+          X.MAX=3.0 Y.TOP=0 Y.BOTTOM=2.5 Z.MIN=0 Z.MAX=3.0
+PROFILE   Type=analytic   Ion=Acceptor  N.PEAK=2E16 X.MIN=0.0  \
+          X.MAX=3.0 Y.TOP=0 Y.CHAR=0.25 Z.MIN=0 Z.MAX=3.0
+PROFILE   Type=analytic   Ion=Donor  N.PEAK=2E20  Y.Junction=0.34   \
+          X.MIN=0.0  X.MAX=0.5   XY.RATIO=.75   Z.MIN=0 Z.MAX=3.0
+PROFILE   Type=analytic   Ion=Donor  N.PEAK=2E20  Y.Junction=0.34   \
+          X.MIN=2.5  X.MAX=3.0   XY.RATIO=.75   Z.MIN=0 Z.MAX=3.0
+
+BOUNDARY ID=SUB Type=Ohmic
+BOUNDARY ID=GATE Type=Gate Work=4.17
+
+METHOD    Type=Poisson LS=GMRES
+SOLVE
+
+EXPORT   VTKFILE=nmos1.vtu CGNSFILE=nmos1.cgns

@@ -1,0 +1,61 @@
+#==============================================================================
+# Genius example: Avalanche breakdown of PN diode
+#==============================================================================
+
+GLOBAL    T=300 DopingScale=1e18  Z.Width=1.0
+
+#------------------------------------------------------------------------------
+# Create an initial simulation mesh
+MESH      Type = S_Tri3 triangle="pzADq30Q"
+
+X.MESH    WIDTH=1.0   N.SPACES=10
+X.MESH    WIDTH=1.0   N.SPACES=10
+X.MESH    WIDTH=1.0   N.SPACES=10
+
+Y.MESH    DEPTH=1.0  N.SPACES=10
+Y.MESH    DEPTH=2.0  N.SPACES=15
+Y.MESH    DEPTH=3.0  N.SPACES=20
+
+
+#------------------------------------------------------------------------------
+# Specify regions
+REGION    Label=Silicon  Material=Si
+REGION    Label=Cathode  Material=Elec Y.min=5.8 Y.max=6.0
+FACE      Label=Anode   Location=TOP   x.min=2.0 x.max=3.0
+
+
+#------------------------------------------------------------------------------
+# doping profile
+DOPING Type=Analytic
+PROFILE   Type=Uniform    Ion=Donor  N.PEAK=1E16  X.MIN=0.0 X.MAX=3.0  \
+          Y.min=0.0 Y.max=6.0        Z.MIN=0.0 Z.MAX=3.0
+
+PROFILE   Type=Analytic   Ion=Acceptor  N.PEAK=1E19  X.MIN=2.0 X.MAX=3.0  \
+          Z.MIN=0.0 Z.MAX=1.0 \
+	  Y.min=0.0 Y.max=0.5 X.CHAR=0.2  Z.CHAR=0.2 Y.JUNCTION=1.0
+
+#------------------------------------------------------------------------------
+# boundary condition
+BOUNDARY ID=Anode   Type=Ohmic Res=0
+CONTACT  ID=Cathode Type=Ohmic
+
+
+#------------------------------------------------------------------------------
+
+# refine by doping
+REFINE.C  Variable=Doping error.fraction=0.7 Measure=signedlog
+
+# get initial conditon
+METHOD    Type=Poisson NS=Basic
+SOLVE
+
+# reverse dc scan
+PMI       Region=Silicon Type=Band real<TAUN0>=1e-9 real<TAUP0>=1e-9
+PMI       Region=Silicon Type=Mobility Model=Philips
+MODEL     Region=Silicon Mobility.Force=EQF II=Local II.Force=EVector
+METHOD    Type=DDML1 NS=Basic Damping=Potential MaxIteration=20 LS=LU
+SOLVE     TYpe=EQ
+SOLVE     TYpe=DCSWEEP Vscan=Anode Vstart=0.0 Vstep=-1.0 Vstop=-48 out.prefix=avalanche1
+SOLVE     TYpe=DCSWEEP Vscan=Anode Vstart=-48 Vstep=-0.1 Vstop=-60 out.prefix=avalanche2
+
+EXPORT   VTKFILE=avalanche.vtu

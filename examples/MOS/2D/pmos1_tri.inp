@@ -1,0 +1,74 @@
+#==============================================================================
+# GENIUS Example: 1.5 Micron P-Channel MOSFET
+#==============================================================================
+
+GLOBAL    T=300 DopingScale=1e18 Z.Width=1.0
+
+MESH     Type = S_Tri3  Triangle="pzAQ"
+X.MESH    WIDTH=0.6  N.SPACES=5
+X.MESH    WIDTH=1.8  N.SPACES=24
+X.MESH    WIDTH=0.6  N.SPACES=5
+
+Y.MESH    Y.TOP=0.025 DEPTH=0.025 N.SPACES=2
+Y.MESH    DEPTH=0.5  N.SPACES=6
+Y.MESH    DEPTH=0.5  N.SPACES=4
+Y.MESH    DEPTH=1.0  N.SPACES=4
+
+# Eliminate some unnecessary substrate nodes
+ELIMINATE    Direction=Y  Y.TOP=1.1
+
+SPREAD    Location=Left  Width=0.625 Upper=0 Lower=2 Thickness=0.1 Encroach=1
+SPREAD    Location=Right Width=0.625 Upper=0 Lower=2 Thickness=0.1 Encroach=1
+
+# Specify oxide and silicon regions
+REGION    Label=PSilicon  Material=Si
+REGION    Label=POxide    IY.MAX=2 Material=Ox
+REGION    Label=PSource   X.MAX=0.5  IY.MAX=2 Material=Elec
+REGION    Label=PDrain    X.MIN=2.5  IY.MAX=2 Material=Elec
+
+FACE    Label=PGate    X.MIN=0.625  X.MAX=2.375  Location=TOP
+FACE    Label=PSubstrate  Location=BOTTOM
+
+
+#Specify impurity profiles and fixed charge
+DOPING    Type=analytic
+PROFILE   Type=Uniform Ion=Donor  N.PEAK=3E15 X.MIN=0.0  \
+          X.MAX=3.0 Y.TOP=0 Y.BOTTOM=2.5
+PROFILE   Type=analytic   Ion=Donor  N.PEAK=2E16 X.MIN=0.0  \
+          X.MAX=3.0 Y.TOP=0 Y.CHAR=0.25
+PROFILE   Type=analytic   Ion=Acceptor  N.PEAK=2E20  Y.CHAR=0.1   \
+          X.MIN=0.0  X.MAX=0.5   X.CHAR=0.1
+PROFILE   Type=analytic   Ion=Acceptor  N.PEAK=2E20  Y.CHAR=0.1   \
+          X.MIN=2.5  X.MAX=3.0   X.CHAR=0.1
+
+
+#------------------------------------------------------------------------------
+# specify boundary condition.
+boundary Type = InsulatorInterface ID = POxide_to_PSilicon QF=0
+boundary Type = GateContact       ID = PGate        WorkFunction=5.25
+boundary Type = OhmicContact      ID = PSubstrate   Res=0 Cap=0 Ind=0
+CONTACT  Type = OhmicContact      ID = PSource Res=0 Cap=0 Ind=0
+CONTACT  Type = OhmicContact      ID = PDrain  Res=0 Cap=0 Ind=0
+
+#------------------------------------------------------------------------------
+# drive command, specify the solving process.
+
+METHOD    Type=Poisson
+SOLVE
+REFINE.C    Variable=Potential cell.fraction=0.2
+
+METHOD    Type=Poisson
+SOLVE
+
+METHOD   Type = DDML1   NS=LineSearch LS=GMRES Damping=Potential
+# compute equilibrium state
+#SOLVE    Type = TRANSIENT TStart = 0 TStep=1e-12  TStop = 3e-11
+SOLVE    Type=EQUILIBRIUM
+
+
+
+METHOD   Type = DDML1   NS=LineSearch LS=GMRES Damping=Potential
+#SOLVE   Type = TRANSIENT TStart = 0 TStep=1e-12  TStop = 3e-11
+SOLVE    Type=EQUILIBRIUM
+
+EXPORT   VTKFILE=pmos_tri.vtk CGNSFile = pmos_init.cgns

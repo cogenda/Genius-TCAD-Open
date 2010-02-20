@@ -1,0 +1,61 @@
+#==============================================================================
+# GENIUS example: SiGe BJT simulation
+# On the first step, we will generate simulation structure for the transistor.
+# Then the generated CGNS file will be used on later steps.
+#==============================================================================
+
+GLOBAL    T=300  DopingScale=1e18  Z.width=100
+
+MESH      Type=S_TRI3   Triangle="pzA"
+X.MESH    X.MIN=0.0  X.MAX=0.50   N.SPACES=8
+Y.MESH    DEPTH=0.1  N.SPACES=8  RATIO=0.8
+Y.MESH    DEPTH=0.1  N.SPACES=20
+Y.MESH    DEPTH=0.6  H1=0.005  H2=0.050
+
+REGION    Label=Si1   Material=Si    Y.TOP= 0.000  Y.BOTTOM= 0.100
+REGION    Label=SiGe1 Material=SiGe  Y.TOP= 0.100  Y.BOTTOM= 0.125
+REGION    Label=SiGe2 Material=SiGe  Y.TOP= 0.125  Y.BOTTOM= 0.200
+REGION    Label=SiGe3 Material=SiGe  Y.TOP= 0.200  Y.BOTTOM= 0.230
+REGION    Label=Si2   Material=Si    Y.TOP= 0.230
+
+FACE    Label=Emitter    Location=TOP
+FACE    Label=Base       Location=LEFT    Y.TOP=0.13  Y.BOTTOM=0.19
+FACE    Label=Collector  Location=BOTTOM
+
+DOPING    Type=analytic
+PROFILE   Ion=Donor     Type=Uniform N.PEAK=2E16  Type=Uniform
+PROFILE   Ion=Donor     Type=analytic   N.PEAK=5E19  Y.MIN=0.80  \
+          Y.MAX=0.80 Y.CHAR=0.125 X.MIN=0 X.MAX=0.50
+PROFILE   Ion=Acceptor  Type=analytic   N.PEAK=2E18  Y.MIN=0.12  \
+          Y.MAX=0.12 Y.CHAR=0.03   X.MIN=0 X.MAX=0.50
+PROFILE   Ion=Donor     Type=analytic   N.PEAK=7E19  Y.MIN=0.0   \
+          Y.MAX=0.0  Y.CHAR=0.06   X.MIN=0 X.MAX=0.50
+
+MOLE Region=SiGe1  X.MOLE=0.0 X.MOLE.END=0.2 X.MOLE.GRAD=Y.Linear
+MOLE Region=SiGe2  X.MOLE=0.2
+MOLE Region=SiGe3  X.MOLE=0.2 X.MOLE.END=0.0 X.MOLE.GRAD=Y.Linear
+
+
+
+#------------------------------------------------------------------------------
+boundary Type = OhmicContact    ID=Emitter    Res=0 Cap=0 Ind=0
+boundary Type = OhmicContact    ID=Base       Res=0 Cap=0 Ind=0
+boundary Type = OhmicContact    ID=Collector  Res=0 Cap=0 Ind=0
+
+#------------------------------------------------------------------------------
+# drive command, specify the solving process.
+
+
+METHOD   Type = DDML1  NS=Basic LS=LU Damping=Potential
+#compute equilibrium state
+SOLVE    Type=EQUILIBRIUM
+
+
+#REFINE.C  Variable=Potential Measure=Linear Dispersion=0.3 #refine by potential
+#METHOD   Type = DDML1 NS=LineSearch LS=GMRES
+#compute equilibrium state
+#SOLVE    Type=EQUILIBRIUM
+
+
+# export mesh and solution
+EXPORT   CGNSFile=hbjt.cgns VTKFile=hbjt.vtu

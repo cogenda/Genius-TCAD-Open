@@ -1,0 +1,66 @@
+#==============================================================================
+# Genius example: NPN Transistor Simulation
+# On this step, we will create the initial mesh, do some refine
+# and compute equilibrium state of the BJT.
+#==============================================================================
+
+GLOBAL    T=300 DopingScale=1e20   Z.width=100
+
+#------------------------------------------------------------------------------
+# create TRI3 mesh
+MESH       Type=S_TRI3  Triangle="pzAq"
+X.MESH     WIDTH=6.0  H1=0.250
+Y.MESH     DEPTH=0.5  H1=0.125
+Y.MESH     DEPTH=1.5  H1=0.125  H2=0.2
+
+# define region material
+REGION    Label=Si Material=Si
+
+# define electrodes
+FACE    Label=Base     X.MIN=1.25  X.MAX=2.00  Location=TOP
+FACE    Label=Emitter  X.MIN=2.75  X.MAX=4.25  Location=TOP
+FACE    Label=Collector  Location=BOTTOM
+
+#------------------------------------------------------------------------------
+# doping profile
+DOPING    Type=analytic
+PROFILE   Ion=Donor     Type=Uniform N.PEAK=5e15  Y.TOP=0 Y.BOTTOM=2.0 \
+          X.MIN=0.0     X.MAX=6.0
+PROFILE   Ion=Acceptor  Type=analytic      N.PEAK=6e17  \
+          Y.TOP=0       Y.BOTTOM=0.35      Y.CHAR=0.16  \
+          X.MIN=1.25    X.MAX=4.75         X.CHAR=0.12
+PROFILE   Ion=Acceptor  Type=analytic      N.PEAK=4e18  \
+          Y.TOP=0       Y.BOTTOM=0         Y.CHAR=0.16  \
+          X.MIN=1.25    X.MAX=4.75         X.CHAR=0.12
+PROFILE   Ion=Donor     Type=analytic      N.PEAK=7e19  \
+          Y.TOP=0       Y.BOTTOM=0         Y.CHAR=0.17  \
+          X.MIN=2.75    X.MAX=4.25         X.CHAR=0.1275
+PROFILE   Ion=Donor     Type=analytic      N.PEAK=1e19  \
+          Y.TOP=2       Y.BOTTOM=2         Y.CHAR=0.27  \
+          X.MIN=0.0     X.MAX=6.0
+
+
+#------------------------------------------------------------------------------
+# specify boundary condition.
+boundary Type = OhmicContact    ID=Base      Res=0 Cap=0 Ind=0
+boundary Type = OhmicContact    ID=Emitter   Res=0 Cap=0 Ind=0
+boundary Type = OhmicContact    ID=Collector Res=0 Cap=0 Ind=0
+
+
+#------------------------------------------------------------------------------
+# drive command, specify the solving process.
+
+# refine by doping
+REFINE.C  Variable=Doping Measure=SignedLog cell.fraction=0.2
+
+# solve poisson's equation and refine by potential
+METHOD    Type=Poisson
+SOLVE
+REFINE.C    Variable=Potential cell.fraction=0.2
+
+# compute equilibrium state
+METHOD   Type=DDML1   NS=LineSearch LS=BCGS PC=ILU Damping=Potential
+SOLVE    Type=EQUILIBRIUM
+
+# export mesh and solution
+EXPORT  CGNSFile=npn_refined.cgns VTKFile=npn_refined.vtu

@@ -1,0 +1,38 @@
+#==============================================================================
+# GENIUS Example. Do IV Scan at VGate=5V
+# By import different CGNS file, one can test result for different mesh
+#==============================================================================
+
+# Note: For 2D simulation, Z.Width should be given!
+GLOBAL    T=300 DopingScale=1e18  Z.Width=1.0
+
+
+# Create an initial simulation mesh
+IMPORT    cgnsfile=nmos_tri.cgns
+
+# voltage sources are needed here.
+Vsource Type = VDC    ID = GND    Tdelay=0   Vconst=0
+Vsource Type = VDC    ID = VCC    Tdelay=0   Vconst=0.3
+Vsource Type = VDC    ID = VGATE  Tdelay=0   Vconst=3
+
+
+BOUNDARY ID=NOxide_to_NSilicon Type=InsulatorInterface  QF=1e10
+BOUNDARY ID=SUB     Type=Ohmic
+BOUNDARY ID=GATE    Type=Gate Work=4.17
+CONTACT  ID=NSource Type=OhmicContact       Res=0 Cap=0 Ind=0
+CONTACT  ID=NDrain  Type=OhmicContact       Res=0 Cap=0 Ind=0
+
+
+ATTACH    Elec=GATE    Vapp=VGATE
+
+Model     Region=NSilicon H.Mob=true EB=Tl
+METHOD    Type=DDML1 NS=Basic LS=LU maxiteration=20 Damping=Potential
+SOLVE     Type=equ
+
+PMI       Region=NSilicon Type=Mobility Model=HP
+Model     Region=NSilicon H.Mob=true Mob.force=EQF
+SOLVE     Type=DC  Vscan=NDrain Vstart=0.0 Vstep=0.1 Vstop=3.0 out.prefix=drian_iv_1
+
+EXPORT   VTKFILE=nmos_iv.vtk CGNSFILE=nmos_iv.cgns
+
+

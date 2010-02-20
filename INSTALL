@@ -1,0 +1,105 @@
+Install from source code
+========================
+
+This section describes how to install from source code taken direct
+from git@github.
+
+First, download source from git@github.
+
+Now change directories in to the top-level source directory (where this
+INSTALL file can be found).
+
+The project uses the GNU build process. This is still very crude and needs
+work, but basically you should be able to do the following:
+$ acloal
+$ autoheader
+$ autoconf
+$ ./configure
+$ make
+$ make install
+
+At present it is normal for there to be some warning generated during this
+process.
+
+
+If a problem is found with the build proccess, please submit a report to me.
+Please provide information about you system
+and any ./configure arguments you are using, together with any error
+messages.  Ideally you would have tried to fix the problem yourself first,
+and details about this and any thought you may has as to the cause of the
+problem should also be provided.  If you have fixed the problem then the
+development team will love to hear from you.
+
+
+Basic Installation
+==================
+This covers installation from a tar-ball (for example genius-1.6.tar.gz).
+
+----------------------------------------------------------------------------------------------
+First, you should prepare some libraries genius dependent.
+	1 the latest petsc-3.0.0 is recommended.
+	2 cgnslib-2.5, earlier version has memory leak problem.
+	3 Optional: VTK-5.4.2 However, you can still export VTK file with ascii format if you do not have VTK lib.
+
+The compiling of PETSC requires you to set two system variables:
+'PETSC_DIR' point to the directory of PETSC.
+'PETSC_ARCH' to give a tag of PETSC configuation.
+GENIUS configure script will check PETSC_DIR to determin if PETSC installed.
+
+The default installation directory of cgns and vtk are /usr/local,
+GENIUS configure script will check this directory for cgns and vtk.
+It means if you install cgns/vtk by their default directory, GENIUS
+can find them automatically.
+
+
+----------------------------------------------------------------------------------------------
+Second, make sure your compiler works, flex (version 2.5.4a, no 2.5.3x) and bison (version >=2.0, no 1.8x) are also needed.
+
+Note 1:
+Although gcc version 3.4~4.3 have been tested ok, vendor compiler (such as Intel icc on PC)
+works much faster (50% faster than gcc). That mainly because the math library
+used by gcc compute pow(x,y) in an inefficient way but icc seems using a hardware
+float point arithmatic accelerator.
+
+Note 2:
+Intel icc 9.x has a bug: nan==nan is considered as true, which breaks all the nan test.
+Fortunately, Intel icc 10.x has corrected this bug.
+
+----------------------------------------------------------------------------------------------
+You need to set environment GENIUS_DIR point to the directory of genius.
+for example, under bash:
+	export  GENIUS_DIR=/home/gdiso/genius
+
+----------------------------------------------------------------------------------------------
+After downloading the tar ball to a local directory unpack it using:
+
+$ tar -zxf genius.tar.gz
+
+Now change directories in to the top-level source directory (where this
+INSTALL file can be found).
+
+Generate the configure script by auto-conf tools
+$ acloal
+$ autoheader
+$ autoconf
+
+Then, you should be able to do:
+
+$ ./configure
+$ make
+$ make install
+
+Note 1:
+If cgns lib is not installed at /usr/local, you need to add argument "--with-cgns=<cgns_path>"
+cgnslib.h should be found at <cgns_path>/include
+libcgns.a should be found at <cgns_path>/lib
+
+Note 2:
+"make install" will copy binary file to GENIUS_DIR/bin and material data files to GENIUS_DIR/lib
+
+----------------------------------------------------------------------------------------------
+If everything is ok, add GENIUS_DIR/bin to your path.
+You can goto example directory to check genius.
+	genius -i xxxx.inp
+for parallel version
+        mpiexec -n x genius -i xxxx.inp

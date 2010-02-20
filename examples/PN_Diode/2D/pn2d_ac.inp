@@ -1,0 +1,60 @@
+#==============================================================================
+# Genius example: PN Diode simulation
+# Do AC sweep simulation. For testing Genius AC solver.
+#==============================================================================
+
+GLOBAL    T=300 DopingScale=1e18  Z.Width=1.0
+
+#------------------------------------------------------------------------------
+# Create an initial simulation mesh
+
+MESH      Type = S_QUAD4
+
+X.MESH    WIDTH=1.0   N.SPACES=10
+X.MESH    WIDTH=1.0   N.SPACES=10
+X.MESH    WIDTH=1.0   N.SPACES=10
+
+
+Y.MESH    DEPTH=1.0  N.SPACES=5
+Y.MESH    DEPTH=1.0  N.SPACES=5
+Y.MESH    DEPTH=1.0  N.SPACES=5
+
+
+#------------------------------------------------------------------------------
+# Specify region and boundary faces
+REGION    Label=Silicon  Material=Si
+FACE      Label=Anode   Location=TOP   x.min=0 x.max=1.0
+FACE      Label=Cathode   Location=BOT
+
+#------------------------------------------------------------------------------
+# doping profile
+DOPING Type=Analytic
+PROFILE   Type=Uniform    Ion=Donor     N.PEAK=1E15  X.MIN=0.0 X.MAX=3.0  \
+          Y.min=0.0 Y.max=3.0        Z.MIN=0.0 Z.MAX=3.0
+
+PROFILE   Type=Analytic   Ion=Acceptor  N.PEAK=1E19  X.MIN=0.0 X.MAX=1.0  \
+          Z.MIN=0.0 Z.MAX=1.0 \
+	  Y.min=0.0 Y.max=0.0 X.CHAR=0.2  Z.CHAR=0.2 Y.JUNCTION=0.5
+
+#------------------------------------------------------------------------------
+# boundary condition
+BOUNDARY ID=Anode     Type=Ohmic R=1000 ind=1e-3
+BOUNDARY ID=Cathode   Type=Ohmic
+
+#------------------------------------------------------------------------------
+# get initial condition by poisson solver
+METHOD    Type=Poisson NS=Basic
+SOLVE
+
+# drive diode into a suitable DC biased state
+MODEL     Region=Silicon H.MOB=false EB.LEVEL=NONE
+METHOD    Type=EBML3 NS=LineSearch LS=BCGS PC=ASM
+SOLVE     TYpe=EQ
+SOLVE     TYpe=DC VSCAN=Anode vstart=0.0 vstep=0.1 vstop=0.6 out=dc
+
+# do AC sweep
+METHOD    Type=DDMAC  LS=GMRES PC=LU
+SOLVE     Type=ACSWEEP acscan=Anode  F.Start=1e3 F.stop=2e9 out=ac vac=0.0026
+
+# export result
+EXPORT   VTKFILE=pn2d_ac.vtk  

@@ -1,0 +1,53 @@
+#==============================================================================
+# GENIUS Example. Build NMOS with Triangle mesh
+#==============================================================================
+
+GLOBAL    T=300 DopingScale=1e18 Z.Width=1.0
+
+# Create an initial simulation mesh
+
+
+MESH      Type = S_Tri3 Triangle="pzAQ"
+
+
+X.MESH    X.min=-0.29 WIDTH=0.20  N.SPACES=20
+X.MESH    WIDTH=0.18  N.SPACES=36
+X.MESH    WIDTH=0.20  N.SPACES=20
+
+Y.MESH    Y.TOP=-0.0037 DEPTH=0.0037 N.SPACES=4
+Y.MESH    DEPTH=0.1  h1=0.005 h2=0.01
+Y.MESH    DEPTH=0.4  h1=0.01 h2=0.05
+
+# Eliminate some unnecessary substrate nodes
+ELIMINATE    Direction=Y  X.min=-0.29 X.max=0.29 Y.TOP=0.3
+
+# Specify oxide and silicon regions
+REGION    Label=NSilicon  Material=Si
+REGION    Label=NOxide    IY.MAX=4 Material=Ox
+REGION    Label=NSource   X.min=-0.29 X.MAX=-0.19  IY.MAX=4 Material=Elec
+REGION    Label=NDrain    X.max=+0.29 X.MIN=+0.19  IY.MAX=4 Material=Elec
+
+# Specify interfaces
+FACE      Label=GIF IY=4 x.min=-0.09 x.max=0.09 Direction=YNorm
+FACE      Label=SUB Location=BOTTOM
+FACE      Label=GATE  Location=Top  X.MIN=-0.09 X.MAX=0.09
+
+# Doping Profiles
+DOPING    Type=analytic
+PROFILE   Type=Uniform Ion=Acceptor  N.PEAK=3E17 X.min=-0.29 X.max=0.29 Y.min=0 Y.max=1
+PROFILE   Type=analytic   Ion=Acceptor  N.PEAK=1E18 Y.min=0.08 Y.max=0.2 Y.CHAR=0.1 X.min=-0.29 X.max=0.29
+
+PROFILE   Type=analytic Ion=Donor N.PEAK=4E19 Y.Junction=0.05 X.min=-0.29 X.max=-0.09 XY.Ratio=0.75
+PROFILE   Type=analytic Ion=Donor N.PEAK=4E19 Y.Junction=0.05 X.max=+0.29 X.min=+0.09 XY.Ratio=0.75
+PROFILE   Type=analytic Ion=Donor N.PEAK=2E20 Y.Junction=0.12 X.min=-0.29 X.max=-0.18 XY.RATIO=0.75
+PROFILE   Type=analytic Ion=Donor N.PEAK=2E20 Y.Junction=0.12 X.max=+0.29 X.min=+0.18 XY.RATIO=0.75
+
+# Boundaries
+BOUNDARY ID=SUB Type=Ohmic
+BOUNDARY ID=GATE Type=Gate Work=4.17
+BOUNDARY ID=GIF Type=InsulatorInterface
+
+METHOD    Type=Poisson
+SOLVE
+
+EXPORT   VTKFILE=nmos_tri.vtu CGNSFILE=nmos_tri.cgns

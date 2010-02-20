@@ -1,0 +1,65 @@
+#==============================================================================
+# GENIUS example: PN Diode transient simulation
+#==============================================================================
+
+GLOBAL    T=300 DopingScale=1e18
+
+#------------------------------------------------------------------------------
+# Create an initial simulation mesh
+# one can also use S_Hex8 or S_Prism6 mesh generator
+MESH      Type = S_Tet4
+
+X.MESH    WIDTH=1.0   N.SPACES=6
+X.MESH    WIDTH=1.0   N.SPACES=10
+X.MESH    WIDTH=1.0   N.SPACES=6
+
+Y.MESH    DEPTH=1.0  N.SPACES=10
+Y.MESH    DEPTH=1.0  N.SPACES=10
+Y.MESH    DEPTH=1.0  N.SPACES=8
+
+Z.MESH    WIDTH=1.0  N.SPACES=5
+
+#------------------------------------------------------------------------------
+# Specify regions and boundary faces
+REGION    Label=Silicon  Material=Si
+FACE      Label=Anode   Location=TOP   x.min=0 x.max=1.0 z.min=0.0 z.max=1.0
+FACE      Label=Cathode Location=BOTTOM    
+
+#------------------------------------------------------------------------------
+# set doping profile
+DOPING Type=Analytic
+PROFILE   Type=Uniform    Ion=Donor     N.PEAK=1E15  X.MIN=0.0 X.MAX=3.0  \
+          Y.min=0.0 Y.max=3.0        Z.MIN=0.0 Z.MAX=3.0
+
+PROFILE   Type=Analytic   Ion=Acceptor  N.PEAK=1E19  X.MIN=0.0 X.MAX=1.0  \
+          Z.MIN=0.0 Z.MAX=1.0 \
+	  Y.min=0.0 Y.max=0.0 X.CHAR=0.2  Z.CHAR=0.2 Y.JUNCTION=0.5
+
+#------------------------------------------------------------------------------
+# set boundary condition
+BOUNDARY ID=Anode   Type=Ohmic Res=1000
+BOUNDARY ID=Cathode Type=Ohmic
+
+
+#------------------------------------------------------------------------------
+# voltage sources.
+double  _fenq = 1e6;  # MHz
+vsource Type = VDC    ID = GND  Tdelay=0 Vconst=0
+vsource Type = VDC    ID = VCC  Tdelay=0 Vconst=0.5
+vsource Type = VSIN   ID = Vs   Tdelay=0.1/_fenq Vamp=1.0 Freq=_fenq 
+
+
+#------------------------------------------------------------------------------
+# attach voltage sources to diode electrode
+ATTACH    Electrode=Cathode  VApp=GND
+ATTACH    Electrode=Anode    VApp=VCC VApp=Vs     
+
+# do transient simulation
+METHOD    Type=DDML1 NS=LineSearch LS=BCGS Damping=Potential MaxIt=30
+SOLVE     Type=STEADYSTATE
+SOLVE     Type=TRANSIENT TS=BDF2\
+          TStart = 0  TStep = 1.0/_fenq/50   TStop = 2.1*1.0/_fenq \
+	  out.prefix=drian_tran
+
+# export result
+EXPORT   VTKFILE=pn.vtu

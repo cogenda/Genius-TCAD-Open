@@ -1,0 +1,43 @@
+#==============================================================================
+# NMOS Source-Drain IV curve calculation
+#==============================================================================
+
+#------------------------------------------------------------------------------
+Global Z.width=1 T=300 DopingScale=1e20
+
+
+#------------------------------------------------------------------------------
+# voltage sources are needed here.
+vsource Type = VDC    ID = GND    Tdelay=0   Vconst=0
+vsource Type = VDC    ID = VCC    Tdelay=0   Vconst=0.21
+vsource Type = VDC    ID = VGATE  Tdelay=0   Vconst=3.0
+
+
+#------------------------------------------------------------------------------
+# specify boundary condition.
+CONTACT  Type = OhmicContact        ID = source Res=0 Cap=0 Ind=0
+CONTACT  Type = OhmicContact        ID = drain  Res=0 Cap=0 Ind=0
+CONTACT  Type = GateContact         ID = polysili   Res=0 Cap=0 Ind=0
+boundary Type = OhmicContact        ID = back      Res=0 Cap=0 Ind=0
+
+
+
+# import model from medici TIF file
+IMPORT   TIFFile="90nm.tif"
+
+
+# set vcc to 0.21V
+ATTACH   Electrode=drain             VApp=VCC
+
+# specify physical model, use Lombardi mobility here.
+MODEL    Region=Si Mob.Force=EQF ESurface=true 
+PMI      Region=Si  Type=mobility  Model=Lombardi
+PMI      Region=Si  Type=Band real<V0.BGN>=0
+
+METHOD   Type=DDML1 NS=Basic LS=BCGS
+SOLVE    Type=EQUILIBRIUM
+
+METHOD   Type=DDML1 NS=Basic LS=LU Damping=Potential toler.relax=1e6
+SOLVE    Type=DCSWEEP VScan=polysili  out=v21  VStart=0.00 VStep=0.02 VStop=0.7
+
+END

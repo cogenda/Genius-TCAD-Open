@@ -1,0 +1,126 @@
+Compile genius under windows platform.
+
+It is possible to compile genius code under windows platform with Intel cluster compiler or MS VC.
+The main idea is using cygwin to emulate linux environment (offer make tools), and use a small tool "win32fe"
+to wrap intel C/C++/Fortran compiler for windows or MSVC to have the behavior as linux native compilers.
+
+step 1: install Microsoft Visual Studio 2005/2008.
+        Or one can install a free express version of Visual Studio 2005/2008 plus system SDK.
+        The Microsoft Visual Studio can be installed in the default directory.
+
+step 2: install Intel Cluster Toolkit Compiler Edition 3.1.1 for windows.
+        This package contains intel c/c++ compiler icl, intel fortran compiler ifort, MKL library and MPI library.
+        For convenient, please install it under some directory DOES NOT contain blank, i.e. C:\usr\ICTCE.
+
+	The is an optional choise. If no Intel Compiler, only MSVC can do.
+	However, one should install a MPI implementation such as mpich2 instead of intel mpi.
+	It can be downloaded from http://www.mcs.anl.gov/mpi/mpich. Please install it at the default directory.
+
+step 3: install cygwin. please make sure "binutils", "make" and "python" packages are selected, "flex" and "bison" can be optianl.
+        The directory should NOT contain blank, can be i.e. c:\usr\cygwin.
+        add c:\usr\cygwin\bin\ to your PATH
+
+step 4: Launch a command prompt window.
+        With intel compiler, Run the ictvars.bat batch file at C:\usr\ICTCE\ictvars.bat to setup Intel compiler environment.
+        (For MSVC 2005, Run C:\Program Files\Microsoft Visual Studio 8\VC\vcvarsall.bat to set MSVC environment)
+	And then run the Cygwin batch file C:\usr\cygwin\cygwin.bat to setup the unix-like environment.
+        The following steps are all done within this command window.
+
+step 5: put petsc-2.3.3-p13.tar.gz under windows path c:\usr\cygwin\usr\local, this directory is /usr/local for cygwin environment.
+
+	untar petsc-2.3.3-p13.tar.gz within the command window by cygwin command:
+	  tar -zxf petsc-2.3.3-p13.tar.gz
+        make a symbolic link for convenience
+	  ln -s petsc-2.3.3-p13 petsc
+        patch petsc with ls.c seems still required.
+
+	For intel compiler and intel mpi:
+	set system env by type following command:
+          export PETSC_DIR=/usr/local/petsc
+          export PETSC_ARCH=win32-intel-mpi
+        then configure the petsc with following arguments:
+          ./config/configure.py --with-cc='win32fe icl' --with-fc='win32fe ifort' \
+          --with-mpi-include=/cygdrive/c/usr/ICTCE/mpi/3.1/ia32/include/ \
+          --with-mpi-lib=/cygdrive/c/usr/ICTCE/mpi/3.1/ia32/lib/impi.lib \
+          --download-f-blas-lapack=1 --with-debugging=0 --useThreads=0 --with-shared=0
+
+	Note:
+        I can't make intel MKL work at present. just download a fortran version blas/lapack instead.
+
+        I had compiled SuperLU_DIST into petsc with addtional command line argument --with-superlu_dist=1 --download-superlu_dist=1
+        However, other external packages such as hypre, superlu, umfpack are all faild.
+        Here is a small problem: petsc generates lib with suffix .a, but icl thinks the lib suffix should be .lib.
+        As a result, configure script will generate an error after the SuperLU_DIST lib are successfully built.
+        One can change the lib suffix manually.
+
+	And for MSVC and mpich2:
+	set system env by type following command:
+          export PETSC_DIR=/usr/local/petsc
+          export PETSC_ARCH=win32-msvc-mpi
+        then configure the petsc with following arguments:
+          ./config/configure.py --with-cc='win32fe cl' --with-fc=0 \
+          --download-c-blas-lapack=1 --with-debugging=0
+
+	Note:
+	Since no fortran compiler exist, we have to use --download-c-blas-lapack=1
+	Petsc can find mpich2 automatically if mpich2 is installed at default directory
+
+        after the configure done, type
+	  make
+	to build petsc
+
+        petsc has a tool win32fe which convert compiler flag from linux type to windows type.
+        i.e. win32fe convert -I(linux type include path) to /I(windows type include path).
+	we will use this tool later.
+
+
+step 6:  Here we should borrow the idea of petsc bulid system. Copy win32fe.exe and win32feutils.dll from PETSC_DIR/bin/win32fe
+         to c:\usr\cygwin\bin. As a result, one can override compiler setting for cygwin environment with
+	 For intel compiler
+           export CC='win32fe icl'
+           export CXX='win32fe icl'
+           export F77='win32fe ifort'
+         And MSVC
+	   export CC='win32fe cl'
+           export CXX='win32fe cl'
+
+         One can add above lines to c:\usr\cygwin\home\your_user_name\.bashrc
+
+step 7:  build cgns.  just untar cgnslib-2.5-3.tar.gz, configure it and make, make install.
+         here configure script will use CC, the intel compiler or MSVC defined at step 6 to build win32 native cgns lib.
+
+NOTE:   One can install precompiled cgns and petsc library for win32 platform.
+        Then one can skip step 5 and 7.
+        For this situation, one MUST install Intel Cluster Toolkit Compiler Edition 3.1.1 for windows under C:\usr\ICTCE
+
+	put cgns-win32.tar.gz under cygwin dir /usr/local, that is windows dir C:\usr\cygwin\usr\local, untar it with
+	  tar -zxf cgns-win32.tar.gz
+
+	put petsc-2.3.3-p13-win.tar.gz also under cygwin dir /usr/local (windows dir C:\usr\cygwin\usr\local), untar it with
+	  tar -zxf petsc-2.3.3-p13-win.tar.gz
+	make the symbolic link
+          ln -s petsc-2.3.3-p13 petsc
+
+	The following lines should be put at c:\usr\cygwin\home\your_user_name\.bashrc
+        export PETSC_DIR=/usr/local/petsc
+        export PETSC_ARCH=win32-intel-mpi
+
+	When configure genius, one should specify cgns lib by extra argument --with-cgns=/usr/local/cgns
+        And don't forget to do step 6!
+
+step 8:  build genius. untar the genius.tar.gz to a directory, i.e. c:\usr\genius, configure it and type make, make install.
+         Just ignore many warnings.
+
+         Note:
+         1 Configure script will generate config.h contains #define CYGWIN
+         2 Mixed simulation features are disabled when CYGWIN flag is set.
+         3 The file dependent for makefile does not work for windows.
+         4 Do not use -O3 flag, the generated code will crash.
+
+step 9:  set windows system environment variable GENIUS_DIR i.e. c:\usr\genius\, add c:\usr\genius\bin to system PATH. run genius examples with
+           mpiexec -n 2 -genv GENIUS_DIR c:\usr\genius\ genius -i xxxx.inp
+
+         Note: should also add the intel mpi bin directory to system PATH.
+
+         mpiexec requires user's account and password for first time running.
+	 Here "-genv GENIUS_DIR c:\usr\genius\" set the global environment variable GENIUS_DIR to "c:\usr\genius\"

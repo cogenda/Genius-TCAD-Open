@@ -1,0 +1,42 @@
+#==============================================================================
+# Genius example: HBJT Transistor AC sweep Simulation
+# This example is intended to be run in serial
+#==============================================================================
+
+# set 100um width
+GLOBAL    T=300 DopingScale=1e18  Z.width=100
+
+#------------------------------------------------------------------------------
+vsource Type = VDC    ID = GND  Tdelay=0 Vconst=0
+vsource Type = VDC    ID = VCC  Tdelay=0 Vconst=3.0
+vsource Type = VDC    ID = Vb   Tdelay=0 Vconst=0.7
+
+#------------------------------------------------------------------------------
+# specify boundary condition.
+boundary Type = OhmicContact    ID=Emitter    Res=0    Cap=0 Ind=0
+boundary Type = OhmicContact    ID=Base       Res=1000 Cap=0 Ind=0
+boundary Type = OhmicContact    ID=Collector  Res=1000 Cap=0 Ind=0
+
+
+
+# import bias.cgns computed in step 2.
+IMPORT   CGNSFile=bias.cgns
+
+# set electrode voltage
+ATTACH   Electrode=Emitter       VApp=GND
+ATTACH   Electrode=Base     	 VApp=Vb   # set voltage(Base) to Vb
+ATTACH   Electrode=Collector     VApp=VCC
+
+# call DDML1 to give a initial value for AC sweep.
+METHOD   Type=EBML3  NS=LineSearch LS=LU Damping=Potential
+
+# compute STEADYSTATE to get a initial value
+SOLVE    Type=STEADYSTATE
+
+# Do AC sweep here.
+# we use LU as very strong preconditioner of GMRES method.
+METHOD   Type=DDMAC   LS=GMRES  PC=LU
+SOLVE    Type=ACSWEEP    ACScan=Base  out=ivac  \
+         F.Start=1e6 F.Multiple=1.1  F.Stop=1e10
+
+END

@@ -1,0 +1,45 @@
+#==============================================================================
+# Genius example: MESFET
+# Create an initial simulation mesh
+#==============================================================================
+
+GLOBAL    T=300 DopingScale=2e17  Z.Width=1.0
+
+MESH       Type=S_TRI3   Triangle="pzA"
+X.MESH     WIDTH=3.0  N.SPACES=30
+Y.MESH     DEPTH=0.2  N.SPACES=20
+Y.MESH     DEPTH=0.3  N.SPACES=10
+
+# Region and electrode statements
+REGION    Label=MESFET  Material=GaAs
+FACE      Label=SOURCE  Location=TOP  X.MIN=0.0 X.MAX=0.5
+FACE      Label=GATE    Location=TOP  X.MIN=1.0 X.MAX=1.5
+FACE      Label=DRAIN   Location=TOP  X.MIN=2.5 X.MAX=3.0
+
+#------------------------------------------------------------------------------
+# doping profile
+DOPING    Type=analytic
+PROFILE   Type=Uniform Ion=Donor  N.PEAK=1E14  X.MIN=0.0 X.MAX=3.0  \
+          Y.TOP=0.0 Y.BOTTOM=0.5
+PROFILE   Type=Uniform Ion=Donor  N.PEAK=2E17  X.MIN=0.0 X.MAX=3.0  \
+          Y.TOP=0.0 Y.BOTTOM=0.1
+
+
+#------------------------------------------------------------------------------
+# specify boundary condition.
+boundary Type=OhmicContact      ID=SOURCE Res=0 Cap=0 Ind=0
+boundary Type=OhmicContact      ID=DRAIN  Res=0 Cap=0 Ind=0
+boundary Type=SchottkyContact   ID=GATE   Res=0 Cap=0 Ind=0 Workfunction=4.9
+
+#------------------------------------------------------------------------------
+# drive command, specify the solving process.
+
+#specify DDM method,this is the default solver.
+METHOD   Type = DDML1   NS=LineSearch LS=GMRES Damping=Potential
+#compute equilibrium state
+SOLVE    Type=EQUILIBRIUM 
+
+# export mesh and solution
+EXPORT   CGNSFile=mesfet.cgns VTKFile=mesfet.vtu
+
+END

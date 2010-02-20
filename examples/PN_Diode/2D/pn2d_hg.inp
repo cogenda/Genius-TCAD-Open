@@ -1,0 +1,68 @@
+#==============================================================================
+# Genius example: PN Diode simulation
+# We build diode mesh with Hierarchical refinement here.
+# This file is intended for testing hierarchical refine.
+#==============================================================================
+
+
+GLOBAL    T=300 DopingScale=1e18  Z.Width=1.0
+
+#------------------------------------------------------------------------------
+# Create an initial simulation mesh
+MESH      Type = S_quad4
+
+X.MESH    WIDTH=1.0   N.SPACES=5
+X.MESH    WIDTH=1.0   N.SPACES=5
+X.MESH    WIDTH=1.0   N.SPACES=5
+
+
+Y.MESH    DEPTH=1.0  N.SPACES=5
+Y.MESH    DEPTH=1.0  N.SPACES=5
+Y.MESH    DEPTH=1.0  N.SPACES=5
+
+#------------------------------------------------------------------------------
+# Specify silicon regions and boundary faces
+REGION    Label=Silicon  Material=Si
+FACE      Label=Anode   Location=TOP   x.min=0 x.max=1.0
+FACE      Label=Cathode   Location=BOT
+
+#------------------------------------------------------------------------------
+# doping profile
+DOPING Type=Analytic
+PROFILE   Type=Uniform    Ion=Donor     N.PEAK=1E15  X.MIN=0.0 X.MAX=3.0  \
+          Y.min=0.0 Y.max=3.0        Z.MIN=0.0 Z.MAX=3.0
+
+PROFILE   Type=Analytic   Ion=Acceptor  N.PEAK=1E19  X.MIN=0.0 X.MAX=1.0  \
+          Z.MIN=0.0 Z.MAX=1.0 \
+	  Y.min=0.0 Y.max=0.0 X.CHAR=0.2  Z.CHAR=0.2 Y.JUNCTION=0.5
+
+#------------------------------------------------------------------------------
+# boundary condition
+BOUNDARY ID=Anode     Type=Ohmic Res=100
+BOUNDARY ID=Cathode   Type=Ohmic
+
+
+#------------------------------------------------------------------------------
+# hierarchical refine by potential
+METHOD    Type=Poisson NS=Basic
+SOLVE
+REFINE.H  Variable=Potential cell.refine.fraction=0.4
+
+# hierarchical refine by potential again
+METHOD    Type=Poisson NS=Basic
+SOLVE
+REFINE.H  Variable=Potential cell.refine.fraction=0.3 cell.coarsen.fraction=0.2
+
+# get initial condition by poison solver
+METHOD    Type=Poisson NS=Basic
+SOLVE
+
+# compute diode forward IV 
+MODEL     Region=Silicon H.MOB=false
+METHOD    Type=DDML1 NS=Basic LS=LU 
+SOLVE     TYpe=EQ
+SOLVE     TYpe=DCSWEEP Vscan=Anode Vstart=0.0 Vstep=0.05 Vstop=2.0 out.prefix=diode_hg_iv
+
+# export result
+EXPORT   VTKFILE=pn2d_hg.vtk cgnsfile=pn2d_hg.cgns
+  

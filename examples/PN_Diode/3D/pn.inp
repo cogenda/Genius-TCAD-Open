@@ -1,0 +1,60 @@
+#==============================================================================
+# Genius example: 3D PN Diode simulation
+# we will generate simulation structure for the diode.
+# Then compute the forward IV curve of 3D diode
+#==============================================================================
+
+GLOBAL    T=300 DopingScale=1e18
+
+#------------------------------------------------------------------------------
+# Create an initial simulation mesh
+# one can also use S_Hex8 or S_Tet4 mesh generator
+MESH      Type = S_Prism6
+
+# 15K mesh
+X.MESH    WIDTH=1.0   N.SPACES=6
+X.MESH    WIDTH=1.0   N.SPACES=15
+X.MESH    WIDTH=1.0   N.SPACES=6
+
+Y.MESH    DEPTH=0.5  N.SPACES=5
+Y.MESH    DEPTH=1.0  N.SPACES=20
+Y.MESH    DEPTH=1.5  N.SPACES=8
+
+Z.MESH    WIDTH=1.0  N.SPACES=5
+
+#------------------------------------------------------------------------------
+# Specify region and boundary faces
+REGION    Label=Silicon  Material=Si
+FACE      Label=Anode   Location=TOP   x.min=0 x.max=1.0 z.min=0.0 z.max=1.0
+FACE      Label=Cathode Location=BOTTOM
+
+
+#------------------------------------------------------------------------------
+DOPING Type=Analytic
+PROFILE   Type=Uniform    Ion=Donor     N.PEAK=1E15  X.MIN=0.0 X.MAX=3.0  \
+          Y.min=0.0 Y.max=3.0        Z.MIN=0.0 Z.MAX=3.0
+
+PROFILE   Type=Analytic   Ion=Acceptor  N.PEAK=1E19  X.MIN=0.0 X.MAX=1.0  \
+          Z.MIN=0.0 Z.MAX=1.0 \
+	  Y.min=0.0 Y.max=0.0 X.CHAR=0.2  Z.CHAR=0.2 Y.JUNCTION=0.5
+
+#------------------------------------------------------------------------------
+# boundary condition
+BOUNDARY ID=Anode   Type=Ohmic Res=1e3
+BOUNDARY ID=Cathode Type=Ohmic
+
+PLOT
+
+# get initial condition by poison solver
+METHOD    Type=Poisson NS=Basic
+SOLVE
+
+# compute diode forward IV
+MODEL     Region=Silicon Mobility.Force=EQF
+METHOD    Type=DDML1 NS=Basic LS=BCGS PC=ILU
+SOLVE     Type=EQ
+SOLVE     Type=DCSWEEP Vscan=Anode Vstart=0.0 Vstep=0.05 Vstop=1.0 out.prefix=diode_iv
+
+# export result
+EXPORT   VTKFILE=pn.vtu cgnsfile=pn.cgns
+

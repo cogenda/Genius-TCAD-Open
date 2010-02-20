@@ -1,0 +1,67 @@
+#==============================================================================
+# GSS example: PN Diode simulation
+# On the first step, we will generate simulation structure for the diode.
+# Then the generated CGNS file will be used on later steps.
+#==============================================================================
+
+# Create an initial simulation mesh
+
+GLOBAL    T=300 DopingScale=1e18  Z.Width=1.0
+
+MESH      Type = S_Tri3 #triangle="pzADq30Q"
+
+X.MESH    WIDTH=1.0   N.SPACES=5
+X.MESH    WIDTH=1.0   N.SPACES=5
+X.MESH    WIDTH=1.0   N.SPACES=5
+
+
+Y.MESH    DEPTH=1.0  N.SPACES=5
+Y.MESH    DEPTH=1.0  N.SPACES=5
+Y.MESH    DEPTH=1.0  N.SPACES=5
+
+
+
+# Specify oxide and silicon regions
+REGION    Label=Silicon  Material=Si
+REGION    Label=Cathode  Material=Elec Y.min=2.8 Y.max=3.0 
+
+
+FACE      Label=Anode   Location=TOP   x.min=0 x.max=1.0
+
+
+DOPING Type=Analytic
+PROFILE   Type=Uniform    Ion=Donor     N.PEAK=1E15  X.MIN=0.0 X.MAX=3.0  \
+          Y.min=0.0 Y.max=3.0        Z.MIN=0.0 Z.MAX=3.0
+
+PROFILE   Type=Analytic   Ion=Acceptor  N.PEAK=1E19  X.MIN=0.0 X.MAX=1.0  \
+          Z.MIN=0.0 Z.MAX=1.0 \
+	  Y.min=0.0 Y.max=0.0 X.CHAR=0.2  Z.CHAR=0.2 Y.JUNCTION=0.5
+PROFILE   Type=Uniform    Ion=Custom    ID=TrapA N.Peak=1e15  X.min=0.0 x.max=3.0  \
+          Y.min=0.0 Y.max=1.0   z.min=0.0 z.max=3.0
+
+BOUNDARY ID=Anode   Type=Ohmic Res=1000
+CONTACT  ID=Cathode Type=Ohmic
+
+REFINE.C   Variable=Doping error.fraction=0.7 Measure=signedlog
+
+METHOD    Type=Poisson NS=Basic
+SOLVE
+
+REFINE.C   Variable=Potential error.fraction=0.7
+METHOD    Type=Poisson NS=Basic
+SOLVE
+
+REFINE.C   Variable=Potential cell.fraction=0.4
+METHOD    Type=Poisson NS=Basic
+SOLVE
+
+PMI region=Silicon type=Trap string<profile>="TrapA" string<chargetype>=Acceptor double<prefactor>=1.0 double<energy>=0.02 double<sigman>=1e-16 double<sigmap>=1e-14 
+PMI region=Silicon type=Trap string<profile>="TrapA" string<chargetype>=Donor    double<prefactor>=1.0 double<energy>=-0.22 double<sigman>=5e-15 double<sigmap>=2e-15 print=1
+
+MODEL     Region=Silicon Mobility.Force=EQF Trap=true
+METHOD    Type=DDML1 NS=Basic LS=BCGS
+SOLVE     TYpe=EQ
+SOLVE     TYpe=DCSWEEP Vscan=Anode Vstart=0.0 Vstep=0.05 Vstop=0.8 out.prefix=diode_iv
+
+
+EXPORT   VTKFILE=pn2d.vtk CGNSFILE=pn2d.cgns 

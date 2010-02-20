@@ -1,0 +1,3 @@
+#!/bin/sh
+LOGFILE="$1.valgrind.log"
+valgrind --leak-check=full --show-reachable=yes --error-limit=no --log-file=$LOGFILE genius.LINUX -i "$1"

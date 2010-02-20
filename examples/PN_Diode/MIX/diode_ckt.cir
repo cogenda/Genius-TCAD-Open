@@ -1,0 +1,13 @@
+Mixed Device/Circuit simulation of Diode
+
+Vpp 2        0         0.3V sin(0.3 1.0 1MEGHz)
+N0  2=anode  3=cathode
+R1  3        1         0.1
+C0  1        0         10n
+RL  1        0         1k
+
+.option acct itl2=100
+.tran 0.01us 10us
+.print i(Vpp)
+.plot tran i(Vpp)
+.END

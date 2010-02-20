@@ -1,0 +1,43 @@
+#==============================================================================
+# Genius example: Schottky Diode simulation
+# On this step, we will do mixed-type transient calculation with NGSPICE
+#==============================================================================
+
+GLOBAL    T=300  DopingScale=1e18   Z=1000
+
+#------------------------------------------------------------------------------
+# Create an initial simulation mesh
+MESH      Type = S_Quad4
+X.MESH    WIDTH=3.0  N.SPACES=10
+Y.MESH    DEPTH=3.0  N.SPACES=10
+
+
+#------------------------------------------------------------------------------
+# Specify silicon region and boundary faces
+REGION    Label=Silicon  Material=Si
+FACE      Label=Anode   Location=TOP   x.min=0 x.max=1.0
+FACE      Label=Cathode Location=BOTTOM
+
+#------------------------------------------------------------------------------
+# doping profile
+DOPING Type=Analytic
+PROFILE   Type=Uniform    Ion=Donor     N.PEAK=1E18  X.MIN=0.0 X.MAX=3.0  \
+          Y.min=0.0 Y.max=3.0
+
+#------------------------------------------------------------------------------
+#boundary condition
+BOUNDARY ID=Anode   Type=Schottky WorkFunction=4.9
+BOUNDARY ID=Cathode Type=Ohmic
+
+#------------------------------------------------------------------------------
+# load spice circuit netlist
+CIRCUIT NETLIST=diode_ckt.cir
+
+
+Model  Region=Silicon H.Mob=false Mob.force=ESimple EB.level=tl
+METHOD Type=DDML1M  NS=Basic LS=GMRES PC=ILU Damping=Potential maxit=20 relative.tol=1e-4 toler.relax=1e-6 #Fermi=On
+SOLVE  Type=Op
+#SOLVE  Type=DCSweep Vscan=Vpp Vstart=0.0 Vstep=0.1 Vstop=2.5 out.prefix=diode_mix
+SOLVE  Type=tran tstart=0.0 tstep=0.001e-6 tstepmax=0.01e-6 tstop=5e-6 out.prefix=diode_mix
+
+EXPORT VTKFILE=sd_mix.vtu

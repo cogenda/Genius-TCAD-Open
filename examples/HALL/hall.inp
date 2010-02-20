@@ -1,0 +1,44 @@
+#==============================================================================
+# Genius example: 3D HALL device
+#==============================================================================
+
+GLOBAL    T=300 DopingScale=1e18
+MagneticField BY=1
+
+#------------------------------------------------------------------------------
+# Create an initial simulation mesh
+# one can also use S_Prism6 or S_Tet4 mesh generator
+MESH      Type = S_Hex8
+
+X.MESH    WIDTH=3.0   N.SPACES=20
+Y.MESH    DEPTH=1.0   N.SPACES=10
+Z.MESH    WIDTH=1.0   N.SPACES=10
+
+#------------------------------------------------------------------------------
+# Specify region and boundary faces
+REGION    Label=Silicon  Material=Si
+FACE      Label=Anode   Location=LEFT
+FACE      Label=Cathode Location=RIGHT
+
+#------------------------------------------------------------------------------
+DOPING Type=Analytic
+PROFILE   Type=Uniform    Ion=Accept     N.PEAK=1E18  X.MIN=0.0 X.MAX=3.0  \
+          Y.min=0.0 Y.max=1.0        Z.MIN=0.0 Z.MAX=1.0
+
+#------------------------------------------------------------------------------
+# boundary condition
+BOUNDARY ID=Anode   Type=Ohmic
+BOUNDARY ID=Cathode Type=Ohmic
+
+# get initial condition by poison solver
+METHOD    Type=Poisson NS=Basic
+SOLVE
+
+# compute diode forward IV
+METHOD    Type=HALL NS=Basic LS=LU #PC=ILU
+SOLVE     Type=EQ
+SOLVE     Type=DCSWEEP Vscan=Anode Vstart=0.0 Vstep=0.05 Vstop=1.0 out.prefix=iv
+
+# export result
+EXPORT   VTKFILE=hall.vtk
+

@@ -1,0 +1,858 @@
+ExprEval 3.x Help
+-----------------
+
+Introduction
+------------
+ExprEval 3.x is an expression evaluation library for C++.  It can take an
+expression string, parse it, and evaluate it.  Several key features of ExprEval
+include:
+
+- Object Oriented.  ExprEval 3.x is a C++ library, where 2.x was a C library.
+- POEM (Parse Once, Evaluate Many), the expression string is parsed on time.
+  After that, it can be evaluated over and over many times.
+- Seperation of objects.  By keeping the function and value lists seperate from
+  the expression, the programmer can choose how to connect them.  Each
+  expression may have a private value list, or several expressions can share
+  a single value list.
+- Fast variable lookup.  The variables and constants are stored as pointers in
+  the parsed expression.  This means there is no need to search through a list
+  for the value.  Additionally, applications can do the same.
+- Custom functions.  An application can create custom functions for use by an
+  expression.  Doing so is easy.
+- Variable constants.  As the name suggests, a constant that is variable.  The
+  expression can NOT change a constant, but the application can.
+
+Syntax
+------
+Expression syntax is similar to what it may look like written on paper.  The
+operators '+', '-', '*', '/', and '^', are the addition, subtraction,
+multiplication, division, and exponent operators and the '=' operator is used to
+assign to a variable.
+
+    k = (x * x) + (y * y)
+
+is the same as
+
+    k = x ^ 2 + y ^ 2
+
+Parentheses are used to group items in an expression and for the
+arguments to a function.
+
+    d = sqrt((x * x) + (y * y))
+
+Semicolons are used to seperate expressions.  In this way, an expresion string
+can contain more than one expression.  The result is the value of the last
+expression.
+
+    x = r * cos(d); y = r * sin(d)
+
+Functions can take normal arguments and reference arguments.  Functions that
+take reference arguments can modify the reference variable.  Constants can NOT
+be passed by reference.  Also, normal and reference arguments can be mixed, as
+long as the order is the same.  Commas(',') at a parentheses level of 0 are used
+to seperate the arguments.  Reference parameters must be prefixed with an
+ampersand('&').
+
+    f(x, y, z, &a, &b, &c)
+
+is the same as
+
+    f(x, &a, y, &b, z, &c)
+
+Additionally, some functions may take special data arguments.  These are
+used specifically by the functions only.  They are passed with the at sign('@').
+For functions that take special data arguments, be sure to use the same data
+name only for parameters of the same data type.
+
+    f(@data)
+
+Anything that is a sub-expression is still an expression, and can be anything
+that an expression can be.
+
+    y = x = 0
+
+    x = r * cos(r1 ; r2) ; y = (z ; r) * cos(r1 + sin(r2) ; r2)
+
+Order of Operators
+------------------
+Within an expression, the order of operators is as follows.
+
+1.  Parentheses
+2.  Exponents, left to right
+3.  Negation, right to left
+4.  Multiplication/division, left to right
+5.  Addition/subtration, left to right
+6.  Assignment, right to left
+
+The entire expression is actually parsed as a tree.  This expression will look
+a little like this: (view with a fixed-width font)
+
+    y = q = x + -z^-2^3 - 5 * (x + 2) * sin(x)
+
+                                assign(y)
+                                    |
+                                assign(q)
+                                    |
+                                subtract
+                ________________/       \_____________
+               /                                      \
+             add                                     multiply
+          ___/ \___                             _____/      \_____
+         /         \                           /                  \
+    variable(x)    negate                  multiply             function(sin)
+                      |                  __/      \___                |
+                    power               /             \             variable(x)
+                  __/   \___         value(5)        add
+                 /          \                    ____/ \_____
+              power       value(3)              /            \
+           ___/   \___                     variable(x)     value(2)
+          /           \
+      variable(z)    negate
+                        |
+                     value(2)
+
+Using ExprEval
+--------------
+To use ExprEval, just include 'expreval.h' in your program.  All the items are
+under the 'ExprEval' namespace:
+
+    #include "expreval.h"
+    using namespace ExprEval;
+    using namespace std;
+
+Then, create the value and function lists, and initialize them as desired.
+
+    ValueList vlist;
+    FunctionLIst flist;
+
+    vlist.AddDefaultValues();
+    flist.AddDefaultFunctions();
+
+Finally, create the expression and set it to use the values and functions.
+
+    Expression e;
+    e.SetValueList(&vlist);
+    e.SetFunctionList(&flist);
+
+Now the expression is ready to be parsed and evaluated.
+
+    e.Parse("y=5");
+    result = e.Evaluate();
+
+User Abort
+----------
+It is possible that an evaluation can take a long amount of time or enter an
+infinite loop, depending on the functions used and the expression.  To help
+with this, an abort mechanism is introduced.  Every time 'Node::Evaluate' gets
+called, it calls 'Expression::TestAbort', and then 'Node::DoEvaluate'.  Every so
+often, 'Expression::TestAbort' will call 'Expression::DoTestAbort'.  If
+'Expression::DoTestAbort' returns true, and exception is thrown indicating an
+abort.
+
+The reason a real test is not conducted each time by 'Expression::TestAbort' is
+that it can dramatically slow down the expression evaluation, depending how an
+abort is tested.  'Expression::SetTestAbortCount' controlls how many times
+'Node::Evaluate' (and therefore 'Expression::TestAbort') gets called before a
+real abort is tested by 'Expression::DoTestAbort'.
+
+To add abort testing support, derive a new expression object and override
+'Expression::DoTestAbort' as follows:
+
+    class MyExpression : public Expression
+        {
+        public:
+            MyExpression(bool *abort) { m_abort = abort; }
+
+            bool DoTestAbort() { return *m_abort; }
+
+        private:
+            bool *m_abort;
+        };
+
+User Data
+---------
+If custom function need to access user data associated with an expression,
+derive a class from the expression object that stores the user data.  Then,
+access the expression from the function node by using the protected 'm_expr'.
+
+class MyExpression : public Expression
+    {
+    public:
+        MyExpression(void *userdata);
+    };
+
+class MyFunctionNode : public FunctionNode
+    {
+    public:
+        ...
+
+        double DoEvaluate() {  MyExpression *m = (MyExpression*)m_expr; ... }
+    };
+
+
+Identifiers
+-----------
+Functions, variables, and constants are accessed in the expression as
+identifiers.  These identifiers follow a certain form by the parser:
+
+- An identifier may consist of multiple parts, each seperated by a period('.')
+- An identifier does not end in a period('.')
+- Each part begins with a letter or underscore('_'), and may contain letters,
+  digits, or underscores('_').
+
+The parser recognizes the above as identifiers in an expression.  However, no
+check is made when an application adds a function or value to the lists.  It is
+up to the application to make sure it is named correct.
+
+The following are valid identifiers:
+
+    color1
+    color1.red
+    color2._rgb._red
+    _x
+
+The following are invalid identifiers
+
+    1color
+    color.4
+
+Value Lists
+-----------
+Value lists store the constants and values that are used by an expression.
+A value list is associated with an expression by using 'Expression::SetValueList'
+Once an expression is parsed, the expression tree stores pointers directly to
+the values, and so the value list should not be freed while it is in use.
+
+To add values to the list, use 'Add'.  You can also specify the
+default values and if it is a constant.
+
+    vlist.Add("x");
+    vlist.Add("found", 1.0);
+    vlist.Add("PI", 3.14159, true);
+
+You can also add external values to the list as follows.
+
+    double x, f, p;
+    vlist.AddAddress("x", &x);
+    vlist.AddAddress("f", &f, 2.2);
+    vlist.AddAddress("p", &p, 3.14, true);
+
+Sometimes a compiler may optimize code in such a way that problems occur.  For
+instance, the expression can change the values 'x' and 'f' above, but the code
+below may get optimized:
+
+    x = 1;
+    f = 2.2;
+
+    for(...)
+        {
+        for(...)
+            {
+            e.Evaluate();
+            Use(x, f);
+            }
+        }
+
+Since it does not appear that 'x' and 'f' are being modified inside the loop,
+especially in deeply nested loops, the compiler may optimize it by loading the
+values outside the loop and using the cached values in the loop.  If the
+expression changes the values, they will not be used, but the cached values
+will be.  This is just a problem I have encounted a few times.  To solve this
+problem, change their declarations to be volatile:
+
+    volatile double x, f, p;
+    vlist.AddAddress("x", (double*)&x);
+    vlist.AddAddress("f", (double*)&f, 2.2);
+    vlist.AddAddress("p", (double*)&p, 3.14, true);
+
+Like this, the compiler must reload the variables from memory each time they
+are accessed.
+
+If you use internal storage, you can still get the address of the values and
+directly manipulate them as such:
+
+    double *x;
+
+    vlist.Add("x");
+    x = vlist.GetAddress("x");
+
+    for(...)
+        {
+        *x = some_value;
+        e.Evaluate();
+        ...
+        }
+
+To initialize default values into the list, use 'AddDefaultValues':
+
+    vlist.AddDefaultValues();
+    vlist.Add("x");
+    vlist.Add("y");
+    ...
+
+When you want to reset all items to their default values, you can call 'Reset'.
+This will reset internal and external values.  Constants will also be reset
+because, even though an expression can not modify a constant, the application
+can.
+
+    vlist.Reset();
+
+You can also clear all items from the list.  Do this ONLY when the expression
+will not be evaluated again or will be reparsed before evaluating, because the
+expression stores pointers directly to the values, and evaluating the expression
+if the list is cleared will likely cause an access violation.  External values
+will not be deleted or removed, but the list entry associated with it will be.
+
+    vlist.Clear();
+    e.Parse(...);
+
+Finally, you can save the state of the value list by enumerating the values:
+
+    ValueList::size_type p, c;
+
+    c = vlist.Count();
+    for(p = 0; p < c; p++)
+        {
+        string name;
+        double value;
+
+        vlist.Item(p, &name, &value);
+        ...
+        }
+
+You can later use this to restore the list.  Remember, when adding a value to
+the list, if it already exists, an exception will the be thrown.
+
+Function Lists
+--------------
+Function lists store the function factories for the expression.  A function
+factory create a function node when needed, and also reports the name used.
+To create a custom function, first derive a custom function node from
+'FunctionNode'.
+
+    class MyFunctionNode : public FunctionNode
+        {
+        public:
+            MyFunctionNode(Expression *expr);
+            double DoEvaluate();
+        };
+
+Set the argument count in the constructor.  The first two arguments control
+the number of normal paramters, the second control the number of reference
+parameters.  A value of -1 is used for any number.
+
+    MyFunctionNode::MyFunctionNode(Expression *expr) : FunctionNode(expr)
+        {
+        SetArgumentCount(
+            0, // Minimum normal parameters
+            2, // Maximum normal parameters
+            2, // Minimum reference parameters
+            -1); // Maximum reference parameters
+        }
+
+Evaluate a function by overriding 'DoEvaluate'.  You can access the normal
+parameters in 'm_nodes' and the reference parameters in 'm_refs' as follows.
+When evaluating a node, call 'Evaluate' and NOT 'DoEvaluate'.
+
+    double MyFunctionNode::DoEvaluate()
+        {
+        *m_refs[0] = m_nodes[0]->Evalute();
+
+        return m_nodes[1]->Evaluate();
+        }
+
+It is up to each function solver how to access and do the job.  If you need to
+iterate over the items, the types are defined as follows:
+
+    std::vector<Node*> - For normal argumnents
+    std::vector<double*> - For reference arguments
+
+After a function node is created, a function factory must be created to produce
+the function node:
+
+    class MyFunctionFactory : public FunctionFactory
+        {
+        public:
+            std::string GetName() const;
+            FunctionNode *DoCreate(Expression *expr);
+        };
+
+    std::string MyFunctionFactory::GetName() const
+        {
+        return "myfunction";
+        }
+
+    FunctionNode *MyFunctionFactory::DoCreate(Expression *expr)
+        {
+        return new MyFunctionNode(expr);
+        }
+
+Finally, the function node needs to be added to function list:
+
+    flist.Add(new MyFunctionFactory());
+
+To be exception safe, you can also do this:
+
+    auto_ptr<FunctionFactory> p(new MyFunctionFactory());
+    flist.Add(p.get());
+    p.release();
+
+This way, if 'Add' throws an exception, the function factory will still
+be deleted.
+
+The library includes many internal functions.  These can be initialized directly
+into the list:
+
+    flist.AddDefaultFunctions();
+
+And finally, you can clear the list if you want to.  The list is automatically
+cleared when it is destroyed.
+
+    flist.Clear();
+
+Data Lists
+----------
+Data lists make it possible for arbitrary data to be passed from one function
+to another.  Each function can register a number of arguments, and can specify
+a number of data arguments.  The 'm_data' member of 'FunctionNode' contains
+a list of pointers to 'DataEnty' items.  The 'SetData' and 'GetData' members
+can be used to set and get data, which must derive from 'Data'. Also,
+'Data::GetID' can be used to get the type of data.  The same data name should
+only be passed to functions as parameters of the same data type.
+
+    class MyData : public Data
+        {
+        public:
+            long GetType() const
+                {
+                return CreateType('D', 'A', 'T', 'A');
+                }
+
+            void Action()
+                {
+                ...
+                }
+        };
+
+    class MyFunctionNode : public FunctionNode
+        {
+        public:
+            MyFunctionNode(...) : ...
+                {
+                SetArgumentCount(0, 0, 0, 0, 1, 1);
+                }
+
+            double DoEvaluate()
+                {
+                Data *d = m_data[0]->GetDataEntry();
+
+                if(d)
+                    {
+                    // Verify type
+                    if(d->GetType() != CreateType('D', 'A', 'T', 'A'))
+                        throw(InvalidDataException(GetName());
+                    else
+                        ((MyData*)d)->Action();
+                    }
+                else
+                    {
+                    m_data[0]->SetData(new MyData());
+                    }
+
+                return 0.0;
+                }
+        };
+
+The function may be called something like this:
+
+    myfunc(@a);
+
+Now, the data object 'a' is being passed as a data parameter to myfunc
+that expects the to be of type 'DATA', so it should only be passed
+as parameters that are of a type of 'DATA' and as parameters of other
+types.  This rule can be broken, depending on the implementation of the
+functions, but probably should not be.
+
+The data object is deleted when the data list is destroyed.  Additionally,
+the functions may set and delete the data object as it chooses.
+
+    initdata(@a); dosomething(@a); deletedata(@a);
+
+Expressions
+-----------
+The expression is what is used to actually parse and evaluate.  After the
+function and value lists are created, they can be associated with an expression:
+
+    Expression e;
+    e.SetValueList(&vlist);
+    e.SetFunctionList(&flist);
+    e.SetDataList(&dlist);
+
+An expression can be parsed and used over and over:
+
+    e.Parse(...);
+
+    for(...)
+        {
+        result = e.Evaluate();
+        }
+
+An expression can be parsed again, it is automatically cleared each time.
+'Clear' can be called if desired to clear the expression without reparsing or
+destroying it.
+
+    e.Parse(...);
+
+    for(...)
+        {
+        result = e.Evaluate();
+        }
+
+    e.Parse(...); // Automatically clears
+
+    for(...)
+        {
+        ...
+        }
+
+    e.Clear(); // Clear expression, maybe to free memory, without destroying it
+
+Exceptions
+----------
+Exceptions are thrown to indicate a problem.  The problem may or may not be
+an error, depending on the exception, and the application.
+
+Most exceptions are defined by ExprEval, but some exceptions may occur from
+C++.  The most likely exception to get from C++ is 'bad_alloc' if memory
+allocation fails.
+
+ExprEval defines a base exception class 'Exception', which is derived from
+'std::exception'.  All other ExprEval exceptiosn derive from it.
+
+Exception
+
+    Base ExprEval exception, derived from 'std::exception'.  A 'GetValue'
+    method returns the string of where the exception came from, depending
+    on the exception type.
+
+    For some exceptions generated during parsing, A 'GetStart' and 'GetEnd'
+    method return the position in the expression string of the start and
+    end of the error.
+
+NotFoundException (parsing)
+
+    Thrown when a function is not found.  It is also thrown when a value
+    identifer can not be found in a value list and can not be added to the
+    list during a parse, but this will usually not happen because if it
+    can not be added to the list, a 'bad_alloc' will usually be the reason.
+    'ValueList::GetAddress' does not throw this.
+
+AlreadyExistsException
+
+    A name being added to a function or value list already exists.
+
+NullPointerException
+
+    A null pointer was passed to a function that should not be null.
+
+MathException (evaluation)
+
+    A math error occured during an evaluation.
+
+DivideByZeroException (evaluation)
+
+    A division by zero was attempted during evaluation.
+
+NoValueListException (parsing)
+
+    An expression is trying to use a value identifier, but no value list
+    is associated with it.
+
+NoFunctionListException (parsing)
+
+    An expression is trying to use a function identifier, but no value list
+    is associated with it.
+
+AbortException (evaluation)
+
+    'Expression::DoTestAbort' returned true.
+
+EmptyExpressionException (parsing, evaluation)
+
+    At parse time, there is no expression.  At evaluation time, the expression
+    is not parsed.
+
+UnknownTokenException (parsing)
+
+    An unknown token was encounted.
+
+InvalidArgumentCountException (parsing, evaluation)
+
+    An invalid count of arguments was passed to a function.  At parse time, this
+    is controlled by 'FunctionNode::SetArgumentCount'.  Some functions may take
+    various parameter counts depending on a situation, and may throw this at
+    evaluation time.
+
+ConstantAssignException (parsing)
+
+    An attempt to assign to a constant occured.
+
+ConstantReferenceException (parsing)
+
+    An attempt to pass a constant to a function by reference occured.
+
+SyntaxException (parsing)
+
+    A general syntax exception occured
+
+UnmatchedParenthesisException (parsing)
+
+    The parenthesis are unmatched or missing the opening or closing parenthesis.
+
+
+Tricks
+------
+
+A single value list can be shared by more than one expression.  In this way, each
+expression shares all values of that list:
+
+    ValueList vlist;
+    Expression e1, e2;
+
+    e1.SetValueList(&vlist);
+    e2.SetValueLIst(&vlist);
+
+An external value can be shared by several value lists, and can be constant in
+one and not in another:
+
+    double x;
+    ValueList v1, v2;
+    Expression e1, e2;
+
+    v1.AddAddress("x", &x);
+    v2.AddAddress("x", &x, 0.0, true);
+
+    e1.SetValueList(&v1);
+    e2.SetValueList(&v2);
+
+An empty expression can be ignored:
+
+    Expression e1, e2;
+    bool eval2;
+
+    // Expression 1 must exist
+    e1.Parse(...);
+
+    // Expression 2 can be blank
+    eval2 = true;
+    try
+        {
+        e2.Parse(...);
+        }
+    catch(EmptyExpresionExceptin &e)
+        {
+        eval2 = false;
+        }
+
+    for(...)
+        {
+        e1.Evaluate();
+
+        if(eval2)
+            e2.Evaluate();
+        }
+
+
+Internal Values
+---------------
+A call to 'ValueList::AddDefaultValues' will add the following values to a
+value list:
+
+PI
+
+    The value of PI, equal to 3.14159265358979323846
+
+E
+
+    The value of e, equal to 2.7182818284590452354
+
+
+Internal Functions
+------------------
+A call to 'FunctionList::AddDefaultFunctions' will add the following functions
+to a function list:
+
+abs(x)
+
+    Return the absolute value of 'x'
+
+mod(x, y)
+
+    Return the remainder of 'x' divided by 'y'
+
+ipart(x)
+
+    Return the interger portion of 'x'
+
+fpart(x)
+
+    Return the fraction portion of 'x'
+
+min(x, y, z, ...)
+
+    Return the value of the smallest parameter
+
+max(x, y, z, ...)
+
+    Return the value of the largest parameter
+
+sqrt(x)
+
+    Return the square root of 'x'
+
+sin(x), cos(x), tan(x)
+
+    Return the sine, cosine, or tangent of 'x'
+
+sinh(x), cosh(x), tanh(x)
+
+    Return the hyperbolic sine, cosine, or tangent of 'x'
+
+asin(x), acos(x), atan(x)
+
+    Return the inverse since, cosine, or tangent of 'x'
+
+atan(y, x)
+
+    Return the inverse tangent of 'y' divided by 'x', with the correct
+    angle for the quadrant of (x, y)
+
+asinh(x), acosh(x), atanh(x)
+
+    Return the inverse hyperbolic since, cosine, or tangent of 'x'
+
+log(x)
+
+    Return the base 10 logarithm of 'x'
+
+ln(x)
+
+    Return the natural logarithm of 'x'
+
+exp(x)
+
+    Return the value of e raised to the power of 'x'
+
+logn(x, y)
+
+    Return the base 'y' logarithm of 'x'
+
+erf(x)
+
+    Return error function of 'x'
+
+erfc(x)
+
+   Return complementary error function of 'x'.
+
+ceil(x)
+
+    Return the value of 'x' raised to the nearest integer
+
+floor(x)
+
+    Return the value of 'x' dropped to the nearest integer
+
+rand(&seed)
+
+    Return a random number from 0 to 1 inclusive.  'seed' is used to generate
+    the number and is changed for the next number.
+
+random(min, max, &seed)
+
+    Return a random number from 'min' to 'max'
+
+randomize(&seed)
+
+    Initialize the seed with a random value, based on the computer time and
+    the number of times randomize has been used.
+
+deg(x)
+
+    Return 'x' radians converted to degrees
+
+rad(x)
+
+    Return 'x' degrees converted to radians
+
+rect2pol(x, y, &distance, &angle)
+
+    Convert rectangular coordinates 'x' and 'y' to polar coordinates and stores
+    the result in 'distance' and 'angle'.  Returns distance.
+
+pol2rect(distance, angle, &x, &y)
+
+    Convert polar coordinates 'distance' and 'angle' to rectangular coordinates
+    and stores the result in 'x' and 'y'.  Returns x.
+
+if(c, t, f)
+
+    If 'c' is not zero, evaluates and returns 't', otherwise evaluates and
+    returns 'f'.  Only one of 't' or 'f' is evaluated.
+
+select(c, n, z), select(c, n, z, p)
+
+    If 'c' is less than zero, evaluates and returns 'n'.  If 'c' is zero,
+    evaluates and returns 'z'.  If 'c' is greater than zero, evaluates and
+    returns 'z' for three arguments and 'p' for four arguments.  Only one of
+    'n', 'z', or 'p' is evaluated.
+
+equal(x, y)
+
+    Returns 1 if 'x' is equal to 'y', else returns 0
+
+above(x, y)
+
+    Returns 1 if 'x' is greater than 'y', else returns 0
+
+below(x, y)
+
+    Returns 1 if 'x' is less than 'y', else returns 0
+
+clip(x, min, max)
+
+    Clips 'x' to the range 'min' and 'max'
+
+clamp(x, min, max)
+
+    Clamps 'x' to the range 'min' and 'max', wrapping as needed
+
+rescale(p, o1, o2, n1, n2)
+
+    Rescales a point 'p' from the range 'o1' - 'o2' to the range 'n1' - 'n2'
+
+poly(x, ...)
+
+    Calculate the polynomial with the value of 'x' and given terms.  The
+    right-most argument is the multiplier for the exponent of zero, and
+    increases to the left.
+
+    poly(4, 3, 5, 2, 8) is 3 * 4 ^ 3 + 5 * 4 ^ 2 + 2 * 4 ^ 1 + 8
+
+and(x, y)
+
+    Returns 0 if 'x' or 'y' is 0, else returns 1
+
+or(x, y)
+
+    Returns 0 if 'x' and 'y' is 0, else returns 1
+
+not(x)
+
+    Returns 1 if 'x' is 0, else returns 0
+
+
+More Information
+----------------
+For more information, view the source code for the library.
+

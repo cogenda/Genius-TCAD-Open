@@ -1,0 +1,28 @@
+#==============================================================================
+# Genius example: A thyristor dimmer circult (used in i.e. reading lamp) simulation.
+#==============================================================================
+
+GLOBAL    T=300 DopingScale=1e18
+
+#------------------------------------------------------------------------------
+vsource Type = VSIN   ID = Vs   Tdelay=0 Vamp=5.0 Freq=1e6  # 1MHz
+
+#------------------------------------------------------------------------------
+# specify boundary condition.
+boundary Type = OhmicContact      ID=Anode   Res=10  Cap=0 Ind=0
+boundary Type = OhmicContact      ID=Cathode Res=0   Cap=0 Ind=0
+boundary Type = OhmicContact      ID=Gate    Res=510 Cap=1e-9 Ind=0 
+# adjust Gate R or C can control the pass through angle.  
+
+#------------------------------------------------------------------------------
+# drive command, specify the solving process.
+IMPORT   CGNSFile=Thyristor.cgns
+
+
+# specify DDM method,this is the default solver.
+ATTACH   Electrode=Anode   VApp=Vs
+ATTACH   Electrode=Gate    VApp=Vs 
+METHOD   Type=DDML1 NS=Basic LS=GMRES Damping=Potential
+SOLVE    Type=TRANSIENT     out=iv.txt  TStart = 0 TStep=1e-8  TstepMax=1e-7  TStop = 3e-6
+
+END

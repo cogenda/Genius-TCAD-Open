@@ -1,0 +1,45 @@
+#==============================================================================
+# Genius example: NPN Transistor Simulation
+# On this step, we will do transient simulation when the base electrode
+# stimulated by current source.
+#==============================================================================
+
+GLOBAL  T=300  DopingScale=1e16   Z.width=100
+
+#------------------------------------------------------------------------------
+# voltage source and current source is needed here.
+vsource Type = VDC    ID = GND  Tdelay=0 Vconst=0
+vsource Type = VDC    ID = VCC  Tdelay=0 Vconst=3.0
+vsource Type = VDC    ID = Vb   Tdelay=0 Vconst=0.7
+vsource Type = VSIN   ID = Vs   Tdelay=0 Vamp=1e-3 Freq=1e6  # 1MHz
+
+isource Type = IDC    ID = Ib   Tdelay=0 Iconst=2e-8
+isource Type = ISIN   ID = Is   Tdelay=0 Iamp=1e-9 Freq=1e6  # 1MHz
+
+#------------------------------------------------------------------------------
+# specify boundary condition.
+boundary Type = OhmicContact    ID=Base      Res=0    Cap=0 Ind=0
+boundary Type = OhmicContact    ID=Emitter   Res=0    Cap=0 Ind=0
+boundary Type = OhmicContact    ID=Collector Res=1000 Cap=0 Ind=0
+
+#------------------------------------------------------------------------------
+
+# import  result computed in step 2
+IMPORT   CGNSFile=bias.cgns
+
+# set the driven electric source to electrode
+ATTACH   Electrode=Collector    VApp=VCC
+ATTACH   Electrode=Emitter      VApp=GND
+# use current source as BASE signal
+ATTACH   Electrode=Base     Type=Current IApp=Ib   IApp=Is
+
+METHOD   Type = DDML1  NS=LineSearch LS=LU Damping=Potential
+# compute STEADYSTATE to get a initial value
+SOLVE    Type = STEADYSTATE
+
+# do transient simulation
+METHOD   Type = DDML1  NS=Basic LS=GMRES
+SOLVE    Type = TRANSIENT  TStart=0 TStep=1e-8  TStop=2e-6  out.prefix=tran.ib
+
+END
+
