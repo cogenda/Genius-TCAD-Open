@@ -25,7 +25,7 @@
 #define __petsc_utils_h__
 
 
-#include "petsc.h"
+
 #include "petscmat.h"
 
 #include "genius_common.h"
@@ -34,6 +34,12 @@
 
 namespace PetscUtils
 {
+
+  /**
+   * wrap to petsc MatZeroRows
+   */
+  extern PetscErrorCode  MatZeroRows(Mat mat,PetscInt numRows,const PetscInt rows[],PetscScalar diag);
+
 
   /**
    * @brief add source rows to destination rows, multi by alpha
@@ -92,6 +98,19 @@ namespace PetscUtils
   extern PetscErrorCode  VecAddRowToRow(Vec vec, std::vector<PetscInt> & src_rows, std::vector<PetscInt> & dst_rows, std::vector<PetscScalar> & alpha);
 
 
+ /**-------------------------------------------------------------------
+  * @brief add source rows to destination rows, and clear some rows
+  *
+  * @param  vec        Petsc Vector
+  * @param  src_rows   source rows
+  * @param  dst_rows   the destination rows will be added to
+  * @param  clear_rows the rows to be cleared .
+  *
+  * @note   If vec is not assembled, this function will do it for you. the src row should on local processor.
+  *
+  */
+  extern PetscErrorCode  VecAddClearRow(Vec vec, std::vector<PetscInt> & src_rows, std::vector<PetscInt> & dst_rows, std::vector<PetscInt> & clear_rows);
+
   /**
    * @brief add source rows to destination rows, multi by alpha
    *
@@ -145,6 +164,20 @@ namespace PetscUtils
    *
    */
   extern PetscErrorCode  MatAddRowToRow(Mat mat, std::vector<PetscInt> & src_rows, std::vector<PetscInt> & dst_rows, std::vector<PetscScalar> & alpha);
+
+
+  /**
+   * @brief add source rows to destination rows, and clear some rows
+   *
+   * @param  mat        Petsc Matrix
+   * @param  src_rows   source rows
+   * @param  dst_rows   the destination rows will be added to
+   * @param  clear_rows the rows to be cleared
+   *
+   * @note   If mat is not assembled, this function will do it for you. the src row should on local processor.
+   *
+   */
+  //extern PetscErrorCode  MatAddClearRow(Mat mat, std::vector<PetscInt> & src_rows, std::vector<PetscInt> & dst_rows, std::vector<PetscInt> & clear_rows);
 
   /**
    * @brief add real DenseVector to PetscVec by dof_indices

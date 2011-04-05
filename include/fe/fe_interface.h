@@ -2,17 +2,17 @@
 
 // The libMesh Finite Element Library.
 // Copyright (C) 2002-2007  Benjamin S. Kirk, John W. Peterson
-  
+
 // This library is free software; you can redistribute it and/or
 // modify it under the terms of the GNU Lesser General Public
 // License as published by the Free Software Foundation; either
 // version 2.1 of the License, or (at your option) any later version.
-  
+
 // This library is distributed in the hope that it will be useful,
 // but WITHOUT ANY WARRANTY; without even the implied warranty of
 // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
 // Lesser General Public License for more details.
-  
+
 // You should have received a copy of the GNU Lesser General Public
 // License along with this library; if not, write to the Free Software
 // Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
@@ -64,7 +64,7 @@ private:
   FEInterface();
 
 public:
-  
+
   /**
    * Destructor.
    */
@@ -72,7 +72,7 @@ public:
 
   /**
    * @returns the number of shape functions associated with this
-   * finite element of type \p fe_t. 
+   * finite element of type \p fe_t.
    * Automatically decides which finite element class to use.
    *
    * On a p-refined element, \p fe_t.order should be the total order of the element.
@@ -140,14 +140,14 @@ public:
                            const FEType& fe_t,
                            unsigned int e,
                            std::vector<unsigned int>& di);
-  
+
   /**
    * Build the nodal soln from the element soln.
    * This is the solution that will be plotted.
    * Automatically passes the request to the appropriate
    * finite element class member.  To indicate that
    * results from this specific implementation of
-   * \p nodal_soln should not be used, the vector 
+   * \p nodal_soln should not be used, the vector
    * \p nodal_soln is returned empty.
    *
    * On a p-refined element, \p fe_t.order should be the base order of the element.
@@ -198,7 +198,7 @@ public:
    * for element type t, false otherwise.  Since we are doing floating
    * point comparisons here the parameter \p eps can be specified to
    * indicate a tolerance.  For example, \f$ x \le 1 \f$  becomes
-   * \f$ x \le 1 + \epsilon \f$. 
+   * \f$ x \le 1 + \epsilon \f$.
    */
   static bool on_reference_element(const Point& p,
 				   const ElemType t,
@@ -232,7 +232,7 @@ public:
 		    const Point& p);
 
   /**
-   * Lets the appropriate child of \p FEBase compute the requested 
+   * Lets the appropriate child of \p FEBase compute the requested
    * data for the input specified in \p data, and returns the values
    * also through \p data.  See this as a generalization of \p shape().
    * Currently, with disabled infinite elements, returns a vector of
@@ -248,7 +248,7 @@ public:
 #ifdef ENABLE_AMR
   /**
    * Computes the constraint matrix contributions (for
-   * non-conforming adapted meshes) corresponding to 
+   * non-conforming adapted meshes) corresponding to
    * variable number \p var_number.
    */
   //static void compute_constraints (DofConstraints &constraints,

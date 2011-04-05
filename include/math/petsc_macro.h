@@ -26,11 +26,14 @@
 #ifdef HAVE_PETSC
 
 
-#include "petsc.h"
+
 #include "petscversion.h"
 
 
 // A set of convenient macro for comparing PETSc versions.
+#if ( PETSC_VERSION_RELEASE == 0 )
+#define PETSC_VERSION_DEV
+#endif
 
 #define PETSC_VERSION_LT(major,minor,subminor)			                    \
   ((PETSC_VERSION_MAJOR < (major) ||						    \
@@ -56,8 +59,8 @@
 				   PETSC_VERSION_SUBMINOR > (subminor))))) ? 1 : 0)
 
 #define PETSC_VERSION_GE(major,minor,subminor)			                    \
-  ((PETSC_VERSION_MAJOR == (major) ||						    \
-    (PETSC_VERSION_MAJOR == (major) && (PETSC_VERSION_MINOR == (minor) ||	    \
+  ((PETSC_VERSION_MAJOR > (major) ||						    \
+    (PETSC_VERSION_MAJOR == (major) && (PETSC_VERSION_MINOR > (minor) ||	    \
 				  (PETSC_VERSION_MINOR == (minor) &&		    \
 				   PETSC_VERSION_SUBMINOR >= (subminor))))) ? 1 : 0)
 

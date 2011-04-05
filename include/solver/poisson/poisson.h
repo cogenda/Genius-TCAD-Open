@@ -90,7 +90,8 @@ public:
     {
       case SemiconductorRegion : return 1;
       case InsulatorRegion     : return 1;
-      case ConductorRegion     : return 1;
+      case ElectrodeRegion     : return 1;
+      case MetalRegion    : return 1;
       default : return 0;
     }
   }
@@ -102,8 +103,8 @@ public:
   {
     switch (bc->bc_type())
     {
-    case ChargedContact    : return 1;   // the ChargedContact bc has one extra equation
-    default: return 0;   // others, no extra bc equation
+      case ChargeIntegral    : return 1;// the ChargeIntegral bc has one extra equation
+      default: return 0;   // others, no extra bc equation
     }
   }
 
@@ -114,7 +115,8 @@ public:
   {
     switch (bc->bc_type())
     {
-      case ChargedContact   : return 1;  // the ChargedContact bc equation has a bandwidth of 1
+      case ChargedContact   :  return 1;  // the ChargedContact bc equation has a bandwidth of 1
+      case ChargeIntegral   :  return bc->inter_connect().size()+1;
       // others, bandwidth is zero
       default: return 0;
     }
@@ -151,14 +153,18 @@ public:
    */
   virtual void build_petsc_sens_jacobian(Vec x, Mat *jac, Mat *pc);
 
-  virtual void sens_line_search_post_check(Vec x, Vec y, Vec w, PetscTruth *changed_y, PetscTruth *changed_w)
+  /**
+   * function for line search post check. do Newton damping here
+   */
+  virtual void sens_line_search_post_check(Vec x, Vec y, Vec w, PetscBool *changed_y, PetscBool *changed_w)
   {
-    return potential_damping(x, y, w, changed_y, changed_w);
+    this->potential_damping(x, y, w, changed_y, changed_w);
+    FVM_NonlinearSolver::sens_line_search_post_check(x, y, w, changed_y, changed_w);
   }
 
 private:
 
-  void potential_damping(Vec x, Vec y, Vec w, PetscTruth *changed_y, PetscTruth *changed_w);
+  void potential_damping(Vec x, Vec y, Vec w, PetscBool *changed_y, PetscBool *changed_w);
 
 };
 

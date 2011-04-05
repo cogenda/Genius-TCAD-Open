@@ -49,9 +49,9 @@ ObjectTree::ObjectTree(const MeshBase& mesh)
   }
 
   if (is_planar_xy)
-    _tree = new Trees::QuadTree (mesh, 12, Trees::BOUNDARY_ELEMENTS);
+    _tree = new Trees::QuadTree (mesh, 12, Trees::ELEMENTS_ON_BOUNDARY);
   else
-    _tree = new Trees::OctTree  (mesh, 27, Trees::BOUNDARY_ELEMENTS);
+    _tree = new Trees::OctTree  (mesh, 27, Trees::ELEMENTS_ON_BOUNDARY);
 }
 
 

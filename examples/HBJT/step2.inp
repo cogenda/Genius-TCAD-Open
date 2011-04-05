@@ -6,7 +6,7 @@
 GLOBAL    T=300 DopingScale=1e20  Z.width=100
 
 #------------------------------------------------------------------------------
-VSOURCE Type=VDC ID=VCC Tdelay=0 Vconst=2
+VSOURCE Type=VDC ID=VCC Tdelay=0 Vconst=3
 
 #------------------------------------------------------------------------------
 # specify boundary condition.
@@ -18,11 +18,12 @@ boundary Type = OhmicContact    ID=Collector  Res=1000 Cap=0 Ind=0
 # drive command, specify the solving process.
 IMPORT   CGNSFile = hbjt.cgns
 
+METHOD   Type=DDML1   NS=Basic LS=MUMPS Damping=Potential
+SOLVE    Type=DCSWEEP VScan=Collector VStart=0.0 VStep=0.1 VStop=3.0
+
 ATTACH   Electrode=Collector Vapp=VCC
 
-METHOD   Type=DDML1   NS=Basic LS=LU Damping=Potential Toler.relax=5e5
-SOLVE    Type=STEADYSTATE
-SOLVE    Type=DCSWEEP VScan=Base OUT=iv2 VStart=0.0 VStep=0.02 VStop=0.8
+SOLVE    Type=DCSWEEP VScan=Base OUT=iv2 VStart=0.0 VStep=0.02 VStop=0.7
 
 EXPORT   CGNSFile=bias.cgns
 

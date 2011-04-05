@@ -35,26 +35,7 @@ public:
   /**
    * constructor
    */
-  DDMSolverBase(SimulationSystem & system): FVM_NonlinearSolver(system)
-  {
-    // do clear
-    potential_norm            = 0.0;
-    electron_norm             = 0.0;
-    hole_norm                 = 0.0;
-    temperature_norm          = 0.0;
-    elec_temperature_norm     = 0.0;
-    hole_temperature_norm     = 0.0;
-
-    poisson_norm              = 0.0;
-    elec_continuity_norm      = 0.0;
-    hole_continuity_norm      = 0.0;
-    heat_equation_norm        = 0.0;
-    elec_energy_equation_norm = 0.0;
-    hole_energy_equation_norm = 0.0;
-    electrode_norm            = 0.0;
-
-    function_norm             = 0.0;
-  }
+  DDMSolverBase(SimulationSystem & system);
 
   /**
    * destructor
@@ -285,6 +266,11 @@ protected:
    * nonlinear function norm
    */
   PetscScalar function_norm;
+
+  /**
+   * nonlinear iteration
+   */
+  PetscInt nonlinear_iteration;
 
 };
 

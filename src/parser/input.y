@@ -1,6 +1,4 @@
 %{
-#include <stdio.h>
-#include <string.h>
 
 
 extern int yylineno;
@@ -377,8 +375,9 @@ parameter
 
 static int yyerror(void * dummy, const char *)
 {
-   std::cerr << "\nYACC report: Input file line " << yylineno << " has unrecognized word(s)." << std::endl;
-   std::cerr << "Please check the syntax and try again." << std::endl;
+   MESSAGE << "\nYACC report: Input file line " << yylineno << " has unrecognized word(s)." << std::endl;
+   MESSAGE << "Please check the syntax and try again." << std::endl;
+   RECORD();
    return 1;
 }
 

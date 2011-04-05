@@ -28,6 +28,15 @@
 #include "elem.h"
 #include "log.h"
 
+
+#if defined(HAVE_TR1_UNORDERED_MAP)
+#include <tr1/unordered_map>
+#elif defined(HAVE_TR1_UNORDERED_MAP_WITH_STD_HEADER) || defined(HAVE_UNORDERED_MAP)
+#include <unordered_map>
+#endif
+
+
+
 //------------------------------------------------------
 // BoundaryInfo static member initializations
 const short int BoundaryInfo::invalid_id = -1234;
@@ -56,6 +65,8 @@ void BoundaryInfo::clear()
   _boundary_ids.clear();
   _boundary_labels_to_ids.clear();
   _boundary_ids_to_labels.clear();
+  _boundary_ids_to_descriptions.clear();
+  _extra_descriptions.clear();
 }
 
 
@@ -277,6 +288,34 @@ void BoundaryInfo::add_side(const Elem* elem,
   }*/
 }
 
+void BoundaryInfo::boundary_side_nodes_with_id ( std::map<short int, std::set<const Node *> > & boundary_side_nodes_id_map) const
+{
+  boundary_side_nodes_id_map.clear();
+
+  std::multimap<const Elem*, std::pair<unsigned short int, short int> >::const_iterator pos;
+  for (pos=_boundary_side_id.begin(); pos != _boundary_side_id.end(); ++pos)
+  {
+    const Elem* elem = (*pos).first;
+    unsigned short int side = (*pos).second.first;
+    short int bd_id = (*pos).second.second;
+
+    std::vector<const Elem*> family;
+    elem->active_family_tree_by_side(family, side);
+
+    for(unsigned int f=0; f<family.size(); ++f)
+    {
+      const Elem* family_elem = family[f];
+      AutoPtr<Elem> side_elem = family_elem->build_side(side);
+
+      for (unsigned int n=0; n<side_elem->n_nodes(); ++n)
+      {
+        const Node * node = side_elem->get_node(n);
+        boundary_side_nodes_id_map[bd_id].insert(node);
+      }
+    }
+  }
+}
+
 
 
 void BoundaryInfo::build_node_ids_from_priority_order(const std::map<short int, unsigned int> & order)
@@ -395,6 +434,7 @@ void BoundaryInfo::remove (const Elem* elem, unsigned short int side)
   // after that, rebuild _boundary_ids
   //rebuild_ids();
 }
+
 
 
 void BoundaryInfo::rebuild_ids()
@@ -517,33 +557,52 @@ void BoundaryInfo::build_node_list (std::vector<unsigned int>& nl,
 }
 
 
+void BoundaryInfo::build_on_processor_node_list (std::vector<unsigned int>& nl, std::vector<short int>& il) const
+{
+  nl.clear();
+  il.clear();
+
+  std::map<const Node*, short int>::const_iterator pos
+      = _boundary_node_id.begin();
+
+  for (; pos != _boundary_node_id.end(); ++pos)
+  {
+    if(pos->first->processor_id() != Genius::processor_id()) continue;
+
+    nl.push_back (pos->first->id());
+    il.push_back (pos->second);
+  }
+}
+
 
 void BoundaryInfo::build_side_list (std::vector<unsigned int>&       el,
                                     std::vector<unsigned short int>& sl,
                                     std::vector<short int>&          il) const
 {
-  // Reserve the size, then use push_back
-  el.reserve (_boundary_side_id.size());
-  sl.reserve (_boundary_side_id.size());
-  il.reserve (_boundary_side_id.size());
+  el.resize (_boundary_side_id.size());
+  sl.resize (_boundary_side_id.size());
+  il.resize (_boundary_side_id.size());
 
-  std::multimap<const Elem*, std::pair<unsigned short int, short int> >::const_iterator pos;
+  std::multimap<const Elem*, std::pair<unsigned short int, short int> >::const_iterator pos = _boundary_side_id.begin();
 
-  for (pos=_boundary_side_id.begin(); pos != _boundary_side_id.end();
-       ++pos)
+  for (unsigned int n=0; pos != _boundary_side_id.end(); ++pos, ++n)
   {
-    el.push_back (pos->first->id());
-    sl.push_back (pos->second.first);
-    il.push_back (pos->second.second);
+    el[n] = pos->first->id();
+    sl[n] = pos->second.first;
+    il[n] = pos->second.second;
   }
 }
 
 
 
 void BoundaryInfo::build_active_side_list (std::vector<unsigned int>&       el,
-    std::vector<unsigned short int>& sl,
-    std::vector<short int>&          il) const
+                                           std::vector<unsigned short int>& sl,
+                                           std::vector<short int>&          il) const
 {
+  el.clear();
+  sl.clear();
+  il.clear();
+
   std::multimap<const Elem*, std::pair<unsigned short int, short int> >::const_iterator pos;
 
   for (pos=_boundary_side_id.begin(); pos != _boundary_side_id.end();
@@ -577,6 +636,29 @@ void BoundaryInfo::build_active_side_list (std::vector<unsigned int>&       el,
 }
 
 
+void BoundaryInfo::build_on_processor_side_list (std::vector<unsigned int>&       el,
+                                                 std::vector<unsigned short int>& sl,
+                                                 std::vector<short int>&          il) const
+{
+  el.clear();
+  sl.clear();
+  il.clear();
+
+  std::multimap<const Elem*, std::pair<unsigned short int, short int> >::const_iterator pos = _boundary_side_id.begin();
+
+  for (unsigned int n=0; pos != _boundary_side_id.end(); ++pos, ++n)
+  {
+    if(pos->first->processor_id() != Genius::processor_id()) continue;
+
+    el.push_back(pos->first->id());
+    sl.push_back(pos->second.first);
+    il.push_back(pos->second.second);
+  }
+
+}
+
+
+
 void BoundaryInfo::nodes_with_boundary_id (std::vector<unsigned int>& nl, short int boundary_id) const
 {
   nl.clear();
@@ -591,7 +673,7 @@ void BoundaryInfo::nodes_with_boundary_id (std::vector<unsigned int>& nl, short 
   }
 
   for(std::set<unsigned int>::iterator it=bd_node_set.begin(); it!=bd_node_set.end(); ++it)
-    nl.push_back(*it);
+      nl.push_back(*it);
 }
 
 
@@ -611,6 +693,48 @@ void BoundaryInfo::nodes_with_boundary_id (std::vector<const Node *>& nl, short 
 
   for(std::map<unsigned int, const Node *>::iterator it=bd_node_map.begin(); it!=bd_node_map.end(); ++it)
     nl.push_back((*it).second);
+}
+
+void BoundaryInfo::nodes_with_boundary_id ( std::map<short int, std::vector<const Node *> > & node_boundary_id_map) const
+{
+  node_boundary_id_map.clear();
+
+  std::map<const Node*, short int>::const_iterator pos = _boundary_node_id.begin();
+  for (; pos != _boundary_node_id.end(); ++pos)
+  {
+    node_boundary_id_map[pos->second].push_back(pos->first);
+  }
+}
+
+
+
+void BoundaryInfo::node_in_regions ( std::map<const Node *, std::set<unsigned int > > & node_region_map) const
+{
+  node_region_map.clear();
+
+  std::multimap<const Elem*, std::pair<unsigned short int, short int> >::const_iterator pos;
+  for (pos=_boundary_side_id.begin(); pos != _boundary_side_id.end(); ++pos)
+  {
+    const Elem* elem = (*pos).first;
+    unsigned short int side = (*pos).second.first;
+    short int bd_id = (*pos).second.second;
+
+    std::vector<const Elem*> family;
+    elem->active_family_tree_by_side(family, side);
+
+    for(unsigned int f=0; f<family.size(); ++f)
+    {
+      const Elem* family_elem = family[f];
+      AutoPtr<Elem> side_elem = family_elem->build_side(side);
+
+      for (unsigned int n=0; n<side_elem->n_nodes(); ++n)
+      {
+        const Node * node = side_elem->get_node(n);
+        node_region_map[node].insert(elem->subdomain_id());
+      }
+    }
+  }
+  assert(node_region_map.size() == _boundary_node_id.size());
 }
 
 
@@ -645,7 +769,7 @@ void BoundaryInfo::active_elem_with_boundary_id (std::vector<const Elem *>& el, 
       for(unsigned int n=0; n<family.size(); ++n)
       {
         if( pos->second.second == boundary_id )
-    {
+        {
           el.push_back (family[n]);
           sl.push_back (side);
         }
@@ -654,6 +778,35 @@ void BoundaryInfo::active_elem_with_boundary_id (std::vector<const Elem *>& el, 
     }
   }
 
+}
+
+void BoundaryInfo::active_elem_with_boundary_id (
+  std::map<short int, std::vector< std::pair<const Elem *, unsigned int> > > & boundary_elem_side_map ) const
+{
+  boundary_elem_side_map.clear();
+
+  std::multimap<const Elem*, std::pair<unsigned short int, short int> >::const_iterator pos;
+  for (pos=_boundary_side_id.begin(); pos != _boundary_side_id.end(); ++pos)
+  {
+    const Elem * elem = pos->first;
+    if (elem->active() )
+    {
+      boundary_elem_side_map[pos->second.second].push_back(std::make_pair(pos->first, pos->second.first));
+    }
+    // this element has child
+    else
+    {
+      unsigned short int side = pos->second.first;
+      std::vector<const Elem*> family;
+
+      elem->active_family_tree_by_side(family, side);
+
+      for(unsigned int n=0; n<family.size(); ++n)
+      {
+        boundary_elem_side_map[pos->second.second].push_back(std::make_pair(pos->first, pos->second.first));
+      }
+    }
+  }
 }
 
 
@@ -711,6 +864,56 @@ void BoundaryInfo::get_subdomains_bd_on(short int boundary_id, unsigned int & su
 }
 
 
+void BoundaryInfo::get_subdomains_bd_on( std::map<short int,  std::pair<unsigned int, unsigned int > > & boundary_subdomain_map ) const
+{
+  std::multimap<const Elem*, std::pair<unsigned short int, short int> >::const_iterator pos;
+
+  std::map<short int, std::set< unsigned int > > boundary_sub_ids;
+  for (pos=_boundary_side_id.begin(); pos != _boundary_side_id.end(); ++pos)
+  {
+    short int boundary_id = pos->second.second;
+
+    const Elem * elem = pos->first;
+    boundary_sub_ids[boundary_id].insert( elem->subdomain_id() );
+
+    // get the side
+    unsigned int side = pos->second.first;
+    const Elem * neighbor_elem = elem->neighbor(side);
+    if( neighbor_elem == NULL )
+      boundary_sub_ids[boundary_id].insert( invalid_uint );
+    else
+      boundary_sub_ids[boundary_id].insert( neighbor_elem->subdomain_id() );
+  }
+
+  // fatal error
+  std::map<short int, std::set< unsigned int > >::const_iterator boundary_sub_ids_it = boundary_sub_ids.begin();
+  std::map<short int, std::set< unsigned int > >::const_iterator boundary_sub_ids_it_end = boundary_sub_ids.end();
+  for(; boundary_sub_ids_it != boundary_sub_ids_it_end; ++boundary_sub_ids_it )
+  {
+    short int boundary_id = boundary_sub_ids_it->first;
+    const std::set< unsigned int > & sub_ids = boundary_sub_ids_it->second;
+    if( sub_ids.size() != 2 )
+    {
+      MESSAGE<<std::endl;
+      MESSAGE<<"Fatal Error: Genius assert that all the boundary faces (edges) with same"<<std::endl;
+      MESSAGE<<"boundary label should either be external boundary of a special region or"<<std::endl;
+      MESSAGE<<"interface between two regions."<<std::endl;
+      MESSAGE<<"However, the mesh boundary "<<get_label_by_id(boundary_id)<<" breaks this assert."<<std::endl;
+      MESSAGE<<"This boundary involves "<<sub_ids.size()<<" regions."<<std::endl;
+      MESSAGE<<"Please check the device mesh and try again."<<std::endl;
+      RECORD();
+      genius_error();
+    }
+    std::set< unsigned int >::const_iterator it = sub_ids.begin();
+    unsigned int sub_id1 = *it;
+    ++it;
+    unsigned int sub_id2 = *it;
+    boundary_subdomain_map[boundary_id] = std::make_pair(sub_id1, sub_id2);
+  }
+}
+
+
+
 void BoundaryInfo::get_boundary_ids_by_subdomain (unsigned int subdomain, std::set<short int> & bd_ids) const
   {
     bd_ids.clear();
@@ -758,6 +961,114 @@ void BoundaryInfo::get_subdomain_neighbors( unsigned int subdomain, std::vector<
     neighbor_subdomains.push_back(*it);
   }
 
+}
+
+
+std::set<short int> BoundaryInfo::get_ids_on_region_interface(unsigned int sub1, unsigned int sub2) const
+  {
+    std::set<short int> bds;
+    std::multimap<const Elem*, std::pair<unsigned short int, short int> >::const_iterator pos;
+    for (pos=_boundary_side_id.begin(); pos != _boundary_side_id.end(); ++pos)
+    {
+      const Elem * elem = pos->first;
+      if( elem->subdomain_id() != sub1) continue; // only consider elem on subdomain 1
+
+      // if my neighbor on subdomain 2, record it
+      const Elem * beighbor_elem = elem->neighbor(pos->second.first);
+      if(!beighbor_elem) continue;
+      if( beighbor_elem->subdomain_id() == sub2) bds.insert(pos->second.second);
+    }
+    return bds;
+  }
+
+
+void BoundaryInfo::find_neighbors()
+{
+
+  // Find neighboring elements by first finding elements
+  // with identical side keys and then check to see if they
+  // are neighbors
+
+  // data structures -- Use the unordered_multimap if available
+  typedef unsigned int                    key_type;
+  typedef std::pair<Elem*, unsigned char> val_type;
+  typedef std::pair<key_type, val_type>   key_val_pair;
+
+#if defined(HAVE_UNORDERED_MAP)
+  typedef std::unordered_multimap<key_type, val_type> map_type;
+#elif defined(HAVE_TR1_UNORDERED_MAP) || defined(HAVE_TR1_UNORDERED_MAP_WITH_STD_HEADER)
+  typedef std::tr1::unordered_multimap<key_type, val_type> map_type;
+#else
+  typedef std::multimap<key_type, val_type>  map_type;
+#endif
+
+  // A map from side keys to corresponding elements & side numbers
+  map_type side_to_elem_map;
+
+  std::multimap<const Elem*, std::pair<unsigned short int, short int> >::iterator el = _boundary_side_id.begin();
+  std::multimap<const Elem*, std::pair<unsigned short int, short int> >::iterator el_end = _boundary_side_id.end();
+  for (; el != el_end; ++el)
+  {
+   next_side:
+
+    Elem * element    = const_cast<Elem *>(el->first);
+    unsigned int side = el->second.first;
+    if (element->neighbor(side) == NULL)
+    {
+      // Get the key for the side of this element
+      const unsigned int key = element->key(side);
+
+      // Look for elements that have an identical side key
+      std::pair <map_type::iterator, map_type::iterator>
+      bounds = side_to_elem_map.equal_range(key);
+
+      // May be multiple keys, check all the possible
+      // elements which _might_ be neighbors.
+      if (bounds.first != bounds.second)
+      {
+        // Get the side for this element
+        const AutoPtr<DofObject> my_side(element->side(side));
+
+        // Look at all the entries with an equivalent key
+        while (bounds.first != bounds.second)
+        {
+          // Get the potential element
+          Elem* neighbor = bounds.first->second.first;
+
+          // Get the side for the neighboring element
+          const unsigned int ns = bounds.first->second.second;
+          const AutoPtr<DofObject> their_side(neighbor->side(ns));
+          //assert (my_side.get() != NULL);
+          //assert (their_side.get() != NULL);
+
+          // If found a match wbounds.firsth my side
+          if( *my_side == *their_side )
+          {
+            element->set_neighbor (side, neighbor);
+            neighbor->set_neighbor(ns, element);
+            side_to_elem_map.erase (bounds.first);
+            // get out of this nested crap
+            goto next_side;
+          }
+
+          ++bounds.first;
+        }
+      }
+
+      // didn't find a match...
+      // Build the map entry for this element
+      key_val_pair kvp;
+
+      kvp.first         = key;
+      kvp.second.first  = element;
+      kvp.second.second = side;
+
+      // use the lower bound as a hint for
+      // where to put it.
+      side_to_elem_map.insert (bounds.first,kvp);
+    }
+
+  }
 }
 
 

@@ -33,6 +33,9 @@ BOUNDARY ID=Cathode Type=Ohmic
 # load spice circuit netlist
 CIRCUIT NETLIST=diode_ckt.cir
 
+METHOD Type=DDML1 NS=Basic LS=MUMPS Damping=Potential
+SOLVE Type=equ
+
 
 Model  Region=Silicon H.Mob=false Mob.force=ESimple EB.level=tl
 METHOD Type=DDML1M  NS=Basic LS=GMRES PC=ILU Damping=Potential maxit=20 relative.tol=1e-4 toler.relax=1e-6 #Fermi=On

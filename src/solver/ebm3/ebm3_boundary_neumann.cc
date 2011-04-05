@@ -25,7 +25,7 @@
 #include "semiconductor_region.h"
 #include "conductor_region.h"
 #include "insulator_region.h"
-#include "boundary_condition.h"
+#include "boundary_condition_neumann.h"
 
 
 using PhysicalUnit::kb;
@@ -72,7 +72,7 @@ void NeumannBC::EBM3_Function(PetscScalar * x, Vec f, InsertMode &add_value_flag
     switch ( region->type() )
     {
     case SemiconductorRegion:
-    case ConductorRegion:
+    case ElectrodeRegion:
     case InsulatorRegion:
       {
 
@@ -142,7 +142,7 @@ void NeumannBC::EBM3_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_value_f
     switch ( region->type() )
     {
     case SemiconductorRegion:
-    case ConductorRegion:
+    case ElectrodeRegion:
     case InsulatorRegion:
       {
         //the indepedent variable number, we only need 1 here.

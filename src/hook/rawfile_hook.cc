@@ -76,7 +76,10 @@ void RawFileHook::on_init()
     {
       // if transient simulation, we need to record time
       if ( SolverSpecify::Type == SolverSpecify::TRANSIENT )
+      {
         _variables.push_back( std::pair<std::string, std::string>("time", "time") );
+        _variables.push_back( std::pair<std::string, std::string>("time_step", "time") );
+      }
 
       if( !_mixA )
       {
@@ -86,16 +89,40 @@ void RawFileHook::on_init()
         for(unsigned int n=0; n<bcs->n_bcs(); n++)
         {
           const BoundaryCondition * bc = bcs->get_bc(n);
-          // skip bc which is not electrode
-          if( !bc->is_electrode() ) continue;
-          //
-          std::string bc_label = bc->label();
-          if(!bc->electrode_label().empty())
-            bc_label = bc->electrode_label();
-          //  	
-          _variables.push_back( std::pair<std::string, std::string>(bc_label + "_Vapp", "voltage") );
-          _variables.push_back( std::pair<std::string, std::string>(bc_label + "_potential", "voltage")  );
-          _variables.push_back( std::pair<std::string, std::string>(bc_label + "_current", "current") );
+          // electrode
+          if( bc->is_electrode() )
+          {
+            std::string bc_label = bc->label();
+            if(!bc->electrode_label().empty())
+              bc_label = bc->electrode_label();
+
+            _variables.push_back( std::pair<std::string, std::string>(bc_label + "_Vapp", "voltage") );
+            _variables.push_back( std::pair<std::string, std::string>(bc_label + "_potential", "voltage")  );
+            _variables.push_back( std::pair<std::string, std::string>(bc_label + "_current", "current") );
+            continue;
+          }
+
+          if( bc->has_current_flow() )
+          {
+            std::string bc_label = bc->label();
+            _variables.push_back( std::pair<std::string, std::string>(bc_label + "_current", "current") );
+          }
+
+
+          if( bc->bc_type() == IF_Metal_Ohmic || bc->bc_type() == IF_Metal_Schottky)
+          {
+            std::string bc_label = bc->label();
+            _variables.push_back( std::pair<std::string, std::string>(bc_label + "_average_potential", "voltage") );
+          }
+
+          // charge integral interface
+          if( bc->bc_type() == ChargeIntegral )
+          {
+            std::string bc_label = bc->label();
+            _variables.push_back( std::pair<std::string, std::string>(bc_label + "_Q", "charge") );
+            _variables.push_back( std::pair<std::string, std::string>(bc_label + "_potential", "voltage")  );
+            continue;
+          }
         }
       }
       else
@@ -170,7 +197,10 @@ void RawFileHook::post_solve()
     {
       // if transient simulation, we need to record time
       if (SolverSpecify::Type == SolverSpecify::TRANSIENT)
+      {
         _values[i++].push_back( SolverSpecify::clock/PhysicalUnit::s );
+        _values[i++].push_back( SolverSpecify::dt/PhysicalUnit::s );
+      }
 
       if( !_mixA )
       {
@@ -179,12 +209,31 @@ void RawFileHook::post_solve()
         for(unsigned int n=0; n<bcs->n_bcs(); n++)
         {
           const BoundaryCondition * bc = bcs->get_bc(n);
-          // skip bc which is not electrode
-          if( !bc->is_electrode() ) continue;
+          // electrode
+          if( bc->is_electrode() )
+          {
+            _values[i++].push_back( bc->ext_circuit()->Vapp()/PhysicalUnit::V );
+            _values[i++].push_back( bc->ext_circuit()->potential()/PhysicalUnit::V );
+            _values[i++].push_back( bc->ext_circuit()->current()/PhysicalUnit::A );
+            continue;
+          }
 
-          _values[i++].push_back( bc->ext_circuit()->Vapp()/PhysicalUnit::V );
-          _values[i++].push_back( bc->ext_circuit()->potential()/PhysicalUnit::V );
-          _values[i++].push_back( bc->ext_circuit()->current()/PhysicalUnit::A );
+          if( bc->has_current_flow() )
+          {
+            _values[i++].push_back( bc->current()/PhysicalUnit::A );
+          }
+
+          if( bc->bc_type() == IF_Metal_Ohmic || bc->bc_type() == IF_Metal_Schottky)
+          {
+            _values[i++].push_back( bc->psi()/PhysicalUnit::V );
+          }
+
+          // charge integral interface
+          if( bc->bc_type() == ChargeIntegral )
+          {
+            _values[i++].push_back( bc->Qf()/PhysicalUnit::C );
+            _values[i++].push_back( bc->psi()/PhysicalUnit::V );
+          }
         }
       }
       else
@@ -251,13 +300,13 @@ void RawFileHook::on_close()
 
     switch (SolverSpecify::Type)
     {
-    case SolverSpecify::DCSWEEP :
-      _out << "Plotname: DC transfer characteristic" << std::endl; break;
-    case SolverSpecify::TRANSIENT :
-      _out << "Plotname: Transient Analysis" << std::endl; break;
-    case SolverSpecify::ACSWEEP   :
-      _out << "Plotname: AC small signal Analysis" << std::endl; break;
-    default: break;
+        case SolverSpecify::DCSWEEP :
+        _out << "Plotname: DC transfer characteristic" << std::endl; break;
+        case SolverSpecify::TRANSIENT :
+        _out << "Plotname: Transient Analysis" << std::endl; break;
+        case SolverSpecify::ACSWEEP   :
+        _out << "Plotname: AC small signal Analysis" << std::endl; break;
+        default: break;
     }
 
     _out <<  "Flags: real" << std::endl;

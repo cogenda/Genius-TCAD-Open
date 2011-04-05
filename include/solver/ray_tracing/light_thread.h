@@ -40,7 +40,7 @@ public:
 
   LightThread(const Point & p, const Point & dir, const Point & E_dir, double wavelength, double init_power, double power)
       :_p(p), _dir(dir.unit()), _E_dir(E_dir), _wavelength(wavelength),
-       _init_power(init_power), _power(power)
+      _init_power(init_power), _power(power)
   {
     hit_elem = NULL;
   }
@@ -80,25 +80,25 @@ public:
    * @return the start point of the light
    */
   const Point & start_point() const
-  { return _p; }
+    { return _p; }
 
   /**
    * @return the direction of the light
    */
   const Point & dir() const
-  { return _dir; }
+    { return _dir; }
 
   /**
    * @return the intial power
    */
   double init_power() const
-  { return _init_power; }
+    { return _init_power; }
 
   /**
    * @return light power
    */
   double power() const
-  { return _power; }
+    { return _power; }
 
   /**
    * writable reference to power
@@ -159,16 +159,24 @@ public:
         double refract_perpendicular = sin(2*in_angle)*sin(2*refract_angle)/pow(sin(in_angle+refract_angle),2);
         double refract_eff = refract_parallel*pow(cos(_polarization_angle),2)+refract_perpendicular*pow(sin(_polarization_angle),2);
 
-        Point _E_dir_reflect;
-        if(n2>n1)
-          _E_dir_reflect = (sqrt(reflect_parallel)*reflect_dir.cross(incident_plane.unit_normal()) - sqrt(reflect_perpendicular)*E_perpendicular).unit();
-        else
-          _E_dir_reflect = (sqrt(reflect_parallel)*reflect_dir.cross(incident_plane.unit_normal()) + sqrt(reflect_perpendicular)*E_perpendicular).unit();
+        LightThread * reflect_light = 0;
+        LightThread * refract_light = 0;
 
-        Point _E_dir_refract = (sqrt(refract_parallel)*refract_dir.cross(incident_plane.unit_normal()) + sqrt(refract_perpendicular)*E_perpendicular).unit();
+        if( reflect_eff >=1e-9 )
+        {
+          Point _E_dir_reflect;
+          if(n2>n1)
+            _E_dir_reflect = (sqrt(reflect_parallel)*reflect_dir.cross(incident_plane.unit_normal()) - sqrt(reflect_perpendicular)*E_perpendicular).unit();
+          else
+            _E_dir_reflect = (sqrt(reflect_parallel)*reflect_dir.cross(incident_plane.unit_normal()) + sqrt(reflect_perpendicular)*E_perpendicular).unit();
+          LightThread * reflect_light = new LightThread(in_p, reflect_dir, _E_dir_reflect, _wavelength, _init_power, reflect_eff*_power);
+        }
 
-        LightThread * reflect_light = new LightThread(in_p, reflect_dir, _E_dir_reflect, _wavelength, _init_power, reflect_eff*_power);
-        LightThread * refract_light = new LightThread(in_p, refract_dir, _E_dir_refract, _wavelength, _init_power, refract_eff*_power);
+        if( refract_eff >=1e-9 )
+        {
+          Point _E_dir_refract = (sqrt(refract_parallel)*refract_dir.cross(incident_plane.unit_normal()) + sqrt(refract_perpendicular)*E_perpendicular).unit();
+          LightThread * refract_light = new LightThread(in_p, refract_dir, _E_dir_refract, _wavelength, _init_power, refract_eff*_power);
+        }
 
         return std::make_pair(reflect_light, refract_light);
       }

@@ -31,11 +31,25 @@
 /*----------------------------------------------------------------------
  * constructor, open the file for writing
  */
-ProbeHook::ProbeHook(SolverBase & solver, const std::string & name, void * file)
-    : Hook(solver, name), _input_file((const char *)file), _probe_file(SolverSpecify::out_prefix + ".probe")
+ProbeHook::ProbeHook(SolverBase & solver, const std::string & name, void * param)
+    : Hook(solver, name), _probe_file(SolverSpecify::out_prefix + ".probe")
 {
   _p_solver = & solver;
   _p_fvm_node   = NULL;
+  _min_loc = invalid_uint;
+
+  const std::vector<Parser::Parameter> & parm_list = *((std::vector<Parser::Parameter> *)param);
+  for(std::vector<Parser::Parameter>::const_iterator parm_it = parm_list.begin();
+      parm_it != parm_list.end(); parm_it++)
+  {
+    if(parm_it->name() == "x" && parm_it->type() == Parser::REAL)
+      _pp(0)=parm_it->get_real() * PhysicalUnit::um;
+    if(parm_it->name() == "y" && parm_it->type() == Parser::REAL)
+      _pp(1)=parm_it->get_real() * PhysicalUnit::um;
+    if(parm_it->name() == "z" && parm_it->type() == Parser::REAL)
+      _pp(2)=parm_it->get_real() * PhysicalUnit::um;
+  }
+
 
   if ( !Genius::processor_id() )
     _out.open(_probe_file.c_str());
@@ -59,35 +73,19 @@ ProbeHook::~ProbeHook()
 void ProbeHook::on_init()
 {
 
-  Point pp(0,0,0);
-
-  std::vector<Parser::Parameter> parm_list = SolverSpecify::Hook_Parameters["probe"];
-  for(std::vector<Parser::Parameter>::iterator parm_it = parm_list.begin();
-      parm_it != parm_list.end(); parm_it++)
-  {
-    if(parm_it->name() == "x" && parm_it->type() == Parser::REAL)
-      pp(0)=parm_it->get_real() * PhysicalUnit::um;
-    if(parm_it->name() == "y" && parm_it->type() == Parser::REAL)
-      pp(1)=parm_it->get_real() * PhysicalUnit::um;
-    if(parm_it->name() == "z" && parm_it->type() == Parser::REAL)
-      pp(2)=parm_it->get_real() * PhysicalUnit::um;
-  }
-
   double min_dis = 1e100;
   for( unsigned int r=0; r<_p_solver->get_system().n_regions(); r++)
   {
     const SimulationRegion * region = _p_solver->get_system().region(r);
 
-    SimulationRegion::const_node_iterator node_it     = region->nodes_begin();
-    SimulationRegion::const_node_iterator node_it_end = region->nodes_end();
+    SimulationRegion::const_local_node_iterator node_it = region->on_local_nodes_begin();
+    SimulationRegion::const_local_node_iterator node_it_end = region->on_local_nodes_end();
     for(; node_it!=node_it_end; ++node_it)
     {
-
-      const FVM_Node * fvm_node = (*node_it).second;
+      const FVM_Node * fvm_node = *node_it;
       const Node * node = fvm_node->root_node();
-      if( !node->on_local() ) continue;
 
-      double dis = ((*node)-pp).size();
+      double dis = ((*node)-_pp).size();
       if(dis<min_dis)
       {
         min_dis = dis;
@@ -96,7 +94,7 @@ void ProbeHook::on_init()
     }
   }
 
-
+  // after this call, the _min_loc contains processor_id with minimal min_dis
   Parallel::min_loc(min_dis, _min_loc);
 
   double x,y,z;
@@ -199,6 +197,7 @@ void ProbeHook::post_solve()
     // set output width and format
     _out<< std::scientific << std::right;
 
+    //_out << std::setw(15) << SolverSpecify::clock;
     for(unsigned int i=0; i<var.size(); i++)
       _out << std::setw(15) << var[i];
 

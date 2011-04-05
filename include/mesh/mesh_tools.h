@@ -96,54 +96,71 @@ namespace MeshTools
    * Fills the vector "on_boundary" with flags that tell whether each node
    * is on the domain boundary (true)) or not (false).
    */
-  void find_boundary_nodes (const MeshBase& mesh,
-			    std::vector<bool>& on_boundary);
+  void find_boundary_nodes (const MeshBase& mesh, std::vector<bool>& on_boundary);
 
   /**
    * @returns two points defining a cartesian box that bounds the
    * mesh.  The first entry in the pair is the mininum, the second
    * is the maximim.
    */
-  BoundingBox
-  bounding_box (const MeshBase& mesh);
+  BoundingBox  bounding_box (const MeshBase& mesh);
 
   /**
    * Same, but returns a sphere instead of a box.
    */
-  Sphere
-  bounding_sphere (const MeshBase& mesh);
+  Sphere  bounding_sphere (const MeshBase& mesh);
 
   /**
    * @returns two points defining a cartesian box that bounds the
    * elements belonging to processor pid.  If no processor id is specified
    * the bounding box for the whole mesh is returned.
    */
-  BoundingBox
-  processor_bounding_box (const MeshBase& mesh,
-			  const unsigned int pid = invalid_uint);
+  BoundingBox  processor_bounding_box (const MeshBase& mesh, const unsigned int pid = invalid_uint);
 
   /**
    * Same, but returns a sphere instead of a box.
    */
-  Sphere
-  processor_bounding_sphere (const MeshBase& mesh,
-			     const unsigned int pid = invalid_uint);
+  Sphere  processor_bounding_sphere (const MeshBase& mesh, const unsigned int pid = invalid_uint);
 
   /**
    * @returns two points defining a Cartesian box that bounds the
    * elements belonging to subdomain sid.  If no subdomain id is specified
    * the bounding box for the whole mesh is returned.
    */
-  std::pair<Point, Point>
-  subdomain_bounding_box (const MeshBase& mesh,
-			  const unsigned int sid = invalid_uint);
+  std::pair<Point, Point>  subdomain_bounding_box (const MeshBase& mesh, const unsigned int sid = invalid_uint);
 
   /**
    * Same, but returns a sphere instead of a box.
    */
-  Sphere
-  subdomain_bounding_sphere (const MeshBase& mesh,
-			     const unsigned int pid = invalid_uint);
+  Sphere  subdomain_bounding_sphere (const MeshBase& mesh, const unsigned int pid = invalid_uint);
+
+  /**
+   * @return true iff p inside bounding box b
+   */
+  bool in_bounding_box(const std::pair<Point, Point> &b, const Point &p);
+
+
+  /**
+   * @return true iff projected point of p in dim d inside bounding box b
+   */
+  bool in_bounding_box(const std::pair<Point, Point> &b, const Point &p, unsigned int d);
+
+  /**
+   * create the 8 points of bounding_box
+   */
+  void fill_bounding_box(const std::pair<Point, Point> &b, std::vector<Point> &points);
+
+
+  /**
+   * @return the minimal distance between bounding box b and point p
+   * the distance is positive when p outside the box, negative otherwise
+   */
+  Real minimal_distance(const std::pair<Point, Point> &b, const Point & p);
+
+  /**
+   * @return the minimal distance between bounding box b1 and b2
+   */
+  Real minimal_distance(const std::pair<Point, Point> &b1, const std::pair<Point, Point> & b2);
 
 
   /**

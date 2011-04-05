@@ -27,12 +27,11 @@
 #include "silvaco.h"
 #include "silvaco_io.h"
 
-#include "mesh.h"
+#include "mesh_base.h"
 #include "boundary_info.h"
 #include "mesh_communication.h"
+#include "simulation_region.h"
 #include "parallel.h"
-#include "simulation_system.h"
-#include "show_mesh_2d.h"
 
 
 using PhysicalUnit::cm;
@@ -61,7 +60,7 @@ void STIFIO::read (const std::string& filename)
    * after that, we fill mesh structure with mesh information read from TIF
    */
   SimulationSystem & system = FieldInput<SimulationSystem>::system();
-  Mesh & mesh = system.mesh();
+  MeshBase & mesh = system.mesh();
 
   // clear the system
   system.clear();
@@ -194,8 +193,8 @@ void STIFIO::read (const std::string& filename)
     // get all the boundary element
     mesh.boundary_info->build_side_list (elems, sides, bds);
 
-    //build neighbor information for mesh. then elem->neighbor() is functional
-    mesh.find_neighbors();
+    //build neighbor information for boundary element. then elem->neighbor() is functional
+    mesh.boundary_info->find_neighbors();
 
     for (size_t nbd=0; nbd<elems.size(); nbd++ )
     {
@@ -337,17 +336,15 @@ void STIFIO::read (const std::string& filename)
     {
     case SemiconductorRegion :
       {
-        SimulationRegion::node_iterator node_it = region->nodes_begin();
-        SimulationRegion::node_iterator node_it_end = region->nodes_end();
+        SimulationRegion::local_node_iterator node_it = region->on_local_nodes_begin();
+        SimulationRegion::local_node_iterator node_it_end = region->on_local_nodes_end();
         for(; node_it!=node_it_end; ++node_it)
         {
-          FVM_Node * fvm_node = (*node_it).second;
-          if( !fvm_node->root_node()->on_local() ) continue;
-
+          FVM_Node * fvm_node = (*node_it);
           FVM_NodeData * node_data = fvm_node->node_data();  genius_assert(node_data);
 
           // tif_node_index is the index in TIF file that this FVM node has
-          int tif_node_index = node_id_to_tif_index_map[(*node_it).first];
+          int tif_node_index = node_id_to_tif_index_map[fvm_node->root_node()->id()];
           // however, one TIF node may has several solution data when it lies on region interface, we should find corrent
           // solution data for this region which has the same material string as this region.
           std::pair<Solution_It, Solution_It> sol_it_pair = solution_map.equal_range(tif_node_index);
@@ -373,12 +370,16 @@ void STIFIO::read (const std::string& filename)
         region->init(system.T_external());
         break;
       }
-    case ConductorRegion     :
+    case ElectrodeRegion     :
       {
         region->init(system.T_external());
         break;
       }
-
+    case MetalRegion    :
+      {
+        region->init(system.T_external());
+        break;
+      }
     case VacuumRegion        :
       {
         region->init(system.T_external());

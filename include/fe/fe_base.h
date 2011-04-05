@@ -135,18 +135,18 @@ public:
    * the \p side of the element \p elem.  The \p tolerance paremeter
    * is passed to the involved call to \p inverse_map().
    */
-  //virtual void reinit (const Elem* elem,
-    //         const unsigned int side,
-    //         const Real tolerance = TOLERANCE) = 0;
+  virtual void reinit (const Elem* elem,
+             const unsigned int side,
+             const Real tolerance = TOLERANCE) = 0;
 
   /**
    * Reinitializes all the physical element-dependent data based on
    * the \p edge of the element \p elem.  The \p tolerance paremeter
    * is passed to the involved call to \p inverse_map().
    */
-  //virtual void edge_reinit (const Elem* elem,
-    //              const unsigned int edge,
-    //          const Real tolerance = TOLERANCE) = 0;
+  virtual void edge_reinit (const Elem* elem,
+                  const unsigned int edge,
+                  const Real tolerance = TOLERANCE) = 0;
 
   /**
    * @returns true if the point p is located on the reference element
@@ -155,9 +155,9 @@ public:
    * indicate a tolerance.  For example, \f$ x \le 1 \f$  becomes
    * \f$ x \le 1 + \epsilon \f$.
    */
-  //static bool on_reference_element(const Point& p,
-    //             const ElemType t,
-    //             const Real eps = TOLERANCE);
+  static bool on_reference_element(const Point& p,
+                 const ElemType t,
+                 const Real eps = TOLERANCE);
 
 #ifdef ENABLE_AMR
 
@@ -515,13 +515,13 @@ public:
   /**
    * @returns the continuity level of the finite element.
    */
-  //virtual FEContinuity get_continuity() const = 0;
+  virtual FEContinuity get_continuity() const = 0;
 
   /**
    * @returns true if the finite element's higher order shape functions are
    * hierarchic
    */
-  //virtual bool is_hierarchic() const = 0;
+  virtual bool is_hierarchic() const = 0;
 
   /**
    * @returns the finite element family of this element.

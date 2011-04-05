@@ -53,6 +53,11 @@ public:
   virtual int create_solver();
 
   /**
+   * virtual functions, prepare solution and aux variables used by this solver
+   */
+  virtual int set_variables();
+
+  /**
    * virtual function, do the solve process
    */
   virtual int solve();
@@ -66,6 +71,12 @@ public:
    * do post-process after each solve action
    */
   virtual int post_solve_process();
+
+  /**
+   * virtual function, write solver intermediate data into system
+   * It can be used to monitor the field data evolution during solve action
+   */
+  virtual void flush_system();
 
   /**
    * load previous state into solution vector
@@ -93,7 +104,8 @@ public:
       }
       //dofs for insulator/conductor node
       case InsulatorRegion     :
-      case ConductorRegion     :
+      case ElectrodeRegion     :
+      case MetalRegion         :
       switch(region->get_advanced_model()->EB_Level)
       {
         case ModelSpecify::NONE :
@@ -120,6 +132,7 @@ public:
       case SchottkyContact   :
       case SimpleGateContact :
       case GateContact       :
+      case SolderPad         :
       case ChargedContact    :
       case InterConnect      : return 1; // the above bcs has one extra equation
       // others, no extra bc equation
@@ -137,6 +150,7 @@ public:
       case OhmicContact      :
       case SchottkyContact   :
       case SimpleGateContact :
+      case SolderPad         :
       case GateContact       :  return 2; // the above bc equation has a max bandwidth of 2
       case ChargedContact    :  return 1; // this bc equation has a bandwidth of 1
       case InterConnect      :  return bc->inter_connect().size()+1;
@@ -156,6 +170,7 @@ public:
       case SchottkyContact   : return 1; // displacement current
       case SimpleGateContact : return 1; // displacement current
       case GateContact       : return 1; // displacement current
+      case SolderPad         : return 1; // conductance current
       case ChargedContact    : return 1; // for electrostatic Gauss's law
       default: return 0;
     }
@@ -173,7 +188,8 @@ public:
     {
       case SemiconductorRegion : return true;
       case InsulatorRegion     : return false;
-      case ConductorRegion     : return false;
+      case ElectrodeRegion     : return false;
+      case MetalRegion         : return false;
       default : return false;
     }
   }
@@ -197,18 +213,16 @@ public:
   /**
    * function for line search post check. do Newton damping here
    */
-  virtual void sens_line_search_post_check(Vec x, Vec y, Vec w, PetscTruth *changed_y, PetscTruth *changed_w)
+  virtual void sens_line_search_post_check(Vec x, Vec y, Vec w, PetscBool *changed_y, PetscBool *changed_w)
   {
-
     switch( SolverSpecify::Damping )
     {
-      case SolverSpecify::DampingPotential : potential_damping(x, y, w, changed_y, changed_w); return;
-      case SolverSpecify::DampingBankRose  : bank_rose_damping(x, y, w, changed_y, changed_w); return;
-      case SolverSpecify::DampingNo        : positive_density_damping(x, y, w, changed_y, changed_w); return;
+      case SolverSpecify::DampingPotential : potential_damping(x, y, w, changed_y, changed_w); break;
+      case SolverSpecify::DampingBankRose  : bank_rose_damping(x, y, w, changed_y, changed_w); break;
+      case SolverSpecify::DampingNo        : positive_density_damping(x, y, w, changed_y, changed_w); break;
       default: positive_density_damping(x, y, w, changed_y, changed_w);
     }
-
-    return;
+    FVM_NonlinearSolver::sens_line_search_post_check(x, y, w, changed_y, changed_w);
   }
 
   /**
@@ -231,17 +245,17 @@ private:
   /**
    * Potential Newton damping scheme
    */
-  void potential_damping(Vec x, Vec y, Vec w, PetscTruth *changed_y, PetscTruth *changed_w);
+  void potential_damping(Vec x, Vec y, Vec w, PetscBool *changed_y, PetscBool *changed_w);
 
   /**
    * Bank-Rose Newton damping scheme
    */
-  void bank_rose_damping(Vec x, Vec y, Vec w, PetscTruth *changed_y, PetscTruth *changed_w);
+  void bank_rose_damping(Vec x, Vec y, Vec w, PetscBool *changed_y, PetscBool *changed_w);
 
   /**
    * Positive carrier density Newton damping scheme
    */
-  void positive_density_damping(Vec x, Vec y, Vec w, PetscTruth *changed_y, PetscTruth *changed_w);
+  void positive_density_damping(Vec x, Vec y, Vec w, PetscBool *changed_y, PetscBool *changed_w);
 };
 
 

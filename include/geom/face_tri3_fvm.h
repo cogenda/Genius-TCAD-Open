@@ -77,11 +77,21 @@ public:
     { return _fvm_node[i]; }
 
   /**
+   * @returns the pointer to local \p FVM_Node \p i on side \p s.
+   */
+  virtual FVM_Node * get_side_fvm_node(const unsigned int s, const unsigned int i) const
+  { return _fvm_node[side_nodes_map[s][i]]; }
+
+  /**
    * set the \p ith FVM_Node pointer.
    */
   virtual void hold_fvm_node(const unsigned int i, FVM_Node *pn)
   { _fvm_node[i] = pn; }
 
+  /**
+   * @returns a proxy element coincident with side \p i.
+   */
+  virtual AutoPtr<Elem> build_fvm_side (const unsigned int i, bool proxy=true) const;
 
   /**
    * @return the gradient of input variable in the cell
@@ -136,6 +146,25 @@ public:
   virtual Real partial_volume_with_edge(unsigned int e) const
     { return 0.5*d[e]*l[e]; }
 
+
+  /**
+   * @return the edge associated truncated partial (length/area) of the geometric element with local edge index.
+   */
+  virtual Real partial_area_with_edge_truncated(unsigned int e) const
+  { return dt[e]; }
+
+  /**
+   * @return the edge associated truncated partial (area/volume) of the geometric element with local edge index.
+   */
+  virtual Real partial_volume_with_edge_truncated(unsigned int e) const
+  { return 0.5*dt[e]*l[e]; }
+
+
+  /**
+   * calculate geom information for fvm usage
+   */
+  virtual void prepare_for_fvm();
+
   // For FVM usage, we need more Geom information of a TRI3
 private:
 
@@ -160,7 +189,12 @@ private:
   Real d[3]; // 3- side index
 
   /**
-   * the length of the edge
+   * the truncated distance of circumcircle center to each side (between center and side center)
+   */
+  Real dt[3]; // 3- side index
+
+  /**
+   * the edge length
    */
   Real l[3]; // 3- side index
 
@@ -174,11 +208,6 @@ private:
    * the volume of TRI3, store this vlaue for efficiency reason
    */
   Real vol;
-
-  /**
-   * calculate geom information for fvm usage
-   */
-  virtual void prepare_for_fvm();
 
   /**
    * precomputed matrix inv[A^T.A].A^T for fast vector reconstruct computation

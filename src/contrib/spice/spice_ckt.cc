@@ -24,18 +24,25 @@
 
 #include "genius_env.h"
 #include "genius_common.h"
-#include "log.h"
-#include "spice_ckt.h"
-#include "parallel.h"
-#include "ngspice_interface.h"
-#include "spdefs.h"
-
 
 #ifdef CYGWIN
+  #include <Windows.h>
+  #undef max
+  #undef min
   #define LDFUN GetProcAddress
 #else
+  #include <dlfcn.h>
   #define LDFUN dlsym
 #endif
+
+#include "log.h"
+#include "spice_ckt.h"
+#include "ngspice_interface.h"
+#include "spdefs.h"
+#include "spice_ckt_define.h"
+#include "parallel.h"
+
+
 
 SPICE_CKT::SPICE_CKT(const std::string & ckt_file)
     : _ckt_file(ckt_file)
@@ -98,6 +105,7 @@ SPICE_CKT::SPICE_CKT(const std::string & ckt_file)
     node.is_electrode = 0;
     _node_info_array.push_back(node);
   }
+  _solution.resize(_n_nodes, 0.0);
 
   // get ndev electrode
   unsigned int (*n_electrode)();
@@ -271,6 +279,16 @@ void SPICE_CKT::sync()
 }
 
 
+
+void SPICE_CKT::set_ckt_mode(long mode, bool reset)
+{
+  if(reset)
+    *_ckt_mode = (*_ckt_mode & MODEUIC) | mode;
+  else
+    *_ckt_mode = mode;
+}
+
+
 double SPICE_CKT::rhs(unsigned int n) const
 {
   assert(Genius::is_last_processor());
@@ -297,6 +315,18 @@ double & SPICE_CKT::rhs_old(unsigned int n)
   assert(Genius::is_last_processor());
   return  (*_p_rhs_old)[n];
 }
+
+
+void SPICE_CKT::set_uic(bool uic)
+{
+  if(uic)
+    (*_ckt_mode) |= 0x100000;
+  else
+    (*_ckt_mode) &= ~0x100000;
+}
+
+long SPICE_CKT::uic()
+{ return (*_ckt_mode) & MODEUIC; }
 
 
 void SPICE_CKT::set_temperature(double temp)
@@ -708,5 +738,24 @@ double SPICE_CKT::ckt_residual_norm2() const
   }
 
   return sqrt(norm2);
+}
+
+
+
+double SPICE_CKT::ckt_gmin() const
+{
+  double (*gmin) ();
+  gmin = (double (*)())LDFUN(dll_file,"ngspice_gmin");
+  assert(gmin);
+  return gmin();
+}
+
+
+void SPICE_CKT::ckt_set_gmin(double gmin)
+{
+  void (*set_gmin) (double);
+  set_gmin = (void (*)(double))LDFUN(dll_file,"ngspice_set_gmin");
+  assert(set_gmin);
+  set_gmin(gmin);
 }
 

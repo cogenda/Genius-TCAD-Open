@@ -123,6 +123,33 @@ Array1D<T> operator*(const Array1D<T> &A, const Array1D<T> &B)
 	}
 }
 
+template <class T>
+    Array1D<T> operator*(const Array1D<T> &A, const T scale)
+{
+  int n = A.dim1();
+  Array1D<T> C(n);
+
+  for (int i=0; i<n; i++)
+  {
+    C[i] = A[i] * scale;
+  }
+  return C;
+}
+
+
+template <class T>
+    Array1D<T> operator*(const T scale, const Array1D<T> &A)
+{
+  int n = A.dim1();
+  Array1D<T> C(n);
+
+  for (int i=0; i<n; i++)
+  {
+     C[i] = A[i] * scale;
+  }
+  return C;
+}
+
 
 template <class T>
 Array1D<T> operator/(const Array1D<T> &A, const Array1D<T> &B)

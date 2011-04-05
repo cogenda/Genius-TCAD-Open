@@ -25,7 +25,7 @@
 // inline function for discrete drift-diffusion equation with SG scheme
 
 
-#include "petsc.h"
+
 #include "mathfunc.h"
 
 

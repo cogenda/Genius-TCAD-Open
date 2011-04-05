@@ -29,44 +29,11 @@
 
 #include "config.h"
 
-//for dll support
+//for windows dll support
 #ifdef CYGWIN
-  #include <Windows.h>
-  #undef max
-  #undef min
-#else
-  #include <dlfcn.h>
+  class HINSTANCE__; // Forward or never
+  typedef HINSTANCE__* HINSTANCE;
 #endif
-
-/* defines for CKTmode */
-
-/* old 'mode' parameters */
-#define MODE 0x3
-#define MODETRAN 0x1
-#define MODEAC 0x2
-
-/* old 'modedc' parameters */
-#define MODEDC 0x70
-#define MODEDCOP 0x10
-#define MODETRANOP 0x20
-#define MODEDCTRANCURVE 0x40
-
-/* old 'initf' parameters */
-#define INITF 0x3f00
-#define MODEINITFLOAT 0x100
-#define MODEINITJCT 0x200
-#define MODEINITFIX 0x400
-#define MODEINITSMSIG 0x800
-#define MODEINITTRAN 0x1000
-#define MODEINITPRED 0x2000
-
-/* old 'nosolv' paramater */
-#define MODEUIC 0x10000l
-
-/* known integration methods */
-#define TRAPEZOIDAL 1
-#define GEAR 2
-
 
 class BoundaryCondition;
 
@@ -281,13 +248,7 @@ public:
   /**
    * set circuit mode
    */
-  void set_ckt_mode(long mode, bool reset=true)
-  {
-    if(reset)
-      *_ckt_mode = (*_ckt_mode & MODEUIC) | mode;
-    else
-      *_ckt_mode = mode;
-  }
+  void set_ckt_mode(long mode, bool reset=true);
 
   /**
    * change the CKTMode during iteration
@@ -419,11 +380,16 @@ public:
    */
   void prepare_ckt_state_first_time();
 
+
+  /**
+   * set UIC flag to true
+   */
+  void set_uic(bool);
+
   /**
    * @return true if UIC required
    */
-  long uic()
-  { return (*_ckt_mode) & MODEUIC; }
+  long uic();
 
 
   void exchange_rhs()
@@ -443,8 +409,8 @@ public:
   { _rotate_state_vectors(); }
 
  /**
-   * load circuit, and reorder the matrix
-   */
+  * load circuit, and reorder the matrix
+  */
   int circuit_load()
   {
     return _circuit_load();
@@ -457,6 +423,20 @@ public:
    * reorder the matrix, must call it in parallel
    */
   int smp_preorder();
+
+
+  //---------------------------------------------------------------
+
+  /**
+   * gmin used in ckt
+   */
+  double ckt_gmin() const;
+
+
+  /**
+   * gmin used in ckt
+   */
+  void ckt_set_gmin(double );
 
 private:
 

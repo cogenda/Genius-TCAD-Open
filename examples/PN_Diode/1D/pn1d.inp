@@ -1,0 +1,51 @@
+#==============================================================================
+# Genius example: 1D PN Diode simulation
+#==============================================================================
+
+
+
+GLOBAL    T=300 DopingScale=1e19  Z.Width=1.0
+
+#------------------------------------------------------------------------------
+# Create an initial simulation mesh
+MESH      Type = S_Quad4
+
+X.MESH    WIDTH=1.0   N.SPACES=3
+
+Y.MESH    DEPTH=2.0  N.SPACES=10
+Y.MESH    DEPTH=1.0  N.SPACES=30
+Y.MESH    DEPTH=2.0  N.SPACES=10
+
+
+#------------------------------------------------------------------------------
+# Specify silicon and metal regions.
+REGION    Label=Silicon  Material=Si
+
+# Specify boundary face
+FACE      Label=Anode    Location=TOP
+FACE      Label=Cathode  Location=BOT
+
+#------------------------------------------------------------------------------
+# doping profile
+DOPING Type=Analytic
+PROFILE   Type=Uniform    Ion=Donor     N.PEAK=1E18  X.MIN=0.0 X.MAX=1.0  \
+          Y.min=0.0 Y.max=3.0
+
+PROFILE   Type=Analytic   Ion=Acceptor  N.PEAK=1E19  X.MIN=0.0 X.MAX=1.0  \
+	  Y.min=0.0 Y.max=0.0 Y.JUNCTION=2.5
+
+#------------------------------------------------------------------------------
+# boundary condition
+BOUNDARY ID=Anode   Type=Ohmic
+BOUNDARY ID=Cathode Type=Ohmic
+
+MODEL region=Silicon Fermi=On
+
+METHOD Type=Poisson
+SOLVE
+
+# get initial condition by poisson's equation
+METHOD    Type=DDML1 NS=Basic LS=MUMPS maxit=100
+SOLVE Type=equ
+
+EXPORT VTK=pn1d.vtu

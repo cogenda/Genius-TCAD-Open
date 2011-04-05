@@ -378,6 +378,7 @@ void MeshCommunication::broadcast_mesh (MeshBase&) const
 
           elem->set_node(n) = mesh.node_ptr (conn[cnt++]);
         }
+        elem->prepare_for_fvm();
       } // end while cnt < conn.size
 
       // Iterate in ascending elem ID order
@@ -430,6 +431,9 @@ void MeshCommunication::broadcast_mesh (MeshBase&) const
         mesh.set_subdomain_material(n_sub, material);
     }
   } // Done distribut subdomain information
+
+  // now we have serial mesh
+  mesh.set_serial(true);
 
   STOP_LOG("broadcast_mesh()","MeshCommunication");
 
@@ -521,22 +525,22 @@ void MeshCommunication::broadcast_bcs (MeshBase&,
   }
 
 
-  // distribut boundary ids
+  // distribute boundary ids
   std::set<short int> boundary_ids;
   if (Genius::processor_id() == 0)
-    boundary_ids = mesh.boundary_info->get_boundary_ids();
+    boundary_ids = boundary_info.get_boundary_ids();
   Parallel::broadcast (boundary_ids);
 
-  // distribut boundary labels
+  // distribute boundary labels
   for(std::set<short int>::iterator it=boundary_ids.begin(); it!=boundary_ids.end(); ++it)
-    {
+  {
       std::string label;
       std::string description;
 
       if (Genius::processor_id() == 0)
       {
-        label = mesh.boundary_info->get_label_by_id(*it);
-        description = mesh.boundary_info->get_description_by_id(*it);
+        label = boundary_info.get_label_by_id(*it);
+        description = boundary_info.get_description_by_id(*it);
       }
 
       Parallel::broadcast (label);
@@ -544,14 +548,24 @@ void MeshCommunication::broadcast_bcs (MeshBase&,
 
       if (Genius::processor_id() != 0)
       {
-        mesh.boundary_info->set_label_to_id(*it, label);
+        boundary_info.set_label_to_id(*it, label);
         if( !description.empty() )
-          mesh.boundary_info->set_description_to_id(*it, description);
+          boundary_info.set_description_to_id(*it, description);
       }
+  }
+
+  // distribute extra boundary descriptions
+  {
+    std::vector<std::string> & extra_descriptions = boundary_info.extra_descriptions();
+    unsigned int n_extra_descriptions = extra_descriptions.size();
+    Parallel::broadcast(n_extra_descriptions);
+    if (Genius::processor_id() != 0)
+      extra_descriptions.resize(n_extra_descriptions);
+    for(unsigned int n=0; n<n_extra_descriptions; ++n)
+    {
+      Parallel::broadcast(extra_descriptions[n]);
     }
-
-  // Done distribut subdomain information
-
+  }
 
   // Build up the list of nodes with boundary conditions
   {

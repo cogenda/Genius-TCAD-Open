@@ -110,6 +110,7 @@ int Pattern::save_to_XML(const std::string &fname) const
   return rc;
 }
 
+
 int Pattern::get_from_XML(const std::string & fname)
 {
   mxml_node_t *root;
@@ -132,6 +133,7 @@ int Pattern::get_from_XML(const std::string & fname)
     _pattern_card_map.insert(std::pair<std::string, PatternCard>(cmd._key, cmd));
   }
 
+  mxmlRelease(root);
   fclose(file);
 
   if (parser._errors.empty())
@@ -178,8 +180,9 @@ Parameter DomPatternParser::parseParameter(mxml_node_t* node)
   {
     for (mxml_node_t *ne = mxmlFindElement(node, node, "enum", NULL, NULL, MXML_DESCEND_FIRST);
          ne != NULL; ne = mxmlFindElement(ne, node, "enum", NULL, NULL, MXML_NO_DESCEND))
+    {
       param.add_string_pattern(getElementText(ne));
-
+    }
     std::string strDefault = getElementAttr(node, "default");
 
     if (!strDefault.empty())

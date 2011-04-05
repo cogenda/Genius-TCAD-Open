@@ -23,7 +23,7 @@
 
 #include "simulation_system.h"
 #include "semiconductor_region.h"
-#include "boundary_condition.h"
+#include "boundary_condition_homo.h"
 #include "petsc_utils.h"
 
 using PhysicalUnit::kb;
@@ -34,17 +34,91 @@ using PhysicalUnit::e;
 //----------------Function and Jacobian evaluate---------------------//
 ///////////////////////////////////////////////////////////////////////
 
+/*---------------------------------------------------------------------
+ * do pre-process to function for DDML1 solver
+ */
+void HomoInterfaceBC::DDM1_Function_Preprocess(Vec f, std::vector<PetscInt> &src_row,
+                                               std::vector<PetscInt> &dst_row, std::vector<PetscInt> &clear_row)
+{
+  // search for all the node with this boundary type
+  BoundaryCondition::const_node_iterator node_it = nodes_begin();
+  BoundaryCondition::const_node_iterator end_it = nodes_end();
+  for(; node_it!=end_it; ++node_it )
+  {
+    // skip node not belongs to this processor
+    if( (*node_it)->processor_id()!=Genius::processor_id() ) continue;
+
+    // buffer for saving regions and fvm_nodes this *node_it involves
+    std::vector<const FVM_Node *> fvm_nodes;
+
+    // search all the fvm_node which has *node_it as root node, these fvm_nodes have the same location in geometry,
+    // but belong to different regions in logic.
+    BoundaryCondition::region_node_iterator  rnode_it     = region_node_begin(*node_it);
+    BoundaryCondition::region_node_iterator  end_rnode_it = region_node_end(*node_it);
+    for(unsigned int i=0 ; rnode_it!=end_rnode_it; ++i, ++rnode_it  )
+    {
+      const SimulationRegion * region = (*rnode_it).second.first;
+      const FVM_Node * fvm_node = (*rnode_it).second.second;
+
+      fvm_nodes.push_back( fvm_node );
+
+      // the first semiconductor region
+      if(i==0) continue;
+
+      // other semiconductor region
+      else
+      {
+        switch( region->type() )
+        {
+          case SemiconductorRegion :
+          {
+              // record the source row and dst row
+            src_row.push_back(fvm_nodes[i]->global_offset()+0);
+            src_row.push_back(fvm_nodes[i]->global_offset()+1);
+            src_row.push_back(fvm_nodes[i]->global_offset()+2);
+
+            dst_row.push_back(fvm_nodes[0]->global_offset()+0);
+            dst_row.push_back(fvm_nodes[0]->global_offset()+1);
+            dst_row.push_back(fvm_nodes[0]->global_offset()+2);
+
+            clear_row.push_back(fvm_nodes[i]->global_offset()+0);
+            clear_row.push_back(fvm_nodes[i]->global_offset()+1);
+            clear_row.push_back(fvm_nodes[i]->global_offset()+2);
+            break;
+          }
+          case InsulatorRegion:
+          {
+              // record the source row and dst row
+            src_row.push_back(fvm_nodes[i]->global_offset()+0);
+            dst_row.push_back(fvm_nodes[0]->global_offset()+0);
+            clear_row.push_back(fvm_nodes[i]->global_offset()+0);
+            break;
+          }
+          default: genius_error();
+        }
+      }
+
+    }
+  }
+}
+
+
 
 /*---------------------------------------------------------------------
  * build function and its jacobian for DDML1 solver
  */
 void HomoInterfaceBC::DDM1_Function(PetscScalar * x, Vec f, InsertMode &add_value_flag)
 {
-  // buffer for Vec location
-  std::vector<PetscInt> src_row;
-  std::vector<PetscInt> dst_row;
+  // note, we will use ADD_VALUES to set values of vec f
+  // if the previous operator is not ADD_VALUES, we should assembly the vec
+  if( (add_value_flag != ADD_VALUES) && (add_value_flag != NOT_SET_VALUES) )
+  {
+    VecAssemblyBegin(f);
+    VecAssemblyEnd(f);
+  }
 
   // buffer for Vec value
+  std::vector<PetscInt> iy;
   std::vector<PetscScalar> y_new;
 
   // search for all the node with this boundary type
@@ -68,7 +142,6 @@ void HomoInterfaceBC::DDM1_Function(PetscScalar * x, Vec f, InsertMode &add_valu
     {
       const SimulationRegion * region = (*rnode_it).second.first;
       const FVM_Node * fvm_node = (*rnode_it).second.second;
-      if(!fvm_node->is_valid()) continue;
 
       regions.push_back( region );
       fvm_nodes.push_back( fvm_node );
@@ -76,6 +149,7 @@ void HomoInterfaceBC::DDM1_Function(PetscScalar * x, Vec f, InsertMode &add_valu
       // the first semiconductor region
       if(i==0)
       {
+        genius_assert( regions[0]->type() == SemiconductorRegion );
         // do nothing.
         // however, we will add fvm integral of other regions to it.
       }
@@ -83,55 +157,59 @@ void HomoInterfaceBC::DDM1_Function(PetscScalar * x, Vec f, InsertMode &add_valu
       // other semiconductor region
       else
       {
+        switch( region->type() )
+        {
+            case SemiconductorRegion :
+            {
+              // the governing equation of this fvm node
 
-        // record the source row and dst row
-        src_row.push_back(fvm_nodes[i]->global_offset()+0);
-        src_row.push_back(fvm_nodes[i]->global_offset()+1);
-        src_row.push_back(fvm_nodes[i]->global_offset()+2);
+              PetscScalar V = x[fvm_nodes[i]->local_offset()+0];  // psi of this node
+              PetscScalar n = x[fvm_nodes[i]->local_offset()+1];  // electron density
+              PetscScalar p = x[fvm_nodes[i]->local_offset()+2];  // hole density
 
-        const FVM_Node * ghost_fvm_node = fvm_nodes[0];
+              PetscScalar V_semi = x[fvm_nodes[0]->local_offset()+0];
+              PetscScalar n_semi = x[fvm_nodes[0]->local_offset()+1];  // electron density
+              PetscScalar p_semi = x[fvm_nodes[0]->local_offset()+2];  // hole density
 
-        dst_row.push_back(ghost_fvm_node->global_offset()+0);
-        dst_row.push_back(ghost_fvm_node->global_offset()+1);
-        dst_row.push_back(ghost_fvm_node->global_offset()+2);
+              // the solution value of this node is equal to corresponding node value in the first semiconductor region
+              PetscScalar ff1 = V - V_semi;
+              PetscScalar ff2 = n - n_semi;
+              PetscScalar ff3 = p - p_semi;
 
-        // the ghost node should have the same processor_id with me
-        genius_assert(fvm_nodes[i]->root_node()->processor_id() == ghost_fvm_node->root_node()->processor_id() );
+              iy.push_back(fvm_nodes[i]->global_offset()+0);
+              iy.push_back(fvm_nodes[i]->global_offset()+1);
+              iy.push_back(fvm_nodes[i]->global_offset()+2);
+              y_new.push_back(ff1);
+              y_new.push_back(ff2);
+              y_new.push_back(ff3);
 
-        // the governing equation of this fvm node
+              break;
+            }
+            case InsulatorRegion:
+            {
+              // the governing equation of this fvm node
+              PetscScalar V = x[fvm_nodes[i]->local_offset()+0];  // psi of this node
+              PetscScalar V_semi = x[fvm_nodes[0]->local_offset()+0];
 
-        PetscScalar V = x[fvm_nodes[i]->local_offset()+0];  // psi of this node
-        PetscScalar n = x[fvm_nodes[i]->local_offset()+1];  // electron density
-        PetscScalar p = x[fvm_nodes[i]->local_offset()+2];  // hole density
+              // the solution value of this node is equal to corresponding node value in the first semiconductor region
+              PetscScalar ff1 = V - V_semi;
 
-        PetscScalar V_semi = x[fvm_nodes[0]->local_offset()+0];
-        PetscScalar n_semi = x[fvm_nodes[0]->local_offset()+1];  // electron density
-        PetscScalar p_semi = x[fvm_nodes[0]->local_offset()+2];  // hole density
-
-        // the solution value of this node is equal to corresponding node value in the first semiconductor region
-        PetscScalar ff1 = V - V_semi;
-        PetscScalar ff2 = n - n_semi;
-        PetscScalar ff3 = p - p_semi;
-
-        y_new.push_back(ff1);
-        y_new.push_back(ff2);
-        y_new.push_back(ff3);
-
-        genius_assert(src_row.size()==y_new.size());
+              iy.push_back(fvm_nodes[i]->global_offset()+0);
+              y_new.push_back(ff1);
+              break;
+            }
+            default: genius_error();
+        }
       }
     }
 
   }
 
+  // set new value to row
+  if( iy.size() )
+    VecSetValues(f, iy.size(), &(iy[0]), &(y_new[0]), ADD_VALUES);
 
-  // add src row to dst row, it will assemble vec automatically
-  PetscUtils::VecAddRowToRow(f, src_row, dst_row);
-
-  // insert new value to src row
-  if( src_row.size() )
-    VecSetValues(f, src_row.size(), &(src_row[0]), &(y_new[0]), INSERT_VALUES);
-
-  add_value_flag = INSERT_VALUES;
+  add_value_flag = ADD_VALUES;
 }
 
 
@@ -162,7 +240,6 @@ void HomoInterfaceBC::DDM1_Jacobian_Reserve(Mat *jac, InsertMode &add_value_flag
     if( (*node_it)->processor_id()!=Genius::processor_id() ) continue;
 
     // buffer for saving regions and fvm_nodes this *node_it involves
-    std::vector<const SimulationRegion *> regions;
     std::vector<const FVM_Node *> fvm_nodes;
 
     // search all the fvm_node which has *node_it as root node, these fvm_nodes have the same location in geometry,
@@ -173,52 +250,73 @@ void HomoInterfaceBC::DDM1_Jacobian_Reserve(Mat *jac, InsertMode &add_value_flag
     {
       const SimulationRegion * region = (*rnode_it).second.first;
       const FVM_Node * fvm_node = (*rnode_it).second.second;
-      if(!fvm_node->is_valid()) continue;
 
-      regions.push_back( region );
       fvm_nodes.push_back( fvm_node );
 
       // the first semiconductor region
       if(i==0)
       {
-        // reserve items for all the ghost nodes
-        std::vector<int> rows, cols;
-        rows.push_back(fvm_nodes[0]->global_offset()+0);
-        rows.push_back(fvm_nodes[0]->global_offset()+1);
-        rows.push_back(fvm_nodes[0]->global_offset()+2);
-
-        FVM_Node::fvm_ghost_node_iterator gn_it = fvm_nodes[i]->ghost_node_begin();
-        for(; gn_it != fvm_nodes[i]->ghost_node_end(); ++gn_it)
-        {
-          const FVM_Node * ghost_fvm_node = (*gn_it).first;
-          genius_assert(ghost_fvm_node!=NULL);
-
-          cols.push_back(ghost_fvm_node->global_offset()+0);
-          cols.push_back(ghost_fvm_node->global_offset()+1);
-          cols.push_back(ghost_fvm_node->global_offset()+2);
-
-          FVM_Node::fvm_neighbor_node_iterator  gnb_it = ghost_fvm_node->neighbor_node_begin();
-          for(; gnb_it != ghost_fvm_node->neighbor_node_end(); ++gnb_it)
-          {
-            cols.push_back((*gnb_it).second->global_offset()+0);
-            cols.push_back((*gnb_it).second->global_offset()+1);
-            cols.push_back((*gnb_it).second->global_offset()+2);
-          }
-        }
-
-        std::vector<PetscScalar> value(rows.size()*cols.size(),0);
-
-        MatSetValues(*jac, rows.size(), &rows[0], cols.size(), &cols[0], &value[0], ADD_VALUES);
-
+        genius_assert( region->type() == SemiconductorRegion );
+        // do nothing.
       }
 
       // other semiconductor region
       else
       {
-        // reserve for later operator
-        MatSetValue(*jac, fvm_nodes[i]->global_offset()+0, fvm_nodes[0]->global_offset()+0, 0, ADD_VALUES);
-        MatSetValue(*jac, fvm_nodes[i]->global_offset()+1, fvm_nodes[0]->global_offset()+1, 0, ADD_VALUES);
-        MatSetValue(*jac, fvm_nodes[i]->global_offset()+2, fvm_nodes[0]->global_offset()+2, 0, ADD_VALUES);
+        switch( region->type() )
+        {
+            case SemiconductorRegion :
+            {
+              // reserve items for all the ghost nodes
+              std::vector<int> rows, cols;
+              rows.push_back(fvm_nodes[0]->global_offset()+0);
+              rows.push_back(fvm_nodes[0]->global_offset()+1);
+              rows.push_back(fvm_nodes[0]->global_offset()+2);
+
+              cols.push_back(fvm_nodes[i]->global_offset()+0);
+              cols.push_back(fvm_nodes[i]->global_offset()+1);
+              cols.push_back(fvm_nodes[i]->global_offset()+2);
+
+              FVM_Node::fvm_neighbor_node_iterator  nb_it = fvm_nodes[i]->neighbor_node_begin();
+              for(; nb_it != fvm_nodes[i]->neighbor_node_end(); ++nb_it)
+              {
+                cols.push_back((*nb_it).second->global_offset()+0);
+                cols.push_back((*nb_it).second->global_offset()+1);
+                cols.push_back((*nb_it).second->global_offset()+2);
+              }
+
+              std::vector<PetscScalar> value(rows.size()*cols.size(),0);
+
+              MatSetValues(*jac, rows.size(), &rows[0], cols.size(), &cols[0], &value[0], ADD_VALUES);
+
+              // reserve for later operator
+              MatSetValue(*jac, fvm_nodes[i]->global_offset()+0, fvm_nodes[0]->global_offset()+0, 0, ADD_VALUES);
+              MatSetValue(*jac, fvm_nodes[i]->global_offset()+1, fvm_nodes[0]->global_offset()+1, 0, ADD_VALUES);
+              MatSetValue(*jac, fvm_nodes[i]->global_offset()+2, fvm_nodes[0]->global_offset()+2, 0, ADD_VALUES);
+              break;
+            }
+            case InsulatorRegion:
+            {
+              // reserve items for all the ghost nodes
+              std::vector<int> rows, cols;
+              rows.push_back(fvm_nodes[0]->global_offset()+0);
+              cols.push_back(fvm_nodes[i]->global_offset()+0);
+
+              FVM_Node::fvm_neighbor_node_iterator  nb_it = fvm_nodes[i]->neighbor_node_begin();
+              for(; nb_it != fvm_nodes[i]->neighbor_node_end(); ++nb_it)
+              {
+                cols.push_back((*nb_it).second->global_offset()+0);
+              }
+
+              std::vector<PetscScalar> value(rows.size()*cols.size(),0);
+
+              MatSetValues(*jac, rows.size(), &rows[0], cols.size(), &cols[0], &value[0], ADD_VALUES);
+
+              MatSetValue(*jac, fvm_nodes[i]->global_offset()+0, fvm_nodes[0]->global_offset()+0, 0, ADD_VALUES);
+              break;
+            }
+            default: genius_error();
+        }
       }
     }
 
@@ -231,86 +329,21 @@ void HomoInterfaceBC::DDM1_Jacobian_Reserve(Mat *jac, InsertMode &add_value_flag
 
 
 
-
-
-
 /*---------------------------------------------------------------------
- * build function and its jacobian for DDML1 solver
+ * do pre-process to jacobian matrix for DDML1 solver
  */
-void HomoInterfaceBC::DDM1_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_value_flag)
+void HomoInterfaceBC::DDM1_Jacobian_Preprocess(Mat *jac, std::vector<PetscInt> &src_row,
+    std::vector<PetscInt> &dst_row, std::vector<PetscInt> &clear_row)
 {
-
-  // here we do several things:
-  // add some row to other, clear some row, insert some value to row
-  // I wonder if there are some more efficient way to do these.
-
-  {
-    // buffer for mat rows which should be added to other row
-    std::vector<PetscInt> src_row;
-    std::vector<PetscInt> dst_row;
-
-    // search for all the node with this boundary type
-    BoundaryCondition::const_node_iterator node_it = nodes_begin();
-    BoundaryCondition::const_node_iterator end_it = nodes_end();
-    for(; node_it!=end_it; ++node_it )
-    {
-      // skip node not belongs to this processor
-      if( (*node_it)->processor_id()!=Genius::processor_id() ) continue;
-
-      // buffer for saving regions and fvm_nodes this *node_it involves
-      std::vector<const FVM_Node *> fvm_nodes;
-
-      // search all the fvm_node which has *node_it as root node, these fvm_nodes have the same location in geometry,
-      // but belong to different regions in logic.
-      BoundaryCondition::region_node_iterator  rnode_it     = region_node_begin(*node_it);
-      BoundaryCondition::region_node_iterator  end_rnode_it = region_node_end(*node_it);
-      for(unsigned int i=0 ; rnode_it!=end_rnode_it; ++i, ++rnode_it  )
-      {
-        const FVM_Node * fvm_node = (*rnode_it).second.second;
-        if(!fvm_node->is_valid()) continue;
-
-        fvm_nodes.push_back( fvm_node );
-
-        // the first semiconductor region
-        if(i==0) continue;
-
-        // other semiconductor region
-        else
-        {
-          // record the source row and dst row
-          src_row.push_back(fvm_nodes[i]->global_offset()+0);
-          src_row.push_back(fvm_nodes[i]->global_offset()+1);
-          src_row.push_back(fvm_nodes[i]->global_offset()+2);
-
-          const FVM_Node * ghost_fvm_node = fvm_nodes[0];
-          dst_row.push_back(ghost_fvm_node->global_offset()+0);
-          dst_row.push_back(ghost_fvm_node->global_offset()+1);
-          dst_row.push_back(ghost_fvm_node->global_offset()+2);
-        }
-      }
-
-    }
-
-    //ok, we add source rows to destination rows
-    PetscUtils::MatAddRowToRow(*jac, src_row, dst_row);
-
-    // clear src_row
-    MatZeroRows(*jac, src_row.size(), src_row.empty() ? NULL : &src_row[0], 0.0);
-
-  }
-
-
-
-  // after that, set values to source rows
+  // search for all the node with this boundary type
   BoundaryCondition::const_node_iterator node_it = nodes_begin();
   BoundaryCondition::const_node_iterator end_it = nodes_end();
-  for(node_it = nodes_begin(); node_it!=end_it; ++node_it )
+  for(; node_it!=end_it; ++node_it )
   {
     // skip node not belongs to this processor
     if( (*node_it)->processor_id()!=Genius::processor_id() ) continue;
 
     // buffer for saving regions and fvm_nodes this *node_it involves
-    std::vector<const SimulationRegion *> regions;
     std::vector<const FVM_Node *> fvm_nodes;
 
     // search all the fvm_node which has *node_it as root node, these fvm_nodes have the same location in geometry,
@@ -321,9 +354,7 @@ void HomoInterfaceBC::DDM1_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_v
     {
       const SimulationRegion * region = (*rnode_it).second.first;
       const FVM_Node * fvm_node = (*rnode_it).second.second;
-      if(!fvm_node->is_valid()) continue;
 
-      regions.push_back( region );
       fvm_nodes.push_back( fvm_node );
 
       // the first semiconductor region
@@ -332,44 +363,148 @@ void HomoInterfaceBC::DDM1_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_v
       // other semiconductor region
       else
       {
+        switch( region->type() )
+        {
+            case SemiconductorRegion :
+            {
+              // record the source row and dst row
+              src_row.push_back(fvm_nodes[i]->global_offset()+0);
+              src_row.push_back(fvm_nodes[i]->global_offset()+1);
+              src_row.push_back(fvm_nodes[i]->global_offset()+2);
 
-        //the indepedent variable number, we need 6 here.
-        adtl::AutoDScalar::numdir=6;
+              dst_row.push_back(fvm_nodes[0]->global_offset()+0);
+              dst_row.push_back(fvm_nodes[0]->global_offset()+1);
+              dst_row.push_back(fvm_nodes[0]->global_offset()+2);
 
-        std::vector<int> rows, cols;
+              clear_row.push_back(fvm_nodes[i]->global_offset()+0);
+              clear_row.push_back(fvm_nodes[i]->global_offset()+1);
+              clear_row.push_back(fvm_nodes[i]->global_offset()+2);
+              break;
+            }
+            case InsulatorRegion:
+            {
+              // record the source row and dst row
+              src_row.push_back(fvm_nodes[i]->global_offset()+0);
+              dst_row.push_back(fvm_nodes[0]->global_offset()+0);
+              clear_row.push_back(fvm_nodes[i]->global_offset()+0);
+              break;
+            }
+            default: genius_error();
+        }
+      }
 
-        // the governing equation of this fvm node
-        AutoDScalar V = x[fvm_nodes[i]->local_offset()+0];  V.setADValue(0,1.0);  // psi of this node
-        AutoDScalar n = x[fvm_nodes[i]->local_offset()+1];  n.setADValue(1,1.0);  // electron density
-        AutoDScalar p = x[fvm_nodes[i]->local_offset()+2];  p.setADValue(2,1.0);  // hole density
+    }
+  }
+}
 
-        AutoDScalar V_semi = x[fvm_nodes[0]->local_offset()+0]; V_semi.setADValue(3,1.0);
-        AutoDScalar n_semi = x[fvm_nodes[0]->local_offset()+1]; n_semi.setADValue(4,1.0);  // electron density
-        AutoDScalar p_semi = x[fvm_nodes[0]->local_offset()+2]; p_semi.setADValue(5,1.0);  // hole density
 
-        // the solution value of this node is equal to corresponding node value in the first semiconductor region
-        AutoDScalar ff1 = V - V_semi;
-        AutoDScalar ff2 = n - n_semi;
-        AutoDScalar ff3 = p - p_semi;
+/*---------------------------------------------------------------------
+ * build function and its jacobian for DDML1 solver
+ */
+void HomoInterfaceBC::DDM1_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_value_flag)
+{
+  // the Jacobian of HomoInterface boundary condition is processed here
 
-        rows.push_back(fvm_nodes[i]->global_offset()+0);
-        rows.push_back(fvm_nodes[i]->global_offset()+1);
-        rows.push_back(fvm_nodes[i]->global_offset()+2);
+  // since we will use ADD_VALUES operat, check the matrix state.
+  if( (add_value_flag != ADD_VALUES) && (add_value_flag != NOT_SET_VALUES) )
+  {
+    MatAssemblyBegin(*jac, MAT_FLUSH_ASSEMBLY);
+    MatAssemblyEnd(*jac, MAT_FLUSH_ASSEMBLY);
+  }
 
-        cols = rows;
-        cols.push_back(fvm_nodes[0]->global_offset()+0);
-        cols.push_back(fvm_nodes[0]->global_offset()+1);
-        cols.push_back(fvm_nodes[0]->global_offset()+2);
+  BoundaryCondition::const_node_iterator node_it = nodes_begin();
+  BoundaryCondition::const_node_iterator end_it = nodes_end();
+  for(node_it = nodes_begin(); node_it!=end_it; ++node_it )
+  {
+    // skip node not belongs to this processor
+    if( (*node_it)->processor_id()!=Genius::processor_id() ) continue;
 
-        // set Jacobian of governing equations
-        MatSetValues(*jac, 1, &rows[0], cols.size(), &cols[0], ff1.getADValue(), ADD_VALUES);
-        MatSetValues(*jac, 1, &rows[1], cols.size(), &cols[0], ff2.getADValue(), ADD_VALUES);
-        MatSetValues(*jac, 1, &rows[2], cols.size(), &cols[0], ff3.getADValue(), ADD_VALUES);
+    // buffer for saving regions and fvm_nodes this *node_it involves
+    std::vector<const FVM_Node *> fvm_nodes;
 
+    // search all the fvm_node which has *node_it as root node, these fvm_nodes have the same location in geometry,
+    // but belong to different regions in logic.
+    BoundaryCondition::region_node_iterator  rnode_it     = region_node_begin(*node_it);
+    BoundaryCondition::region_node_iterator  end_rnode_it = region_node_end(*node_it);
+    for(unsigned int i=0 ; rnode_it!=end_rnode_it; ++i, ++rnode_it  )
+    {
+      const SimulationRegion * region = (*rnode_it).second.first;
+      const FVM_Node * fvm_node = (*rnode_it).second.second;
+
+      fvm_nodes.push_back( fvm_node );
+
+      // the first semiconductor region
+      if(i==0) continue;
+
+      // other semiconductor region
+      else
+      {
+        switch( region->type() )
+        {
+            case SemiconductorRegion :
+            {
+              //the indepedent variable number, we need 6 here.
+              adtl::AutoDScalar::numdir=6;
+
+              std::vector<int> rows, cols;
+
+              // the governing equation of this fvm node
+              AutoDScalar V = x[fvm_nodes[i]->local_offset()+0];  V.setADValue(0,1.0);  // psi of this node
+              AutoDScalar n = x[fvm_nodes[i]->local_offset()+1];  n.setADValue(1,1.0);  // electron density
+              AutoDScalar p = x[fvm_nodes[i]->local_offset()+2];  p.setADValue(2,1.0);  // hole density
+
+              AutoDScalar V_semi = x[fvm_nodes[0]->local_offset()+0]; V_semi.setADValue(3,1.0);
+              AutoDScalar n_semi = x[fvm_nodes[0]->local_offset()+1]; n_semi.setADValue(4,1.0);  // electron density
+              AutoDScalar p_semi = x[fvm_nodes[0]->local_offset()+2]; p_semi.setADValue(5,1.0);  // hole density
+
+              // the solution value of this node is equal to corresponding node value in the first semiconductor region
+              AutoDScalar ff1 = V - V_semi;
+              AutoDScalar ff2 = n - n_semi;
+              AutoDScalar ff3 = p - p_semi;
+
+              rows.push_back(fvm_nodes[i]->global_offset()+0);
+              rows.push_back(fvm_nodes[i]->global_offset()+1);
+              rows.push_back(fvm_nodes[i]->global_offset()+2);
+
+              cols = rows;
+              cols.push_back(fvm_nodes[0]->global_offset()+0);
+              cols.push_back(fvm_nodes[0]->global_offset()+1);
+              cols.push_back(fvm_nodes[0]->global_offset()+2);
+
+              // set Jacobian of governing equations
+              MatSetValues(*jac, 1, &rows[0], cols.size(), &cols[0], ff1.getADValue(), ADD_VALUES);
+              MatSetValues(*jac, 1, &rows[1], cols.size(), &cols[0], ff2.getADValue(), ADD_VALUES);
+              MatSetValues(*jac, 1, &rows[2], cols.size(), &cols[0], ff3.getADValue(), ADD_VALUES);
+
+              break;
+            }
+
+            case InsulatorRegion :
+            {
+              //the indepedent variable number, we need 2 here.
+              adtl::AutoDScalar::numdir=2;
+
+              // the governing equation of this fvm node
+              AutoDScalar V = x[fvm_nodes[i]->local_offset()+0];  V.setADValue(0,1.0);  // psi of this node
+              AutoDScalar V_semi = x[fvm_nodes[0]->local_offset()+0]; V_semi.setADValue(1,1.0);
+
+              // the solution value of this node is equal to corresponding node value in the first semiconductor region
+              AutoDScalar ff1 = V - V_semi;
+
+              PetscInt row = fvm_nodes[i]->global_offset()+0;
+              PetscInt cols[2] = { fvm_nodes[i]->global_offset()+0,  fvm_nodes[0]->global_offset()+0};
+              MatSetValues(*jac, 1, &row, 2, cols, ff1.getADValue(), ADD_VALUES);
+
+              break;
+            }
+
+            default: genius_error();
+        }
       }
     }
 
   }
+
 
   // the last operator is ADD_VALUES
   add_value_flag = ADD_VALUES;

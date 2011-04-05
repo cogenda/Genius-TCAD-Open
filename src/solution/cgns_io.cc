@@ -28,11 +28,12 @@
 // Local includes
 #include "cgns_io.h"
 #include "mesh_base.h"
-#include "mesh.h"
 #include "boundary_info.h"
-#include "parallel.h"
+#include "material_define.h"
 #include "simulation_system.h"
 #include "boundary_condition_collector.h"
+
+#include "parallel.h"
 #include "mesh_communication.h"
 
 using PhysicalUnit::cm;
@@ -41,16 +42,6 @@ using PhysicalUnit::V;
 using PhysicalUnit::K;
 using PhysicalUnit::eV;
 
-
-inline std::vector<double> sort_it (const std::vector<double> & x, const std::vector<unsigned int > &id)
-{
-  std::vector<double> xx(id.size());
-
-  for(unsigned int i=0; i<id.size(); i++)
-    xx[id[i]] = x[i];
-
-  return xx;
-}
 
 
 // ------------------------------------------------------------
@@ -61,7 +52,7 @@ inline std::vector<double> sort_it (const std::vector<double> & x, const std::ve
 void CGNSIO::read (const std::string& filename)
 {
   SimulationSystem & system = FieldInput<SimulationSystem>::system();
-  Mesh & mesh = system.mesh();
+  MeshBase & mesh = system.mesh();
 
   // clear the system
   system.clear();
@@ -83,17 +74,17 @@ void CGNSIO::read (const std::string& filename)
     genius_assert(B==1);
 
     int  cell_dim, physical_dim;
-    char basename[32];
+    char base_name[32];
     //read base information
-    genius_assert(!cg_base_read(fn, B, basename, &cell_dim, &physical_dim));
+    genius_assert(!cg_base_read(fn, B, base_name, &cell_dim, &physical_dim));
     genius_assert(physical_dim==3);
 
     // get mesh magic number from base name
     {
-      std::string basename_string = basename;
-      //since the basename has the format of "GENIUS_Mesh_magicnum" we first get the substr of magicnum
-      std::string basename_prefix = "GENIUS_Mesh_";
-      std::string magic_num_string = basename_string.substr(basename_prefix.length());
+      std::string base_name_string = base_name;
+      //since the base name has the format of "GENIUS_Mesh_magicnum" we first get the substr of magicnum
+      std::string base_name_prefix = "GENIUS_Mesh_";
+      std::string magic_num_string = base_name_string.substr(base_name_prefix.length());
 
       // translate string to int
       std::stringstream   ss;
@@ -120,8 +111,8 @@ void CGNSIO::read (const std::string& filename)
       }
 
       // zone basic information
+      char           zone_name[32];
       {
-        char           zone_name[32];
         genius_assert(!cg_zone_read(fn, B, z_id, zone_name, isize));
         mesh.set_subdomain_label(z_id -1, zone_name );
       }
@@ -137,7 +128,7 @@ void CGNSIO::read (const std::string& filename)
           char *material;
           genius_assert(!cg_descriptor_read(ndescriptor, descriptorname, &material));
           mesh.set_subdomain_material(z_id -1, material);
-          free(material);
+          cg_free(material);
         }
       }
 
@@ -157,7 +148,8 @@ void CGNSIO::read (const std::string& filename)
       // read the global index of region node in the mesh
       std::vector<int> global_node_id;
       {
-        genius_assert(!cg_goto(fn, B, "Zone_t", z_id , "UserDefinedData_t", 1, "end"));
+        std::string path = std::string("/") + base_name + "/" + zone_name + "/" + "Global_Node_Index";
+        genius_assert(!cg_gopath(fn, path.c_str()));
         int A;
         genius_assert(!cg_narrays( &A ));
         genius_assert(A==1);
@@ -213,108 +205,125 @@ void CGNSIO::read (const std::string& filename)
         std::vector<int> elem_id;
         std::vector<int> elem_attribute;
         {
-          genius_assert(!cg_goto(fn, B, "Zone_t", z_id , "UserDefinedData_t", 2, "end"));
+          std::string path = std::string("/") + base_name + "/" + zone_name + "/" + "Element_Attribute";
+          genius_assert(!cg_gopath(fn, path.c_str()));
           int A;
           genius_assert(!cg_narrays( &A ));
           genius_assert(A==2);
-          char       ArrayName[32];
-          DataType_t DataType;
-          int        DataDimension;
-          int        DimensionVector;
 
-          genius_assert(!cg_array_info(1, ArrayName , &DataType , &DataDimension , &DimensionVector ));
-          genius_assert(DataType == Integer);
-          elem_id.resize(DimensionVector);
-          genius_assert(!cg_array_read_as(1, DataType, &elem_id[0] ));
+          for(int a=1; a<=A; a++)
+          {
+            char       ArrayName[32];
+            DataType_t DataType;
+            int        DataDimension;
+            int        DimensionVector;
 
-          genius_assert(!cg_array_info(2, ArrayName , &DataType , &DataDimension , &DimensionVector ));
-          genius_assert(DataType == Integer);
-          elem_attribute.resize(DimensionVector);
-          genius_assert(!cg_array_read_as(2, DataType, &elem_attribute[0] ));
+            genius_assert(!cg_array_info(a, ArrayName , &DataType , &DataDimension , &DimensionVector ));
+
+            if( std::string(ArrayName) == "elem_id_array" )
+            {
+              genius_assert(DataType == Integer);
+              elem_id.resize(DimensionVector);
+              genius_assert(!cg_array_read_as(a, DataType, &elem_id[0] ));
+            }
+
+            if( std::string(ArrayName) == "elem_attribute_array" )
+            {
+              genius_assert(DataType == Integer);
+              elem_attribute.resize(DimensionVector);
+              genius_assert(!cg_array_read_as(a, DataType, &elem_attribute[0] ));
+            }
+          }
         }
 #endif
-        std::vector<int>::iterator it = elem.begin();
+        std::vector<int>::const_iterator it = elem.begin();
         for(; it != elem.end(); )
           switch(*it++)
           {
-            // here TRI_3, QUAD_4, TETRA_4, PENTA_6 and HEXA_8 are cgns defined element types!
-          case  TRI_3:
-            {
-              Elem* elem = mesh.add_elem(Elem::build(TRI3).release());
-              elem->set_node(0) = global_id_to_node[global_node_id[*it++ -1]];
-              elem->set_node(1) = global_id_to_node[global_node_id[*it++ -1]];
-              elem->set_node(2) = global_id_to_node[global_node_id[*it++ -1]];
-              elem->subdomain_id() = z_id-1;
-              elem_list.push_back(elem);
-              break;
-            }
-          case  QUAD_4:
-            {
-              Elem* elem = mesh.add_elem(Elem::build(QUAD4).release());
-              elem->set_node(0) = global_id_to_node[global_node_id[*it++ -1]];
-              elem->set_node(1) = global_id_to_node[global_node_id[*it++ -1]];
-              elem->set_node(2) = global_id_to_node[global_node_id[*it++ -1]];
-              elem->set_node(3) = global_id_to_node[global_node_id[*it++ -1]];
-              elem->subdomain_id() = z_id-1;
-              elem_list.push_back(elem);
-              break;
-            }
-          case  TETRA_4:
-            {
-              Elem* elem = mesh.add_elem(Elem::build(TET4).release());
-              elem->set_node(0) = global_id_to_node[global_node_id[*it++ -1]];
-              elem->set_node(1) = global_id_to_node[global_node_id[*it++ -1]];
-              elem->set_node(2) = global_id_to_node[global_node_id[*it++ -1]];
-              elem->set_node(3) = global_id_to_node[global_node_id[*it++ -1]];
-              elem->subdomain_id() = z_id-1;
-              elem_list.push_back(elem);
-              break;
-            }
-          case  PYRA_5 :
-          {
-              Elem* elem = mesh.add_elem(Elem::build(PYRAMID5).release());
-              elem->set_node(0) = global_id_to_node[global_node_id[*it++ -1]];
-              elem->set_node(1) = global_id_to_node[global_node_id[*it++ -1]];
-              elem->set_node(2) = global_id_to_node[global_node_id[*it++ -1]];
-              elem->set_node(3) = global_id_to_node[global_node_id[*it++ -1]];
-              elem->set_node(4) = global_id_to_node[global_node_id[*it++ -1]];
-              elem->subdomain_id() = z_id-1;
-              elem_list.push_back(elem);
-              break;
-          }
-          case  PENTA_6:
-            {
-              Elem* elem = mesh.add_elem(Elem::build(PRISM6).release());
-              elem->set_node(0) = global_id_to_node[global_node_id[*it++ -1]];
-              elem->set_node(1) = global_id_to_node[global_node_id[*it++ -1]];
-              elem->set_node(2) = global_id_to_node[global_node_id[*it++ -1]];
-              elem->set_node(3) = global_id_to_node[global_node_id[*it++ -1]];
-              elem->set_node(4) = global_id_to_node[global_node_id[*it++ -1]];
-              elem->set_node(5) = global_id_to_node[global_node_id[*it++ -1]];
-              elem->subdomain_id() = z_id-1;
-              elem_list.push_back(elem);
-              break;
-            }
-          case  HEXA_8:
-            {
-              Elem* elem = mesh.add_elem(Elem::build(HEX8).release());
-              elem->set_node(0) = global_id_to_node[global_node_id[*it++ -1]];
-              elem->set_node(1) = global_id_to_node[global_node_id[*it++ -1]];
-              elem->set_node(2) = global_id_to_node[global_node_id[*it++ -1]];
-              elem->set_node(3) = global_id_to_node[global_node_id[*it++ -1]];
-              elem->set_node(4) = global_id_to_node[global_node_id[*it++ -1]];
-              elem->set_node(5) = global_id_to_node[global_node_id[*it++ -1]];
-              elem->set_node(6) = global_id_to_node[global_node_id[*it++ -1]];
-              elem->set_node(7) = global_id_to_node[global_node_id[*it++ -1]];
-              elem->subdomain_id() = z_id-1;
-              elem_list.push_back(elem);
-              break;
-            }
-          default :
-            {
-              MESSAGE << "ERROR: Unsupported element type found in this CGNS file!"<<std::endl; RECORD();
-              genius_error();
-            }
+              // here TRI_3, QUAD_4, TETRA_4, PENTA_6 and HEXA_8 are cgns defined element types!
+              case  TRI_3:
+              {
+                Elem* elem = mesh.add_elem(Elem::build(TRI3).release());
+                elem->set_node(0) = global_id_to_node[global_node_id[*it++ -1]];
+                elem->set_node(1) = global_id_to_node[global_node_id[*it++ -1]];
+                elem->set_node(2) = global_id_to_node[global_node_id[*it++ -1]];
+                elem->prepare_for_fvm();
+                elem->subdomain_id() = z_id-1;
+                elem_list.push_back(elem);
+                break;
+              }
+              case  QUAD_4:
+              {
+                Elem* elem = mesh.add_elem(Elem::build(QUAD4).release());
+                elem->set_node(0) = global_id_to_node[global_node_id[*it++ -1]];
+                elem->set_node(1) = global_id_to_node[global_node_id[*it++ -1]];
+                elem->set_node(2) = global_id_to_node[global_node_id[*it++ -1]];
+                elem->set_node(3) = global_id_to_node[global_node_id[*it++ -1]];
+                elem->prepare_for_fvm();
+                elem->subdomain_id() = z_id-1;
+                elem_list.push_back(elem);
+                break;
+              }
+              case  TETRA_4:
+              {
+                Elem* elem = mesh.add_elem(Elem::build(TET4).release());
+                elem->set_node(0) = global_id_to_node[global_node_id[*it++ -1]];
+                elem->set_node(1) = global_id_to_node[global_node_id[*it++ -1]];
+                elem->set_node(2) = global_id_to_node[global_node_id[*it++ -1]];
+                elem->set_node(3) = global_id_to_node[global_node_id[*it++ -1]];
+                elem->prepare_for_fvm();
+                elem->subdomain_id() = z_id-1;
+                elem_list.push_back(elem);
+                break;
+              }
+              case  PYRA_5 :
+              {
+                Elem* elem = mesh.add_elem(Elem::build(PYRAMID5).release());
+                elem->set_node(0) = global_id_to_node[global_node_id[*it++ -1]];
+                elem->set_node(1) = global_id_to_node[global_node_id[*it++ -1]];
+                elem->set_node(2) = global_id_to_node[global_node_id[*it++ -1]];
+                elem->set_node(3) = global_id_to_node[global_node_id[*it++ -1]];
+                elem->set_node(4) = global_id_to_node[global_node_id[*it++ -1]];
+                elem->prepare_for_fvm();
+                elem->subdomain_id() = z_id-1;
+                elem_list.push_back(elem);
+                break;
+              }
+              case  PENTA_6:
+              {
+                Elem* elem = mesh.add_elem(Elem::build(PRISM6).release());
+                elem->set_node(0) = global_id_to_node[global_node_id[*it++ -1]];
+                elem->set_node(1) = global_id_to_node[global_node_id[*it++ -1]];
+                elem->set_node(2) = global_id_to_node[global_node_id[*it++ -1]];
+                elem->set_node(3) = global_id_to_node[global_node_id[*it++ -1]];
+                elem->set_node(4) = global_id_to_node[global_node_id[*it++ -1]];
+                elem->set_node(5) = global_id_to_node[global_node_id[*it++ -1]];
+                elem->prepare_for_fvm();
+                elem->subdomain_id() = z_id-1;
+                elem_list.push_back(elem);
+                break;
+              }
+              case  HEXA_8:
+              {
+                Elem* elem = mesh.add_elem(Elem::build(HEX8).release());
+                elem->set_node(0) = global_id_to_node[global_node_id[*it++ -1]];
+                elem->set_node(1) = global_id_to_node[global_node_id[*it++ -1]];
+                elem->set_node(2) = global_id_to_node[global_node_id[*it++ -1]];
+                elem->set_node(3) = global_id_to_node[global_node_id[*it++ -1]];
+                elem->set_node(4) = global_id_to_node[global_node_id[*it++ -1]];
+                elem->set_node(5) = global_id_to_node[global_node_id[*it++ -1]];
+                elem->set_node(6) = global_id_to_node[global_node_id[*it++ -1]];
+                elem->set_node(7) = global_id_to_node[global_node_id[*it++ -1]];
+                elem->prepare_for_fvm();
+                elem->subdomain_id() = z_id-1;
+                elem_list.push_back(elem);
+                break;
+              }
+              default :
+              {
+                MESSAGE << "ERROR: Unsupported element type found in this CGNS file!"<<std::endl; RECORD();
+                genius_error();
+              }
 
           }
 
@@ -381,8 +390,8 @@ void CGNSIO::read (const std::string& filename)
       genius_assert(!cg_nbocos(fn, B, z_id, &BC));
       for(int bc_id=1; bc_id<=BC; bc_id++)
       {
-        char           boconame[32];
-        BCType_t       bocotype ;
+        char           boco_name[32];
+        BCType_t       boco_type ;
         PointSetType_t ptset_type ;
         int            npnts ;
         int            normalindex ;
@@ -391,66 +400,76 @@ void CGNSIO::read (const std::string& filename)
         int            ndataset;
         int            nuserdata;
 
-        genius_assert(!cg_boco_info(fn, B, z_id, bc_id, boconame, &bocotype, &ptset_type, &npnts, &normalindex, &normallistflag, &normaldatatype, &ndataset) );
+        genius_assert(!cg_boco_info(fn, B, z_id, bc_id, boco_name, &boco_type, &ptset_type, &npnts, &normalindex, &normallistflag, &normaldatatype, &ndataset) );
         genius_assert(ptset_type==PointList);
-        // for old cgns file, the bc_label is boconame
+        // for old cgns file, the bc_label is boco_name
         // however, new cgns file will save bc label in descriptor, thus support long (>32 chars) bc label
-        std::string bc_label(boconame);
+        std::string bc_label(boco_name);
         // new cgns file will contain string for boundary condition as well
         std::string bc_settings;
         {
           genius_assert(!cg_goto(fn, B, "Zone_t", z_id, "ZoneBC_t", 1, "BC_t", bc_id, "end"));
           int ndescriptor;
           genius_assert(!cg_ndescriptors(&ndescriptor));
-          if(ndescriptor)
+
+          char descriptorname[32];
+          for(int nd=1; nd<=ndescriptor; ++nd)
           {
-            assert(ndescriptor == 2);
-
-            // read first descriptor -- bc label
-            char descriptorname[32];
-            char *_bc_label;
-            assert(!cg_descriptor_read(1, descriptorname, &_bc_label));
-            assert(std::string(descriptorname) == "bc_label");
-            bc_label = _bc_label;
-            free(_bc_label);
-
-            // read boundary condition
-            char *_bc_settings;
-            assert(!cg_descriptor_read(2, descriptorname, &_bc_settings));
-            assert(std::string(descriptorname) == "bc_settings");
-            bc_settings = _bc_settings;
-            free(_bc_settings);
+            char *_text;
+            assert(!cg_descriptor_read(nd, descriptorname, &_text));
+            if(std::string(descriptorname) == "bc_label")
+            {
+              bc_label = _text;
+            }
+            if(std::string(descriptorname) == "bc_settings")
+            {
+              bc_settings = _text;
+            }
+            cg_free(_text);
           }
+
         }
 
         // get the number of user defined data structure
         genius_assert(!cg_goto(fn, B, "Zone_t", z_id, "ZoneBC_t", 1, "BC_t", bc_id, "end"));
         genius_assert(!cg_nuser_data(&nuserdata));
 
-        genius_assert(!cg_goto(fn, B, "Zone_t", z_id, "ZoneBC_t", 1, "BC_t", bc_id, "UserDefinedData_t", 1, "end"));
 
-        int A;
-        genius_assert(!cg_narrays( &A ));
-        genius_assert(A==2);
 
         std::vector<int> bd_elem;
         std::vector<int> bd_side;
         // read the element-side array
         {
-          char       ArrayName[32];
-          DataType_t DataType;
-          int        DataDimension;
-          int        DimensionVector;
+          genius_assert(!cg_gopath(fn, "element_side_information"));
 
-          genius_assert(!cg_array_info(1, ArrayName , &DataType , &DataDimension , &DimensionVector ));
-          genius_assert(DataType == Integer);
-          bd_elem.resize(DimensionVector);
-          genius_assert(!cg_array_read_as(1, Integer, &bd_elem[0] ));
+          int A;
+          genius_assert(!cg_narrays( &A ));
+          genius_assert(A==2);
 
-          genius_assert(!cg_array_info(2, ArrayName , &DataType , &DataDimension , &DimensionVector ));
-          genius_assert(DataType == Integer);
-          bd_side.resize(DimensionVector);
-          genius_assert(!cg_array_read_as(2, Integer, &bd_side[0] ));
+          for(int a=1; a<=A; a++)
+          {
+            char       ArrayName[32];
+            DataType_t DataType;
+            int        DataDimension;
+            int        DimensionVector;
+
+            genius_assert(!cg_array_info(a, ArrayName , &DataType , &DataDimension , &DimensionVector ));
+
+            if( std::string(ArrayName) == "element_list" )
+            {
+              genius_assert(DataType == Integer);
+              bd_elem.resize(DimensionVector);
+              genius_assert(!cg_array_read_as(a, Integer, &bd_elem[0] ));
+            }
+
+            if( std::string(ArrayName) == "side_list" )
+            {
+              genius_assert(DataType == Integer);
+              bd_side.resize(DimensionVector);
+              genius_assert(!cg_array_read_as(a, Integer, &bd_side[0] ));
+            }
+          }
+          genius_assert(!cg_gopath(fn, ".."));
         }
 
         short int bd_id = mesh.boundary_info->get_id_by_label(bc_label);
@@ -468,9 +487,12 @@ void CGNSIO::read (const std::string& filename)
         if( nuserdata == 2)
         {
           double potential=0;
-          genius_assert(!cg_goto(fn, B, "Zone_t", z_id, "ZoneBC_t", 1, "BC_t", bc_id, "UserDefinedData_t", 2, "end"));
-          genius_assert(!cg_array_read_as(1,RealDouble, &potential));
-          electrode_potential[bd_id] = potential;
+          if(!cg_gopath(fn, "extra_data_for_electrode"))
+          {
+            genius_assert(!cg_array_read_as(1,RealDouble, &potential));
+            electrode_potential[bd_id] = potential;
+            genius_assert(!cg_gopath(fn, ".."));
+          }
         }
       }
 
@@ -495,15 +517,56 @@ void CGNSIO::read (const std::string& filename)
           cg_field_info(fn, B, z_id, sol_id, f_id, &datatype, fieldname);
           genius_assert(datatype==RealDouble);
 
-          std::pair<std::string,std::string> key(solutionname,fieldname);
+          std::pair<std::string, std::string> key(solutionname,fieldname);
           sol_map[key].resize(isize[0]);
           genius_assert(!cg_field_read(fn, B, z_id, sol_id, fieldname, datatype, &imin, &isize[0], &((sol_map[key])[0])));
         }
+
+        std::string path = std::string("/") + base_name + "/" + zone_name + "/" + solutionname;
+        genius_assert(!cg_gopath(fn, path.c_str()));
+
+        int ndescriptors;
+        genius_assert(!cg_ndescriptors(&ndescriptors));
+        for(int d_it=1; d_it<=ndescriptors; d_it++)
+        {
+          char descriptorname[32];
+          char *_description;
+          genius_assert(!cg_descriptor_read(d_it, descriptorname, &_description));
+          region_solution_units.insert( std::make_pair( std::string(descriptorname),  std::string(_description)) );
+          cg_free(_description);
+        }
       }
+
       // save solution name to solution value map for later usage
       region_solutions.push_back(sol_map);
 
     }// search for each zone
+
+    // read extra boundary info as interconnect or change boundary
+    {
+      genius_assert(!cg_goto(fn, B, "end"));
+      int nuserdata; genius_assert(!cg_nuser_data(&nuserdata));
+      for(int u=1; u<=nuserdata; ++u)
+      {
+        char userdataname[32];
+        genius_assert(!cg_user_data_read(u, userdataname));
+        if( std::string(userdataname) != "ExtraBoundaryInfo" ) continue;
+
+        genius_assert(!cg_goto(fn, B, "UserDefinedData_t", u, "end"));
+        int ndescriptor;
+        genius_assert(!cg_ndescriptors(&ndescriptor));
+        for(int i=1; i<=ndescriptor; ++i)
+        {
+          // read first descriptor -- bc label
+          char descriptorname[32];
+          char *_description;
+          assert(!cg_descriptor_read(i, descriptorname, &_description));
+          mesh.boundary_info->add_extra_description(std::string(_description));
+          cg_free(_description);
+        }
+        genius_assert(!cg_goto(fn, B, "end"));
+      }
+    }
 
     cg_close(fn);
 
@@ -582,239 +645,196 @@ void CGNSIO::read (const std::string& filename)
     }
   }
 
+  Parallel::broadcast(region_solution_units   , 0);
+
+
   // now all the processor have enough information for
   // updating region solution data
   for(unsigned int r=0; r<system.n_regions(); r++)
   {
     SimulationRegion * region = system.region(r);
 
-    std::vector<int> & global_id = region_global_id[r];
-    std::map<int, unsigned int > & global_id_to_node_id = region_global_id_to_node_id[r];
-    std::map<std::pair<std::string,std::string>, std::vector<double> > & solution = region_solutions[r];
+    const std::vector<int> & global_id = region_global_id[r];
+    const std::map<int, unsigned int > & global_id_to_node_id = region_global_id_to_node_id[r];
+    const std::map<std::pair<std::string,std::string>, std::vector<double> > & solution = region_solutions[r];
 
     switch ( region->type() )
     {
-    case SemiconductorRegion :
-      {
-
-        //bool sigle   = Material::IsSingleCompSemiconductor(region->material());
-        //bool complex = Material::IsComplexCompSemiconductor(region->material());
-
-        for(unsigned int n=0; n<global_id.size(); n++)
+        case SemiconductorRegion :
         {
-          unsigned int node_id = global_id_to_node_id[global_id[n]];
-          FVM_Node * fvm_node = region->region_fvm_node(node_id);  genius_assert(fvm_node);
-          if( !fvm_node->root_node()->on_local() ) continue;
 
-          FVM_NodeData * node_data = fvm_node->node_data();  genius_assert(node_data);
-
-          for(std::map< std::pair<std::string,std::string>, std::vector<double> >::const_iterator var_it = solution.begin();
+          for(std::map< std::pair<std::string, std::string>, std::vector<double> >::const_iterator var_it = solution.begin();
               var_it!=solution.end(); var_it++)
           {
-            if(var_it->first.first == "Solution")
-            {
-              // field solution
-              if(var_it->first.second == "elec_density")
-              {
-                node_data->n() = var_it->second[n] * pow(cm,-3);
-                continue;
-              }
-              if(var_it->first.second == "hole_density")
-              {
-                node_data->p() = var_it->second[n] * pow(cm,-3);
-                continue;
-              }
-              if(var_it->first.second == "potential")
-              {
-                node_data->psi() = var_it->second[n] * V;
-                continue;
-              }
-              if(var_it->first.second == "lattice_temperature")
-              {
-                node_data->T() = var_it->second[n] * K;
-                continue;
-              }
-              if(var_it->first.second == "elec_temperature")
-              {
-                node_data->Tn() = var_it->second[n] * K;
-                continue;
-              }
-              if(var_it->first.second == "hole_temperature")
-              {
-                node_data->Tp() = var_it->second[n] * K;
-                continue;
-              }
-              if(var_it->first.second == "elec_quantum_potential")
-              {
-                node_data->Eqc() = var_it->second[n] * eV;
-                continue;
-              }
-              if(var_it->first.second == "hole_quantum_potential")
-              {
-                node_data->Eqv() = var_it->second[n] * eV;
-                continue;
-              }
-            }
-            if(var_it->first.first == "Doping")
-            {
-              // doping
-              if(var_it->first.second == "Na")
-              {
-                node_data->Na()  = var_it->second[n] * pow(cm, -3);
-                continue;
-              }
-              if(var_it->first.second == "Nd")
-              {
-                node_data->Nd()  = var_it->second[n] * pow(cm, -3);
-                continue;
-              }
-              if(var_it->first.second == "P")
-              {
-                node_data->P()   = var_it->second[n] * pow(cm, -3);
-                continue;
-              }
-              if(var_it->first.second == "As")
-              {
-                node_data->As()  = var_it->second[n] * pow(cm, -3);
-                continue;
-              }
-              if(var_it->first.second == "Sb")
-              {
-                node_data->Sb()  = var_it->second[n] * pow(cm, -3);
-                continue;
-              }
-              if(var_it->first.second == "B")
-              {
-                node_data->B()   = var_it->second[n] * pow(cm, -3);
-                continue;
-              }
-            }
-            if(var_it->first.first == "Mole")
-            {
-              // mole fraction
-              if(var_it->first.second =="mole_x")
-              {
-                node_data->mole_x() = var_it->second[n];
-                genius_assert(node_data->mole_x() <= 1.0);
-                continue;
-              }
-              if(var_it->first.second =="mole_y")
-              {
-                node_data->mole_y() = var_it->second[n];
-                genius_assert(node_data->mole_y() <= 1.0);
-                continue;
-              }
-            }
             if(var_it->first.first == "Custom")
             {
-              node_data->CreateUserScalarValue(var_it->first.second);
-              node_data->UserScalarValue(var_it->first.second) = var_it->second[n];
+              const std::string & variable = var_it->first.second;
+              const std::string & variable_unit = region_solution_units[variable+".unit"];
+              region->add_variable( SimulationVariable(variable, SCALAR, POINT_CENTER, variable_unit, invalid_uint, true, true)  );
             }
           }
+
+          for(unsigned int n=0; n<global_id.size(); n++)
+          {
+            unsigned int node_id = global_id_to_node_id.find(global_id[n])->second;
+            FVM_Node * fvm_node = region->region_fvm_node(node_id);
+            if( !fvm_node || !fvm_node->root_node()->on_local() ) continue;
+
+            FVM_NodeData * node_data = fvm_node->node_data();  genius_assert(node_data);
+
+            for(std::map< std::pair<std::string,std::string>, std::vector<double> >::const_iterator var_it = solution.begin();
+                var_it!=solution.end(); var_it++)
+            {
+              if(var_it->first.first == "Solution")
+              {
+                // field solution
+                if(var_it->first.second == "electron" || var_it->first.second == "elec_density")
+                {
+                  node_data->n() = var_it->second[n] * pow(cm,-3);
+                  continue;
+                }
+                if(var_it->first.second == "hole" || var_it->first.second == "hole_density")
+                {
+                  node_data->p() = var_it->second[n] * pow(cm,-3);
+                  continue;
+                }
+                if(var_it->first.second == "potential")
+                {
+                  node_data->psi() = var_it->second[n] * V;
+                  continue;
+                }
+                if(var_it->first.second == "temperature" || var_it->first.second == "lattice_temperature" )
+                {
+                  node_data->T() = var_it->second[n] * K;
+                  continue;
+                }
+                if(var_it->first.second == "elec_temperature")
+                {
+                  node_data->Tn() = var_it->second[n] * K;
+                  continue;
+                }
+                if(var_it->first.second == "hole_temperature")
+                {
+                  node_data->Tp() = var_it->second[n] * K;
+                  continue;
+                }
+              }
+              if(var_it->first.first == "Doping")
+              {
+                // doping
+                if(var_it->first.second == "Na" || var_it->first.second == "na")
+                {
+                  node_data->Na()  = var_it->second[n] * pow(cm, -3);
+                  continue;
+                }
+                if(var_it->first.second == "Nd" || var_it->first.second == "nd")
+                {
+                  node_data->Nd()  = var_it->second[n] * pow(cm, -3);
+                  continue;
+                }
+              }
+              if(var_it->first.first == "Mole")
+              {
+                // mole fraction
+                if(var_it->first.second =="mole_x")
+                {
+                  node_data->mole_x() = var_it->second[n];
+                  genius_assert(node_data->mole_x() <= 1.0);
+                  continue;
+                }
+                if(var_it->first.second =="mole_y")
+                {
+                  node_data->mole_y() = var_it->second[n];
+                  genius_assert(node_data->mole_y() <= 1.0);
+                  continue;
+                }
+              }
+
+              if(var_it->first.first == "Custom")
+              {
+                const SimulationVariable & variable = region->get_variable(var_it->first.second, POINT_CENTER);
+                node_data->data<Real>(variable.variable_index) = var_it->second[n]*variable.variable_unit;
+              }
+
+            }
+          }
+
+          // after import previous solutions, we re-init region here
+          region->reinit_after_import();
+
+          break;
         }
-
-        // after import previous solutions, we re-init region here
-        region->reinit_after_import();
-
-        break;
-      }
-    case InsulatorRegion     :
-      {
-        for(unsigned int n=0; n<global_id.size(); n++)
+        case InsulatorRegion     :
+        case ElectrodeRegion     :
+        case MetalRegion         :
         {
-          unsigned int node_id = global_id_to_node_id[global_id[n]];
-          FVM_Node * fvm_node = region->region_fvm_node(node_id);  genius_assert(fvm_node);
-          if( !fvm_node->root_node()->on_local() ) continue;
-
-          FVM_NodeData * node_data = fvm_node->node_data();  genius_assert(node_data);
-
-          for(std::map< std::pair<std::string,std::string>, std::vector<double> >::const_iterator var_it = solution.begin();
+          for(std::map< std::pair<std::string, std::string>, std::vector<double> >::const_iterator var_it = solution.begin();
               var_it!=solution.end(); var_it++)
           {
-            if(var_it->first.first == "Solution")
-            {
-              // field solution
-              if(var_it->first.second == "potential")
-              {
-                node_data->psi() = var_it->second[n] * V;
-                continue;
-              }
-              if(var_it->first.second == "lattice_temperature")
-              {
-                node_data->T() = var_it->second[n] * K;
-                continue;
-              }
-            }
             if(var_it->first.first == "Custom")
             {
-              node_data->CreateUserScalarValue(var_it->first.second);
-              node_data->UserScalarValue(var_it->first.second) = var_it->second[n];
+              const std::string & variable = var_it->first.second;
+              const std::string & variable_unit = region_solution_units[variable+".unit"];
+              region->add_variable( SimulationVariable(variable, SCALAR, POINT_CENTER, variable_unit, invalid_uint, true, true)  );
             }
           }
-        }
 
-        // after import previous solutions, we re-init region here
-        region->reinit_after_import();
-
-        break;
-      }
-    case ConductorRegion     :
-      {
-        for(unsigned int n=0; n<global_id.size(); n++)
-        {
-          unsigned int node_id = global_id_to_node_id[global_id[n]];
-          FVM_Node * fvm_node = region->region_fvm_node(node_id);  genius_assert(fvm_node);
-          if( !fvm_node->root_node()->on_local() ) continue;
-
-          FVM_NodeData * node_data = fvm_node->node_data();  genius_assert(node_data);
-
-          for(std::map< std::pair<std::string,std::string>, std::vector<double> >::const_iterator var_it = solution.begin();
-              var_it!=solution.end(); var_it++)
+          for(unsigned int n=0; n<global_id.size(); n++)
           {
-            if(var_it->first.first == "Solution")
+            unsigned int node_id = global_id_to_node_id.find(global_id[n])->second;
+            FVM_Node * fvm_node = region->region_fvm_node(node_id);
+            if( !fvm_node || !fvm_node->root_node()->on_local() ) continue;
+
+            FVM_NodeData * node_data = fvm_node->node_data();  genius_assert(node_data);
+
+            for(std::map< std::pair<std::string,std::string>, std::vector<double> >::const_iterator var_it = solution.begin();
+                var_it!=solution.end(); var_it++)
             {
-              // field solution
-              if(var_it->first.second == "potential")
+              if(var_it->first.first == "Solution")
               {
-                node_data->psi() = var_it->second[n] * V;
-                continue;
+                // field solution
+                if(var_it->first.second == "potential")
+                {
+                  node_data->psi() = var_it->second[n] * V;
+                  continue;
+                }
+                if(var_it->first.second == "temperature" || var_it->first.second == "lattice_temperature" )
+                {
+                  node_data->T() = var_it->second[n] * K;
+                  continue;
+                }
               }
-              if(var_it->first.second == "lattice_temperature")
+
+              if(var_it->first.first == "Custom")
               {
-                node_data->T() = var_it->second[n] * K;
-                continue;
+                const SimulationVariable & variable = region->get_variable(var_it->first.second, POINT_CENTER);
+                node_data->data<Real>(variable.variable_index) = var_it->second[n]*variable.variable_unit;
               }
-            }
-            if(var_it->first.first == "Custom")
-            {
-              node_data->CreateUserScalarValue(var_it->first.second);
-              node_data->UserScalarValue(var_it->first.second) = var_it->second[n];
             }
           }
+
+          // after import previous solutions, we re-init region here
+          region->reinit_after_import();
+
+          break;
         }
 
-        // after import previous solutions, we re-init region here
-        region->reinit_after_import();
-
-        break;
-      }
-
-    // no solution data in vacuum region?
-    case VacuumRegion     :
-      {
-        region->reinit_after_import();
-        break;
-      }
-    case PMLRegion     :
-      {
-        region->reinit_after_import();
-        break;
-      }
-    default:
-      {
-        MESSAGE<<"ERROR: Unsupported region type found during CGNS import."<<std::endl; RECORD();
-        genius_error();
-      }
+        // no solution data in vacuum region?
+        case VacuumRegion     :
+        {
+          region->reinit_after_import();
+          break;
+        }
+        case PMLRegion     :
+        {
+          region->reinit_after_import();
+          break;
+        }
+        default:
+        {
+          MESSAGE<<"ERROR: Unsupported region type found during CGNS import."<<std::endl; RECORD();
+          genius_error();
+        }
     }
   }
 
@@ -836,8 +856,68 @@ void CGNSIO::read (const std::string& filename)
 void CGNSIO::write (const std::string& filename)
 {
   const SimulationSystem & system = FieldOutput<SimulationSystem>::system();
-  const Mesh & mesh = system.mesh();
+  const BoundaryConditionCollector * bcs = system.get_bcs();
+  const MeshBase & mesh = system.mesh();
 
+  // classify node to region
+  std::vector< std::vector<const Node *> > region_node_array(system.n_regions());
+  if( Genius::processor_id() == 0)
+  {
+    std::vector< std::set<unsigned int> > region_node_id_array(system.n_regions());
+    MeshBase::const_element_iterator elem_it = mesh.elements_begin();
+    MeshBase::const_element_iterator elem_it_end = mesh.elements_end();
+    for(; elem_it != elem_it_end; ++elem_it)
+    {
+      unsigned int region = (*elem_it)->subdomain_id();
+      for(unsigned int n=0; n<(*elem_it)->n_nodes(); ++n)
+      {
+        region_node_id_array[region].insert((*elem_it)->get_node(n)->id());
+      }
+    }
+    for( unsigned int r=0; r<system.n_regions(); r++)
+    {
+      std::set<unsigned int>::const_iterator it = region_node_id_array[r].begin();
+      std::set<unsigned int>::const_iterator it_end = region_node_id_array[r].end();
+      for(; it!=it_end; ++it)
+        region_node_array[r].push_back( mesh.node_ptr(*it) );
+    }
+  }
+
+
+  // classify elem to region
+  std::vector< std::vector<const Elem *> > region_elem_array(system.n_regions());
+  if( Genius::processor_id() == 0)
+  {
+    MeshBase::const_element_iterator elem_it = mesh.elements_begin();
+    MeshBase::const_element_iterator elem_it_end = mesh.elements_end();
+    for(elem_it = mesh.elements_begin(); elem_it != elem_it_end; ++elem_it)
+    {
+      region_elem_array[(*elem_it)->subdomain_id()].push_back(*elem_it);
+    }
+  }
+
+  // get all the boundary elem-side-id trip
+  std::vector<unsigned int>       boundary_el;
+  std::vector<unsigned short int> boundary_sl;
+  std::vector<short int>          boundary_il;
+  // get nodes on each boundary
+  std::map<short int, std::set<const Node *> > boundary_side_nodes_id_map;
+  // classify boundaries to each region
+  std::vector< std::vector<unsigned int> >region_boundary_array(system.n_regions());
+  if( Genius::processor_id() == 0)
+  {
+    mesh.boundary_info->build_side_list (boundary_el, boundary_sl, boundary_il);
+    mesh.boundary_info->boundary_side_nodes_with_id(boundary_side_nodes_id_map );
+    for(unsigned int n=0; n<boundary_el.size(); n++)
+    {
+      const Elem * elem = mesh.elem(boundary_el[n]);
+      region_boundary_array[elem->subdomain_id()].push_back(n);
+    }
+  }
+
+  std::string base_name;
+
+  // ok, create cgns here
   if( Genius::processor_id() == 0)
   {
     // remove old file if exist
@@ -847,45 +927,34 @@ void CGNSIO::write (const std::string& filename)
     genius_assert(!cg_open(filename.c_str(), MODE_WRITE, &fn));
 
     // create base of three dimensional mesh, here mesh takes its magic number as postfix
-    std::string cgns_mesh_label;
     std::stringstream   ss;
     ss << "GENIUS_Mesh_" << system.mesh().magic_num();
-    ss >> cgns_mesh_label;
+    ss >> base_name;
 
-    genius_assert(!cg_base_write(fn, cgns_mesh_label.c_str(), 3, 3, &B));
+    genius_assert(!cg_base_write(fn, base_name.c_str(), 3, 3, &B));
   }
 
-  // create zone
+  // create cgns zone
   for( unsigned int r=0; r<system.n_regions(); r++)
   {
     const SimulationRegion * region = system.region(r);
 
-
     int size[3];
     // region node number
-    size[0] = region->n_node();
+    size[0] = region_node_array[r].size();
 
-    //region cell number, since region only has local cell, we need to gather from all the processor
-    size[1] = 0;
+    //region cell number
+    size[1] = region_elem_array[r].size();
 
     //boundary cell number
     size[2] = 0;
 
-    std::vector<double> x;
-    std::vector<double> y;
-    std::vector<double> z;
-    x.reserve(size[0]);
-    y.reserve(size[0]);
-    z.reserve(size[0]);
-
-    // addtional information about global id of region node
-    std::vector<int> global_node_id;
-    global_node_id.reserve(size[0]);
+    std::string zone_name = region->name();
 
     if( Genius::processor_id() == 0)
     {
       // write region name
-      genius_assert(!cg_zone_write(fn, B, region->name().c_str(), size, Unstructured, &Z));
+      genius_assert(!cg_zone_write(fn, B, zone_name.c_str(), size, Unstructured, &Z));
 
       // goto the current region
       genius_assert(!cg_goto(fn,B,"Zone_t",Z,"end"));
@@ -894,26 +963,39 @@ void CGNSIO::write (const std::string& filename)
       genius_assert(!cg_descriptor_write("Material", region->material().c_str() ));
     }
 
-    std::map<const Node *, unsigned int> node_pointer_to_id;
-    unsigned int local_id = 1;
 
-    // set coordinates of each node in this zone
-    SimulationRegion::const_node_iterator node_it = region->nodes_begin();
-    for(; node_it!=region->nodes_end(); ++node_it, ++local_id)
-    {
-      //convert the unit to cm
-      const Node * node = (*node_it).second->root_node();
-      x.push_back( (*node)(0)/cm );
-      y.push_back( (*node)(1)/cm );
-      z.push_back( (*node)(2)/cm );
-      // save global index of the region node
-      global_node_id.push_back(node->id());
-      // insert Node * to local node index map
-      node_pointer_to_id.insert( std::pair<const Node *, unsigned int>(node, local_id) );
-    }
+    // map node id to local node index in this region, alloc max_node_id with invalid_uint
+    // it is a bit overkill in memory. however, i think vector is faster than map<id, local_id>
+    std::vector<unsigned int> node_id_to_region_node_id(mesh.max_node_id (), invalid_uint);
 
     if( Genius::processor_id() == 0)
     {
+      std::vector<double> x;
+      std::vector<double> y;
+      std::vector<double> z;
+      x.reserve(size[0]);
+      y.reserve(size[0]);
+      z.reserve(size[0]);
+
+      // addtional information about global id of region node
+      std::vector<int> global_node_id;
+      global_node_id.reserve(size[0]);
+
+      // set coordinates of each node in this zone
+      unsigned int local_id = 1;
+      for(unsigned int n=0; n<region_node_array[r].size(); ++n, ++local_id)
+      {
+        //convert the unit to cm
+        const Node * node = region_node_array[r][n];
+        x.push_back( (*node)(0)/cm );
+        y.push_back( (*node)(1)/cm );
+        z.push_back( (*node)(2)/cm );
+        // save global index of the region node
+        global_node_id.push_back(node->id());
+        // save local node index, the we can find local node index by node id
+        node_id_to_region_node_id[node->id()] = local_id;
+      }
+
       // write down coordinates
       cg_coord_write(fn, B, Z, RealDouble, "CoordinateX", &x[0], &C);
       cg_coord_write(fn, B, Z, RealDouble, "CoordinateY", &y[0], &C);
@@ -929,123 +1011,101 @@ void CGNSIO::write (const std::string& filename)
 
     // set element connectivity here
 
-    std::vector<int> elem;           // for element connectivity
-    std::vector<int> elem_attribute; // for element attribute
-    std::vector<unsigned int> elem_id;
-
-    Mesh::const_element_iterator elem_it = mesh.subdomain_elements_begin(r);
-    Mesh::const_element_iterator elem_it_end = mesh.subdomain_elements_end(r);
-    for(; elem_it != elem_it_end; ++elem_it)
-    {
-#ifdef ENABLE_AMR
-      // use parent_ID of -1 to indicate a level 0 element
-      if ((*elem_it)->level() == 0)
-      {
-        elem_attribute.push_back(-1);
-        elem_attribute.push_back(-1);
-      }
-      else
-      {
-        elem_attribute.push_back((*elem_it)->parent()->id());
-        elem_attribute.push_back((*elem_it)->parent()->which_child_am_i((*elem_it)));
-      }
-#endif
-
-#ifdef ENABLE_AMR
-      elem_attribute.push_back (static_cast<int>((*elem_it)->level()));
-      elem_attribute.push_back (static_cast<int>((*elem_it)->p_level()));
-      elem_attribute.push_back (static_cast<int>((*elem_it)->refinement_flag()));
-      elem_attribute.push_back (static_cast<int>((*elem_it)->p_refinement_flag()));
-#endif
-
-      elem_id.push_back( (*elem_it)->id() );
-
-      switch( (*elem_it)->type() )
-      {
-      case TRI3        :
-      case TRI3_FVM    :
-        {
-          elem.push_back( TRI_3 );
-          elem.push_back( node_pointer_to_id[(*elem_it)->get_node(0)] );
-          elem.push_back( node_pointer_to_id[(*elem_it)->get_node(1)] );
-          elem.push_back( node_pointer_to_id[(*elem_it)->get_node(2)] );
-          break;
-        }
-      case QUAD4       :
-      case QUAD4_FVM   :
-        {
-          elem.push_back( QUAD_4 );
-          elem.push_back( node_pointer_to_id[(*elem_it)->get_node(0)] );
-          elem.push_back( node_pointer_to_id[(*elem_it)->get_node(1)] );
-          elem.push_back( node_pointer_to_id[(*elem_it)->get_node(2)] );
-          elem.push_back( node_pointer_to_id[(*elem_it)->get_node(3)] );
-          break;
-        }
-      case TET4        :
-      case TET4_FVM    :
-        {
-          elem.push_back( TETRA_4 );
-          elem.push_back( node_pointer_to_id[(*elem_it)->get_node(0)] );
-          elem.push_back( node_pointer_to_id[(*elem_it)->get_node(1)] );
-          elem.push_back( node_pointer_to_id[(*elem_it)->get_node(2)] );
-          elem.push_back( node_pointer_to_id[(*elem_it)->get_node(3)] );
-          break;
-        }
-      case PYRAMID5      :
-      case PYRAMID5_FVM  :
-        {
-          elem.push_back( PYRA_5 );
-          elem.push_back( node_pointer_to_id[(*elem_it)->get_node(0)] );
-          elem.push_back( node_pointer_to_id[(*elem_it)->get_node(1)] );
-          elem.push_back( node_pointer_to_id[(*elem_it)->get_node(2)] );
-          elem.push_back( node_pointer_to_id[(*elem_it)->get_node(3)] );
-          elem.push_back( node_pointer_to_id[(*elem_it)->get_node(4)] );
-          break;
-        }
-      case PRISM6      :
-      case PRISM6_FVM  :
-        {
-          elem.push_back( PENTA_6 );
-          elem.push_back( node_pointer_to_id[(*elem_it)->get_node(0)] );
-          elem.push_back( node_pointer_to_id[(*elem_it)->get_node(1)] );
-          elem.push_back( node_pointer_to_id[(*elem_it)->get_node(2)] );
-          elem.push_back( node_pointer_to_id[(*elem_it)->get_node(3)] );
-          elem.push_back( node_pointer_to_id[(*elem_it)->get_node(4)] );
-          elem.push_back( node_pointer_to_id[(*elem_it)->get_node(5)] );
-          break;
-        }
-      case HEX8        :
-      case HEX8_FVM    :
-        {
-          elem.push_back( HEXA_8 );
-          elem.push_back( node_pointer_to_id[(*elem_it)->get_node(0)] );
-          elem.push_back( node_pointer_to_id[(*elem_it)->get_node(1)] );
-          elem.push_back( node_pointer_to_id[(*elem_it)->get_node(2)] );
-          elem.push_back( node_pointer_to_id[(*elem_it)->get_node(3)] );
-          elem.push_back( node_pointer_to_id[(*elem_it)->get_node(4)] );
-          elem.push_back( node_pointer_to_id[(*elem_it)->get_node(5)] );
-          elem.push_back( node_pointer_to_id[(*elem_it)->get_node(6)] );
-          elem.push_back( node_pointer_to_id[(*elem_it)->get_node(7)] );
-          break;
-        }
-      default:
-        {
-          MESSAGE<<"ERROR: Unsupported element type found during CGNS export."<<std::endl; RECORD();
-          genius_error();
-        }
-      }
-
-    }
-
-
     // map elem->id() to the cell's index for cgns writing in this region
     std::map<unsigned int, int> elem_id_to_region_cell_index ;
-    for(unsigned int n=0; n<elem_id.size(); n++)
-      elem_id_to_region_cell_index[elem_id[n]] = n+1;
 
     if( Genius::processor_id() == 0)
     {
-      genius_assert(!cg_section_write(fn, B ,Z, "GridElements", MIXED, 1, elem_id.size(), 0, &elem[0], &S));
+      const std::vector<const Elem *> & region_elem = region_elem_array[r];
+
+      std::vector<int> elem_package;           // for element connectivity
+      std::vector<int> elem_attribute;         // for element attribute
+      std::vector<unsigned int> elem_id;
+      elem_package.reserve(10*region_elem.size());// a bit overkill
+      elem_attribute.reserve(6*region_elem.size());
+      elem_id.reserve(region_elem.size());
+
+      for(unsigned int n=0; n < region_elem.size(); ++n)
+      {
+        const Elem * elem = region_elem[n];
+#ifdef ENABLE_AMR
+        // use parent_ID of -1 to indicate a level 0 element
+        if (elem->level() == 0)
+        {
+          elem_attribute.push_back(-1);
+          elem_attribute.push_back(-1);
+        }
+        else
+        {
+          elem_attribute.push_back(elem->parent()->id());
+          elem_attribute.push_back(elem->parent()->which_child_am_i(elem));
+        }
+#endif
+
+#ifdef ENABLE_AMR
+        elem_attribute.push_back (static_cast<int>(elem->level()));
+        elem_attribute.push_back (static_cast<int>(elem->p_level()));
+        elem_attribute.push_back (static_cast<int>(elem->refinement_flag()));
+        elem_attribute.push_back (static_cast<int>(elem->p_refinement_flag()));
+#endif
+
+        elem_id.push_back( elem->id() );
+
+        switch( elem->type() )
+        {
+            case TRI3        :
+            case TRI3_FVM    :
+            {
+              elem_package.push_back( TRI_3 );
+              break;
+            }
+            case QUAD4       :
+            case QUAD4_FVM   :
+            {
+              elem_package.push_back( QUAD_4 );
+              break;
+            }
+            case TET4        :
+            case TET4_FVM    :
+            {
+              elem_package.push_back( TETRA_4 );
+              break;
+            }
+            case PYRAMID5      :
+            case PYRAMID5_FVM  :
+            {
+              elem_package.push_back( PYRA_5 );
+              break;
+            }
+            case PRISM6      :
+            case PRISM6_FVM  :
+            {
+              elem_package.push_back( PENTA_6 );
+              break;
+            }
+            case HEX8        :
+            case HEX8_FVM    :
+            {
+              elem_package.push_back( HEXA_8 );
+              break;
+            }
+            default:
+            {
+              MESSAGE<<"ERROR: Unsupported element type found during CGNS export."<<std::endl; RECORD();
+              genius_error();
+            }
+        }
+
+        for(unsigned int n=0; n<elem->n_nodes(); ++n)
+          elem_package.push_back( node_id_to_region_node_id[elem->get_node(n)->id()] );
+
+      }
+
+
+      for(unsigned int n=0; n<elem_id.size(); n++)
+        elem_id_to_region_cell_index[elem_id[n]] = n+1;
+
+      genius_assert(!cg_section_write(fn, B ,Z, "GridElements", MIXED, 1, elem_id.size(), 0, &elem_package[0], &S));
 #ifdef ENABLE_AMR
       // write element amr attribute
       int  elem_id_size = static_cast<int>(elem_id.size());
@@ -1061,46 +1121,48 @@ void CGNSIO::write (const std::string& filename)
 
 
     // write boundary condition into cgns file
-
-    // the element-face boundary information
-    std::map<short int, std::pair<std::vector<int>, std::vector<int> > > bd_info;
+    if( Genius::processor_id() == 0 )
     {
-      std::vector<unsigned int>       el;
-      std::vector<unsigned short int> sl;
-      std::vector<short int>          il;
-      system.mesh().boundary_info->build_side_list (el, sl, il);
-      for(unsigned int n=0; n<sl.size(); n++)
-      {
-        const Elem * elem = mesh.elem(el[n]);
-        if( elem->subdomain_id() != r) continue;
+      const std::vector<unsigned int> & region_boundary = region_boundary_array[r];
 
-        genius_assert( elem_id_to_region_cell_index.find(el[n]) != elem_id_to_region_cell_index.end() );
-        bd_info[il[n]].first.push_back( elem_id_to_region_cell_index[el[n]] );
-        bd_info[il[n]].second.push_back( sl[n] );
+      // the element-face boundary information
+      std::map<short int, std::pair<std::vector<int>, std::vector<int> > > bd_info;
+      //std::map<short int, std::set< const Node * > > bd_node_info;
+      {
+        for(unsigned int n=0; n<region_boundary.size(); n++)
+        {
+          unsigned int index = region_boundary[n];
+          const Elem * elem = mesh.elem(boundary_el[index]);
+          genius_assert( elem->subdomain_id() == r);
+
+          bd_info[boundary_il[index]].first.push_back( elem_id_to_region_cell_index[boundary_el[index]] );
+          bd_info[boundary_il[index]].second.push_back( boundary_sl[index] );
+        }
       }
-    }
 
-
-    // the point type boundary
-    const BoundaryConditionCollector * bcs = system.get_bcs();
-    for(unsigned int n=0; n< bcs->n_bcs(); n++)
-    {
-      const BoundaryCondition * bc = bcs->get_bc(n);
-      //skip inter connector here
-      if(bc->is_inter_connect_hub()) continue;
-
-      short int bd_id = bcs->get_bd_id_by_bc_index(n);
-
-      // collect boundary nodes
-      std::vector<int> bd_point;
-      std::vector<const Node *> bd_nodes = bc->nodes();
-      for(unsigned int i=0; i<bd_nodes.size(); i++)
-        if( node_pointer_to_id.find(bd_nodes[i]) != node_pointer_to_id.end() )
-          bd_point.push_back(node_pointer_to_id[bd_nodes[i]]);
-
-      // write down boundary information
-      if( Genius::processor_id() == 0  && bd_info[bd_id].second.size() && bd_point.size() )
+      // the point type boundary
+      std::map<short int, std::pair<std::vector<int>, std::vector<int> > > ::const_iterator bd_info_it = bd_info.begin();
+      for( ; bd_info_it != bd_info.end(); ++bd_info_it)
       {
+        short int bd_id = bd_info_it->first;
+        const std::vector<int> & elems =  bd_info_it->second.first;
+        const std::vector<int> & sides =  bd_info_it->second.second;
+
+        if( elems.empty() ) continue;
+
+        const BoundaryCondition * bc = bcs->get_bc_by_bd_id(bd_id);
+
+        // collect boundary nodes
+        std::vector<int> bd_point;
+        {
+          const std::set<const Node *> & bd_nodes = boundary_side_nodes_id_map.find(bd_id)->second;
+          for(std::set<const Node *>::const_iterator it=bd_nodes.begin(); it!=bd_nodes.end(); ++it)
+              if( node_id_to_region_node_id[(*it)->id()] != invalid_uint )
+                bd_point.push_back(node_id_to_region_node_id[(*it)->id()]);
+        }
+
+        // now write down boundary information
+
         // write a dummy bc label
         char bc_label[32];
         sprintf( bc_label, "boundary_%d", bd_id );
@@ -1116,9 +1178,6 @@ void CGNSIO::write (const std::string& filename)
         assert(!cg_descriptor_write("bc_settings", bc->boundary_condition_in_string().c_str()));
 
         // extra information as element-side list
-        std::vector<int> & elems =  bd_info[bd_id].first;
-        std::vector<int> & sides =  bd_info[bd_id].second;
-
         int n_side =  sides.size();
         assert(!cg_goto(fn, B, "Zone_t", Z, "ZoneBC_t", 1, "BC_t", BC, "end"));
         assert(!cg_user_data_write ("element_side_information"));
@@ -1133,10 +1192,11 @@ void CGNSIO::write (const std::string& filename)
           int    DimensionVector = 1;
 
           assert(!cg_goto(fn, B, "Zone_t", Z, "ZoneBC_t", 1, "BC_t", BC, "end"));
-          assert(!cg_user_data_write ("Extra_data_for_electrode"));
+          assert(!cg_user_data_write ("extra_data_for_electrode"));
           assert(!cg_goto(fn, B, "Zone_t", Z, "ZoneBC_t", 1, "BC_t", BC, "UserDefinedData_t", 2, "end"));
           assert(!cg_array_write("electrode_potential", RealDouble, 1, &DimensionVector, &potential));
         }
+
       }
     }
 
@@ -1144,508 +1204,218 @@ void CGNSIO::write (const std::string& filename)
     // write zone 1-to-1 connect information
     // does this really needed?
 
-
     // write solution data to cgns file
     switch ( region->type() )
     {
-
-    case SemiconductorRegion :
-      {
-        std::vector<unsigned int> region_id;
-        std::vector<double> Na, Nd, P, As, Sb, Bo;
-        std::vector<double> psi, p, n, T, Tn, Tp, Eqc, Eqv;
-        std::vector<double> mole_x, mole_y;
-        std::map< std::string, std::vector<double> > custom_variable;
-        std::map< std::string, int > custom_variable_dummy;
-
-        bool sigle   = Material::IsSingleCompSemiconductor(region->material());
-        bool complex = Material::IsComplexCompSemiconductor(region->material());
-
-        SimulationRegion::const_node_iterator node_it = region->nodes_begin();
-        local_id = 0;
-        for(; node_it!=region->nodes_end(); ++node_it, ++local_id)
+        case SemiconductorRegion :
         {
-          if( (*node_it).second->root_node()->processor_id() != Genius::processor_id()) continue;
+          bool sigle   = Material::IsSingleCompSemiconductor(region->material());
+          bool complex = Material::IsComplexCompSemiconductor(region->material());
 
-          const FVM_NodeData * node_data = (*node_it).second->node_data();
-          genius_assert(node_data);
+          std::vector<unsigned int> region_node_id;
 
-          region_id.push_back(local_id);
+          std::multimap< std::string, std::pair<SimulationVariable, std::vector<double> > >  region_data;
+          typedef std::multimap< std::string, std::pair<SimulationVariable, std::vector<double> > > region_data_map;
+          region_data_map::iterator region_data_it;
 
-          // doping information
-          Na.push_back( node_data->Na()/ pow(cm, -3) );
-          Nd.push_back( node_data->Nd()/ pow(cm, -3) );
-          P.push_back ( node_data->P() / pow(cm, -3) );
-          As.push_back( node_data->As()/ pow(cm, -3) );
-          Sb.push_back( node_data->Sb()/ pow(cm, -3) );
-          Bo.push_back( node_data->B() /  pow(cm, -3) );
+          region_data.insert( std::make_pair("Doping", std::make_pair(region->get_variable("na", POINT_CENTER), std::vector<double>())) );
+          region_data.insert( std::make_pair("Doping", std::make_pair(region->get_variable("nd", POINT_CENTER), std::vector<double>())) );
 
-          // field solution
-          psi.push_back( node_data->psi()/ V );
-          n.push_back  ( node_data->n()  / pow(cm, -3) );
-          p.push_back  ( node_data->p()  / pow(cm, -3) );
-          T.push_back  ( node_data->T()  / K );
-          Tn.push_back ( node_data->Tn() / K );
-          Tp.push_back ( node_data->Tp() / K );
-          Eqc.push_back( node_data->Eqc()/ eV );
-          Eqv.push_back( node_data->Eqv()/ eV );
+          region_data.insert( std::make_pair("Solution", std::make_pair(region->get_variable("electron", POINT_CENTER), std::vector<double>())) );
+          region_data.insert( std::make_pair("Solution", std::make_pair(region->get_variable("hole", POINT_CENTER), std::vector<double>())) );
+          region_data.insert( std::make_pair("Solution", std::make_pair(region->get_variable("potential", POINT_CENTER), std::vector<double>())) );
+          region_data.insert( std::make_pair("Solution", std::make_pair(region->get_variable("temperature", POINT_CENTER), std::vector<double>())) );
+          region_data.insert( std::make_pair("Solution", std::make_pair(region->get_variable("elec_temperature", POINT_CENTER), std::vector<double>())) );
+          region_data.insert( std::make_pair("Solution", std::make_pair(region->get_variable("hole_temperature", POINT_CENTER), std::vector<double>())) );
 
           if(sigle)
-            mole_x.push_back(node_data->mole_x());
+            region_data.insert( std::make_pair("Mole", std::make_pair(region->get_variable("mole_x", POINT_CENTER), std::vector<double>())) );
 
           if(complex)
           {
-            mole_x.push_back(node_data->mole_x());
-            mole_y.push_back(node_data->mole_y());
+            region_data.insert( std::make_pair("Mole", std::make_pair(region->get_variable("mole_x", POINT_CENTER), std::vector<double>())) );
+            region_data.insert( std::make_pair("Mole", std::make_pair(region->get_variable("mole_y", POINT_CENTER), std::vector<double>())) );
           }
 
-          // user defined values.
-          // some of which are defined only on a subset of nodes, we collect all names here first
-          std::vector<std::string> user_var_list;
-          node_data->GetUserScalarList(user_var_list);
-          for(std::vector<std::string>::iterator name_it=user_var_list.begin();
-              name_it!=user_var_list.end(); name_it++)
+          std::vector<SimulationVariable> custom_variable;
+          region->get_user_defined_variable(POINT_CENTER, SCALAR, custom_variable);
+          for(unsigned int n=0; n<custom_variable.size(); ++n)
+            region_data.insert( std::make_pair("Custom", std::make_pair(custom_variable[n], std::vector<double>())) );
+
+
+          SimulationRegion::const_processor_node_iterator node_it = region->on_processor_nodes_begin();
+          SimulationRegion::const_processor_node_iterator node_it_end = region->on_processor_nodes_end();
+          for(; node_it!=node_it_end; ++node_it)
           {
-            if(custom_variable.find(*name_it) == custom_variable.end())
+            const FVM_Node * fvm_node = (*node_it);
+            const FVM_NodeData * node_data = fvm_node->node_data();
+            genius_assert(node_data);
+
+            region_node_id.push_back(fvm_node->root_node()->id());
+
+            for( region_data_it = region_data.begin(); region_data_it != region_data.end(); ++region_data_it)
             {
-              custom_variable_dummy.insert(std::pair<std::string, int >(*name_it,0));
+              const SimulationVariable & variable = region_data_it->second.first;
+              region_data_it->second.second.push_back( node_data->data<double>( variable.variable_index ) / variable.variable_unit );
             }
           }
-        }
 
-        // actually collecting user defined values, and use zero as default.
-        {
-          std::vector<unsigned int> n_var;
-          n_var.push_back(custom_variable_dummy.size());
-          Parallel::allgather(n_var);
-          for(unsigned int i=0; i<Genius::n_processors(); i++)
+          // synchronization data with other processor
+          Parallel::gather(0, region_node_id);
+
+          for( region_data_it = region_data.begin(); region_data_it != region_data.end(); ++region_data_it)
+            Parallel::gather(0, region_data_it->second.second);
+
+          if( Genius::processor_id() == 0)
           {
-            if (Genius::processor_id() == i)
+            std::vector<unsigned int> region_node_local_id;
+            for(unsigned int n=0; n<region_node_id.size(); ++n)
+              region_node_local_id.push_back( node_id_to_region_node_id[region_node_id[n]]-1 );
+
+            for( region_data_it = region_data.begin(); region_data_it != region_data.end(); )
             {
-              for(std::map< std::string, int >::iterator var_it=custom_variable_dummy.begin();
-                  var_it!=custom_variable_dummy.end();var_it++)
+              const std::string & sol =  region_data_it->first;
+              genius_assert(!cg_sol_write  (fn, B, Z, sol.c_str(), Vertex, &SOL));
+              std::string path = std::string("/") + base_name + "/" + zone_name + "/" + sol;
+              std::pair <region_data_map::iterator, region_data_map::iterator>  bounds = region_data.equal_range(sol);
+              while (bounds.first != bounds.second)
               {
-                std::string key;
-                key = var_it->first;
-                Parallel::broadcast(key,i);
-                custom_variable.insert(std::pair<std::string,std::vector<double> >(key,std::vector<double>()));
+                const std::string & variable =  bounds.first->second.first.variable_name;
+                std::string variable_unit = variable + ".unit";
+                std::string variable_unit_string = bounds.first->second.first.variable_unit_string;
+                genius_assert(!cg_field_write(fn, B, Z, SOL, RealDouble, variable.c_str(),  &(_sort_it(bounds.first->second.second, region_node_local_id)[0]),   &F));
+                genius_assert(!cg_gopath(fn, path.c_str()));
+                genius_assert(!cg_descriptor_write(variable_unit.c_str(), variable_unit_string.c_str()));
+                ++bounds.first;
               }
-            }
-            else
-            {
-              for(unsigned int j=0; j<n_var[i]; j++)
-              {
-                std::string key;
-                Parallel::broadcast(key,i);
-                custom_variable.insert(std::pair<std::string,std::vector<double> >(key,std::vector<double>()));
-              }
+              region_data_it = bounds.second;
             }
           }
 
-          if (custom_variable.size()>0)
-          {
-            local_id=0;
-            for(node_it=region->nodes_begin(); node_it!=region->nodes_end(); ++node_it, ++local_id)
-            {
-              if( (*node_it).second->root_node()->processor_id() != Genius::processor_id()) continue;
-
-              const FVM_NodeData * node_data = (*node_it).second->node_data();
-              genius_assert(node_data);
-
-              for(std::map< std::string, std::vector<double> >::iterator var_it=custom_variable.begin();
-                  var_it!=custom_variable.end();var_it++)
-              {
-                var_it->second.push_back(0.0);
-              }
-
-              std::vector<std::string> user_var_list;
-              node_data->GetUserScalarList(user_var_list);
-              for(std::vector<std::string>::const_iterator name_it=user_var_list.begin();
-                  name_it!=user_var_list.end(); name_it++)
-              {
-                double v = node_data->UserScalarValue(*name_it);
-                std::map< std::string, std::vector<double> >::iterator var_it = custom_variable.find(*name_it);
-                var_it->second.back() = v;
-              }
-            }
-          }
+          break;
         }
 
-        // synchronization data with other processor
-        Parallel::gather(0, region_id);
-        Parallel::gather(0, Na);
-        Parallel::gather(0, Nd);
-        Parallel::gather(0, P);
-        Parallel::gather(0, As);
-        Parallel::gather(0, Sb);
-        Parallel::gather(0, Bo);
-        Parallel::gather(0, psi);
-        Parallel::gather(0, n);
-        Parallel::gather(0, p);
-        Parallel::gather(0, T);
-        Parallel::gather(0, Tn);
-        Parallel::gather(0, Tp);
-        Parallel::gather(0, Eqc);
-        Parallel::gather(0, Eqv);
 
-        if(sigle)
-          Parallel::gather(0, mole_x);
-
-        if(complex)
+        case InsulatorRegion     :
+        case ElectrodeRegion     :
+        case MetalRegion         :
         {
-          Parallel::gather(0, mole_x);
-          Parallel::gather(0, mole_y);
-        }
+          std::vector<unsigned int> region_node_id;
 
-        if(custom_variable.size()>0)
-        {
-          for(std::map< std::string, std::vector<double> >::iterator var_it=custom_variable.begin();
-              var_it!=custom_variable.end();var_it++)
+          std::multimap< std::string, std::pair<SimulationVariable, std::vector<double> > >  region_data;
+          typedef std::multimap< std::string, std::pair<SimulationVariable, std::vector<double> > > region_data_map;
+          region_data_map::iterator region_data_it;
+
+          region_data.insert( std::make_pair("Solution", std::make_pair(region->get_variable("potential", POINT_CENTER), std::vector<double>())) );
+          region_data.insert( std::make_pair("Solution", std::make_pair(region->get_variable("temperature", POINT_CENTER), std::vector<double>())) );
+
+
+          std::vector<SimulationVariable> custom_variable;
+          region->get_user_defined_variable(POINT_CENTER, SCALAR, custom_variable);
+          for(unsigned int n=0; n<custom_variable.size(); ++n)
+            region_data.insert( std::make_pair("Custom", std::make_pair(custom_variable[n], std::vector<double>())) );
+
+          SimulationRegion::const_processor_node_iterator node_it = region->on_processor_nodes_begin();
+          SimulationRegion::const_processor_node_iterator node_it_end = region->on_processor_nodes_end();
+          for(; node_it!=node_it_end; ++node_it)
           {
-            Parallel::gather(0,var_it->second);
-          }
-        }
+            const FVM_Node * fvm_node = (*node_it);
+            const FVM_NodeData * node_data = fvm_node->node_data();
 
-        if( Genius::processor_id() == 0)
-        {
-          //write solution
-          genius_assert(!cg_sol_write  (fn, B, Z, "Solution", Vertex, &SOL));
-          genius_assert(!cg_field_write(fn, B, Z, SOL, RealDouble, "elec_density",           &(sort_it(n,  region_id)[0]), &F));
-          genius_assert(!cg_field_write(fn, B, Z, SOL, RealDouble, "hole_density",           &(sort_it(p,  region_id)[0]), &F));
-          genius_assert(!cg_field_write(fn, B, Z, SOL, RealDouble, "potential",              &(sort_it(psi,region_id)[0]), &F));
-          genius_assert(!cg_field_write(fn, B, Z, SOL, RealDouble, "lattice_temperature",    &(sort_it(T,  region_id)[0]), &F));
-          genius_assert(!cg_field_write(fn, B, Z, SOL, RealDouble, "elec_temperature",       &(sort_it(Tn, region_id)[0]), &F));
-          genius_assert(!cg_field_write(fn, B, Z, SOL, RealDouble, "hole_temperature",       &(sort_it(Tp, region_id)[0]), &F));
-          genius_assert(!cg_field_write(fn, B, Z, SOL, RealDouble, "elec_quantum_potential", &(sort_it(Eqc,region_id)[0]), &F));
-          genius_assert(!cg_field_write(fn, B, Z, SOL, RealDouble, "hole_quantum_potential", &(sort_it(Eqv,region_id)[0]), &F));
+            region_node_id.push_back(fvm_node->root_node()->id());
 
-          //write doping
-          genius_assert(!cg_sol_write  (fn, B, Z, "Doping", Vertex, &SOL));
-          genius_assert(!cg_field_write(fn, B, Z, SOL, RealDouble, "Na", &(sort_it(Na, region_id)[0]), &F));
-          genius_assert(!cg_field_write(fn, B, Z, SOL, RealDouble, "Nd", &(sort_it(Nd, region_id)[0]), &F));
-          genius_assert(!cg_field_write(fn, B, Z, SOL, RealDouble, "P",  &(sort_it(P,  region_id)[0]), &F));
-          genius_assert(!cg_field_write(fn, B, Z, SOL, RealDouble, "As", &(sort_it(As, region_id)[0]), &F));
-          genius_assert(!cg_field_write(fn, B, Z, SOL, RealDouble, "Sb", &(sort_it(Sb, region_id)[0]), &F));
-          genius_assert(!cg_field_write(fn, B, Z, SOL, RealDouble, "B",  &(sort_it(Bo, region_id)[0]), &F));
-
-          //write mole fraction
-          if(sigle)
-          {
-            genius_assert(!cg_sol_write  (fn, B, Z, "Mole", Vertex, &SOL));
-            genius_assert(!cg_field_write(fn, B, Z, SOL, RealDouble, "mole_x", &(sort_it(mole_x, region_id)[0]), &F));
-          }
-
-          if(complex)
-          {
-            genius_assert(!cg_sol_write  (fn, B, Z, "Mole", Vertex, &SOL));
-            genius_assert(!cg_field_write(fn, B, Z, SOL, RealDouble, "mole_x", &(sort_it(mole_x, region_id)[0]), &F));
-            genius_assert(!cg_field_write(fn, B, Z, SOL, RealDouble, "mole_y", &(sort_it(mole_y, region_id)[0]), &F));
-          }
-
-          //write user defined values
-          if(custom_variable.size()>0)
-          {
-            genius_assert(!cg_sol_write  (fn, B, Z, "Custom", Vertex, &SOL));
-            for(std::map< std::string, std::vector<double> >::iterator var_it=custom_variable.begin();
-                var_it!=custom_variable.end();var_it++)
+            for( region_data_it = region_data.begin(); region_data_it != region_data.end(); ++region_data_it)
             {
-              genius_assert(!cg_field_write(fn, B, Z, SOL, RealDouble, var_it->first.c_str(), &(sort_it(var_it->second, region_id)[0]), &F));
+              const SimulationVariable & variable = region_data_it->second.first;
+              region_data_it->second.second.push_back( node_data->data<double>( variable.variable_index ) / variable.variable_unit );
             }
           }
-        }
 
+          // synchronization data with other processor
+          Parallel::gather(0, region_node_id);
+          for( region_data_it = region_data.begin(); region_data_it != region_data.end(); ++region_data_it)
+            Parallel::gather(0, region_data_it->second.second);
+
+          if( Genius::processor_id() == 0)
+          {
+            std::vector<unsigned int> region_node_local_id;
+            for(unsigned int n=0; n<region_node_id.size(); ++n)
+              region_node_local_id.push_back( node_id_to_region_node_id[region_node_id[n]]-1 );
+
+            for( region_data_it = region_data.begin(); region_data_it != region_data.end(); )
+            {
+              const std::string & sol =  region_data_it->first;
+              genius_assert(!cg_sol_write  (fn, B, Z, sol.c_str(), Vertex, &SOL));
+              std::string path = std::string("/") + base_name + "/" + zone_name + "/" + sol;
+              std::pair <region_data_map::iterator, region_data_map::iterator>  bounds = region_data.equal_range(sol);
+              while (bounds.first != bounds.second)
+              {
+                const std::string & variable =  bounds.first->second.first.variable_name;
+                std::string variable_unit = variable + ".unit";
+                std::string variable_unit_string = bounds.first->second.first.variable_unit_string;
+                genius_assert(!cg_field_write(fn, B, Z, SOL, RealDouble, variable.c_str(),  &(_sort_it(bounds.first->second.second, region_node_local_id)[0]),   &F));
+                genius_assert(!cg_gopath(fn, path.c_str()));
+                genius_assert(!cg_descriptor_write(variable_unit.c_str(), variable_unit_string.c_str()));
+                ++bounds.first;
+              }
+              region_data_it = bounds.second;
+            }
+          }
+          break;
+        }
+        // no solution data in vacuum region?
+        case VacuumRegion     :
         break;
-      }
 
-
-    case InsulatorRegion     :
-      {
-        std::vector<unsigned int> region_id;
-        std::vector<double> psi, T;
-        std::map< std::string, std::vector<double> > custom_variable;
-        std::map< std::string, int > custom_variable_dummy;
-
-        SimulationRegion::const_node_iterator node_it = region->nodes_begin();
-        local_id = 0;
-        for(; node_it!=region->nodes_end(); ++node_it, ++local_id)
-        {
-
-          if( (*node_it).second->root_node()->processor_id() != Genius::processor_id()) continue;
-
-          const FVM_NodeData * node_data = (*node_it).second->node_data();
-          genius_assert(node_data);
-
-          region_id.push_back(local_id);
-
-          // field solution
-          psi.push_back( node_data->psi()/ V );
-          T.push_back  ( node_data->T()  / K );
-
-          // user defined values.
-          // some of which are defined only on a subset of nodes, we collect all names here first
-          std::vector<std::string> user_var_list;
-          node_data->GetUserScalarList(user_var_list);
-          for(std::vector<std::string>::iterator name_it=user_var_list.begin();
-              name_it!=user_var_list.end(); name_it++)
-          {
-            if(custom_variable.find(*name_it) == custom_variable.end())
-            {
-              custom_variable_dummy.insert(std::pair<std::string, int >(*name_it,0));
-            }
-          }
-
-        }
-
-        // actually collecting user defined values, and use zero as default.
-        {
-          std::vector<unsigned int> n_var;
-          n_var.push_back(custom_variable_dummy.size());
-          Parallel::allgather(n_var);
-          for(unsigned int i=0; i<Genius::n_processors(); i++)
-          {
-            if (Genius::processor_id() == i)
-            {
-              for(std::map< std::string, int >::iterator var_it=custom_variable_dummy.begin();
-                  var_it!=custom_variable_dummy.end();var_it++)
-              {
-                std::string key;
-                key = var_it->first;
-                Parallel::broadcast(key,i);
-                custom_variable.insert(std::pair<std::string,std::vector<double> >(key,std::vector<double>()));
-              }
-            }
-            else
-            {
-              for(unsigned int j=0; j<n_var[i]; j++)
-              {
-                std::string key;
-                Parallel::broadcast(key,i);
-                custom_variable.insert(std::pair<std::string,std::vector<double> >(key,std::vector<double>()));
-              }
-            }
-          }
-
-          if (custom_variable.size()>0)
-          {
-            local_id=0;
-            for(node_it=region->nodes_begin(); node_it!=region->nodes_end(); ++node_it, ++local_id)
-            {
-              if( (*node_it).second->root_node()->processor_id() != Genius::processor_id()) continue;
-
-              const FVM_NodeData * node_data = (*node_it).second->node_data();
-              genius_assert(node_data);
-
-              for(std::map< std::string, std::vector<double> >::iterator var_it=custom_variable.begin();
-                  var_it!=custom_variable.end();var_it++)
-              {
-                var_it->second.push_back(0.0);
-              }
-
-              std::vector<std::string> user_var_list;
-              node_data->GetUserScalarList(user_var_list);
-              for(std::vector<std::string>::const_iterator name_it=user_var_list.begin();
-                  name_it!=user_var_list.end(); name_it++)
-              {
-                double v = node_data->UserScalarValue(*name_it);
-                std::map< std::string, std::vector<double> >::iterator var_it = custom_variable.find(*name_it);
-                var_it->second.back() = v;
-              }
-            }
-          }
-        }
-
-
-        // synchronization data with other processor
-        Parallel::gather(0, region_id);
-        Parallel::gather(0, psi);
-        Parallel::gather(0, T);
-
-        if(custom_variable.size()>0)
-        {
-          for(std::map< std::string, std::vector<double> >::iterator var_it=custom_variable.begin();
-              var_it!=custom_variable.end();var_it++)
-          {
-            Parallel::gather(0,var_it->second);
-          }
-        }
-
-
-        if( Genius::processor_id() == 0)
-        {
-          genius_assert(!cg_sol_write  (fn, B, Z, "Solution", Vertex, &SOL));
-          genius_assert(!cg_field_write(fn, B, Z, SOL, RealDouble, "potential",              &(sort_it(psi,region_id)[0]),   &F));
-          genius_assert(!cg_field_write(fn, B, Z, SOL, RealDouble, "lattice_temperature",    &(sort_it(T,  region_id)[0]),   &F));
-
-          //write user defined values
-          if(custom_variable.size()>0)
-          {
-            genius_assert(!cg_sol_write  (fn, B, Z, "Custom", Vertex, &SOL));
-            for(std::map< std::string, std::vector<double> >::iterator var_it=custom_variable.begin();
-                var_it!=custom_variable.end();var_it++)
-            {
-              genius_assert(!cg_field_write(fn, B, Z, SOL, RealDouble, var_it->first.c_str(), &(sort_it(var_it->second, region_id)[0]), &F));
-            }
-          }
-        }
+        case PMLRegion     :
         break;
-      }
 
-
-    case ConductorRegion     :
-      {
-        std::vector<unsigned int> region_id;
-        std::vector<double> psi, T;
-        std::map< std::string, std::vector<double> > custom_variable;
-        std::map< std::string, int > custom_variable_dummy;
-
-        SimulationRegion::const_node_iterator node_it = region->nodes_begin();
-        local_id = 0;
-        for(; node_it!=region->nodes_end(); ++node_it, ++local_id)
+        default :
         {
-
-          if( (*node_it).second->root_node()->processor_id() != Genius::processor_id()) continue;
-
-          const FVM_NodeData * node_data = (*node_it).second->node_data();
-          genius_assert(node_data);
-
-          region_id.push_back(local_id);
-
-          // field solution
-          psi.push_back( node_data->psi()/ V );
-          T.push_back  ( node_data->T()  / K );
-
-          // user defined values.
-          // some of which are defined only on a subset of nodes, we collect all names here first
-          std::vector<std::string> user_var_list;
-          node_data->GetUserScalarList(user_var_list);
-          for(std::vector<std::string>::iterator name_it=user_var_list.begin();
-              name_it!=user_var_list.end(); name_it++)
-          {
-            if(custom_variable.find(*name_it) == custom_variable.end())
-            {
-              custom_variable_dummy.insert(std::pair<std::string, int >(*name_it,0));
-            }
-          }
-
+          MESSAGE<<"ERROR: Unsupported region type found during CGNS export."<<std::endl; RECORD();
+          genius_error();
         }
-
-        // actually collecting user defined values, and use zero as default.
-        {
-          std::vector<unsigned int> n_var;
-          n_var.push_back(custom_variable_dummy.size());
-          Parallel::allgather(n_var);
-          for(unsigned int i=0; i<Genius::n_processors(); i++)
-          {
-            if (Genius::processor_id() == i)
-            {
-              for(std::map< std::string, int >::iterator var_it=custom_variable_dummy.begin();
-                  var_it!=custom_variable_dummy.end();var_it++)
-              {
-                std::string key;
-                key = var_it->first;
-                Parallel::broadcast(key,i);
-                custom_variable.insert(std::pair<std::string,std::vector<double> >(key,std::vector<double>()));
-              }
-            }
-            else
-            {
-              for(unsigned int j=0; j<n_var[i]; j++)
-              {
-                std::string key;
-                Parallel::broadcast(key,i);
-                custom_variable.insert(std::pair<std::string,std::vector<double> >(key,std::vector<double>()));
-              }
-            }
-          }
-
-          if (custom_variable.size()>0)
-          {
-            local_id=0;
-            for(node_it=region->nodes_begin(); node_it!=region->nodes_end(); ++node_it, ++local_id)
-            {
-              if( (*node_it).second->root_node()->processor_id() != Genius::processor_id()) continue;
-
-              const FVM_NodeData * node_data = (*node_it).second->node_data();
-              genius_assert(node_data);
-
-              for(std::map< std::string, std::vector<double> >::iterator var_it=custom_variable.begin();
-                  var_it!=custom_variable.end();var_it++)
-              {
-                var_it->second.push_back(0.0);
-              }
-
-              std::vector<std::string> user_var_list;
-              node_data->GetUserScalarList(user_var_list);
-              for(std::vector<std::string>::const_iterator name_it=user_var_list.begin();
-                  name_it!=user_var_list.end(); name_it++)
-              {
-                double v = node_data->UserScalarValue(*name_it);
-                std::map< std::string, std::vector<double> >::iterator var_it = custom_variable.find(*name_it);
-                var_it->second.back() = v;
-              }
-            }
-          }
-        }
-
-
-        // synchronization data with other processor
-        Parallel::gather(0, region_id);
-        Parallel::gather(0, psi);
-        Parallel::gather(0, T);
-
-        if(custom_variable.size()>0)
-        {
-          for(std::map< std::string, std::vector<double> >::iterator var_it=custom_variable.begin();
-              var_it!=custom_variable.end();var_it++)
-          {
-            Parallel::gather(0,var_it->second);
-          }
-        }
-
-
-        if( Genius::processor_id() == 0)
-        {
-          genius_assert(!cg_sol_write  (fn, B, Z, "Solution", Vertex, &SOL));
-          genius_assert(!cg_field_write(fn, B, Z, SOL, RealDouble, "potential",              &(sort_it(psi,region_id)[0]),   &F));
-          genius_assert(!cg_field_write(fn, B, Z, SOL, RealDouble, "lattice_temperature",    &(sort_it(T,  region_id)[0]),   &F));
-
-          //write user defined values
-          if(custom_variable.size()>0)
-          {
-            genius_assert(!cg_sol_write  (fn, B, Z, "Custom", Vertex, &SOL));
-            for(std::map< std::string, std::vector<double> >::iterator var_it=custom_variable.begin();
-                var_it!=custom_variable.end();var_it++)
-            {
-              genius_assert(!cg_field_write(fn, B, Z, SOL, RealDouble, var_it->first.c_str(), &(sort_it(var_it->second, region_id)[0]), &F));
-            }
-          }
-        }
-        break;
-      }
-
-    // no solution data in vacuum region?
-    case VacuumRegion     :
-      break;
-
-    case PMLRegion     :
-      break;
-
-    default :
-      {
-        MESSAGE<<"ERROR: Unsupported region type found during CGNS export."<<std::endl; RECORD();
-        genius_error();
-      }
 
     }
 
-
   }
 
+
+  // write global boundary conditions, including interconnect and charge boundary
+  if( Genius::processor_id() == 0)
+  {
+    genius_assert(!cg_goto(fn,B,"end"));
+    assert(!cg_user_data_write ("ExtraBoundaryInfo"));
+    assert(!cg_goto(fn, B, "UserDefinedData_t", 1, "end"));
+    const BoundaryConditionCollector * bcs = system.get_bcs();
+    for(unsigned int n=0; n<bcs->n_bcs(); ++n)
+    {
+      const BoundaryCondition * bc = bcs->get_bc(n);
+
+      // interconnect bc
+      if( bc->bc_type() == InterConnect || bc->bc_type() == ChargeIntegral)
+      {
+        genius_assert(!cg_descriptor_write(bc->label().c_str(), bc->boundary_condition_in_string().c_str() ));
+      }
+    }
+  }
 
   // close CGNS file
   if( Genius::processor_id() == 0)
     cg_close(fn);
 
 }
+
+
+std::vector<double> & CGNSIO::_sort_it (std::vector<double> & x, const std::vector<unsigned int > &id)
+{
+  std::vector<double> xx(x) ;
+
+  for(unsigned int i=0; i<id.size(); i++)
+    x[id[i]] = xx[i];
+
+  return x;
+}
+
 
 

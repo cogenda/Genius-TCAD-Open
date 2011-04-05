@@ -24,11 +24,46 @@
 
 #include "simulation_system.h"
 #include "semiconductor_region.h"
-#include "boundary_condition.h"
+#include "boundary_condition_simplegate.h"
 
 using PhysicalUnit::kb;
 using PhysicalUnit::e;
-using PhysicalUnit::eps0;
+
+
+
+/*---------------------------------------------------------------------
+ * set scaling constant
+ */
+void SimpleGateContactBC::Poissin_Fill_Value(Vec , Vec L)
+{
+  BoundaryCondition::const_node_iterator node_it = nodes_begin();
+  BoundaryCondition::const_node_iterator end_it = nodes_end();
+  for(; node_it!=end_it; ++node_it )
+  {
+    // skip node not belongs to this processor
+    if( (*node_it)->processor_id()!=Genius::processor_id() ) continue;
+
+    // search all the fvm_node which has *node_it as root node, these fvm_nodes have the same location in geometry,
+    // but belong to different regions in logic.
+    BoundaryCondition::region_node_iterator  rnode_it     = region_node_begin(*node_it);
+    BoundaryCondition::region_node_iterator  end_rnode_it = region_node_end(*node_it);
+    for(unsigned int i=0 ; rnode_it!=end_rnode_it; ++i, ++rnode_it  )
+    {
+      const SimulationRegion * region = ( *rnode_it ).second.first;
+      switch ( region->type() )
+      {
+        case SemiconductorRegion :
+        {
+          const FVM_Node * fvm_node = ( *rnode_it ).second.second;
+          VecSetValue(L, fvm_node->global_offset(), 1.0, INSERT_VALUES);
+          break;
+        }
+
+        default: break;
+      }
+    }
+  }
+}
 
 
 ///////////////////////////////////////////////////////////////////////
@@ -54,7 +89,7 @@ void SimpleGateContactBC::Poissin_Function(PetscScalar * x, Vec f, InsertMode &a
 
   PetscScalar q = e*this->Qf();            // surface change density
   PetscScalar Thick = this->Thickness();   // the thickness of gate oxide
-  PetscScalar eps_ox = eps0*this->eps();   // the permittivity of gate material
+  PetscScalar eps_ox = this->eps();        // the permittivity of gate material
 
   BoundaryCondition::const_node_iterator node_it = nodes_begin();
   BoundaryCondition::const_node_iterator end_it = nodes_end();
@@ -118,7 +153,7 @@ void SimpleGateContactBC::Poissin_Jacobian(PetscScalar * x, Mat *jac, InsertMode
 
   PetscScalar q = e*this->Qf();            // surface change density
   PetscScalar Thick = this->Thickness();   // the thickness of gate oxide
-  PetscScalar eps_ox = eps0*this->eps();   // the permittivity of gate material
+  PetscScalar eps_ox = this->eps();        // the permittivity of gate material
 
   // we use AD again. no matter it is overkill here.
   //the indepedent variable number, we only need 1 here.

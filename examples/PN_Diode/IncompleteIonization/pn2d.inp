@@ -1,0 +1,73 @@
+#==============================================================================
+# Genius example: Incomplete Ionization simulation
+#==============================================================================
+
+
+
+GLOBAL    T=300 DopingScale=1e18  Z.Width=1.0
+
+#------------------------------------------------------------------------------
+# Create an initial simulation mesh
+MESH      Type = S_Tri3 triangle="pzADq30"
+
+X.MESH    WIDTH=1.0   N.SPACES=10
+X.MESH    WIDTH=1.0   N.SPACES=10
+X.MESH    WIDTH=1.0   N.SPACES=10
+
+
+Y.MESH    DEPTH=1.0  N.SPACES=10
+Y.MESH    DEPTH=1.0  N.SPACES=10
+Y.MESH    DEPTH=1.0  N.SPACES=10
+
+
+#------------------------------------------------------------------------------
+# Specify silicon and metal regions.
+REGION    Label=Silicon  Material=Si
+
+
+# Specify boundary face
+FACE      Label=Anode    Location=TOP   x.min=0 x.max=1.0
+FACE      Label=Cathode  Location=BOT
+
+
+#------------------------------------------------------------------------------
+# boundary condition
+BOUNDARY ID=Anode   Type=Ohmic
+BOUNDARY ID=Cathode Type=Ohmic
+
+#------------------------------------------------------------------------------
+# User defined detailed information of species boron_concentration,
+# which has the ion type acceptor (-1 for acceptor, +1 for donor),
+# with constant activation energy E0=0.045eV and band degeneracy factor GB=4.
+# Here alpha, beta and gamma are parameters for effective activation energy.
+# NOTE: PMI command must before the PROFILE command.
+PMI region=Silicon type=band string<species>=boron_concentration int<ion>=-1 real<e0>=0.045 real<gb>=4 \
+    real<alpha>=3.037e-8 real<beta>=200 real<gamma>=0.95
+
+#------------------------------------------------------------------------------
+# doping profile
+DOPING Type=Analytic
+PROFILE   Type=Uniform    Ion=Donor     N.PEAK=1E18  X.MIN=0.0 X.MAX=3.0  \
+          Y.min=0.0 Y.max=3.0        Z.MIN=0.0 Z.MAX=3.0
+
+# Here the id boron_concentration matches species in PMI specification, 
+# genius knows that this profile is P-type doping.
+PROFILE   Type=Analytic   Ion=custom  id=boron_concentration  N.PEAK=1E19  X.MIN=0.0 X.MAX=1.0  \
+          Z.MIN=0.0 Z.MAX=1.0 \
+	  Y.min=0.0 Y.max=0.0 X.CHAR=0.2  Z.CHAR=0.2 Y.CHAR=0.2
+
+METHOD    Type=Poisson NS=Basic LS=MUMPS MaxIt=100
+SOLVE
+
+# active incomplete ionization and Fermi statistics
+Model region=Silicon incompleteionization=true fermi=true
+
+
+
+METHOD    Type=DDML1 NS=Basic LS=MUMPS MaxIt=100 damping=potential
+SOLVE     TYpe=EQ
+EXPORT    VTK=diode.vtu CGNS=diode.cgns
+
+# solver diode forward IV
+SOLVE     TYpe=DC vscan=Anode vstart=0 vstep=0.05 vstop=0.8
+EXPORT    VTK=diode_bias.vtu CGNS=diode_bias.cgns

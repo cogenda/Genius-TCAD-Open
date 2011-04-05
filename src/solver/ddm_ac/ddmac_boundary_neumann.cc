@@ -25,7 +25,7 @@
 #include "semiconductor_region.h"
 #include "conductor_region.h"
 #include "insulator_region.h"
-#include "boundary_condition.h"
+#include "boundary_condition_neumann.h"
 
 
 using PhysicalUnit::kb;

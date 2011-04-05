@@ -230,6 +230,8 @@ public:
    */
   struct SolHead_t
   {
+    SolHead_t():sol_num(0) {}
+
     /**
      * Number of solution variables
      */

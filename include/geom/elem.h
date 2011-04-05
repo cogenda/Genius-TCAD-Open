@@ -125,12 +125,6 @@ class Elem :    public DofObject
    */
   virtual Node* get_node (const unsigned int i) const;
 
-  /**
-   * @returns the pointer to local \p FVM_Node \p i.
-   * only for FVM element
-   */
-  virtual FVM_Node * get_fvm_node(const unsigned int ) const
-  { genius_error(); return NULL; }
 
   /**
    * set the \p ith FVM_Node pointer.
@@ -138,6 +132,23 @@ class Elem :    public DofObject
    */
   virtual void hold_fvm_node(const unsigned int , FVM_Node *)
   {genius_error(); return; }
+
+
+  /**
+   * @returns the pointer to local \p FVM_Node \p i.
+   * only for FVM element
+   */
+  virtual FVM_Node * get_fvm_node(const unsigned int /* i */) const
+  { genius_error(); return NULL; }
+
+
+  /**
+   * @returns the pointer to local \p FVM_Node \p i on side \p s.
+   * only for FVM element
+   */
+  virtual FVM_Node * get_side_fvm_node(const unsigned int /* s */, const unsigned int /* i */) const
+  { genius_error(); return NULL; }
+
 
 
   /**
@@ -297,6 +308,17 @@ class Elem :    public DofObject
                             std::vector<unsigned int>& conn) const = 0;
 
   /**
+   * Returns the side order for this element in a specific
+   * format, which is specified by the IOPackage tag.
+   */
+  virtual void side_order( const IOPackage iop, std::vector<unsigned int>& order) const = 0;
+
+  /**
+   * write out vtk(?) format for 3D view the element
+   */
+  virtual void geometri_view(std::ostream & /*out*/) const {}
+
+  /**
    * Writes the element connectivity for various IO packages
    * to the passed ostream "out".  Not virtual, since it is
    * implemented in the base class.  This function supercedes the
@@ -403,6 +425,12 @@ class Elem :    public DofObject
                               std::vector<unsigned int> & nodes ) const =0;
 
   /**
+   * get the node local index on edge2 e
+   */
+  virtual void nodes_on_edge (const unsigned int e,
+                              std::pair<unsigned int, unsigned int> & nodes ) const =0;
+
+  /**
    * @returns true iff the specified (local) edge number is on the
    * specified side
    */
@@ -450,6 +478,11 @@ class Elem :    public DofObject
    */
   virtual AutoPtr<Elem> build_side (const unsigned int i,
                                     bool proxy=true) const = 0;
+
+  /**
+   * @return the ith node on sth side
+   */
+  virtual unsigned int side_node(unsigned int s, unsigned int i) const=0;
 
   /**
    * Creates an element coincident with edge \p i. The element returned is
@@ -524,10 +557,21 @@ class Elem :    public DofObject
   { genius_error(); VectorValue<AutoDScalar> dummy(0,0,0); return dummy; }
 
   /**
+   * @return the interpolated value at given point
+   */
+  virtual PetscScalar interpolation( const std::vector<PetscScalar> & , const Point &) const;
+
+  /**
    * @return the (length/area/volume) of the geometric element.
    * however, we should never get here
    */
   virtual Real volume () const {genius_error(); return 0;}
+
+  /**
+   * @return the length of the ith edge of element.
+   * however, we should never get here
+   */
+  virtual Real edge_length(const unsigned int i) const {genius_error(); return 0;}
 
   /**
    * @return the node associated partial (length/area/volume) of the geometric element with local node index.
@@ -549,6 +593,21 @@ class Elem :    public DofObject
    */
   virtual Real partial_volume_with_edge(unsigned int e) const
   {genius_assert( e<n_edges() ); return 0;}
+
+
+  /**
+   * @return the edge associated truncated partial (length/area) of the geometric element with local edge index.
+   * truncated means this value should be positive, some element has their own specific treatment
+   */
+  virtual Real partial_area_with_edge_truncated(unsigned int e) const
+  { return std::max(0.0, this->partial_area_with_edge(e)); }
+
+  /**
+   * @return the edge associated truncated partial (area/volume) of the geometric element with local edge index.
+   * truncated means this value should be positive, some element has their own specific treatment
+   */
+  virtual Real partial_volume_with_edge_truncated(unsigned int e) const
+  { return std::max(0.0, this->partial_volume_with_edge(e)); }
 
 
   /**
@@ -582,6 +641,11 @@ class Elem :    public DofObject
     */
    virtual void ray_hit(const Point & /* p */ , const Point & /* dir */ , IntersectionResult & /* result */ , unsigned int=3 /* dim */ ) const
    {genius_error(); return;}
+
+   /**
+    * @return the nearest point on this element to the given point p
+    */
+   virtual Point nearest_point(const Point &p, Real * dist = 0) const=0;
 
    /**
     * @returns the unit normal vector of a specified side for any element. The return value
@@ -745,6 +809,11 @@ class Elem :    public DofObject
   static ElemType fvm_compatible_type (const ElemType et);
 
   /**
+   * @returns dimension by elem type
+   */
+  static unsigned int dim (const ElemType et);
+
+  /**
    * return \p true if the element can be used in FVM
    */
   virtual bool fvm_compatible_test() const
@@ -752,10 +821,10 @@ class Elem :    public DofObject
 
 
   /**
-   * calculate geom information for fvm usage
+   * calculate geom information for fvm usage, default does nothing
    */
-  virtual void prepare_for_fvm()
-  { genius_error(); }
+  virtual void prepare_for_fvm() {}
+
 
   /**
    * @returns the refinement level of the current element.  If the
@@ -978,13 +1047,6 @@ class Elem :    public DofObject
   virtual void refine (MeshRefinement& mesh_refinement);
 
   /**
-   * For an element with children, this function calculates
-   * and sets the key values for the nodes introduced by the
-   * children (e.g. mid-edge/mid-face nodes)
-   */
-  void compute_children_node_keys();
-
-  /**
    * Coarsen the element.  This is not
    * virtual since it is the same for all
    * element types.
@@ -998,6 +1060,16 @@ class Elem :    public DofObject
    * children from the mesh
    */
   void contract ();
+
+  /**
+   * Pack all this information into one communication to avoid latency
+   */
+  void pack_element (std::vector<int> &conn) const;
+
+  /**
+   * elem pack size
+   */
+  static unsigned int pack_size( ElemType t );
 
 #endif
 
@@ -1074,6 +1146,15 @@ public:
    */
   static AutoPtr<Elem> build (const ElemType type,
                               Elem* p=NULL);
+
+
+ /**
+  * Build an clone element of type \p type. which has its own nodes
+  * Since this method allocates memory the new \p Elem is returned
+  * in a \p AutoPtr<>
+  */
+  static AutoPtr<Elem> build_clone (const ElemType type,
+                                    Elem* p=NULL);
 
 #ifdef ENABLE_AMR
 
@@ -1198,11 +1279,6 @@ public:
   friend class MeshRefinement;    // (Elem::nullify_neighbors)
 
  private:
-  /**
-   * This function is used internally for node key generation.
-   * It handles casting of pointers on various architectures.
-   */
-  unsigned int _cast_node_address_to_unsigned_int(const unsigned int n);
 
   // Prime numbers used for computing node keys.  These are the same
   // for every instance of the Elem class.

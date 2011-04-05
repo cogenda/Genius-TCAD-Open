@@ -136,6 +136,17 @@ int MeshGeneratorQuad4::set_region(const Parser::Card &c)
     return 1;
   }
 
+  // test if region label is unique
+  for(unsigned int n=0; n<region_array1d.size(); ++n)
+  {
+    if(region_array1d[n].label == region.label)
+    {
+      MESSAGE<<"ERROR at " <<c.get_fileline()<< " REGION: Region label " << region.label << " has been defined before!\n";
+      RECORD();
+      return 1;
+    }
+  }
+
   region_array1d.push_back(region);
 
   return 0;
@@ -582,7 +593,7 @@ int MeshGeneratorQuad4::do_mesh()
   _mesh.boundary_info->build_side_list (elems, sides, bds);
 
   //build neighbor information for mesh. then elem->neighbor() is functional
-  _mesh.find_neighbors();
+  _mesh.boundary_info->find_neighbors();
 
 
   for (size_t nbd=0; nbd<elems.size(); nbd++ )

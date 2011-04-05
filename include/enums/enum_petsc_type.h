@@ -45,9 +45,9 @@ namespace SolverSpecify
 
 
   /**
-   * Defines an \p enum for iterative solver types
+   * Defines an \p enum for linear solver types
    */
-  enum LinearSolverType {CG=0,
+  enum LinearSolverType {CG=0,         // iterative solvers
                          CGN,
                          CGS,
                          CR,
@@ -56,8 +56,10 @@ namespace SolverSpecify
                          TFQMR,
                          BICG,
                          BICGSTAB,
+                         BCGSL,
                          MINRES,
                          GMRES,
+                         FGMRES,
                          LSQR,
                          JACOBI,
                          SOR_FORWARD,
@@ -65,7 +67,7 @@ namespace SolverSpecify
                          SSOR,
                          RICHARDSON,
                          CHEBYSHEV,
-                         LU,
+                         LU,            // direct solvers
                          UMFPACK,
                          SuperLU,
                          PASTIX,
@@ -73,6 +75,13 @@ namespace SolverSpecify
                          SuperLU_DIST,
                          GSS,
                          INVALID_LINEAR_SOLVER};
+
+ /**
+  * Defines an \p enum for category of linear solvers
+  */
+  enum LinearSolverCategory {ITERATIVE=0,
+                             DIRECT,
+                             HYBRID};
 
   /**
    * Defines an \p enum for preconditioner types
@@ -83,11 +92,14 @@ namespace SolverSpecify
                            SOR_PRECOND,
                            SSOR_PRECOND,
                            EISENSTAT_PRECOND,
+                           BOOMERAMG_PRECOND,
                            ASM_PRECOND,
                            CHOLESKY_PRECOND,
                            ICC_PRECOND,
                            ILU_PRECOND,
+                           ILUT_PRECOND,
                            LU_PRECOND,
+                           PARMS_PRECOND,
                            USER_PRECOND,
                            SHELL_PRECOND,
                            INVALID_PRECONDITIONER};

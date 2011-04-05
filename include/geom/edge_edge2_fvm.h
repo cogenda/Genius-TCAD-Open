@@ -77,6 +77,12 @@ public:
     { return _fvm_node[i]; }
 
   /**
+   * @returns the pointer to local \p FVM_Node \p i on side \p s.
+   */
+  virtual FVM_Node * get_side_fvm_node(const unsigned int s, const unsigned int i) const
+  {  genius_assert(s<2); genius_assert(i==0);  return _fvm_node[s]; }
+
+  /**
    * set the \p ith FVM_Node pointer.
    */
   virtual void hold_fvm_node(const unsigned int i, FVM_Node *pn)
@@ -123,6 +129,11 @@ public:
   virtual Real partial_volume_with_edge(unsigned int ) const
     { return 0;}
 
+  /**
+   * calculate geom information for fvm usage
+   */
+  virtual void prepare_for_fvm();
+
   // For FVM usage, we need more Geometry information of an Edge
 private:
 
@@ -136,10 +147,7 @@ private:
    */
   Real vol;
 
-  /**
-   * calculate geom information for fvm usage
-   */
-  virtual void prepare_for_fvm();
+
 };
 
 

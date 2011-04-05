@@ -75,14 +75,12 @@
 
 #define INSTANTIATE_MBRF(_dim,_t) \
   template bool         FE<_dim,_t>::shapes_need_reinit() const;\
-  template unsigned int FE<_dim,_t>::n_dofs(ElemType,Order)
-/*
+  template unsigned int FE<_dim,_t>::n_dofs(ElemType,Order); \
   template unsigned int FE<_dim,_t>::n_dofs_at_node(ElemType,Order,unsigned int); \
   template FEContinuity FE<_dim,_t>::get_continuity() const;\
   template bool         FE<_dim,_t>::is_hierarchic() const;\
   template unsigned int FE<_dim,_t>::n_dofs_per_elem(ElemType,Order);\
-  template void         FE<_dim,_t>::nodal_soln(const Elem*,const Order,const std::vector<Number>&,std::vector<Number>&)
-*/
+  template void         FE<_dim,_t>::nodal_soln(const Elem*,const Order,const std::vector<Number>&,std::vector<Number>&);
 #endif
 /*
 // The Intel 7.1 compiler out at TACC required these, but they are used

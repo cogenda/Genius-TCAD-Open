@@ -34,7 +34,7 @@ ATTACH   Electrode=Base          VApp=Vb   # set voltage(Base) to Vb
 #ATTACH   Electrode=Base         IApp=Ib   # set current(Base) to Ib
 
 # compute STEADYSTATE to get a initial value
-METHOD   Type=DDML2    NS=Basic LS=GMRES Damping=Potential
+METHOD   Type=DDML1    NS=Basic LS=GMRES Damping=Potential
 SOLVE    Type=STEADY
 
 # we get an iv curvy on Vbe=0.7V.

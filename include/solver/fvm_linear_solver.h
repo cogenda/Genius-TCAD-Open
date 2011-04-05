@@ -24,8 +24,6 @@
 #ifndef __fvm_linear_solver_h__
 #define __fvm_linear_solver_h__
 
-#include <vector>
-
 #include "enum_petsc_type.h"
 #include "fvm_pde_solver.h"
 #include "petscksp.h"

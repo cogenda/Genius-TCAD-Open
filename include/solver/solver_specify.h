@@ -30,9 +30,9 @@
 #include <deque>
 #include <string>
 
-
-#include "enum_solver_specify.h"
 #include "enum_petsc_type.h"
+#include "enum_solver_specify.h"
+
 #include "key.h"
 
 
@@ -63,14 +63,9 @@ namespace SolverSpecify
   extern std::string      out_prefix;
 
   /**
-   * hooks to be installed
+   * hooks to be installed, \<id \<hook_name, hook_parameters\> \>
    */
-  extern std::deque<std::string> Hooks;
-
-  /**
-   * parameters for the hooks
-   */
-  extern std::map<std::string, std::vector<Parser::Parameter> > Hook_Parameters;
+  extern std::map<std::string, std::pair<std::string, std::vector<Parser::Parameter> > > Hooks;
 
   /**
    * nonlinear solver scheme: basic, line search, trust region...
@@ -91,6 +86,11 @@ namespace SolverSpecify
    * Newton damping
    */
   extern DampingScheme     Damping;
+
+  /**
+   * indicate whether voronoi truncation will be used
+   */
+  extern VoronoiTruncationFlag VoronoiTruncation;
 
 
   //--------------------------------------------
@@ -122,6 +122,18 @@ namespace SolverSpecify
    * Max nonlinear iteration number
    */
   extern unsigned int      MaxIteration;
+
+  /**
+  * potential damping factor, in kT/q
+  */
+  extern double   potential_update;
+
+
+  /**
+   * When absolute error of equation less
+   * than this value, solution is considered converged.
+   */
+  extern double      absolute_toler;
 
   /**
    * When relative error of solution variable less
@@ -194,7 +206,7 @@ namespace SolverSpecify
   /**
    * transient scheme
    */
-  extern TSType    TS_type;
+  extern TemporalScheme    TS_type;
 
   /**
    * start time of transient simulation
@@ -246,6 +258,12 @@ namespace SolverSpecify
    * use initial condition, only for mixA solver
    */
   extern bool      UIC;
+
+
+  /**
+   * do operator point calculation before transient simulation, only for mixA solver
+   */
+  extern bool      tran_op;
 
   /**
    * current time
@@ -346,6 +364,16 @@ namespace SolverSpecify
    * the current step for ramp up
    */
   extern double    RampUpIStep;
+
+  /**
+   * the initial value of gmin
+   */
+  extern double    GminInit;
+
+  /**
+   * the final value of gmin
+   */
+  extern double    Gmin;
 
   //------------------------------------------------------
   // parameters for MIX simulation

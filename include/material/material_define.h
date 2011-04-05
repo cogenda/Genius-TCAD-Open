@@ -39,6 +39,7 @@ enum  MaterialType
  ComplexCompoundSemiconductor   ,
  Insulator                      ,
  Conductor                      ,
+ Resistance                     ,
  PML                            ,
  Vacuum                         ,
  INVALID_MATERIAL_TYPE            // should always be last
@@ -59,38 +60,44 @@ extern void init_material_define(const std::string &fname);
 
 
 /**
- * @return true iff mat_name match any semiconductor material name
+ * @return true if mat_name match any semiconductor material name
  */
 extern bool IsSemiconductor(const std::string & mat_name);
 
 /**
- * @return true iff mat_name match any single compound semiconductor material name
+ * @return true if mat_name match any single compound semiconductor material name
  */
 extern bool IsSingleCompSemiconductor(const std::string & mat_name);
 
 
 /**
- * @return true iff mat_name match any complex compound semiconductor material name
+ * @return true if mat_name match any complex compound semiconductor material name
  */
 extern bool IsComplexCompSemiconductor(const std::string & mat_name);
 
 /**
- * @return true iff mat_name match a material name of insulator
+ * @return true if mat_name match a material name of insulator
  */
 extern bool IsInsulator(const std::string & mat_name);
 
 /**
- * @return true iff mat_name match a material name of conductor
+ * @return true if mat_name match a material name of conductor
  */
 extern bool IsConductor(const std::string & mat_name);
 
 /**
- * @return true iff mat_name is Vacuum
+ * @return true if mat_name match a material name of resistance material
+ */
+extern bool IsResistance(const std::string & mat_name);
+
+
+/**
+ * @return true if mat_name is Vacuum
  */
 extern bool IsVacuum(const std::string & mat_name);
 
 /**
- * @return true iff mat_name is MPL
+ * @return true if mat_name is MPL
  */
 extern bool IsPML(const std::string & mat_name);
 

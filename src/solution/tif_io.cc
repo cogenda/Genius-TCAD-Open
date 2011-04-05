@@ -27,11 +27,11 @@
 // Local includes
 #include "tif_data.h"
 #include "tif_io.h"
-#include "mesh.h"
+#include "mesh_base.h"
 #include "boundary_info.h"
 #include "mesh_communication.h"
+#include "simulation_region.h"
 #include "parallel.h"
-#include "simulation_system.h"
 #include "material.h"
 
 using PhysicalUnit::cm;
@@ -63,7 +63,7 @@ void TIFIO::read (const std::string& filename)
    * after that, we fill mesh structure with mesh information read from TIF
    */
   SimulationSystem & system = FieldInput<SimulationSystem>::system();
-  Mesh & mesh = system.mesh();
+  MeshBase & mesh = system.mesh();
 
   // clear the system
   system.clear();
@@ -139,46 +139,65 @@ void TIFIO::read (const std::string& filename)
       Elem* elem = mesh.add_elem(Elem::build(TRI3).release());
 
       // tri elem node
-      elem->set_node(0) = mesh.node_ptr( (*tif_tri_it).c1 );
-      elem->set_node(1) = mesh.node_ptr( (*tif_tri_it).c2 );
-      elem->set_node(2) = mesh.node_ptr( (*tif_tri_it).c3 );
+      elem->set_node(0) = mesh.node_ptr( tif_tri_it->c1 );
+      elem->set_node(1) = mesh.node_ptr( tif_tri_it->c2 );
+      elem->set_node(2) = mesh.node_ptr( tif_tri_it->c3 );
 
       // which region this tri belongs to
       elem->subdomain_id() = (*tif_tri_it).region;
 
-      TIF::Edge_t edge;
+      std::vector< std::pair<unsigned int, unsigned int> > edges;
+      edges.push_back( std::make_pair(tif_tri_it->c1, tif_tri_it->c2) );
+      edges.push_back( std::make_pair(tif_tri_it->c2, tif_tri_it->c3) );
+      edges.push_back( std::make_pair(tif_tri_it->c3, tif_tri_it->c1) );
 
-      // process edge0
-      edge.point1 = (*tif_tri_it).c1 < (*tif_tri_it).c2 ? (*tif_tri_it).c1 : (*tif_tri_it).c2 ;
-      edge.point2 = (*tif_tri_it).c1 > (*tif_tri_it).c2 ? (*tif_tri_it).c1 : (*tif_tri_it).c2 ;
-      std::map<TIF::Edge_t, int, TIF::lt_edge>::iterator edge_pointer = edge_table.find(edge);
-      if( edge_pointer != edge_table.end() )
+      for(unsigned int n=0; n<edges.size(); ++n)
       {
-        // this edge should on external boundary or region interface
-        genius_assert( (*tif_tri_it).t3<0 || (*tif_tri_it).region != TIF::tri_array[(*tif_tri_it).t3].region );
-        mesh.boundary_info->add_side(elem, 0, (*edge_pointer).second);
+        TIF::Edge_t edge;
+        edge.point1 = edges[n].first;
+        edge.point2 = edges[n].second;
+        if( edge.point1 > edge.point2 )
+          std::swap(edge.point1, edge.point2);
+
+        std::map<TIF::Edge_t, int, TIF::lt_edge>::iterator edge_pointer = edge_table.find(edge);
+        if( edge_pointer != edge_table.end() )
+          mesh.boundary_info->add_side(elem, n, edge_pointer->second);
       }
+    }
 
-      // process edge1
-      edge.point1 = (*tif_tri_it).c2 < (*tif_tri_it).c3 ? (*tif_tri_it).c2 : (*tif_tri_it).c3 ;
-      edge.point2 = (*tif_tri_it).c2 > (*tif_tri_it).c3 ? (*tif_tri_it).c2 : (*tif_tri_it).c3 ;
-      edge_pointer = edge_table.find(edge);
-      if( edge_pointer != edge_table.end() )
-      {
-        // this edge should on external boundary or region interface
-        genius_assert( (*tif_tri_it).t1<0 || (*tif_tri_it).region != TIF::tri_array[(*tif_tri_it).t1].region );
-        mesh.boundary_info->add_side(elem, 1, (*edge_pointer).second);
-      }
 
-      // process edge2
-      edge.point1 = (*tif_tri_it).c3 < (*tif_tri_it).c1 ? (*tif_tri_it).c3 : (*tif_tri_it).c1 ;
-      edge.point2 = (*tif_tri_it).c3 > (*tif_tri_it).c1 ? (*tif_tri_it).c3 : (*tif_tri_it).c1 ;
-      edge_pointer = edge_table.find(edge);
-      if( edge_pointer != edge_table.end() )
+    // fill quadrangles
+    std::vector<TIF::Quad_t>::iterator tif_quad_it  = TIF::quad_array.begin();
+    for(; tif_quad_it!=TIF::quad_array.end(); ++tif_quad_it)
+    {
+      Elem* elem = mesh.add_elem(Elem::build(QUAD4).release());
+
+      // quadrangle elem node
+      elem->set_node(0) = mesh.node_ptr( tif_quad_it->c1 );
+      elem->set_node(1) = mesh.node_ptr( tif_quad_it->c2 );
+      elem->set_node(2) = mesh.node_ptr( tif_quad_it->c3 );
+      elem->set_node(3) = mesh.node_ptr( tif_quad_it->c4 );
+
+      // which region this tri belongs to
+      elem->subdomain_id() = (*tif_quad_it).region;
+
+      std::vector< std::pair<unsigned int, unsigned int> > edges;
+      edges.push_back( std::make_pair(tif_quad_it->c1, tif_quad_it->c2) );
+      edges.push_back( std::make_pair(tif_quad_it->c2, tif_quad_it->c3) );
+      edges.push_back( std::make_pair(tif_quad_it->c3, tif_quad_it->c4) );
+      edges.push_back( std::make_pair(tif_quad_it->c4, tif_quad_it->c1) );
+
+      for(unsigned int n=0; n<edges.size(); ++n)
       {
-        // this edge should on external boundary or region interface
-        genius_assert( (*tif_tri_it).t2<0 || (*tif_tri_it).region != TIF::tri_array[(*tif_tri_it).t2].region );
-        mesh.boundary_info->add_side(elem, 2, (*edge_pointer).second);
+        TIF::Edge_t edge;
+        edge.point1 = edges[n].first;
+        edge.point2 = edges[n].second;
+        if( edge.point1 > edge.point2 )
+          std::swap(edge.point1, edge.point2);
+
+        std::map<TIF::Edge_t, int, TIF::lt_edge>::iterator edge_pointer = edge_table.find(edge);
+        if( edge_pointer != edge_table.end() )
+          mesh.boundary_info->add_side(elem, n, edge_pointer->second);
       }
     }
 
@@ -192,8 +211,8 @@ void TIFIO::read (const std::string& filename)
     // get all the boundary element
     mesh.boundary_info->build_side_list (elems, sides, bds);
 
-    //build neighbor information for mesh. then elem->neighbor() is functional
-    mesh.find_neighbors();
+    //build neighbor information for boundary element. then elem->neighbor() is functional
+    mesh.boundary_info->find_neighbors();
 
     for (size_t nbd=0; nbd<elems.size(); nbd++ )
     {
@@ -363,6 +382,8 @@ void TIFIO::read (const std::string& filename)
   unsigned int elec_temp    = TIF::sol_head.solution_index("tn");
   unsigned int hole_temp    = TIF::sol_head.solution_index("tp");
 
+  unsigned int mole_x       = TIF::sol_head.solution_index("mole_x");
+  unsigned int mole_y       = TIF::sol_head.solution_index("mole_y");
 
   for(unsigned int r=0; r<system.n_regions(); r++)
   {
@@ -376,17 +397,16 @@ void TIFIO::read (const std::string& filename)
         bool sigle   = Material::IsSingleCompSemiconductor(region->material());
         bool complex = Material::IsComplexCompSemiconductor(region->material());
 
-        SimulationRegion::node_iterator node_it = region->nodes_begin();
-        SimulationRegion::node_iterator node_it_end = region->nodes_end();
+        SimulationRegion::local_node_iterator node_it = region->on_local_nodes_begin();
+        SimulationRegion::local_node_iterator node_it_end = region->on_local_nodes_end();
         for(; node_it!=node_it_end; ++node_it)
         {
-          FVM_Node * fvm_node = (*node_it).second;
-          if( !fvm_node->root_node()->on_local() ) continue;
+          FVM_Node * fvm_node = (*node_it);
 
           FVM_NodeData * node_data = fvm_node->node_data();  genius_assert(node_data);
 
           // tif_node_index is the index in TIF file that this FVM node has
-          int tif_node_index = node_id_to_tif_index_map[(*node_it).first];
+          int tif_node_index = node_id_to_tif_index_map[fvm_node->root_node()->id()];
           // however, one TIF node may has several solution data when it lies on region interface, we should find corrent
           // solution data for this region which has the same material string as this region.
           std::pair<Solution_It, Solution_It> sol_it_pair = solution_map.equal_range(tif_node_index);
@@ -427,18 +447,19 @@ void TIFIO::read (const std::string& filename)
 
               node_data->Na()   = 0.5*std::abs(total_doping - net_doping);
               node_data->Nd()   = 0.5*std::abs(total_doping + net_doping);
-              node_data->P()    = 0;
-              node_data->As()   = 0;
-              node_data->Sb()   = 0;
-              node_data->B()    = 0;
             }
 
             // mole fraction
-            if(sigle)
-            {}
+            if(sigle && mole_x!=invalid_uint)
+            {
+              node_data->mole_x()   = (*sol_it).second.data_array[mole_x];
+            }
 
-            if(complex)
-            {}
+            if(complex && mole_x!=invalid_uint && mole_y!=invalid_uint)
+            {
+              node_data->mole_x()   = (*sol_it).second.data_array[mole_x];
+              node_data->mole_y()   = (*sol_it).second.data_array[mole_y];
+            }
           }
         }
 
@@ -452,17 +473,16 @@ void TIFIO::read (const std::string& filename)
       }
     case InsulatorRegion     :
       {
-        SimulationRegion::node_iterator node_it = region->nodes_begin();
-        SimulationRegion::node_iterator node_it_end = region->nodes_end();
+        SimulationRegion::local_node_iterator node_it = region->on_local_nodes_begin();
+        SimulationRegion::local_node_iterator node_it_end = region->on_local_nodes_end();
         for(; node_it!=node_it_end; ++node_it)
         {
-          FVM_Node * fvm_node = (*node_it).second;
-          if( !fvm_node->root_node()->on_local() ) continue;
+          FVM_Node * fvm_node = (*node_it);
 
           FVM_NodeData * node_data = fvm_node->node_data();  genius_assert(node_data);
 
           // tif_node_index is the index in TIF file that this FVM node has
-          int tif_node_index = node_id_to_tif_index_map[(*node_it).first];
+          int tif_node_index = node_id_to_tif_index_map[fvm_node->root_node()->id()];
           // however, one TIF node may has several solution data when it lies on region interface, we should find corrent
           // solution data for this region which has the same material string as this region.
           std::pair<Solution_It, Solution_It> sol_it_pair = solution_map.equal_range(tif_node_index);
@@ -490,19 +510,18 @@ void TIFIO::read (const std::string& filename)
 
         break;
       }
-    case ConductorRegion     :
+    case ElectrodeRegion     :
       {
-        SimulationRegion::node_iterator node_it = region->nodes_begin();
-        SimulationRegion::node_iterator node_it_end = region->nodes_end();
+        SimulationRegion::local_node_iterator node_it = region->on_local_nodes_begin();
+        SimulationRegion::local_node_iterator node_it_end = region->on_local_nodes_end();
         for(; node_it!=node_it_end; ++node_it)
         {
-          FVM_Node * fvm_node = (*node_it).second;
-          if( !fvm_node->root_node()->on_local() ) continue;
+          FVM_Node * fvm_node = (*node_it);
 
           FVM_NodeData * node_data = fvm_node->node_data();  genius_assert(node_data);
 
           // tif_node_index is the index in TIF file that this FVM node has
-          int tif_node_index = node_id_to_tif_index_map[(*node_it).first];
+          int tif_node_index = node_id_to_tif_index_map[fvm_node->root_node()->id()];
           // however, one TIF node may has several solution data when it lies on region interface, we should find corrent
           // solution data for this region which has the same material string as this region.
           std::pair<Solution_It, Solution_It> sol_it_pair = solution_map.equal_range(tif_node_index);
@@ -530,7 +549,45 @@ void TIFIO::read (const std::string& filename)
 
         break;
       }
+    case MetalRegion     :
+      {
+        SimulationRegion::local_node_iterator node_it = region->on_local_nodes_begin();
+        SimulationRegion::local_node_iterator node_it_end = region->on_local_nodes_end();
+        for(; node_it!=node_it_end; ++node_it)
+        {
+          FVM_Node * fvm_node = (*node_it);
 
+          FVM_NodeData * node_data = fvm_node->node_data();  genius_assert(node_data);
+
+          // tif_node_index is the index in TIF file that this FVM node has
+          int tif_node_index = node_id_to_tif_index_map[fvm_node->root_node()->id()];
+          // however, one TIF node may has several solution data when it lies on region interface, we should find corrent
+          // solution data for this region which has the same material string as this region.
+          std::pair<Solution_It, Solution_It> sol_it_pair = solution_map.equal_range(tif_node_index);
+          Solution_It sol_it = sol_it_pair.first;
+          for(; sol_it!=sol_it_pair.second; ++sol_it)
+            if((*sol_it).second.material == region->material()) break;
+
+          if( sol_it != sol_it_pair.second && sol_it != solution_map.end())
+          {
+            // field solution
+            if(psi != invalid_uint)
+              node_data->psi() = (*sol_it).second.data_array[psi         ] * V;
+
+            if(latt_temp != invalid_uint)
+              node_data->T()   = (*sol_it).second.data_array[latt_temp   ] * K;
+            else
+              node_data->T()   = system.T_external();
+          }
+        }
+
+        if(psi!=invalid_uint)
+          region->reinit_after_import();
+        else
+          region->init(system.T_external());
+
+        break;
+      }
     case VacuumRegion     :
       {
         region->init(system.T_external());

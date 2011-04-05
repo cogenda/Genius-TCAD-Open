@@ -1,0 +1,36 @@
+#==============================================================================
+# Genius example: EEPROM cell erase Simulation
+# Erase Bias: Control Gate = -12 V, Source = 5.5 V
+#==============================================================================
+
+GLOBAL    T=300  DopingScale=1e20  Z.width=1
+
+#------------------------------------------------------------------------------
+vsource Type = VDC    ID = GND       Tdelay=0   Vconst=0
+vsource Type = VDC    ID = VSource   Tdelay=0   Vconst=5.5
+vsource Type = VDC    ID = VGate     Tdelay=0   Vconst=-12
+
+#------------------------------------------------------------------------------
+# import eeprom model file, it already contains boundary information
+IMPORT   CGNSFile = eeprom_charged.cgns
+
+# specify physical model, use HP mobility here.
+PMI      Region=Silicon Type=Mobility Model=HP
+Model    Region=Silicon H.Mob=true Mob.force=ESimple
+
+# ramp up the bias
+METHOD   Type=DDML1  NS=Basic LS=MUMPS Damping=Potential MaxIt=30 toler.relax=1e5
+SOLVE    Type=DC VScan=Gate Vstart=0 Vstep=-1.0 Vstop=-12
+ATTACH   Electrode=Gate   VApp=VGate
+SOLVE    Type=DC VScan=Source Vstart=0 Vstep=0.5 Vstop=5.5
+ATTACH   Electrode=Source  VApp=VSource
+EXPORT   CGNS=eeprom_erase_bias.cgns vtk=eeprom_erase_bias.vtu
+
+# erase eeprom by FN tunneling
+MODEL    Region=Silicon hotcarrier=true
+METHOD   Type=DDML1  NS=Basic LS=MUMPS Damping=Potential MaxIt=15 toler.relax=1e5
+SOLVE    Type=TRANSIENT  TStart=0 TStep=1e-6  TStepMax=1e-4  TStop=1e-3 out.prefix=erase
+EXPORT   CGNS=eeprom_erase.cgns vtk=eeprom_erase.vtu
+
+END
+

@@ -29,18 +29,16 @@
 
 #include "genius_common.h"
 
-#ifdef CYGWIN
-  #include <Windows.h>
-  #undef max
-  #undef min
-#else
-  #include <dlfcn.h>
-#endif
-
 #include "material_define.h"
 #include "physical_unit.h"
 #include "PMI.h"
 
+#ifdef CYGWIN
+  class HINSTANCE__; // Forward or never
+  typedef HINSTANCE__* HINSTANCE;
+#endif
+
+class SimulationRegion;
 
 //using namespace Material;
 
@@ -65,22 +63,12 @@ public:
   /**
    * constructor
    */
-  MaterialBase(const std::string & mat, const std::string & reg)
-  : set_ad_num(0), material(mat), region(reg) , p_point(0), p_node_data(0), dll_file(0)
-  {}
+  MaterialBase(const SimulationRegion * reg);
 
   /**
    * destructor, free the dll file pointer
    */
-  virtual ~MaterialBase()
-  {
-#ifdef CYGWIN
-    FreeLibrary(dll_file);
-#else
-    if ( dll_file )
-      dlclose( dll_file );
-#endif
-  }
+  virtual ~MaterialBase();
 
   /**
    * mapping Point, its Data and current time to internal image.
@@ -94,6 +82,17 @@ public:
     clock = time;
   }
 
+  /**
+   * @return PMI_Environment
+   */
+  PMI_Environment build_PMI_Environment() ;
+
+
+  /**
+   * load the material dll file
+   */
+  void load_material( const std::string & material );
+
 
   /**
    * function pointer to set_ad_number, set the independent variable
@@ -105,7 +104,7 @@ public:
    * virtual function for set different model, calibrate parameters to PMI
    */
   virtual void set_pmi(const std::string &type, const std::string &model_name,
-                       const std::vector<Parser::Parameter> & pmi_parameters) = 0;
+                       std::vector<Parser::Parameter> & pmi_parameters) = 0;
 
   /**
    * virtual function for init nodal data
@@ -128,15 +127,16 @@ public:
   virtual std::string get_pmi_info(const std::string& type, const int verbosity = 0) = 0;
 
 protected:
+
+  /**
+   * const pointer to region
+   */
+  const SimulationRegion * region;
+
   /**
    * the material name
    */
   const std::string          material;
-
-  /**
-   * the owner region of this material
-   */
-  const std::string          region;
 
   /**
    * pointer to current point, which is updated by mapping function
@@ -153,6 +153,15 @@ protected:
    */
   PetscScalar                clock;
 
+  /**
+   * region point based variables
+   */
+  const std::map<std::string, SimulationVariable>  * point_variables;
+
+  /**
+   * region cell based variables
+   */
+  const std::map<std::string, SimulationVariable>  * cell_variables;
 
   /**
    * pointer to dynamic loaded library file
@@ -210,15 +219,9 @@ public:
 
 public:
   /**
-   * @brief constructor, open the material file and point each pointer to corresponding functions
-   *
-   * @param mat   material string
-   * @param reg   region label
-   * @param u     physical dimension system
-   *
-   * @note physical dimension system will be passed to material database
+   * constructor, open the material file and point each pointer to corresponding functions
    */
-  MaterialSemiconductor(const std::string & mat, const std::string &reg);
+  MaterialSemiconductor(const SimulationRegion * reg);
 
   /**
    * destructor, unload each pointer
@@ -229,7 +232,7 @@ public:
    * set different model, calibrate parameters in PMI
    */
   void set_pmi(const std::string &type, const std::string &model_name,
-               const std::vector<Parser::Parameter> & pmi_parameters);
+               std::vector<Parser::Parameter> & pmi_parameters);
 
   /**
    * init nodal data for semiconductor region
@@ -263,6 +266,11 @@ public:
   PMII_BasicParameter *basic;
 
   /**
+   * function pointer to insulator band structure parameter
+   */
+  PMII_BandStructure  *band;
+
+  /**
    * function pointer to insulator thermal parameter
    */
   PMII_Thermal        *thermal;
@@ -274,15 +282,9 @@ public:
 
 public:
   /**
-   * @brief constructor, open the material file and point each pointer to corresponding functions
-   *
-   * @param mat   material string
-   * @param reg   region label
-   * @param u     physical dimension system
-   *
-   * @note physical dimension system will be passed to material database
+   * constructor, open the material file and point each pointer to corresponding functions
    */
-  MaterialInsulator(const std::string & mat, const std::string &reg);
+  MaterialInsulator(const SimulationRegion * reg);
 
   /**
    * destructor, unload each pointer
@@ -293,7 +295,7 @@ public:
    * set different model, calibrate parameters in PMI
    */
   void set_pmi(const std::string &type, const std::string &model_name,
-               const std::vector<Parser::Parameter> & pmi_parameters);
+               std::vector<Parser::Parameter> & pmi_parameters);
 
   /**
    * init nodal data for insulator region
@@ -338,15 +340,9 @@ public:
 
 public:
   /**
-   * @brief constructor, open the material file and point each pointer to corresponding functions
-   *
-   * @param mat   material string
-   * @param reg   region label
-   * @param u     physical dimension system
-   *
-   * @note physical dimension system will be passed to material database
+   * constructor, open the material file and point each pointer to corresponding functions
    */
-  MaterialConductor(const std::string & mat, const std::string &reg);
+  MaterialConductor(const SimulationRegion * reg);
 
   /**
    * destructor, unload each pointer
@@ -357,7 +353,7 @@ public:
    * set different model, calibrate parameters in PMI
    */
   void set_pmi(const std::string &type, const std::string &model_name,
-               const std::vector<Parser::Parameter> & pmi_parameters);
+               std::vector<Parser::Parameter> & pmi_parameters);
 
   /**
    * init nodal data for conductor region
@@ -401,15 +397,9 @@ public:
 
 public:
   /**
-   * @brief constructor, open the material file and point each pointer to corresponding functions
-   *
-   * @param mat   material string
-   * @param reg   region label
-   * @param u     physical dimension system
-   *
-   * @note physical dimension system will be passed to material database
+   * constructor, open the material file and point each pointer to corresponding functions
    */
-  MaterialVacuum(const std::string & mat, const std::string &reg);
+  MaterialVacuum(const SimulationRegion * reg);
 
   /**
    * destructor, unload each pointer
@@ -420,7 +410,7 @@ public:
    * set different model, calibrate parameters in PMI
    */
   void set_pmi(const std::string &type, const std::string &model_name,
-               const std::vector<Parser::Parameter> & pmi_parameters);
+               std::vector<Parser::Parameter> & pmi_parameters);
 
   /**
    * init nodal data for conductor region
@@ -458,15 +448,9 @@ public:
 
 public:
   /**
-   * @brief constructor, open the material file and point each pointer to corresponding functions
-   *
-   * @param mat   material string
-   * @param reg   region label
-   * @param u     physical dimension system
-   *
-   * @note physical dimension system will be passed to material database
+   * constructor, open the material file and point each pointer to corresponding functions
    */
-  MaterialPML(const std::string & mat, const std::string &reg);
+  MaterialPML(const SimulationRegion * reg);
 
   /**
    * destructor, unload each pointer
@@ -477,7 +461,7 @@ public:
    * set different model, calibrate parameters in PMI
    */
   void set_pmi(const std::string &type, const std::string &model_name,
-               const std::vector<Parser::Parameter> & pmi_parameters);
+               std::vector<Parser::Parameter> & pmi_parameters);
 
   /**
    * init nodal data for conductor region

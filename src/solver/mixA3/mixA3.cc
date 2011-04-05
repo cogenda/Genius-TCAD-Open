@@ -24,7 +24,7 @@
 #include "mixA3/mixA3.h"
 #include "spice_ckt.h"
 #include "parallel.h"
-
+#include "petsc_utils.h"
 
 
 using PhysicalUnit::kb;
@@ -89,16 +89,16 @@ int MixA3Solver::solve()
 
   switch( SolverSpecify::Type )
   {
-  case SolverSpecify::OP :
-    solve_dcop(); break;
+      case SolverSpecify::OP :
+      solve_dcop(); break;
 
-  case SolverSpecify::DCSWEEP :
-    solve_dcsweep(); break;
+      case SolverSpecify::DCSWEEP :
+      solve_dcsweep(); break;
 
-  case SolverSpecify::TRANSIENT :
-    solve_transient(); break;
+      case SolverSpecify::TRANSIENT :
+      solve_transient(); break;
 
-  default: genius_error();
+      default: genius_error();
   }
 
   STOP_LOG("MixA3Solver_SNES()", "MixA3Solver");
@@ -133,6 +133,28 @@ int MixA3Solver::post_solve_process()
   _circuit->save_solution();
 
   return MixASolverBase::post_solve_process();
+}
+
+
+/*------------------------------------------------------------------
+ * write the (intermediate) solution to each region
+ */
+void MixA3Solver::flush_system()
+{
+  VecScatterBegin(scatter, x, lx, INSERT_VALUES, SCATTER_FORWARD);
+  VecScatterEnd  (scatter, x, lx, INSERT_VALUES, SCATTER_FORWARD);
+
+  PetscScalar *lxx;
+  VecGetArray(lx, &lxx);
+
+  //search for all the regions
+  for(unsigned int n=0; n<_system.n_regions(); n++)
+  {
+    SimulationRegion * region = _system.region(n);
+    region->EBM3_Update_Solution(lxx);
+  }
+
+  VecRestoreArray(lx, &lxx);
 }
 
 
@@ -177,7 +199,7 @@ int MixA3Solver::diverged_recovery()
 /*------------------------------------------------------------------
  * Potential Newton Damping
  */
-void MixA3Solver::potential_damping(Vec x, Vec y, Vec w, PetscTruth *changed_y, PetscTruth *changed_w)
+void MixA3Solver::potential_damping(Vec x, Vec y, Vec w, PetscBool *changed_y, PetscBool *changed_w)
 {
 
   PetscScalar    *xx;
@@ -189,8 +211,8 @@ void MixA3Solver::potential_damping(Vec x, Vec y, Vec w, PetscTruth *changed_y, 
   VecGetArray(w, &ww);  // current candidate iterate
 
   PetscScalar dV_max = 0.0; // the max changes of psi
-  PetscScalar onePerCMC = 1.0*std::pow(cm,-3);
-  PetscScalar T_external = this->get_system().T_external();
+  const PetscScalar onePerCMC = 1.0*std::pow(cm,-3);
+  const PetscScalar T_external = this->get_system().T_external();
 
   // we should find dV_max;
   // first, we find in local
@@ -207,14 +229,11 @@ void MixA3Solver::potential_damping(Vec x, Vec y, Vec w, PetscTruth *changed_y, 
     unsigned int node_Tn_offset  = region->ebm_variable_offset(E_TEMP);
     unsigned int node_Tp_offset  = region->ebm_variable_offset(H_TEMP);
 
-    SimulationRegion::const_node_iterator it = region->nodes_begin();
-    SimulationRegion::const_node_iterator it_end = region->nodes_end();
+    SimulationRegion::const_processor_node_iterator it = region->on_processor_nodes_begin();
+    SimulationRegion::const_processor_node_iterator it_end = region->on_processor_nodes_end();
     for(; it!=it_end; ++it)
     {
-      const FVM_Node * fvm_node = (*it).second;
-
-      //if this node NOT belongs to this processor or not valid, continue
-      if( !fvm_node->on_processor() || !fvm_node->is_valid()) continue;
+      const FVM_Node * fvm_node = *it;
 
       // we konw the position of fvm_node->local_offset() is psi in semiconductor region
       unsigned int local_offset = fvm_node->local_offset();
@@ -277,13 +296,11 @@ void MixA3Solver::potential_damping(Vec x, Vec y, Vec w, PetscTruth *changed_y, 
 
       unsigned int node_psi_offset = region->ebm_variable_offset(POTENTIAL);
 
-      SimulationRegion::const_node_iterator it = region->nodes_begin();
-      SimulationRegion::const_node_iterator it_end = region->nodes_end();
+      SimulationRegion::const_processor_node_iterator it = region->on_processor_nodes_begin();
+      SimulationRegion::const_processor_node_iterator it_end = region->on_processor_nodes_end();
       for(; it!=it_end; ++it)
       {
-        const FVM_Node * fvm_node = (*it).second;
-        //if this node NOT belongs to this processor or not valid, continue
-        if( !fvm_node->on_processor() || !fvm_node->is_valid()) continue;
+        const FVM_Node * fvm_node = *it;
 
         unsigned int local_offset = fvm_node->local_offset();
 
@@ -332,7 +349,7 @@ void MixA3Solver::potential_damping(Vec x, Vec y, Vec w, PetscTruth *changed_y, 
 /*------------------------------------------------------------------
  * Bank-Rose Newton Damping
  */
-void MixA3Solver::bank_rose_damping(Vec , Vec , Vec , PetscTruth *changed_y, PetscTruth *changed_w)
+void MixA3Solver::bank_rose_damping(Vec , Vec , Vec , PetscBool *changed_y, PetscBool *changed_w)
 {
   *changed_y = PETSC_FALSE;
   *changed_w = PETSC_FALSE;
@@ -345,7 +362,7 @@ void MixA3Solver::bank_rose_damping(Vec , Vec , Vec , PetscTruth *changed_y, Pet
 /*------------------------------------------------------------------
  * positive density Newton Damping
  */
-void MixA3Solver::positive_density_damping(Vec x, Vec y, Vec w, PetscTruth *changed_y, PetscTruth *changed_w)
+void MixA3Solver::positive_density_damping(Vec x, Vec y, Vec w, PetscBool *changed_y, PetscBool *changed_w)
 {
 
   PetscScalar    *xx;
@@ -357,8 +374,8 @@ void MixA3Solver::positive_density_damping(Vec x, Vec y, Vec w, PetscTruth *chan
   VecGetArray(w, &ww);  // current candidate iterate
 
   int changed_flag=0;
-  PetscScalar onePerCMC = 1.0*std::pow(cm,-3);
-  PetscScalar T_external = this->get_system().T_external();
+  const PetscScalar onePerCMC = 1.0*std::pow(cm,-3);
+  const PetscScalar T_external = this->get_system().T_external();
 
   // do newton damping here
   for(unsigned int n=0; n<_system.n_regions(); n++)
@@ -374,13 +391,11 @@ void MixA3Solver::positive_density_damping(Vec x, Vec y, Vec w, PetscTruth *chan
     unsigned int node_Tn_offset  = region->ebm_variable_offset(E_TEMP);
     unsigned int node_Tp_offset  = region->ebm_variable_offset(H_TEMP);
 
-    SimulationRegion::const_node_iterator it = region->nodes_begin();
-    SimulationRegion::const_node_iterator it_end = region->nodes_end();
+    SimulationRegion::const_processor_node_iterator it = region->on_processor_nodes_begin();
+    SimulationRegion::const_processor_node_iterator it_end = region->on_processor_nodes_end();
     for(; it!=it_end; ++it)
     {
-      const FVM_Node * fvm_node = (*it).second;
-      //if this node NOT belongs to this processor or not valid, continue
-      if( !fvm_node->on_processor() || !fvm_node->is_valid()) continue;
+      const FVM_Node * fvm_node = *it;
 
       unsigned int local_offset = fvm_node->local_offset();
 
@@ -453,8 +468,8 @@ void MixA3Solver::projection_positive_density_check(Vec x, Vec xo)
   VecGetArray(x, &xx);
   VecGetArray(xo, &oo);
 
-  PetscScalar onePerCMC = 1.0*std::pow(cm,-3);
-  PetscScalar T_external = this->get_system().T_external();
+  const PetscScalar onePerCMC = 1.0*std::pow(cm,-3);
+  const PetscScalar T_external = this->get_system().T_external();
 
   for(unsigned int n=0; n<_system.n_regions(); n++)
   {
@@ -468,13 +483,11 @@ void MixA3Solver::projection_positive_density_check(Vec x, Vec xo)
     unsigned int node_Tn_offset  = region->ebm_variable_offset(E_TEMP);
     unsigned int node_Tp_offset  = region->ebm_variable_offset(H_TEMP);
 
-    SimulationRegion::const_node_iterator it = region->nodes_begin();
-    SimulationRegion::const_node_iterator it_end = region->nodes_end();
-    for(; it!=it_end; it++)
+    SimulationRegion::const_processor_node_iterator it = region->on_processor_nodes_begin();
+    SimulationRegion::const_processor_node_iterator it_end = region->on_processor_nodes_end();
+    for(; it!=it_end; ++it)
     {
-      const FVM_Node * fvm_node = (*it).second;
-      //if this node NOT belongs to this processor or not valid, continue
-      if( !fvm_node->on_processor() || !fvm_node->is_valid()) continue;
+      const FVM_Node * fvm_node = *it;
 
       unsigned int local_offset = fvm_node->local_offset();
 
@@ -579,72 +592,69 @@ PetscScalar MixA3Solver::LTE_norm()
     const SimulationRegion * region = _system.region(n);
     switch ( region->type() )
     {
-    case SemiconductorRegion :
-      {
-        unsigned int node_psi_offset = region->ebm_variable_offset(POTENTIAL);
-        unsigned int node_n_offset   = region->ebm_variable_offset(ELECTRON);
-        unsigned int node_p_offset   = region->ebm_variable_offset(HOLE);
-        unsigned int node_Tl_offset  = region->ebm_variable_offset(TEMPERATURE);
-        unsigned int node_Tn_offset  = region->ebm_variable_offset(E_TEMP);
-        unsigned int node_Tp_offset  = region->ebm_variable_offset(H_TEMP);
-
-        SimulationRegion::const_node_iterator it = region->nodes_begin();
-        SimulationRegion::const_node_iterator it_end = region->nodes_end();
-        for(; it!=it_end; ++it)
+        case SemiconductorRegion :
         {
-          const FVM_Node * fvm_node = (*it).second;
-          //if this node NOT belongs to this processor, continue
-          if( !fvm_node->on_processor() ) continue;
+          unsigned int node_psi_offset = region->ebm_variable_offset(POTENTIAL);
+          unsigned int node_n_offset   = region->ebm_variable_offset(ELECTRON);
+          unsigned int node_p_offset   = region->ebm_variable_offset(HOLE);
+          unsigned int node_Tl_offset  = region->ebm_variable_offset(TEMPERATURE);
+          unsigned int node_Tn_offset  = region->ebm_variable_offset(E_TEMP);
+          unsigned int node_Tp_offset  = region->ebm_variable_offset(H_TEMP);
 
-          unsigned int local_offset = fvm_node->local_offset();
+          SimulationRegion::const_processor_node_iterator it = region->on_processor_nodes_begin();
+          SimulationRegion::const_processor_node_iterator it_end = region->on_processor_nodes_end();
+          for(; it!=it_end; ++it)
+          {
+            const FVM_Node * fvm_node = *it;
 
-          ll[local_offset+node_psi_offset] = 0;
-          ll[local_offset+node_n_offset] = ll[local_offset+node_n_offset]/(eps_r*xx[local_offset+node_n_offset]+eps_a);
-          ll[local_offset+node_p_offset] = ll[local_offset+node_p_offset]/(eps_r*xx[local_offset+node_p_offset]+eps_a);
+            unsigned int local_offset = fvm_node->local_offset();
 
-          if(region->get_advanced_model()->enable_Tl())
-            ll[local_offset+node_Tl_offset] = ll[local_offset+node_Tl_offset]/(eps_r*xx[local_offset+node_Tl_offset]+eps_a); // temperature
+            ll[local_offset+node_psi_offset] = 0;
+            ll[local_offset+node_n_offset] = ll[local_offset+node_n_offset]/(eps_r*xx[local_offset+node_n_offset]+eps_a);
+            ll[local_offset+node_p_offset] = ll[local_offset+node_p_offset]/(eps_r*xx[local_offset+node_p_offset]+eps_a);
 
-          if(region->get_advanced_model()->enable_Tn())
-            ll[local_offset+node_Tn_offset] = ll[local_offset+node_Tn_offset]/(eps_r*xx[local_offset+node_Tn_offset]+eps_a); // temperature
+            if(region->get_advanced_model()->enable_Tl())
+              ll[local_offset+node_Tl_offset] = ll[local_offset+node_Tl_offset]/(eps_r*xx[local_offset+node_Tl_offset]+eps_a); // temperature
 
-          if(region->get_advanced_model()->enable_Tp())
-            ll[local_offset+node_Tp_offset] = ll[local_offset+node_Tp_offset]/(eps_r*xx[local_offset+node_Tp_offset]+eps_a); // temperature
+            if(region->get_advanced_model()->enable_Tn())
+              ll[local_offset+node_Tn_offset] = ll[local_offset+node_Tn_offset]/(eps_r*xx[local_offset+node_Tn_offset]+eps_a); // temperature
+
+            if(region->get_advanced_model()->enable_Tp())
+              ll[local_offset+node_Tp_offset] = ll[local_offset+node_Tp_offset]/(eps_r*xx[local_offset+node_Tp_offset]+eps_a); // temperature
+          }
+
+          N += (region->ebm_n_variables()-1)*region->n_on_processor_node();
+
+          break;
         }
-
-        N += (region->ebm_n_variables()-1)*region->n_on_processor_node();
-
-        break;
-      }
-    case InsulatorRegion :
-    case ConductorRegion :
-      {
-        unsigned int node_psi_offset = region->ebm_variable_offset(POTENTIAL);
-        unsigned int node_Tl_offset  = region->ebm_variable_offset(TEMPERATURE);
-
-        SimulationRegion::const_node_iterator it = region->nodes_begin();
-        SimulationRegion::const_node_iterator it_end = region->nodes_end();
-        for(; it!=it_end; ++it)
+        case InsulatorRegion :
+        case ElectrodeRegion :
+        case MetalRegion     :
         {
-          const FVM_Node * fvm_node = (*it).second;
-          //if this node NOT belongs to this processor, continue
-          if( !fvm_node->on_processor() ) continue;
+          unsigned int node_psi_offset = region->ebm_variable_offset(POTENTIAL);
+          unsigned int node_Tl_offset  = region->ebm_variable_offset(TEMPERATURE);
 
-          unsigned int local_offset = fvm_node->local_offset();
+          SimulationRegion::const_processor_node_iterator it = region->on_processor_nodes_begin();
+          SimulationRegion::const_processor_node_iterator it_end = region->on_processor_nodes_end();
+          for(; it!=it_end; ++it)
+          {
+            const FVM_Node * fvm_node = *it;
 
-          ll[local_offset+node_psi_offset] = 0;
+            unsigned int local_offset = fvm_node->local_offset();
 
-          if(region->get_advanced_model()->enable_Tl())
-            ll[local_offset+node_Tl_offset] = ll[local_offset+node_Tl_offset]/(eps_r*xx[local_offset+node_Tl_offset]+eps_a); // temperature
+            ll[local_offset+node_psi_offset] = 0;
+
+            if(region->get_advanced_model()->enable_Tl())
+              ll[local_offset+node_Tl_offset] = ll[local_offset+node_Tl_offset]/(eps_r*xx[local_offset+node_Tl_offset]+eps_a); // temperature
+          }
+
+          N += (region->ebm_n_variables()-1)*region->n_on_processor_node();
+
+          break;
         }
-
-        N += (region->ebm_n_variables()-1)*region->n_on_processor_node();
-
+        case VacuumRegion:
         break;
-      }
-    case VacuumRegion:
-      break;
-    default: genius_error();
+        default: genius_error();
     }
   }
 
@@ -679,9 +689,7 @@ PetscScalar MixA3Solver::LTE_norm()
 }
 
 
-#if PETSC_VERSION_LE(2,3,3)
-#include "private/snesimpl.h"
-#endif
+
 void MixA3Solver::error_norm()
 {
   PetscScalar    *xx;
@@ -693,15 +701,9 @@ void MixA3Solver::error_norm()
   //VecScatterEnd  (scatter, x, lx, INSERT_VALUES, SCATTER_FORWARD);
 
   // scatte global function vector f to local vector lf
-#if (PETSC_VERSION_GE(3,0,0) || defined(HAVE_PETSC_DEV))
   VecScatterBegin(scatter, f, lf, INSERT_VALUES, SCATTER_FORWARD);
   VecScatterEnd  (scatter, f, lf, INSERT_VALUES, SCATTER_FORWARD);
-#endif
 
-#if PETSC_VERSION_LE(2,3,3)
-  VecScatterBegin(scatter, snes->vec_func_always, lf, INSERT_VALUES, SCATTER_FORWARD);
-  VecScatterEnd  (scatter, snes->vec_func_always, lf, INSERT_VALUES, SCATTER_FORWARD);
-#endif
 
   VecGetArray(lx, &xx);  // solution value
   VecGetArray(lf, &ff);  // function value
@@ -729,82 +731,79 @@ void MixA3Solver::error_norm()
 
     switch ( region->type() )
     {
-    case SemiconductorRegion :
-      {
-        unsigned int node_psi_offset = region->ebm_variable_offset(POTENTIAL);
-        unsigned int node_n_offset   = region->ebm_variable_offset(ELECTRON);
-        unsigned int node_p_offset   = region->ebm_variable_offset(HOLE);
-        unsigned int node_Tl_offset  = region->ebm_variable_offset(TEMPERATURE);
-        unsigned int node_Tn_offset  = region->ebm_variable_offset(E_TEMP);
-        unsigned int node_Tp_offset  = region->ebm_variable_offset(H_TEMP);
-
-        SimulationRegion::const_node_iterator it = region->nodes_begin();
-        SimulationRegion::const_node_iterator it_end = region->nodes_end();
-        for(; it!=it_end; ++it)
+        case SemiconductorRegion :
         {
-          const FVM_Node * fvm_node = (*it).second;
-          //if this node NOT belongs to this processor, continue
-          if( !fvm_node->on_processor() ) continue;
+          unsigned int node_psi_offset = region->ebm_variable_offset(POTENTIAL);
+          unsigned int node_n_offset   = region->ebm_variable_offset(ELECTRON);
+          unsigned int node_p_offset   = region->ebm_variable_offset(HOLE);
+          unsigned int node_Tl_offset  = region->ebm_variable_offset(TEMPERATURE);
+          unsigned int node_Tn_offset  = region->ebm_variable_offset(E_TEMP);
+          unsigned int node_Tp_offset  = region->ebm_variable_offset(H_TEMP);
 
-          unsigned int offset = fvm_node->local_offset();
-
-          potential_norm   += xx[offset+node_psi_offset]*xx[offset+node_psi_offset];
-          electron_norm    += xx[offset+node_n_offset]*xx[offset+node_n_offset];
-          hole_norm        += xx[offset+node_p_offset]*xx[offset+node_p_offset];
-
-          poisson_norm        += ff[offset+node_psi_offset]*ff[offset+node_psi_offset];
-          elec_continuity_norm += ff[offset+node_n_offset]*ff[offset+node_n_offset];
-          hole_continuity_norm += ff[offset+node_p_offset]*ff[offset+node_p_offset];
-
-          if(region->get_advanced_model()->enable_Tl())
+          SimulationRegion::const_processor_node_iterator it = region->on_processor_nodes_begin();
+          SimulationRegion::const_processor_node_iterator it_end = region->on_processor_nodes_end();
+          for(; it!=it_end; ++it)
           {
-            temperature_norm    += xx[offset+node_Tl_offset]*xx[offset+node_Tl_offset];
-            heat_equation_norm  += ff[offset+node_Tl_offset]*ff[offset+node_Tl_offset];
-          }
+            const FVM_Node * fvm_node = *it;
 
-          if(region->get_advanced_model()->enable_Tn())
-          {
-            elec_temperature_norm      += xx[offset+node_Tn_offset]/xx[offset+node_n_offset]*xx[offset+node_Tn_offset]/xx[offset+node_n_offset];
-            elec_energy_equation_norm  += ff[offset+node_Tn_offset]*ff[offset+node_Tn_offset];
-          }
+            unsigned int offset = fvm_node->local_offset();
 
-          if(region->get_advanced_model()->enable_Tp())
-          {
-            hole_temperature_norm      += xx[offset+node_Tp_offset]/xx[offset+node_p_offset]*xx[offset+node_Tp_offset]/xx[offset+node_p_offset];
-            hole_energy_equation_norm  += ff[offset+node_Tp_offset]*ff[offset+node_Tp_offset];
+            potential_norm   += xx[offset+node_psi_offset]*xx[offset+node_psi_offset];
+            electron_norm    += xx[offset+node_n_offset]*xx[offset+node_n_offset];
+            hole_norm        += xx[offset+node_p_offset]*xx[offset+node_p_offset];
+
+            poisson_norm        += ff[offset+node_psi_offset]*ff[offset+node_psi_offset];
+            elec_continuity_norm += ff[offset+node_n_offset]*ff[offset+node_n_offset];
+            hole_continuity_norm += ff[offset+node_p_offset]*ff[offset+node_p_offset];
+
+            if(region->get_advanced_model()->enable_Tl())
+            {
+              temperature_norm    += xx[offset+node_Tl_offset]*xx[offset+node_Tl_offset];
+              heat_equation_norm  += ff[offset+node_Tl_offset]*ff[offset+node_Tl_offset];
+            }
+
+            if(region->get_advanced_model()->enable_Tn())
+            {
+              elec_temperature_norm      += xx[offset+node_Tn_offset]/xx[offset+node_n_offset]*xx[offset+node_Tn_offset]/xx[offset+node_n_offset];
+              elec_energy_equation_norm  += ff[offset+node_Tn_offset]*ff[offset+node_Tn_offset];
+            }
+
+            if(region->get_advanced_model()->enable_Tp())
+            {
+              hole_temperature_norm      += xx[offset+node_Tp_offset]/xx[offset+node_p_offset]*xx[offset+node_Tp_offset]/xx[offset+node_p_offset];
+              hole_energy_equation_norm  += ff[offset+node_Tp_offset]*ff[offset+node_Tp_offset];
+            }
           }
+          break;
         }
-        break;
-      }
-    case InsulatorRegion :
-    case ConductorRegion :
-      {
-        unsigned int node_psi_offset = region->ebm_variable_offset(POTENTIAL);
-        unsigned int node_Tl_offset  = region->ebm_variable_offset(TEMPERATURE);
-
-        SimulationRegion::const_node_iterator it = region->nodes_begin();
-        SimulationRegion::const_node_iterator it_end = region->nodes_end();
-        for(; it!=it_end; ++it)
+        case InsulatorRegion :
+        case ElectrodeRegion :
+        case MetalRegion     :
         {
-          const FVM_Node * fvm_node = (*it).second;
-          //if this node NOT belongs to this processor, continue
-          if( !fvm_node->on_processor() ) continue;
+          unsigned int node_psi_offset = region->ebm_variable_offset(POTENTIAL);
+          unsigned int node_Tl_offset  = region->ebm_variable_offset(TEMPERATURE);
 
-          unsigned int offset = fvm_node->local_offset();
-          potential_norm   += xx[offset+node_psi_offset]*xx[offset+node_psi_offset];
-          poisson_norm     += ff[offset+node_psi_offset]*ff[offset+node_psi_offset];
-
-          if(region->get_advanced_model()->enable_Tl())
+          SimulationRegion::const_processor_node_iterator it = region->on_processor_nodes_begin();
+          SimulationRegion::const_processor_node_iterator it_end = region->on_processor_nodes_end();
+          for(; it!=it_end; ++it)
           {
-            temperature_norm    += xx[offset+node_Tl_offset]*xx[offset+node_Tl_offset];
-            heat_equation_norm  += ff[offset+node_Tl_offset]*ff[offset+node_Tl_offset];
+            const FVM_Node * fvm_node = *it;
+
+            unsigned int offset = fvm_node->local_offset();
+            potential_norm   += xx[offset+node_psi_offset]*xx[offset+node_psi_offset];
+            poisson_norm     += ff[offset+node_psi_offset]*ff[offset+node_psi_offset];
+
+            if(region->get_advanced_model()->enable_Tl())
+            {
+              temperature_norm    += xx[offset+node_Tl_offset]*xx[offset+node_Tl_offset];
+              heat_equation_norm  += ff[offset+node_Tl_offset]*ff[offset+node_Tl_offset];
+            }
           }
+          break;
         }
+        case VacuumRegion:
         break;
-      }
-    case VacuumRegion:
-      break;
-    default: genius_error();
+        default: genius_error();
     }
   }
 
@@ -813,39 +812,41 @@ void MixA3Solver::error_norm()
     electrode_norm = _circuit->ckt_residual_norm2();
 
   // sum of variable value on all processors
-  parallel_only();
-  Parallel::sum(potential_norm);
-  Parallel::sum(electron_norm);
-  Parallel::sum(hole_norm);
-  Parallel::sum(temperature_norm);
-  Parallel::sum(elec_temperature_norm);
-  Parallel::sum(hole_temperature_norm);
+  std::vector<PetscScalar> norm_buffer;
 
-  Parallel::sum(poisson_norm);
-  Parallel::sum(elec_continuity_norm);
-  Parallel::sum(hole_continuity_norm);
-  Parallel::sum(heat_equation_norm);
-  Parallel::sum(elec_energy_equation_norm);
-  Parallel::sum(hole_energy_equation_norm);
+  norm_buffer.push_back(potential_norm);
+  norm_buffer.push_back(electron_norm);
+  norm_buffer.push_back(hole_norm);
+  norm_buffer.push_back(temperature_norm);
+  norm_buffer.push_back(elec_temperature_norm);
+  norm_buffer.push_back(hole_temperature_norm);
+
+  norm_buffer.push_back(poisson_norm);
+  norm_buffer.push_back(elec_continuity_norm);
+  norm_buffer.push_back(hole_continuity_norm);
+  norm_buffer.push_back(heat_equation_norm);
+  norm_buffer.push_back(elec_energy_equation_norm);
+  norm_buffer.push_back(hole_energy_equation_norm);
+
+  Parallel::sum(norm_buffer);
 
 
   // sqrt to get L2 norm
-  potential_norm        = sqrt(potential_norm);
-  electron_norm         = sqrt(electron_norm);
-  hole_norm             = sqrt(hole_norm);
-  temperature_norm      = sqrt(temperature_norm);
-  elec_temperature_norm = sqrt(elec_temperature_norm);
-  hole_temperature_norm = sqrt(hole_temperature_norm);
+  potential_norm        = sqrt(norm_buffer[0]);
+  electron_norm         = sqrt(norm_buffer[1]);
+  hole_norm             = sqrt(norm_buffer[2]);
+  temperature_norm      = sqrt(norm_buffer[3]);
+  elec_temperature_norm = sqrt(norm_buffer[4]);
+  hole_temperature_norm = sqrt(norm_buffer[5]);
 
-  poisson_norm              = sqrt(poisson_norm);
-  elec_continuity_norm       = sqrt(elec_continuity_norm);
-  hole_continuity_norm       = sqrt(hole_continuity_norm);
-  heat_equation_norm        = sqrt(heat_equation_norm);
-  elec_energy_equation_norm = sqrt(elec_energy_equation_norm);
-  hole_energy_equation_norm = sqrt(hole_energy_equation_norm);
+  poisson_norm              = sqrt(norm_buffer[6]);
+  elec_continuity_norm      = sqrt(norm_buffer[7]);
+  hole_continuity_norm      = sqrt(norm_buffer[8]);
+  heat_equation_norm        = sqrt(norm_buffer[9]);
+  elec_energy_equation_norm = sqrt(norm_buffer[10]);
+  hole_energy_equation_norm = sqrt(norm_buffer[11]);
 
   Parallel::broadcast(electrode_norm, Genius::last_processor_id());
-
 
   VecRestoreArray(lx, &xx);
   VecRestoreArray(lf, &ff);
@@ -892,7 +893,7 @@ void MixA3Solver::build_petsc_sens_residual(Vec x, Vec r)
     region->EBM3_Function(lxx, r, add_value_flag);
   }
 
-#ifdef HAVE_FENV_H
+#if defined(HAVE_FENV_H) && defined(DEBUG)
   genius_assert( !fetestexcept(FE_INVALID) );
 #endif
 
@@ -904,7 +905,7 @@ void MixA3Solver::build_petsc_sens_residual(Vec x, Vec r)
       region->EBM3_Time_Dependent_Function(lxx, r, add_value_flag);
     }
 
-#ifdef HAVE_FENV_H
+#if defined(HAVE_FENV_H) && defined(DEBUG)
   genius_assert( !fetestexcept(FE_INVALID) );
 #endif
 
@@ -915,24 +916,37 @@ void MixA3Solver::build_petsc_sens_residual(Vec x, Vec r)
     region->EBM3_Function_Hanging_Node(lxx, r, add_value_flag);
   }
 
-#ifdef HAVE_FENV_H
+#if defined(HAVE_FENV_H) && defined(DEBUG)
   genius_assert( !fetestexcept(FE_INVALID) );
 #endif
 
   build_spice_function(lxx, r, add_value_flag);
 
-#ifdef HAVE_FENV_H
+#if defined(HAVE_FENV_H) && defined(DEBUG)
   genius_assert( !fetestexcept(FE_INVALID) );
 #endif
 
-  // evaluate governing equations of MixA1 for all the boundaries
+
+  // preprocess each bc
+  VecAssemblyBegin(r);
+  VecAssemblyEnd(r);
+  std::vector<PetscInt> src_row,  dst_row,  clear_row;
+  for(unsigned int b=0; b<_system.get_bcs()->n_bcs(); b++)
+  {
+    BoundaryCondition * bc = _system.get_bcs()->get_bc(b);
+    bc->MixA_EBM3_Function_Preprocess(r, src_row, dst_row, clear_row);
+  }
+  //add source rows to destination rows, and clear rows
+  PetscUtils::VecAddClearRow(r, src_row, dst_row, clear_row);
+  add_value_flag = NOT_SET_VALUES;
+
   for(unsigned int b=0; b<_system.get_bcs()->n_bcs(); b++)
   {
     BoundaryCondition * bc = _system.get_bcs()->get_bc(b);
     bc->MixA_EBM3_Function(lxx, r, add_value_flag);
   }
 
-#ifdef HAVE_FENV_H
+#if defined(HAVE_FENV_H) && defined(DEBUG)
   genius_assert( !fetestexcept(FE_INVALID) );
 #endif
 
@@ -994,7 +1008,7 @@ void MixA3Solver::build_petsc_sens_jacobian(Vec x, Mat *, Mat *)
     region->EBM3_Jacobian(lxx, &J, add_value_flag);
   }
 
-#ifdef HAVE_FENV_H
+#if defined(HAVE_FENV_H) && defined(DEBUG)
   genius_assert( !fetestexcept(FE_INVALID) );
 #endif
 
@@ -1006,8 +1020,13 @@ void MixA3Solver::build_petsc_sens_jacobian(Vec x, Mat *, Mat *)
       region->EBM3_Time_Dependent_Jacobian(lxx, &J, add_value_flag);
     }
 
-
-#ifdef HAVE_FENV_H
+  // process hanging node here
+  for(unsigned int n=0; n<_system.n_regions(); n++)
+  {
+    SimulationRegion * region = _system.region(n);
+    region->EBM3_Jacobian_Hanging_Node(lxx, &J, add_value_flag);
+  }
+#if defined(HAVE_FENV_H) && defined(DEBUG)
   genius_assert( !fetestexcept(FE_INVALID) );
 #endif
 
@@ -1024,32 +1043,34 @@ void MixA3Solver::build_petsc_sens_jacobian(Vec x, Mat *, Mat *)
       BoundaryCondition * bc = _system.get_bcs()->get_bc(b);
       bc->MixA_EBM3_Jacobian_Reserve(&J, add_value_flag);
     }
-
-    jacobian_matrix_first_assemble = true;
-
-    // after that, we do not allow zero insert/add to matrix
-#if (PETSC_VERSION_GE(3,0,0) || defined(HAVE_PETSC_DEV))
-    genius_assert(!MatSetOption(J, MAT_IGNORE_ZERO_ENTRIES, PETSC_TRUE));
-#endif
-
-#if PETSC_VERSION_LE(2,3,3)
-    genius_assert(!MatSetOption(J, MAT_IGNORE_ZERO_ENTRIES));
-#endif
-
   }
 
-  // process hanging node here
-  for(unsigned int n=0; n<_system.n_regions(); n++)
-  {
-    SimulationRegion * region = _system.region(n);
-    region->EBM3_Jacobian_Hanging_Node(lxx, &J, add_value_flag);
-  }
 
-#ifdef HAVE_FENV_H
+
+#if defined(HAVE_FENV_H) && defined(DEBUG)
   genius_assert( !fetestexcept(FE_INVALID) );
 #endif
 
-  // evaluate Jacobian matrix of governing equations of DDML1 for all the boundaries
+  // evaluate Jacobian matrix of governing equations of EBML3 for all the boundaries
+  MatAssemblyBegin(J, MAT_FINAL_ASSEMBLY);
+  MatAssemblyEnd(J, MAT_FINAL_ASSEMBLY);
+
+  // we do not allow zero insert/add to matrix
+  if( !jacobian_matrix_first_assemble )
+    genius_assert(!MatSetOption(J, MAT_IGNORE_ZERO_ENTRIES, PETSC_TRUE));
+
+  std::vector<PetscInt> src_row,  dst_row,  clear_row;
+  for(unsigned int b=0; b<_system.get_bcs()->n_bcs(); b++)
+  {
+    BoundaryCondition * bc = _system.get_bcs()->get_bc(b);
+    bc->MixA_EBM3_Jacobian_Preprocess(&J, src_row, dst_row, clear_row);
+  }
+  //add source rows to destination rows
+  PetscUtils::MatAddRowToRow(J, src_row, dst_row);
+  // clear row
+  PetscUtils::MatZeroRows(J, clear_row.size(), clear_row.empty() ? NULL : &clear_row[0], 0.0);
+  add_value_flag = NOT_SET_VALUES;
+
   for(unsigned int b=0; b<_system.get_bcs()->n_bcs(); b++)
   {
     BoundaryCondition * bc = _system.get_bcs()->get_bc(b);
@@ -1057,7 +1078,7 @@ void MixA3Solver::build_petsc_sens_jacobian(Vec x, Mat *, Mat *)
   }
 
 
-#ifdef HAVE_FENV_H
+#if defined(HAVE_FENV_H) && defined(DEBUG)
   genius_assert( !fetestexcept(FE_INVALID) );
 #endif
 
@@ -1080,6 +1101,9 @@ void MixA3Solver::build_petsc_sens_jacobian(Vec x, Mat *, Mat *)
 
   //MatView(J, PETSC_VIEWER_DRAW_WORLD);
   //getchar();
+
+  if(!jacobian_matrix_first_assemble)
+    jacobian_matrix_first_assemble = true;
 
   STOP_LOG("MixA3Solver_Jacobian()", "MixA3Solver");
 

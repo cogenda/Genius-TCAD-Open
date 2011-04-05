@@ -27,6 +27,8 @@
 #include "solver_specify.h"
 #include "electrical_source.h"
 #include "parallel.h"
+#include "petsc_utils.h"
+
 
 using PhysicalUnit::kb;
 using PhysicalUnit::e;
@@ -78,15 +80,20 @@ int PoissonSolver::pre_solve_process(bool /*load_solution*/)
     region->Poissin_Fill_Value(x, L);
   }
 
+  // for all the bcs
+  for(unsigned int b=0; b<_system.get_bcs()->n_bcs(); b++)
+  {
+    BoundaryCondition * bc = _system.get_bcs()->get_bc(b);
+    bc->Poissin_Fill_Value(x, L);
+  }
+
   VecAssemblyBegin(x);
   VecAssemblyBegin(L);
 
   VecAssemblyEnd(x);
   VecAssemblyEnd(L);
 
-  // call (user defined) hook function hook_pre_solve_process
-
-  return 0;
+  return FVM_NonlinearSolver::post_solve_process();
 }
 
 
@@ -124,7 +131,7 @@ int PoissonSolver::solve()
   // call post_solve_process
   post_solve_process();
 
-  //build_petsc_sens_jacobian(x, &J, &J);
+  //dump_jacobian_matrix_petsc("poisson.mat");
 
   STOP_LOG("PoissonSolver_SNES()", "PoissonSolver");
 
@@ -162,7 +169,7 @@ int PoissonSolver::post_solve_process()
 
   // call (user defined) hook function hook_post_solve_process
 
-  return 0;
+  return FVM_NonlinearSolver::post_solve_process();
 }
 
 
@@ -176,9 +183,7 @@ int PoissonSolver::destroy_solver()
   // clear nonlinear contex
   clear_nonlinear_data();
 
-  // delete (user defined) hook functions
-
-  return 0;
+  return FVM_NonlinearSolver::destroy_solver();
 }
 
 
@@ -215,6 +220,7 @@ void PoissonSolver::build_petsc_sens_residual(Vec x, Vec r)
   // flag for indicate ADD_VALUES operator.
   InsertMode add_value_flag = NOT_SET_VALUES;
 
+
   // evaluate Poisson's equation in all the regions
   for(unsigned int n=0; n<_system.n_regions(); ++n)
   {
@@ -229,9 +235,22 @@ void PoissonSolver::build_petsc_sens_residual(Vec x, Vec r)
     region->Poissin_Function_Hanging_Node(lxx, r, add_value_flag);
   }
 
-#ifdef HAVE_FENV_H
+#if defined(HAVE_FENV_H) && defined(DEBUG)
   genius_assert( !fetestexcept(FE_INVALID) );
 #endif
+
+  // preprocess each bc
+  VecAssemblyBegin(r);
+  VecAssemblyEnd(r);
+  std::vector<PetscInt> src_row,  dst_row,  clear_row;
+  for(unsigned int b=0; b<_system.get_bcs()->n_bcs(); b++)
+  {
+    BoundaryCondition * bc = _system.get_bcs()->get_bc(b);
+    bc->Poissin_Function_Preprocess(r, src_row, dst_row, clear_row);
+  }
+  //add source rows to destination rows, and clear rows
+  PetscUtils::VecAddClearRow(r, src_row, dst_row, clear_row);
+  add_value_flag = NOT_SET_VALUES;
 
   // evaluate Poisson's equation for all the boundaries
   for(unsigned int b=0; b<_system.get_bcs()->n_bcs(); ++b)
@@ -240,14 +259,14 @@ void PoissonSolver::build_petsc_sens_residual(Vec x, Vec r)
     bc->Poissin_Function(lxx, r, add_value_flag);
   }
 
-#ifdef HAVE_FENV_H
+#if defined(HAVE_FENV_H) && defined(DEBUG)
   genius_assert( !fetestexcept(FE_INVALID) );
 #endif
 
   // restore array back to Vec
   VecRestoreArray(lx, &lxx);
 
-  // assembly the function Vec
+  // final assembly the function Vec
   VecAssemblyBegin(r);
   VecAssemblyEnd(r);
 
@@ -267,9 +286,10 @@ void PoissonSolver::build_petsc_sens_residual(Vec x, Vec r)
 
   STOP_LOG("PoissonSolver_Residual()", "PoissonSolver");
 
-#ifdef HAVE_FENV_H
+#if defined(HAVE_FENV_H) && defined(DEBUG)
   genius_assert( !fetestexcept(FE_INVALID) );
 #endif
+
 }
 
 
@@ -302,30 +322,6 @@ void PoissonSolver::build_petsc_sens_jacobian(Vec x, Mat *, Mat *)
     region->Poissin_Jacobian(lxx, &J, add_value_flag);
   }
 
-#ifdef HAVE_FENV_H
-  genius_assert( !fetestexcept(FE_INVALID) );
-#endif
-
-  // before first assemble, resereve none zero pattern for each boundary
-  {
-    if( !jacobian_matrix_first_assemble )
-      for(unsigned int b=0; b<_system.get_bcs()->n_bcs(); ++b)
-      {
-        BoundaryCondition * bc = _system.get_bcs()->get_bc(b);
-        bc->Poissin_Jacobian_Reserve(&J, add_value_flag);
-      }
-    jacobian_matrix_first_assemble = true;
-
-    // after that, we do not allow zero insert/add to matrix
-#if (PETSC_VERSION_GE(3,0,0) || defined(HAVE_PETSC_DEV))
-    genius_assert(!MatSetOption(J, MAT_IGNORE_ZERO_ENTRIES, PETSC_TRUE));
-#endif
-
-#if PETSC_VERSION_LE(2,3,3)
-    genius_assert(!MatSetOption(J, MAT_IGNORE_ZERO_ENTRIES));
-#endif
-  }
-
   // process hanging node here
   for(unsigned int n=0; n<_system.n_regions(); n++)
   {
@@ -333,14 +329,50 @@ void PoissonSolver::build_petsc_sens_jacobian(Vec x, Mat *, Mat *)
     region->Poissin_Jacobian_Hanging_Node(lxx, &J, add_value_flag);
   }
 
-  // evaluate Jacobian matrix of Poisson's equation for all the boundaries
-  for(unsigned int b=0; b<_system.get_bcs()->n_bcs(); ++b)
+
+#if defined(HAVE_FENV_H) && defined(DEBUG)
+  genius_assert( !fetestexcept(FE_INVALID) );
+#endif
+
+  // before first assemble, resereve none zero pattern for each boundary
+  if( !jacobian_matrix_first_assemble )
+  {
+    for(unsigned int b=0; b<_system.get_bcs()->n_bcs(); ++b)
+    {
+      BoundaryCondition * bc = _system.get_bcs()->get_bc(b);
+      bc->Poissin_Jacobian_Reserve(&J, add_value_flag);
+    }
+  }
+
+  // assembly matrix
+  MatAssemblyBegin(J, MAT_FINAL_ASSEMBLY);
+  MatAssemblyEnd(J, MAT_FINAL_ASSEMBLY);
+
+  // we do not allow zero insert/add to matrix
+  if( !jacobian_matrix_first_assemble )
+    genius_assert(!MatSetOption(J, MAT_IGNORE_ZERO_ENTRIES, PETSC_TRUE));
+
+  // evaluate Jacobian matrix of governing equations of DDML1 for all the boundaries
+  std::vector<PetscInt> src_row,  dst_row,  clear_row;
+  for(unsigned int b=0; b<_system.get_bcs()->n_bcs(); b++)
+  {
+    BoundaryCondition * bc = _system.get_bcs()->get_bc(b);
+    bc->Poissin_Jacobian_Preprocess(&J, src_row, dst_row, clear_row);
+  }
+  //add source rows to destination rows
+  PetscUtils::MatAddRowToRow(J, src_row, dst_row);
+  // clear row
+  PetscUtils::MatZeroRows(J, clear_row.size(), clear_row.empty() ? NULL : &clear_row[0], 0.0);
+
+  add_value_flag = NOT_SET_VALUES;
+  for(unsigned int b=0; b<_system.get_bcs()->n_bcs(); b++)
   {
     BoundaryCondition * bc = _system.get_bcs()->get_bc(b);
     bc->Poissin_Jacobian(lxx, &J, add_value_flag);
   }
 
-#ifdef HAVE_FENV_H
+
+#if defined(HAVE_FENV_H) && defined(DEBUG)
   genius_assert( !fetestexcept(FE_INVALID) );
 #endif
 
@@ -354,23 +386,23 @@ void PoissonSolver::build_petsc_sens_jacobian(Vec x, Mat *, Mat *)
   //scaling the matrix
   MatDiagonalScale(J, L, PETSC_NULL);
 
-  // we use the reciprocal of matrix diagonal as scaling value
-  // this will take place at next call
-  //MatGetDiagonal(J, L);
-  //VecReciprocal(L);
-
-
   STOP_LOG("Poissin_Jacobian()", "PoissonSolver");
 
   //MatView(J,PETSC_VIEWER_DRAW_WORLD);
   //getchar();
+  //genius_assert(0);
 
-#ifdef HAVE_FENV_H
+  if(!jacobian_matrix_first_assemble)
+    jacobian_matrix_first_assemble = true;
+
+
+#if defined(HAVE_FENV_H) && defined(DEBUG)
   genius_assert( !fetestexcept(FE_INVALID) );
 #endif
+
 }
 
-void PoissonSolver::potential_damping(Vec x, Vec y, Vec w, PetscTruth *changed_y, PetscTruth *changed_w)
+void PoissonSolver::potential_damping(Vec x, Vec y, Vec w, PetscBool *changed_y, PetscBool *changed_w)
 {
 
   PetscScalar    *xx;
@@ -381,6 +413,7 @@ void PoissonSolver::potential_damping(Vec x, Vec y, Vec w, PetscTruth *changed_y
   VecGetArray(y, &yy);  // new search direction and length
   VecGetArray(w, &ww);  // current candidate iterate
 
+  const PetscScalar T = this->get_system().T_external();
   PetscScalar dV_max = 0.0; // the max changes of psi
 
   // we should find dV_max;
@@ -391,18 +424,14 @@ void PoissonSolver::potential_damping(Vec x, Vec y, Vec w, PetscTruth *changed_y
     const SimulationRegion * region = _system.region(n);
     if( region->type() != SemiconductorRegion ) continue;
 
-    SimulationRegion::const_node_iterator it = region->nodes_begin();
-    SimulationRegion::const_node_iterator it_end = region->nodes_end();
+    SimulationRegion::const_processor_node_iterator it = region->on_processor_nodes_begin();
+    SimulationRegion::const_processor_node_iterator it_end = region->on_processor_nodes_end();
     for(; it!=it_end; ++it)
     {
-      const FVM_Node * fvm_node = (*it).second;
-      //if this node NOT belongs to this processor or not valid, continue
-      if( !fvm_node->on_processor() || !fvm_node->is_valid()) continue;
-
+      const FVM_Node * fvm_node = *it;
       // we konw the fvm_node->local_offset() is psi in semiconductor region
       unsigned int local_offset = fvm_node->local_offset();
-      if(  std::abs(yy[local_offset]) > dV_max)
-        dV_max = std::abs(yy[local_offset]);
+      dV_max = std::max(dV_max, std::abs(yy[local_offset]));
     }
   }
 
@@ -412,8 +441,8 @@ void PoissonSolver::potential_damping(Vec x, Vec y, Vec w, PetscTruth *changed_y
   if( dV_max > 1e-6 )
   {
     // compute logarithmic potential damping factor f;
-    PetscScalar Vt = kb*this->get_system().T_external()/e;
-    PetscScalar f = log(1+dV_max/Vt)/(dV_max/Vt);
+    PetscScalar Vut = kb*T/e * SolverSpecify::potential_update;
+    PetscScalar f = log(1+dV_max/Vut)/(dV_max/Vut);
 
     // do newton damping here
     for(unsigned int n=0; n<_system.n_regions(); n++)
@@ -422,14 +451,11 @@ void PoissonSolver::potential_damping(Vec x, Vec y, Vec w, PetscTruth *changed_y
       // only consider semiconductor region
       //if( region->type() != SemiconductorRegion ) continue;
 
-      SimulationRegion::const_node_iterator it = region->nodes_begin();
-      SimulationRegion::const_node_iterator it_end = region->nodes_end();
+      SimulationRegion::const_processor_node_iterator it = region->on_processor_nodes_begin();
+      SimulationRegion::const_processor_node_iterator it_end = region->on_processor_nodes_end();
       for(; it!=it_end; ++it)
       {
-        const FVM_Node * fvm_node = (*it).second;
-        //if this node NOT belongs to this processor or not valid, continue
-        if( !fvm_node->on_processor() || !fvm_node->is_valid()) continue;
-
+        const FVM_Node * fvm_node = *it;
         unsigned int local_offset = fvm_node->local_offset();
         ww[local_offset] = xx[local_offset] - f*yy[local_offset];
       }

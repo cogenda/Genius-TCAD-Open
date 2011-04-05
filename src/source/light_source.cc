@@ -26,7 +26,8 @@
 #include "simulation_system.h"
 #include "simulation_region.h"
 #include "interpolation_2d_csa.h"
-#include "interpolation_3d_qshep.h"
+#include "interpolation_2d_nn.h"
+//#include "interpolation_3d_qshep.h"
 #include "interpolation_3d_nbtet.h"
 #include "mathfunc.h"
 #include "log.h"
@@ -207,10 +208,11 @@ void Light_Source_From_File::update_system()
 
   InterpolationBase * interpolator;
   if (_dim == 2)
-    interpolator = new Interpolation2D_CSA;
+    interpolator = new Interpolation2D_NN;
+    //interpolator = new Interpolation2D_CSA;
   else
     interpolator = new Interpolation3D_nbtet;
-//  interpolator = new Interpolation3D_qshep;
+    //interpolator = new Interpolation3D_qshep;
 
   interpolator->set_interpolation_type(0, InterpolationBase::Linear);
 
@@ -244,14 +246,13 @@ void Light_Source_From_File::update_system()
     Complex r = region->get_optical_refraction(_wave_length);
     Complex eps(r.real()*r.real()-r.imag()*r.imag(), -2*r.real()*r.imag()) ;
 
-    SimulationRegion::node_iterator node_it = region->nodes_begin();
-    for(; node_it != region->nodes_end(); ++node_it)
+    SimulationRegion::processor_node_iterator it = region->on_processor_nodes_begin();
+    SimulationRegion::processor_node_iterator it_end = region->on_processor_nodes_end();
+    for(; it!=it_end; ++it)
     {
-      FVM_Node * fvm_node = node_it->second;
-
-      if(!fvm_node->on_local()) continue;
-
+      FVM_Node * fvm_node = (*it);
       FVM_NodeData * node_data = fvm_node->node_data();
+
       double E_field = interpolator->get_interpolated_value(*(fvm_node->root_node()), 0);
       node_data->OptG() += eta*M_PI/h*eps0*(-eps.imag())* E_field *E_field * scale;
     }

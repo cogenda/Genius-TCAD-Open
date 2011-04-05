@@ -25,7 +25,7 @@
 // inline function for discrete energy balance equation with SG scheme
 
 
-#include "petsc.h"
+
 #include "mathfunc.h"
 
 
@@ -36,9 +36,9 @@
  *                         Theta(T1,T2) = -------------
  *                                         log(T2/T1)
  */
-inline PetscScalar Theta(PetscScalar T1, PetscScalar T2)
+inline Real Theta(Real T1, Real T2)
 {
-        PetscScalar x = T2/T1-1;
+        Real x = T2/T1-1;
         if(fabs(x)>1e-6)
                 return (T2-T1)/log(fabs(T2/T1));
         else
@@ -55,11 +55,11 @@ inline AutoDScalar Theta(const AutoDScalar &T1, const AutoDScalar &T2)
 
 //-----------------------------------------------------------------------------
 // FIXME I am very afraid about float exception of exp operator here.
-inline PetscScalar nmid_eb(PetscScalar kb, PetscScalar e,  PetscScalar V1,  PetscScalar V2,
-                           PetscScalar n1, PetscScalar n2, PetscScalar Tn1, PetscScalar Tn2)
+inline Real nmid_eb(Real kb, Real e,  Real V1,  Real V2,
+                           Real n1, Real n2, Real Tn1, Real Tn2)
 {
-  PetscScalar Tn = 0.5*(Tn1+Tn2);
-  PetscScalar Q;
+  Real Tn = 0.5*(Tn1+Tn2);
+  Real Q;
   if( fabs(Tn2-Tn1)/(Tn2+Tn1) > 1e-6 )
     Q = (1-exp((2-e/kb*(V2-V1)/(Tn2-Tn1))*log(Tn1/Tn)))/(1-exp((2-e/kb*(V2-V1)/(Tn2-Tn1))*log(Tn1/Tn2)));
   else
@@ -67,7 +67,7 @@ inline PetscScalar nmid_eb(PetscScalar kb, PetscScalar e,  PetscScalar V1,  Pets
   return n1/Tn1*Tn*(1-Q) + n2/Tn2*Tn*Q;
 }
 
-inline AutoDScalar nmid_eb(PetscScalar kb, PetscScalar e, const AutoDScalar &V1, const AutoDScalar &V2,
+inline AutoDScalar nmid_eb(Real kb, Real e, const AutoDScalar &V1, const AutoDScalar &V2,
                            const AutoDScalar &n1,const AutoDScalar &n2, const AutoDScalar &Tn1,const AutoDScalar &Tn2)
 {
   AutoDScalar Tn = 0.5*(Tn1+Tn2);
@@ -83,11 +83,11 @@ inline AutoDScalar nmid_eb(PetscScalar kb, PetscScalar e, const AutoDScalar &V1,
 
 //-----------------------------------------------------------------------------
 
-inline PetscScalar pmid_eb(PetscScalar kb, PetscScalar e,  PetscScalar V1,  PetscScalar V2,
-                           PetscScalar p1, PetscScalar p2, PetscScalar Tp1, PetscScalar Tp2)
+inline Real pmid_eb(Real kb, Real e,  Real V1,  Real V2,
+                           Real p1, Real p2, Real Tp1, Real Tp2)
 {
-  PetscScalar Tp = 0.5*(Tp1+Tp2);
-  PetscScalar Q;
+  Real Tp = 0.5*(Tp1+Tp2);
+  Real Q;
   if( fabs(Tp2-Tp1)/(Tp2+Tp1) > 1e-6 )
     Q = (1-exp((2+e/kb*(V2-V1)/(Tp2-Tp1))*log(Tp1/Tp)))/(1-exp((2+e/kb*(V2-V1)/(Tp2-Tp1))*log(Tp1/Tp2)));
   else
@@ -95,7 +95,7 @@ inline PetscScalar pmid_eb(PetscScalar kb, PetscScalar e,  PetscScalar V1,  Pets
   return p1/Tp1*Tp*(1-Q) + p2/Tp2*Tp*Q;
 }
 
-inline AutoDScalar pmid_eb(PetscScalar kb, PetscScalar e, const AutoDScalar &V1, const AutoDScalar &V2,
+inline AutoDScalar pmid_eb(Real kb, Real e, const AutoDScalar &V1, const AutoDScalar &V2,
                            const AutoDScalar &p1,const AutoDScalar &p2, const AutoDScalar &Tp1,const AutoDScalar &Tp2)
 {
   AutoDScalar Tp = 0.5*(Tp1+Tp2);
@@ -110,16 +110,16 @@ inline AutoDScalar pmid_eb(PetscScalar kb, PetscScalar e, const AutoDScalar &V1,
 
 //-----------------------------------------------------------------------------
 
-inline PetscScalar In_eb(PetscScalar kb, PetscScalar e,  PetscScalar V1,  PetscScalar V2,
-                         PetscScalar n1, PetscScalar n2, PetscScalar Tn1, PetscScalar Tn2, PetscScalar h)
+inline Real In_eb(Real kb, Real e,  Real V1,  Real V2,
+                         Real n1, Real n2, Real Tn1, Real Tn2, Real h)
 {
-  PetscScalar theta = Theta(Tn1,Tn2);
-  PetscScalar alpha = (e/kb*(V2-V1)-2*(Tn2-Tn1))/theta;
+  Real theta = Theta(Tn1,Tn2);
+  Real alpha = (e/kb*(V2-V1)-2*(Tn2-Tn1))/theta;
   return kb*0.5*(Tn1+Tn2)*theta*(bern(alpha)*n2/Tn2 - bern(-alpha)*n1/Tn1)/h;
 }
 
-inline AutoDScalar In_eb(PetscScalar kb, PetscScalar e, const AutoDScalar &V1, const AutoDScalar &V2,
-                         const AutoDScalar &n1,const AutoDScalar &n2, const AutoDScalar &Tn1,const AutoDScalar &Tn2, PetscScalar h)
+inline AutoDScalar In_eb(Real kb, Real e, const AutoDScalar &V1, const AutoDScalar &V2,
+                         const AutoDScalar &n1,const AutoDScalar &n2, const AutoDScalar &Tn1,const AutoDScalar &Tn2, Real h)
 {
   AutoDScalar theta = Theta(Tn1,Tn2);
   AutoDScalar alpha = (e/kb*(V2-V1)-2*(Tn2-Tn1))/theta;
@@ -130,16 +130,16 @@ inline AutoDScalar In_eb(PetscScalar kb, PetscScalar e, const AutoDScalar &V1, c
 
 //-----------------------------------------------------------------------------
 
-inline PetscScalar Ip_eb(PetscScalar kb, PetscScalar e,  PetscScalar V1,  PetscScalar V2,
-                         PetscScalar p1, PetscScalar p2, PetscScalar Tp1, PetscScalar Tp2, PetscScalar h)
+inline Real Ip_eb(Real kb, Real e,  Real V1,  Real V2,
+                         Real p1, Real p2, Real Tp1, Real Tp2, Real h)
 {
-  PetscScalar theta = Theta(Tp1,Tp2);
-  PetscScalar alpha = (e/kb*(V2-V1)+2*(Tp2-Tp1))/theta;
+  Real theta = Theta(Tp1,Tp2);
+  Real alpha = (e/kb*(V2-V1)+2*(Tp2-Tp1))/theta;
   return kb*0.5*(Tp1+Tp2)*theta*(bern(alpha)*p1/Tp1 - bern(-alpha)*p2/Tp2)/h;
 }
 
-inline AutoDScalar Ip_eb(PetscScalar kb, PetscScalar e, const AutoDScalar &V1, const AutoDScalar &V2,
-                         const AutoDScalar &p1,const AutoDScalar &p2, const AutoDScalar &Tp1,const AutoDScalar &Tp2, PetscScalar h)
+inline AutoDScalar Ip_eb(Real kb, Real e, const AutoDScalar &V1, const AutoDScalar &V2,
+                         const AutoDScalar &p1,const AutoDScalar &p2, const AutoDScalar &Tp1,const AutoDScalar &Tp2, Real h)
 {
   AutoDScalar theta = Theta(Tp1,Tp2);
   AutoDScalar alpha = (e/kb*(V2-V1)+2*(Tp2-Tp1))/theta;
@@ -151,20 +151,20 @@ inline AutoDScalar Ip_eb(PetscScalar kb, PetscScalar e, const AutoDScalar &V1, c
 
 //-----------------------------------------------------------------------------
 
-inline PetscScalar Sn_eb(PetscScalar kb, PetscScalar e,  PetscScalar V1,  PetscScalar V2,
-                         PetscScalar n1, PetscScalar n2, PetscScalar Tn1, PetscScalar Tn2, PetscScalar h)
+inline Real Sn_eb(Real kb, Real e,  Real V1,  Real V2,
+                         Real n1, Real n2, Real Tn1, Real Tn2, Real h)
 {
-  PetscScalar theta = Theta(Tn1,Tn2);
-  PetscScalar alpha = (e/kb*(V2-V1)-2*(Tn2-Tn1))/theta;
-  PetscScalar phi   = (e/kb*(V2-V1)-(Tn2-Tn1))/theta-log(fabs(n2/n1));
-  PetscScalar Dn    = kb*0.5*(Tn1+Tn2)/e;
+  Real theta = Theta(Tn1,Tn2);
+  Real alpha = (e/kb*(V2-V1)-2*(Tn2-Tn1))/theta;
+  Real phi   = (e/kb*(V2-V1)-(Tn2-Tn1))/theta-log(fabs(n2/n1));
+  Real Dn    = kb*0.5*(Tn1+Tn2)/e;
   if(alpha > BP4_BERN || 1.25*phi > BP4_BERN)
     return -2.0*kb*Dn/h*theta*( - bern(-alpha)*bern(-1.25*phi)/bern(-phi)*n1);
   return -2.0*kb*Dn/h*theta*(bern(alpha)*bern(1.25*phi)/bern(phi)*n2 - bern(-alpha)*bern(-1.25*phi)/bern(-phi)*n1);
 }
 
-inline AutoDScalar Sn_eb(PetscScalar kb, PetscScalar e, const  AutoDScalar &V1,const  AutoDScalar &V2,
-                         const AutoDScalar &n1, const AutoDScalar &n2, const AutoDScalar &Tn1,const AutoDScalar &Tn2, PetscScalar h)
+inline AutoDScalar Sn_eb(Real kb, Real e, const  AutoDScalar &V1,const  AutoDScalar &V2,
+                         const AutoDScalar &n1, const AutoDScalar &n2, const AutoDScalar &Tn1,const AutoDScalar &Tn2, Real h)
 {
   AutoDScalar theta = Theta(Tn1,Tn2);
   AutoDScalar alpha = (e/kb*(V2-V1)-2*(Tn2-Tn1))/theta;
@@ -179,20 +179,20 @@ inline AutoDScalar Sn_eb(PetscScalar kb, PetscScalar e, const  AutoDScalar &V1,c
 
 //-----------------------------------------------------------------------------
 
-inline PetscScalar Sp_eb(PetscScalar kb, PetscScalar e,  PetscScalar V1,  PetscScalar V2,
-                         PetscScalar p1, PetscScalar p2, PetscScalar Tp1, PetscScalar Tp2, PetscScalar h)
+inline Real Sp_eb(Real kb, Real e,  Real V1,  Real V2,
+                         Real p1, Real p2, Real Tp1, Real Tp2, Real h)
 {
-  PetscScalar theta = Theta(Tp1,Tp2);
-  PetscScalar alpha = (-e/kb*(V2-V1)-2*(Tp2-Tp1))/theta;
-  PetscScalar phi   = (-e/kb*(V2-V1)-(Tp2-Tp1))/theta-log(fabs(p2/p1));
-  PetscScalar Dp    = kb*0.5*(Tp1+Tp2)/e;
+  Real theta = Theta(Tp1,Tp2);
+  Real alpha = (-e/kb*(V2-V1)-2*(Tp2-Tp1))/theta;
+  Real phi   = (-e/kb*(V2-V1)-(Tp2-Tp1))/theta-log(fabs(p2/p1));
+  Real Dp    = kb*0.5*(Tp1+Tp2)/e;
   if(alpha > BP4_BERN || 1.25*phi > BP4_BERN)
     return -2.0*kb*Dp/h*theta*(- bern(-alpha)*bern(-1.25*phi)/bern(-phi)*p1);
   return  -2.0*kb*Dp/h*theta*(bern(alpha)*bern(1.25*phi)/bern(phi)*p2 - bern(-alpha)*bern(-1.25*phi)/bern(-phi)*p1);
 }
 
-inline AutoDScalar Sp_eb(PetscScalar kb, PetscScalar e, const  AutoDScalar &V1,const  AutoDScalar &V2,
-                         const AutoDScalar &p1, const AutoDScalar &p2, const AutoDScalar &Tp1,const AutoDScalar &Tp2, PetscScalar h)
+inline AutoDScalar Sp_eb(Real kb, Real e, const  AutoDScalar &V1,const  AutoDScalar &V2,
+                         const AutoDScalar &p1, const AutoDScalar &p2, const AutoDScalar &Tp1,const AutoDScalar &Tp2, Real h)
 {
   AutoDScalar theta = Theta(Tp1,Tp2);
   AutoDScalar alpha = (-e/kb*(V2-V1)-2*(Tp2-Tp1))/theta;

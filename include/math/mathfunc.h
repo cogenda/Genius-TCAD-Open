@@ -1,7 +1,7 @@
 #ifndef __mathfunc_h__
 #define __mathfunc_h__
 
-#include "petsc.h"
+
 #include "brkpnts.h"
 
 #ifdef HAVE_GSL
@@ -16,15 +16,15 @@
 using namespace adtl;
 
 /* define the constant */
-const PetscScalar PI     = 3.14159265358979323846;
-const PetscScalar SQRTPI = 1.772453850905516;
-const PetscScalar LOG10e = 0.434294481903251827651;
-const PetscScalar LOGe10 = 2.30258509299404568402;
-const PetscScalar VerySmallNumericValue = 1.0e-30;
-const PetscScalar VeryLargeNumericValue = 1.0e30;
-const PetscScalar MaximumExponent = 76.0;
-const PetscScalar MinimumLogarithmArgument = 1.0e-40;
-const PetscScalar MinimumExponent = 1.0e-5;
+const Real PI     = 3.14159265358979323846;
+const Real SQRTPI = 1.772453850905516;
+const Real LOG10e = 0.434294481903251827651;
+const Real LOGe10 = 2.30258509299404568402;
+const Real VerySmallNumericValue = 1.0e-30;
+const Real VeryLargeNumericValue = 1.0e30;
+const Real MaximumExponent = 76.0;
+const Real MinimumLogarithmArgument = 1.0e-40;
+const Real MinimumExponent = 1.0e-5;
 
 
 inline double Erfc(double x)
@@ -75,9 +75,9 @@ inline double Erf(double x)
  *                                     e^x - 1
  *
  */
-inline PetscScalar bern ( PetscScalar x )
+inline Real bern ( Real x )
 {
-  PetscScalar y;
+  Real y;
 
   if (x <= BP0_BERN)
   { return(-x); }
@@ -122,9 +122,9 @@ inline AutoDScalar bern ( const AutoDScalar &x )
  *                         --B(x) = -------------
  *                         dx        (e^x - 1)^2
  */
-inline PetscScalar pd1bern ( PetscScalar x )
+inline Real pd1bern ( Real x )
 {
-  PetscScalar y, z;
+  Real y, z;
 
   if (x <= BP0_DBERN)
   { return(-1.0); }
@@ -152,9 +152,9 @@ inline PetscScalar pd1bern ( PetscScalar x )
  *                         Aux1(x) =  -------
  *                                    sinh(x)
  */
-inline PetscScalar aux1 ( PetscScalar x )
+inline Real aux1 ( Real x )
 {
-  PetscScalar y=x;
+  Real y=x;
   if      (x < -BP0_MISC) y = -BP0_MISC;
   else if (x >  BP0_MISC) y =  BP0_MISC;
 
@@ -171,20 +171,20 @@ inline PetscScalar aux1 ( PetscScalar x )
  * To avoid under and overflows this function is defined by equivalent or
  * approximate functions depending upon the value of the argument.
  *
- *                    d           sinh(x) - x*cosh(x)
- *                    --Aux1(x) = -------------------
- *                    dx              (sinh(x))^2
+ *		      d		  sinh(x) - x*cosh(x)
+ *		      --Aux1(x) = -------------------
+ *		      dx	      (sinh(x))^2
  */
-inline PetscScalar pd1aux1 ( PetscScalar x )
+inline Real pd1aux1 ( Real x )
 {
-  PetscScalar y=x;
-  PetscScalar z;
+  Real y=x;
+  Real z;
   if      (x < -BP0_MISC) y = -BP0_MISC;
   else if (x >  BP0_MISC) y =  BP0_MISC;
 
-  if (y <= BP4_DAUX1) 
+  if (y <= BP4_DAUX1)
   { return 0.0; }
-  else if (y <= BP2_DAUX1) 
+  else if (y <= BP2_DAUX1)
   { return -(1+y)*exp(y); }
   else if (y <= BP0_DAUX1)
   { z = sinh(y); return((z - y*cosh(y))/(z*z)); }
@@ -196,12 +196,15 @@ inline PetscScalar pd1aux1 ( PetscScalar x )
   { return (1-y)*exp(-y); }
   else
   { return 0.0; }
+
 } /* pd1aux1 */
+
+
 
 inline AutoDScalar aux1 ( const AutoDScalar &x )
 {
   AutoDScalar y;
-  PetscScalar td = pd1aux1(x.getValue());
+  Real td = pd1aux1(x.getValue());
   y = td * x;
   y.setValue(aux1(x.getValue()));
   return y;
@@ -218,7 +221,7 @@ inline AutoDScalar aux1 ( const AutoDScalar &x )
  *                              Aux2(x) = -------
  *                                        1 + e^x
  */
-inline PetscScalar aux2 ( PetscScalar x )
+inline Real aux2 ( Real x )
 {
   if (x <= BP0_AUX2)
   { return(1.0); }
@@ -241,9 +244,9 @@ inline PetscScalar aux2 ( PetscScalar x )
  *                         --Aux2(x) = -----------
  *                         dx          (1 + e^x)^2
  */
-inline PetscScalar pd1aux2 ( PetscScalar x )
+inline Real pd1aux2 ( Real x )
 {
-  PetscScalar y,z;
+  Real y,z;
 
   if (x <= BP0_DAUX2)
   { return(0.0); }
@@ -261,7 +264,7 @@ inline PetscScalar pd1aux2 ( PetscScalar x )
 inline AutoDScalar aux2 ( const AutoDScalar &x )
 {
   AutoDScalar y = x;
-  PetscScalar td = pd1aux2(x.getValue());
+  Real td = pd1aux2(x.getValue());
   y = td * x;
   y.setValue(aux2(x.getValue()));
   return y;
@@ -272,7 +275,7 @@ inline AutoDScalar aux2 ( const AutoDScalar &x )
  * pd1erf:  This function returns the derivative of the error function with
  * respect to the first variable.
  */
-inline PetscScalar pd1erf ( PetscScalar x )
+inline Real pd1erf ( Real x )
 {
   return 2.0 / sqrt(PI) * exp(-x*x);
 }
@@ -281,10 +284,10 @@ inline PetscScalar pd1erf ( PetscScalar x )
 /* ----------------------------------------------------------------------------
  * fermi_half:  This function returns value of 1/2 order Fermi-Dirac Integral
  */
-inline PetscScalar fermi_half(PetscScalar x)
+inline Real fermi_half(Real x)
 {
 #ifdef HAVE_GSL
-  return PetscScalar(gsl_sf_fermi_dirac_half(double(x)));
+  return Real(gsl_sf_fermi_dirac_half(double(x)));
 #else
   /* use an analytic expression. The result achieves within 0.4% error in all ranges.*/
   if(x<-4.5)
@@ -294,14 +297,14 @@ inline PetscScalar fermi_half(PetscScalar x)
   }
   else if(x<0.0)
   {
-    PetscScalar v = std::pow(x,4) + 50 + 33.6*x*(1-0.68*exp(-0.17*(x+1)*(x+1)));
-    PetscScalar p = 1.329340388179*std::pow(v,PetscScalar(-0.375));
+    Real v = std::pow(x,4) + 50 + 33.6*x*(1-0.68*exp(-0.17*(x+1)*(x+1)));
+    Real p = 1.329340388179*std::pow(v,Real(-0.375));
     return 1.0/(exp(-x) + p);
   }
   else
   {
-    PetscScalar v = std::pow(x,4) + 50 + 33.6*x*(1-0.68*exp(-0.17*(x+1)*(x+1)));
-    PetscScalar p = 1.329340388179*std::pow(v,PetscScalar(-0.375));
+    Real v = std::pow(x,4) + 50 + 33.6*x*(1-0.68*exp(-0.17*(x+1)*(x+1)));
+    Real p = 1.329340388179*std::pow(v,Real(-0.375));
     return 1.0/(1.0/exp(x) + p);
   }
 #endif
@@ -322,13 +325,13 @@ inline AutoDScalar fermi_half(AutoDScalar x)
   else if(x<0.0)
   {
     AutoDScalar v = adtl::pow(x,4) + 50 + 33.6*x*(1-0.68*exp(-0.17*(x+1)*(x+1)));
-    AutoDScalar p = 1.329340388179*adtl::pow(v,PetscScalar(-0.375));
+    AutoDScalar p = 1.329340388179*adtl::pow(v,Real(-0.375));
     return 1.0/(exp(-x) + p);
   }
   else
   {
     AutoDScalar v = adtl::pow(x,4) + 50 + 33.6*x*(1-0.68*exp(-0.17*(x+1)*(x+1)));
-    AutoDScalar p = 1.329340388179*adtl::pow(v,PetscScalar(-0.375));
+    AutoDScalar p = 1.329340388179*adtl::pow(v,Real(-0.375));
     return 1.0/(1.0/exp(x) + p);
   }
 #endif
@@ -340,10 +343,10 @@ inline AutoDScalar fermi_half(AutoDScalar x)
  *     fhfm evaluates the fermi-dirac integral of minus one-half order
  *     f-1/2(x) from x
  */
-inline PetscScalar fermi_mhalf(PetscScalar x)
+inline Real fermi_mhalf(Real x)
 {
 #ifdef HAVE_GSL
-  return PetscScalar(gsl_sf_fermi_dirac_mhalf(double(x)));
+  return Real(gsl_sf_fermi_dirac_mhalf(double(x)));
 #else
 /*     the formulae used are after j.s. blakemore, ''semiconductor
  *     statistics,'' new york: pergamon press, appendix c, 1962, for
@@ -353,7 +356,7 @@ inline PetscScalar fermi_mhalf(PetscScalar x)
  *     fermi_half)
  *     the maximum relative error is about 1.2%
  */
-  PetscScalar a=3.53553e-1,b=4.95009e-3,c=1.48386e-4,d=4.42563e-6;
+  Real a=3.53553e-1,b=4.95009e-3,c=1.48386e-4,d=4.42563e-6;
   if(x<-4.5)
   {
     //for small argument, fhfm1 and exp are almost identical.
@@ -363,11 +366,11 @@ inline PetscScalar fermi_mhalf(PetscScalar x)
   {
     if(x<5.5)
     {
-      PetscScalar f=fermi_half(x);
+      Real f=fermi_half(x);
       return f/(1.0+f*(a+f*(-2.0*b+f*(3*c-4*d*f))));
     }
     else
-      return 2.0*x/(SQRTPI*std::pow((x*x+0.6),PetscScalar(0.25)));
+      return 2.0*x/(SQRTPI*std::pow((x*x+0.6),Real(0.25)));
   }
 #endif
 }
@@ -401,15 +404,15 @@ inline AutoDScalar fermi_half(const AutoDScalar &x)
  *       f-1/2 = 2*eta/sqrt(pi)/(eta*eta+0.6)**(1/4)
  *     the maximum relative error is about 1.2%
  */
-inline PetscScalar fermi_mhalf_f(PetscScalar x)
+inline Real fermi_mhalf_f(Real x)
 {
-  PetscScalar a=3.53553e-1,b=4.95009e-3,c=1.48386e-4,d=4.42563e-6;
+  Real a=3.53553e-1,b=4.95009e-3,c=1.48386e-4,d=4.42563e-6;
   if(x<1.0e1)
     return x/(1.e0+x*(a+x*(-2.e0*b+x*(3.e0*c-4.e0*d*x))));
   else
   {
-    PetscScalar eta=sqrt(std::pow(0.75e0*SQRTPI*x,PetscScalar(4.e0/3.e0))-PI*PI/6.e0);
-    return 2.e0*eta/(SQRTPI*std::pow(eta*eta+0.6e0,PetscScalar(0.25e0)));
+    Real eta=sqrt(std::pow(0.75e0*SQRTPI*x,Real(4.e0/3.e0))-PI*PI/6.e0);
+    return 2.e0*eta/(SQRTPI*std::pow(eta*eta+0.6e0,Real(0.25e0)));
   }
 }
 
@@ -418,13 +421,13 @@ inline PetscScalar fermi_mhalf_f(PetscScalar x)
 /* ----------------------------------------------------------------------------
  * inv_fermi_half:  This function returns inverse value of Fermi-Dirac Integral
  */
-inline PetscScalar inv_fermi_half(PetscScalar x)
+inline Real inv_fermi_half(Real x)
 {
   if(x<8.463)
     return log(x) + x*(3.5355339059327379e-001 - x*(4.9500897298752622e-003
                        - x*(1.4838577128872821e-004 - x*4.4256301190009895e-006)));
   else
-    return sqrt(std::pow(0.75*SQRTPI*x,PetscScalar(4.0/3.0)) - PI*PI/6.0);
+    return sqrt(std::pow(0.75*SQRTPI*x,Real(4.0/3.0)) - PI*PI/6.0);
 }
 
 
@@ -432,14 +435,14 @@ inline PetscScalar inv_fermi_half(PetscScalar x)
  *   GAMMA calculates f1/2(eta)/exp(eta) according to the approximate
  *   formula in casey's book,dummy arguement x=f1/2(eta).
  */
-inline  PetscScalar gamma_f(PetscScalar x)
+inline  Real gamma_f(Real x)
 {
-  const PetscScalar a=3.53553e-1,b=4.95009e-3,c=1.48386e-4;
-  const PetscScalar d=4.42563e-6,pi1=1.772453851e0,pi2=9.869604401e0;
-  PetscScalar temx;
+  const Real a=3.53553e-1,b=4.95009e-3,c=1.48386e-4;
+  const Real d=4.42563e-6,pi1=1.772453851e0,pi2=9.869604401e0;
+  Real temx;
   if(x>1.0e1)
   {
-    temx=sqrt(std::pow(7.5e-1*pi1*x,PetscScalar(4.e0/3.e0))-pi2/6.e0);
+    temx=sqrt(std::pow(7.5e-1*pi1*x,Real(4.e0/3.e0))-pi2/6.e0);
     if(x > MaximumExponent)
       return VerySmallNumericValue;
     else
@@ -457,12 +460,12 @@ inline  PetscScalar gamma_f(PetscScalar x)
 
 inline  AutoDScalar gamma_f(const AutoDScalar &x)
 {
-  const PetscScalar a=3.53553e-1,b=4.95009e-3,c=1.48386e-4;
-  const PetscScalar d=4.42563e-6,pi1=1.772453851e0,pi2=9.869604401e0;
+  const Real a=3.53553e-1,b=4.95009e-3,c=1.48386e-4;
+  const Real d=4.42563e-6,pi1=1.772453851e0,pi2=9.869604401e0;
   AutoDScalar temx;
   if(x>1.0e1)
   {
-    temx=sqrt(adtl::pow(7.5e-1*pi1*x,PetscScalar(4.e0/3.e0))-pi2/6.e0);
+    temx=sqrt(adtl::pow(7.5e-1*pi1*x,Real(4.e0/3.e0))-pi2/6.e0);
     if(x > MaximumExponent)
       return VerySmallNumericValue;
     else

@@ -62,3 +62,4 @@ VectorValue<AutoDScalar> Edge2_FVM::gradient( const std::vector<AutoDScalar> & v
   AutoDScalar dv = var[1]-var[0];
   return VectorValue<AutoDScalar>(dv*p(0), dv*p(1), dv*p(2));
 }
+

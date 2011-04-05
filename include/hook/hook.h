@@ -31,6 +31,7 @@
 // predefine
 class SolverBase;
 
+
 /**
  * Hooks are executed previous and after each solution
  */
@@ -68,10 +69,22 @@ public:
   virtual void post_solve() {}
 
   /**
+   *  This is executed before each (nonlinear) iteration
+   *  i.e. for analysis the condition number of jacobian matrix
+   */
+  virtual void pre_iteration() {}
+
+  /**
    *  This is executed after each (nonlinear) iteration
    *  i.e. for collecting convergence information or implementing various damping strategy
    */
   virtual void post_iteration() {}
+
+  /**
+   *  This is executed after each (nonlinear) iteration
+   *  i.e. for collecting convergence information or implementing various damping strategy
+   */
+  virtual void post_iteration(void * , void * , void * , void * , bool &, bool &) {}
 
   /**
    * This is executed after the finalization of the solver

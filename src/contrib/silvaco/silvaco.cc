@@ -25,10 +25,6 @@
 
 #include "silvaco.h"
 
-#ifndef BUFSIZ
-#define BUFSIZ 1024
-#endif
-
 
 //stuff for the Silvaco read write
 SilvacoTIF::SilvacoTIF(const std::string & file) : _file(file)
@@ -85,7 +81,6 @@ int SilvacoTIF::read()
     return 1;
   }
 
-  char buffer[BUFSIZ];
   char flag;
 
   while(ctmp >> flag)
@@ -266,7 +261,10 @@ int SilvacoTIF::read()
       break;
 
     default :
-      ctmp.getline(buffer, BUFSIZ);
+      {
+        std::string rubbish;
+        std::getline(ctmp, rubbish);
+      }
     }
   }
   ctmp.close();

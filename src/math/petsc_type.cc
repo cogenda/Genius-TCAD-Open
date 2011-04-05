@@ -23,7 +23,8 @@
 
 #include <string>
 #include <map>
-#include "enum_petsc_type.h"
+
+#include "petsc_type.h"
 
 // convert string to enum
 
@@ -67,11 +68,13 @@ namespace SolverSpecify
       LinearSolverName_to_LinearSolverType["tcqmr"       ]  = TCQMR;
       LinearSolverName_to_LinearSolverType["tfqmr"       ]  = TFQMR;
       LinearSolverName_to_LinearSolverType["bicg"        ]  = BICG;
-      LinearSolverName_to_LinearSolverType["bcgs"        ]  = BICGSTAB;
-      LinearSolverName_to_LinearSolverType["bicgstab"    ]  = BICGSTAB;
+      LinearSolverName_to_LinearSolverType["bcgs"        ]  = BCGSL;//BICGSTAB; BCGSL is more stable
+      LinearSolverName_to_LinearSolverType["bicgstab"    ]  = BCGSL;//BICGSTAB;
+      LinearSolverName_to_LinearSolverType["bcgsl"       ]  = BCGSL;
 
       LinearSolverName_to_LinearSolverType["minres"      ]  = MINRES;
       LinearSolverName_to_LinearSolverType["gmres"       ]  = GMRES;
+      LinearSolverName_to_LinearSolverType["fgmres"      ]  = FGMRES;
       LinearSolverName_to_LinearSolverType["lsqr"        ]  = LSQR;
 
       LinearSolverName_to_LinearSolverType["jacobian"    ]  = JACOBI;
@@ -113,10 +116,13 @@ namespace SolverSpecify
       PreconditionerName_to_PreconditionerType["sor"         ]  = SOR_PRECOND;
       PreconditionerName_to_PreconditionerType["ssor"        ]  = SSOR_PRECOND;
       PreconditionerName_to_PreconditionerType["asm"         ]  = ASM_PRECOND;
+      PreconditionerName_to_PreconditionerType["amg"         ]  = BOOMERAMG_PRECOND;
       PreconditionerName_to_PreconditionerType["bjacobian"   ]  = CHOLESKY_PRECOND;
       PreconditionerName_to_PreconditionerType["sor"         ]  = ICC_PRECOND;
       PreconditionerName_to_PreconditionerType["ilu"         ]  = ILU_PRECOND;
+      PreconditionerName_to_PreconditionerType["ilut"        ]  = ILUT_PRECOND;
       PreconditionerName_to_PreconditionerType["lu"          ]  = LU_PRECOND;
+      PreconditionerName_to_PreconditionerType["parms"       ]  = PARMS_PRECOND;
     }
 
   }
@@ -126,6 +132,46 @@ namespace SolverSpecify
     init_PreconditionerName_to_PreconditionerType();
     return PreconditionerName_to_PreconditionerType[pc];
   }
+
+
+  //-------------------------------------------------------------------------------------
+
+  LinearSolverCategory  linear_solver_category(LinearSolverType ls)
+  {
+    switch(ls)
+    {
+      case CG           :
+      case CGN          :
+      case CGS          :
+      case CR           :
+      case QMR          :
+      case TCQMR        :
+      case TFQMR        :
+      case BICG         :
+      case BICGSTAB     :
+      case BCGSL        :
+      case MINRES       :
+      case GMRES        :
+      case FGMRES       :
+      case LSQR         :
+      case JACOBI       :
+      case SOR_FORWARD  :
+      case SOR_BACKWARD :
+      case SSOR         :
+      case RICHARDSON   : return ITERATIVE;
+      case CHEBYSHEV    :// direct solvers
+      case LU           :
+      case UMFPACK      :
+      case SuperLU      :
+      case PASTIX       :
+      case MUMPS        :
+      case SuperLU_DIST :
+      case GSS          : return DIRECT;
+    }
+
+    return HYBRID;
+  }
+
 
 }
 

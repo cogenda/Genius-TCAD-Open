@@ -30,21 +30,20 @@ private:
   PetscScalar PERMITTI;  // The relative dielectric permittivity of SiO2.
   PetscScalar PERMEABI;  // The relative megnetic permeability of SiO2.
   PetscScalar AFFINITY;  // The electron affinity for the material.
-  PetscScalar BANDGAP;   // The banggap for the material.
   PetscScalar DENSITY;   // Specific mass density for the material.
+
   void   Basic_Init()
   {
     PERMITTI = 3.900000e+00;
     PERMEABI = 1.0;
-    AFFINITY = 0.970000e+00*eV;
-    BANDGAP  = 9.0*eV;
+    AFFINITY = 1.070000e+00*eV;
     DENSITY  = 2.260000e-03*kg*std::pow(cm,-3);
 
 #ifdef __CALIBRATE__
-    parameter_map.insert(para_item("PERMITTI",    PARA("PERMITTI",    "The relative dielectric permittivity of SiO2", "-", 1.0, &PERMITTI)) );
-    parameter_map.insert(para_item("PERMEABI",  PARA("PERMEABI",  "The relative megnetic permeability of SiO2", "-", 1.0, &PERMEABI)) );
-    parameter_map.insert(para_item("AFFINITY", PARA("AFFINITY", "The electron affinity for the material", "eV", eV, &AFFINITY)) );
-    parameter_map.insert(para_item("DENSITY", PARA("DENSITY", "Specific mass density for the material", "kg*cm^-3", kg*std::pow(cm,-3), &DENSITY)) );
+    parameter_map.insert(para_item("PERMITTI",  PARA("PERMITTI", "The relative dielectric permittivity of SiO2", "-", 1.0, &PERMITTI)) );
+    parameter_map.insert(para_item("PERMEABI",  PARA("PERMEABI", "The relative megnetic permeability of SiO2", "-", 1.0, &PERMEABI)) );
+    parameter_map.insert(para_item("AFFINITY",  PARA("AFFINITY", "The electron affinity for the material", "eV", eV, &AFFINITY)) );
+    parameter_map.insert(para_item("DENSITY",   PARA("DENSITY",  "Specific mass density for the material", "kg*cm^-3", kg*std::pow(cm,-3), &DENSITY)) );
 #endif
   }
 public:
@@ -52,7 +51,6 @@ public:
   PetscScalar Permittivity  ()                      const { return PERMITTI; }
   PetscScalar Permeability  ()                      const { return PERMEABI; }
   PetscScalar Affinity      (const PetscScalar &Tl) const { return AFFINITY; }
-  PetscScalar Eg            (const PetscScalar &Tl) const { return BANDGAP;  }
 
   void atom_fraction(std::vector<std::string> &atoms, std::vector<double> & fraction) const
   {
@@ -63,6 +61,7 @@ public:
     fraction.push_back(2.0);
   }
 
+public:
   GSS_SiO2_BasicParameter(const PMII_Environment &env):PMII_BasicParameter(env)
   {
     Basic_Init();

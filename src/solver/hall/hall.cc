@@ -23,6 +23,8 @@
 
 #include "hall/hall.h"
 #include "parallel.h"
+#include "petsc_utils.h"
+
 
 using PhysicalUnit::kb;
 using PhysicalUnit::e;
@@ -89,22 +91,22 @@ int HallSolver::solve()
 
   switch( SolverSpecify::Type )
   {
-  case SolverSpecify::EQUILIBRIUM :
-    solve_equ(); break;
+      case SolverSpecify::EQUILIBRIUM :
+      solve_equ(); break;
 
-  case SolverSpecify::STEADYSTATE:
-    solve_steadystate(); break;
+      case SolverSpecify::STEADYSTATE:
+      solve_steadystate(); break;
 
-  case SolverSpecify::DCSWEEP:
-    solve_dcsweep(); break;
+      case SolverSpecify::DCSWEEP:
+      solve_dcsweep(); break;
 
-  case SolverSpecify::TRANSIENT:
-    solve_transient();break;
+      case SolverSpecify::TRANSIENT:
+      solve_transient();break;
 
-  case SolverSpecify::TRACE:
-    solve_iv_trace();break;
+      case SolverSpecify::TRACE:
+      solve_iv_trace();break;
 
-  default: genius_error();
+      default: genius_error();
   }
 
   STOP_LOG("DDM1Solver_SNES()", "HallSolver");
@@ -183,7 +185,7 @@ int HallSolver::diverged_recovery()
 /*------------------------------------------------------------------
  * Potential Newton Damping
  */
-void HallSolver::potential_damping(Vec x, Vec y, Vec w, PetscTruth *changed_y, PetscTruth *changed_w)
+void HallSolver::potential_damping(Vec x, Vec y, Vec w, PetscBool *changed_y, PetscBool *changed_w)
 {
 
   PetscScalar    *xx;
@@ -206,13 +208,11 @@ void HallSolver::potential_damping(Vec x, Vec y, Vec w, PetscTruth *changed_y, P
     const SimulationRegion * region = _system.region(n);
     if( region->type() != SemiconductorRegion ) continue;
 
-    SimulationRegion::const_node_iterator it = region->nodes_begin();
-    SimulationRegion::const_node_iterator it_end = region->nodes_end();
+    SimulationRegion::const_processor_node_iterator it = region->on_processor_nodes_begin();
+    SimulationRegion::const_processor_node_iterator it_end = region->on_processor_nodes_end();
     for(; it!=it_end; ++it)
     {
-      const FVM_Node * fvm_node = (*it).second;
-      //if this node NOT belongs to this processor or not valid, continue
-      if( !fvm_node->on_processor() || !fvm_node->is_valid()) continue;
+      const FVM_Node * fvm_node = *it;
 
       // we konw the fvm_node->local_offset() is psi in semiconductor region
       unsigned int local_offset = fvm_node->local_offset();
@@ -243,13 +243,11 @@ void HallSolver::potential_damping(Vec x, Vec y, Vec w, PetscTruth *changed_y, P
       // only consider semiconductor region
       //if( region->type() != SemiconductorRegion ) continue;
 
-      SimulationRegion::const_node_iterator it = region->nodes_begin();
-      SimulationRegion::const_node_iterator it_end = region->nodes_end();
+      SimulationRegion::const_processor_node_iterator it = region->on_processor_nodes_begin();
+      SimulationRegion::const_processor_node_iterator it_end = region->on_processor_nodes_end();
       for(; it!=it_end; ++it)
       {
-        const FVM_Node * fvm_node = (*it).second;
-        //if this node NOT belongs to this processor or not valid, continue
-        if( !fvm_node->on_processor() || !fvm_node->is_valid()) continue;
+        const FVM_Node * fvm_node = *it;
 
         unsigned int local_offset = fvm_node->local_offset();
         ww[local_offset]   = xx[local_offset] - f*yy[local_offset];
@@ -288,7 +286,7 @@ void HallSolver::potential_damping(Vec x, Vec y, Vec w, PetscTruth *changed_y, P
 /*------------------------------------------------------------------
  * Bank-Rose Newton Damping
  */
-void HallSolver::bank_rose_damping(Vec , Vec , Vec , PetscTruth *changed_y, PetscTruth *changed_w)
+void HallSolver::bank_rose_damping(Vec , Vec , Vec , PetscBool *changed_y, PetscBool *changed_w)
 {
   *changed_y = PETSC_FALSE;
   *changed_w = PETSC_FALSE;
@@ -301,7 +299,7 @@ void HallSolver::bank_rose_damping(Vec , Vec , Vec , PetscTruth *changed_y, Pets
 /*------------------------------------------------------------------
  * positive density Newton Damping
  */
-void HallSolver::positive_density_damping(Vec x, Vec y, Vec w, PetscTruth *changed_y, PetscTruth *changed_w)
+void HallSolver::positive_density_damping(Vec x, Vec y, Vec w, PetscBool *changed_y, PetscBool *changed_w)
 {
 
   PetscScalar    *xx;
@@ -322,13 +320,11 @@ void HallSolver::positive_density_damping(Vec x, Vec y, Vec w, PetscTruth *chang
     const SimulationRegion * region = _system.region(n);
     if( region->type() != SemiconductorRegion ) continue;
 
-    SimulationRegion::const_node_iterator it = region->nodes_begin();
-    SimulationRegion::const_node_iterator it_end = region->nodes_end();
+    SimulationRegion::const_processor_node_iterator it = region->on_processor_nodes_begin();
+    SimulationRegion::const_processor_node_iterator it_end = region->on_processor_nodes_end();
     for(; it!=it_end; ++it)
     {
-      const FVM_Node * fvm_node = (*it).second;
-      //if this node NOT belongs to this processor or not valid, continue
-      if( !fvm_node->on_processor() || !fvm_node->is_valid()) continue;
+      const FVM_Node * fvm_node = *it;
 
       unsigned int local_offset = fvm_node->local_offset();
 
@@ -387,13 +383,11 @@ void HallSolver::projection_positive_density_check(Vec x, Vec xo)
     const SimulationRegion * region = _system.region(n);
     if( region->type() != SemiconductorRegion ) continue;
 
-    SimulationRegion::const_node_iterator it = region->nodes_begin();
-    SimulationRegion::const_node_iterator it_end = region->nodes_end();
-    for(; it!=it_end; it++)
+    SimulationRegion::const_processor_node_iterator it = region->on_processor_nodes_begin();
+    SimulationRegion::const_processor_node_iterator it_end = region->on_processor_nodes_end();
+    for(; it!=it_end; ++it)
     {
-      const FVM_Node * fvm_node = (*it).second;
-      //if this node NOT belongs to this processor or not valid, continue
-      if( !fvm_node->on_processor() || !fvm_node->is_valid()) continue;
+      const FVM_Node * fvm_node = *it;
 
       unsigned int local_offset = fvm_node->local_offset();
 
@@ -464,62 +458,55 @@ PetscScalar HallSolver::LTE_norm()
     const SimulationRegion * region = _system.region(n);
     switch ( region->type() )
     {
-    case SemiconductorRegion :
-      {
-        SimulationRegion::const_node_iterator it = region->nodes_begin();
-        SimulationRegion::const_node_iterator it_end = region->nodes_end();
-        for(; it!=it_end; ++it)
+        case SemiconductorRegion :
         {
-          const FVM_Node * fvm_node = (*it).second;
-          //if this node NOT belongs to this processor, continue
-          if( !fvm_node->on_processor() ) continue;
+          SimulationRegion::const_processor_node_iterator it = region->on_processor_nodes_begin();
+          SimulationRegion::const_processor_node_iterator it_end = region->on_processor_nodes_end();
+          for(; it!=it_end; ++it)
+          {
+            const FVM_Node * fvm_node = *it;
 
-          unsigned int local_offset = fvm_node->local_offset();
+            unsigned int local_offset = fvm_node->local_offset();
 
-          ll[local_offset+0] = 0;
-          ll[local_offset+1] = ll[local_offset+1]/(eps_r*xx[local_offset+1]+eps_a);
-          ll[local_offset+2] = ll[local_offset+2]/(eps_r*xx[local_offset+2]+eps_a);
+            ll[local_offset+0] = 0;
+            ll[local_offset+1] = ll[local_offset+1]/(eps_r*xx[local_offset+1]+eps_a);
+            ll[local_offset+2] = ll[local_offset+2]/(eps_r*xx[local_offset+2]+eps_a);
+          }
+          N += 2*region->n_on_processor_node();
+          break;
         }
-        N += 2*region->n_on_processor_node();
-        break;
-      }
-    case InsulatorRegion :
-      {
-        SimulationRegion::const_node_iterator it = region->nodes_begin();
-        SimulationRegion::const_node_iterator it_end = region->nodes_end();
-
-        for(; it!=it_end; ++it)
+        case InsulatorRegion :
         {
-          const FVM_Node * fvm_node = (*it).second;
-          //if this node NOT belongs to this processor, continue
-          if( !fvm_node->on_processor() ) continue;
+          SimulationRegion::const_processor_node_iterator it = region->on_processor_nodes_begin();
+          SimulationRegion::const_processor_node_iterator it_end = region->on_processor_nodes_end();
+          for(; it!=it_end; ++it)
+          {
+            const FVM_Node * fvm_node = *it;
 
-          unsigned int local_offset = fvm_node->local_offset();
+            unsigned int local_offset = fvm_node->local_offset();
 
-          ll[local_offset] = 0;
+            ll[local_offset] = 0;
+          }
+          break;
         }
-        break;
-      }
-    case ConductorRegion :
-      {
-        SimulationRegion::const_node_iterator it = region->nodes_begin();
-        SimulationRegion::const_node_iterator it_end = region->nodes_end();
-
-        for(; it!=it_end; ++it)
+        case ElectrodeRegion :
+        case MetalRegion     :
         {
-          const FVM_Node * fvm_node = (*it).second;
-          //if this node NOT belongs to this processor, continue
-          if( !fvm_node->on_processor() ) continue;
+          SimulationRegion::const_processor_node_iterator it = region->on_processor_nodes_begin();
+          SimulationRegion::const_processor_node_iterator it_end = region->on_processor_nodes_end();
+          for(; it!=it_end; ++it)
+          {
+            const FVM_Node * fvm_node = *it;
 
-          unsigned int local_offset = fvm_node->local_offset();
+            unsigned int local_offset = fvm_node->local_offset();
 
-          ll[local_offset] = 0;
+            ll[local_offset] = 0;
+          }
+          break;
         }
+        case VacuumRegion:
         break;
-      }
-    case VacuumRegion:
-        break;
-    default: genius_error();
+        default: genius_error();
     }
   }
 
@@ -531,7 +518,7 @@ PetscScalar HallSolver::LTE_norm()
       const BoundaryCondition * bc = _system.get_bcs()->get_bc(b);
       unsigned int array_offset = bc->array_offset();
       if( array_offset != invalid_uint )
-    ll[array_offset] = 0;
+        ll[array_offset] = 0;
     }
 
   VecRestoreArray(x, &xx);
@@ -554,9 +541,6 @@ PetscScalar HallSolver::LTE_norm()
 
 
 
-#if PETSC_VERSION_LE(2,3,3)
-#include "private/snesimpl.h"
-#endif
 void HallSolver::error_norm()
 {
   PetscScalar    *xx;
@@ -568,15 +552,8 @@ void HallSolver::error_norm()
   //VecScatterEnd  (scatter, x, lx, INSERT_VALUES, SCATTER_FORWARD);
 
   // scatte global function vector f to local vector lf
-#if (PETSC_VERSION_GE(3,0,0) || defined(HAVE_PETSC_DEV))
   VecScatterBegin(scatter, f, lf, INSERT_VALUES, SCATTER_FORWARD);
   VecScatterEnd  (scatter, f, lf, INSERT_VALUES, SCATTER_FORWARD);
-#endif
-
-#if PETSC_VERSION_LE(2,3,3)
-  VecScatterBegin(scatter, snes->vec_func_always, lf, INSERT_VALUES, SCATTER_FORWARD);
-  VecScatterEnd  (scatter, snes->vec_func_always, lf, INSERT_VALUES, SCATTER_FORWARD);
-#endif
 
   VecGetArray(lx, &xx);  // solution value
   VecGetArray(lf, &ff);  // function value
@@ -602,44 +579,43 @@ void HallSolver::error_norm()
     // only consider semiconductor region
     const SimulationRegion * region = _system.region(n);
 
-    SimulationRegion::const_node_iterator it = region->nodes_begin();
-    SimulationRegion::const_node_iterator it_end = region->nodes_end();
+    SimulationRegion::const_processor_node_iterator it = region->on_processor_nodes_begin();
+    SimulationRegion::const_processor_node_iterator it_end = region->on_processor_nodes_end();
     for(; it!=it_end; ++it)
     {
-      const FVM_Node * fvm_node = (*it).second;
-      //if this node NOT belongs to this processor, continue
-      if( !fvm_node->on_processor() ) continue;
+      const FVM_Node * fvm_node = *it;
 
       unsigned int offset = fvm_node->local_offset();
 
       switch ( region->type() )
       {
-      case SemiconductorRegion :
-        {
-          potential_norm += xx[offset+0]*xx[offset+0];
-          electron_norm  += xx[offset+1]*xx[offset+1];
-          hole_norm      += xx[offset+2]*xx[offset+2];
+          case SemiconductorRegion :
+          {
+            potential_norm += xx[offset+0]*xx[offset+0];
+            electron_norm  += xx[offset+1]*xx[offset+1];
+            hole_norm      += xx[offset+2]*xx[offset+2];
 
-          poisson_norm         += ff[offset+0]*ff[offset+0];
-          elec_continuity_norm += ff[offset+1]*ff[offset+1];
-          hole_continuity_norm += ff[offset+2]*ff[offset+2];
+            poisson_norm         += ff[offset+0]*ff[offset+0];
+            elec_continuity_norm += ff[offset+1]*ff[offset+1];
+            hole_continuity_norm += ff[offset+2]*ff[offset+2];
+            break;
+          }
+          case InsulatorRegion :
+          {
+            potential_norm += xx[offset]*xx[offset];
+            poisson_norm   += ff[offset]*ff[offset];
+            break;
+          }
+          case ElectrodeRegion :
+          case MetalRegion     :
+          {
+            potential_norm += xx[offset]*xx[offset];
+            poisson_norm   += ff[offset]*ff[offset];
+            break;
+          }
+          case VacuumRegion:
           break;
-        }
-      case InsulatorRegion :
-        {
-          potential_norm += xx[offset]*xx[offset];
-          poisson_norm   += ff[offset]*ff[offset];
-          break;
-        }
-      case ConductorRegion :
-        {
-          potential_norm += xx[offset]*xx[offset];
-          poisson_norm   += ff[offset]*ff[offset];
-          break;
-        }
-      case VacuumRegion:
-          break;
-      default: genius_error(); //we should never reach here
+          default: genius_error(); //we should never reach here
       }
     }
   }
@@ -719,14 +695,15 @@ void HallSolver::build_petsc_sens_residual(Vec x, Vec r)
   // flag for indicate ADD_VALUES operator.
   InsertMode add_value_flag = NOT_SET_VALUES;
 
+  const VectorValue<double> & B = _system.get_magnetic_field();
   // evaluate governing equations of DDML1 in all the regions
   for(unsigned int n=0; n<_system.n_regions(); n++)
   {
     SimulationRegion * region = _system.region(n);
-    region->HALL_Function(lxx, r, add_value_flag);
+    region->HALL_Function(B, lxx, r, add_value_flag);
   }
 
-#ifdef HAVE_FENV_H
+#if defined(HAVE_FENV_H) && defined(DEBUG)
   genius_assert( !fetestexcept(FE_INVALID) );
 #endif
 
@@ -738,7 +715,7 @@ void HallSolver::build_petsc_sens_residual(Vec x, Vec r)
       region->HALL_Time_Dependent_Function(lxx, r, add_value_flag);
     }
 
-#ifdef HAVE_FENV_H
+#if defined(HAVE_FENV_H) && defined(DEBUG)
   genius_assert( !fetestexcept(FE_INVALID) );
 #endif
 
@@ -749,9 +726,21 @@ void HallSolver::build_petsc_sens_residual(Vec x, Vec r)
     region->HALL_Function_Hanging_Node(lxx, r, add_value_flag);
   }
 
-#ifdef HAVE_FENV_H
+#if defined(HAVE_FENV_H) && defined(DEBUG)
   genius_assert( !fetestexcept(FE_INVALID) );
 #endif
+  // preprocess each bc
+  VecAssemblyBegin(r);
+  VecAssemblyEnd(r);
+  std::vector<PetscInt> src_row,  dst_row,  clear_row;
+  for(unsigned int b=0; b<_system.get_bcs()->n_bcs(); b++)
+  {
+    BoundaryCondition * bc = _system.get_bcs()->get_bc(b);
+    bc->DDM1_Function_Preprocess(r, src_row, dst_row, clear_row);
+  }
+  //add source rows to destination rows, and clear rows
+  PetscUtils::VecAddClearRow(r, src_row, dst_row, clear_row);
+  add_value_flag = NOT_SET_VALUES;
 
   // evaluate governing equations of DDML1 for all the boundaries
   for(unsigned int b=0; b<_system.get_bcs()->n_bcs(); b++)
@@ -760,7 +749,7 @@ void HallSolver::build_petsc_sens_residual(Vec x, Vec r)
     bc->DDM1_Function(lxx, r, add_value_flag);
   }
 
-#ifdef HAVE_FENV_H
+#if defined(HAVE_FENV_H) && defined(DEBUG)
   genius_assert( !fetestexcept(FE_INVALID) );
 #endif
 
@@ -813,14 +802,15 @@ void HallSolver::build_petsc_sens_jacobian(Vec x, Mat *, Mat *)
   // flag for indicate ADD_VALUES operator.
   InsertMode add_value_flag = NOT_SET_VALUES;
 
+  const VectorValue<double> & B = _system.get_magnetic_field();
   // evaluate Jacobian matrix of governing equations of DDML1 in all the regions
   for(unsigned int n=0; n<_system.n_regions(); n++)
   {
     SimulationRegion * region = _system.region(n);
-    region->HALL_Jacobian(lxx, &J, add_value_flag);
+    region->HALL_Jacobian(B, lxx, &J, add_value_flag);
   }
 
-#ifdef HAVE_FENV_H
+#if defined(HAVE_FENV_H) && defined(DEBUG)
   genius_assert( !fetestexcept(FE_INVALID) );
 #endif
 
@@ -832,8 +822,13 @@ void HallSolver::build_petsc_sens_jacobian(Vec x, Mat *, Mat *)
       region->HALL_Time_Dependent_Jacobian(lxx, &J, add_value_flag);
     }
 
-
-#ifdef HAVE_FENV_H
+  // process hanging node here
+  for(unsigned int n=0; n<_system.n_regions(); n++)
+  {
+    SimulationRegion * region = _system.region(n);
+    region->HALL_Jacobian_Hanging_Node(lxx, &J, add_value_flag);
+  }
+#if defined(HAVE_FENV_H) && defined(DEBUG)
   genius_assert( !fetestexcept(FE_INVALID) );
 #endif
 
@@ -846,38 +841,42 @@ void HallSolver::build_petsc_sens_jacobian(Vec x, Mat *, Mat *)
       BoundaryCondition * bc = _system.get_bcs()->get_bc(b);
       bc->DDM1_Jacobian_Reserve(&J, add_value_flag);
     }
-
-    jacobian_matrix_first_assemble = true;
-
-    // after that, we do not allow zero insert/add to matrix
-#if (PETSC_VERSION_GE(3,0,0) || defined(HAVE_PETSC_DEV))
-    genius_assert(!MatSetOption(J, MAT_IGNORE_ZERO_ENTRIES, PETSC_TRUE));
-#endif
-
-#if PETSC_VERSION_LE(2,3,3)
-    genius_assert(!MatSetOption(J, MAT_IGNORE_ZERO_ENTRIES));
-#endif
   }
 
-  // process hanging node here
-  for(unsigned int n=0; n<_system.n_regions(); n++)
-  {
-    SimulationRegion * region = _system.region(n);
-    region->HALL_Jacobian_Hanging_Node(lxx, &J, add_value_flag);
-  }
 
-#ifdef HAVE_FENV_H
+
+#if defined(HAVE_FENV_H) && defined(DEBUG)
   genius_assert( !fetestexcept(FE_INVALID) );
 #endif
 
+
   // evaluate Jacobian matrix of governing equations of DDML1 for all the boundaries
+  MatAssemblyBegin(J, MAT_FINAL_ASSEMBLY);
+  MatAssemblyEnd(J, MAT_FINAL_ASSEMBLY);
+
+  // we do not allow zero insert/add to matrix
+  if( !jacobian_matrix_first_assemble )
+    genius_assert(!MatSetOption(J, MAT_IGNORE_ZERO_ENTRIES, PETSC_TRUE));
+
+  std::vector<PetscInt> src_row,  dst_row,  clear_row;
+  for(unsigned int b=0; b<_system.get_bcs()->n_bcs(); b++)
+  {
+    BoundaryCondition * bc = _system.get_bcs()->get_bc(b);
+    bc->DDM1_Jacobian_Preprocess(&J, src_row, dst_row, clear_row);
+  }
+  //add source rows to destination rows
+  PetscUtils::MatAddRowToRow(J, src_row, dst_row);
+  // clear row
+  PetscUtils::MatZeroRows(J, clear_row.size(), clear_row.empty() ? NULL : &clear_row[0], 0.0);
+
+  add_value_flag = NOT_SET_VALUES;
   for(unsigned int b=0; b<_system.get_bcs()->n_bcs(); b++)
   {
     BoundaryCondition * bc = _system.get_bcs()->get_bc(b);
     bc->DDM1_Jacobian(lxx, &J, add_value_flag);
   }
 
-#ifdef HAVE_FENV_H
+#if defined(HAVE_FENV_H) && defined(DEBUG)
   genius_assert( !fetestexcept(FE_INVALID) );
 #endif
 
@@ -899,6 +898,9 @@ void HallSolver::build_petsc_sens_jacobian(Vec x, Mat *, Mat *)
 
   //MatView(J, PETSC_VIEWER_DRAW_WORLD);
   //getchar();
+
+  if(!jacobian_matrix_first_assemble)
+    jacobian_matrix_first_assemble = true;
 
   STOP_LOG("DDM1Solver_Jacobian()", "HallSolver");
 

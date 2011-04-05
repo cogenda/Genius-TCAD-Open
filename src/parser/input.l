@@ -23,6 +23,7 @@ static int error_report(const char *s);
 /*#define VERBOSE*/
 
 
+
 %}
 
 
@@ -37,6 +38,7 @@ D       [0-9]
 E       [EeDd][+-]?{D}+
 SIGN    ([+-]?)
 
+%option noyywrap
 
 %%
 
@@ -244,16 +246,31 @@ string                             { state = STRING_DEFINE; return STRING_TYPE;}
 
 \!\=                                   { return NE;}
 
-{D}+                                   {sscanf(yytext, "%d", &yylval.ival); return INT_VALUE;}
+{D}+                                   {
+    // NOTE: input deck some times have big number, i.e. 2397610736220310
+    // which will be parsed as int. However, int will be overflow for such a big value
+    int    i;
+    double d;
+    sscanf(yytext, "%d", &i);
+    sscanf(yytext, "%lf", &d);
+    if( i == floor(d+0.5) )
+    {
+      yylval.ival = i;
+      return INT_VALUE;
+    }
+
+    yylval.dval = d;
+    return REAL_VALUE;
+}
 
 
-{D}+"."{D}*({E})?               |
-{D}*"."{D}+({E})?               |
-{D}+({E})                              {sscanf(yytext, "%lf", &yylval.dval);return REAL_VALUE;}
+{D}+"."{D}*({E})?         |
+{D}*"."{D}+({E})?         |
+{D}+({E})                       {sscanf(yytext, "%lf", &yylval.dval);return REAL_VALUE;}
 
 
 
-{name}                          {
+{name}                                {
 
         // find if this token belongs to any exist ID
         strncpy(yylval.sval, yytext,1023);
@@ -286,7 +303,7 @@ string                             { state = STRING_DEFINE; return STRING_TYPE;}
 }
 
 
-{cstring}                              {
+{cstring}                                    {
         // c style string
         // the only poissable is STRING_VALUE
         yytext[yyleng-1]='\0';
@@ -361,7 +378,3 @@ static int error_report(const char * s)
   return 1;
 }
 
-int yywrap()
-{
-        return 1;
-}

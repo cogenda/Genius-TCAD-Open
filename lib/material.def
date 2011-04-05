@@ -29,6 +29,15 @@ Si
         color    = 0xffb6c1ff
 }
 
+PolySi
+{
+        property = Semiconductor
+        alias    = Poly
+        alias    = PolySilicon
+        alias    = GatePolySilicon
+        color    = 0xc71585ff
+}
+
 GaAs
 {
         property = Semiconductor
@@ -224,49 +233,49 @@ Elec
 {
         property = Conductor
         alias    = Metal
+        alias    = IdeaMetal
+        alias    = PerfectMetal
+        alias    = Conductor
         color    = 0xcdba96ff
 }
 
+
+
+
+#-----------------------------------------------------
+# Resistance
+#-----------------------------------------------------
 Al
 {
-        property = Conductor
+        property = Resistance
         alias    = Aluminum
         color    = 0x4d7f94ff
 }
 
 Au
 {
-        property = Conductor
+        property = Resistance
         alias    = Gold
         color    = 0xffd700ff
 }
 
 Ag
 {
-        property = Conductor
+        property = Resistance
         alias    = Silver
         color    = 0x008b00ff
 }
 
 Cu
 {
-        property = Conductor
+        property = Resistance
         alias    = Copper
         color    = 0xff7f50ff
 }
 
-PolySi
-{
-        property = Conductor
-        alias    = Poly
-        alias    = PolySilicon
-        alias    = GatePolySilicon
-        color    = 0xc71585ff
-}
-
 NPolySi
 {
-        property = Conductor
+        property = Resistance
         alias    = NPoly
         alias    = NPolySilicon
         alias    = GateNPolySilicon
@@ -276,7 +285,7 @@ NPolySi
 
 PPolySi
 {
-        property = Conductor
+        property = Resistance
         alias    = PPoly
         alias    = PPolySilicon
         alias    = GatePPolySilicon
@@ -286,49 +295,49 @@ PPolySi
 
 Ti
 {
-        property = Conductor
+        property = Resistance
         alias    = Titanium
         color    = 0xe0eeeeff
 }
 
 Co
 {
-        property = Conductor
+        property = Resistance
         alias    = Cobalt
         color    = 0xcdc9c9ff
 }
 
 W
 {
-        property = Conductor
+        property = Resistance
         alias    = Tungsten
         color    = 0xd0d0f0ff
 }
 
 Ta
 {
-        property = Conductor
+        property = Resistance
         alias    = Tantalum
         color    = 0xeee9e9ff
 }
 
 Pt
 {
-        property = Conductor
+        property = Resistance
         alias    = Platinum
         color    = 0xadc9a9ff
 }
 
 Mo
 {
-        property = Conductor
+        property = Resistance
         alias    = Molybdenum
         color    = 0x8b8878ff
 }
 
 TiSi2
 {
-        property = Conductor
+        property = Resistance
         alias    = Silicide
         color    = 0xcdc8b1ff
 }

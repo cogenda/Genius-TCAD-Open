@@ -33,18 +33,20 @@
 #include "elem.h"
 #include "boundary_info.h"
 #include "point_locator_base.h"
+#include "surface_locator_hub.h"
 
 
 // ------------------------------------------------------------
 // MeshBase class member functions
 MeshBase::MeshBase (unsigned int d) :
-    boundary_info  (new BoundaryInfo(*this)),
-    _magic_num     (invalid_uint),
-    _n_sbd         (1),
-    _n_parts       (1),
-    _dim           (d),
-    _is_prepared   (false),
-    _point_locator (NULL)
+    boundary_info   (new BoundaryInfo(*this)),
+    _magic_num      (invalid_uint),
+    _n_sbd          (1),
+    _n_parts        (1),
+    _dim            (d),
+    _is_prepared    (false),
+    _point_locator  (NULL),
+    _surface_locator(NULL)
 {
   assert (DIM <= 3);
   assert (DIM >= _dim);
@@ -53,13 +55,14 @@ MeshBase::MeshBase (unsigned int d) :
 
 
 MeshBase::MeshBase (const MeshBase& other_mesh) :
-    boundary_info  (new BoundaryInfo(*this)), // no copy constructor defined for BoundaryInfo?
-    _magic_num     (other_mesh._magic_num),
-    _n_sbd         (other_mesh._n_sbd),
-    _n_parts       (other_mesh._n_parts),
-    _dim           (other_mesh._dim),
-    _is_prepared   (other_mesh._is_prepared),
-    _point_locator (NULL)
+    boundary_info   (new BoundaryInfo(*this)), // no copy constructor defined for BoundaryInfo?
+    _magic_num      (other_mesh._magic_num),
+    _n_sbd          (other_mesh._n_sbd),
+    _n_parts        (other_mesh._n_parts),
+    _dim            (other_mesh._dim),
+    _is_prepared    (other_mesh._is_prepared),
+    _point_locator  (NULL),
+    _surface_locator(NULL)
 
 {}
 
@@ -99,6 +102,7 @@ void MeshBase::prepare_for_use (const bool skip_renumber_nodes_and_elements)
   // Reset our PointLocator.  This needs to happen any time the elements
   // in the underlying elements in the mesh have changed, so we do it here.
   this->clear_point_locator();
+  this->clear_surface_locator();
 
   // The mesh is now prepared for use.
   _is_prepared = true;
@@ -140,6 +144,7 @@ void MeshBase::clear ()
 
   // Clear our point locator.
   this->clear_point_locator();
+  this->clear_surface_locator();
 
   // clear subdomain material and label information
   _subdomain_labels_to_ids.clear();
@@ -296,7 +301,7 @@ unsigned int MeshBase::recalculate_n_partitions()
 const PointLocatorBase & MeshBase::point_locator () const
 {
   if (_point_locator.get() == NULL)
-    _point_locator.reset (PointLocatorBase::build(TREE, *this).release());
+    _point_locator.reset (PointLocatorBase::build(PointLocator_TREE, *this).release());
 
   return *_point_locator;
 }
@@ -306,6 +311,22 @@ const PointLocatorBase & MeshBase::point_locator () const
 void MeshBase::clear_point_locator ()
 {
   _point_locator.reset(NULL);
+}
+
+
+SurfaceLocatorHub & MeshBase::surface_locator () const
+{
+  if (_surface_locator.get() == NULL)
+    _surface_locator.reset (new SurfaceLocatorHub(*this, SurfaceLocator_SPHERE));
+
+  return *_surface_locator;
+}
+
+
+
+void MeshBase::clear_surface_locator ()
+{
+  _surface_locator.reset(NULL);
 }
 
 

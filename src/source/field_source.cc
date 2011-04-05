@@ -31,6 +31,8 @@
 #include "solver_specify.h"
 #include "log.h"
 #include "parallel.h"
+
+
 using  PhysicalUnit::s;
 
 
@@ -43,7 +45,7 @@ FieldSource::FieldSource(SimulationSystem & system, Parser::InputParser & decks)
   {
     Parser::Card c = _decks.get_current_card();
 
-    if( c.key() == "WAVEFORM" )   // It's a WAVEFORM card
+    if( c.key() == "ENVELOP" )   // It's a ENVELOP (Waveform) card
     {
       if(c.is_parameter_exist("type"))
       {
@@ -81,6 +83,13 @@ FieldSource::FieldSource(SimulationSystem & system, Parser::InputParser & decks)
         Particle_Source * particle_source = new Particle_Source_Analytic(system, c);
         add_particle_source(particle_source);
       }
+
+      if( c.is_enum_value("profile", "track") )
+      {
+        Particle_Source * particle_source = new Particle_Source_Track(system, c);
+        add_particle_source(particle_source);
+      }
+
     }
 
     // parse input card to find if light source exist
@@ -139,7 +148,6 @@ FieldSource::~FieldSource()
 
 void FieldSource::update(double time)
 {
-
   // fast detect if we need to do something
   if(!SolverSpecify::PatG && !SolverSpecify::OptG) return;
 
@@ -148,15 +156,13 @@ void FieldSource::update(double time)
     SimulationRegion * region = _system.region(n);
     if( region->type()== SemiconductorRegion)
     {
-      SimulationRegion::const_node_iterator it = region->nodes_begin();
-      SimulationRegion::const_node_iterator it_end = region->nodes_end();
+      SimulationRegion::processor_node_iterator it = region->on_processor_nodes_begin();
+      SimulationRegion::processor_node_iterator it_end = region->on_processor_nodes_end();
       for(; it!=it_end; ++it)
       {
-        FVM_Node * fvm_node = (*it).second;
-        //if this node NOT on local, continue
-        if( !fvm_node->on_local() ) continue;
-
+        FVM_Node * fvm_node = (*it);
         FVM_NodeData * fvm_node_data = fvm_node->node_data();
+        genius_assert(fvm_node_data);
 
         double G=0;
 
@@ -164,7 +170,9 @@ void FieldSource::update(double time)
         {
           std::vector<Particle_Source *>::iterator pit = _particle_sources.begin();
           for(; pit!=_particle_sources.end(); ++pit)
+          {
             G += fvm_node_data->PatG()*(*pit)->carrier_generation(time);
+          }
         }
 
         if(SolverSpecify::OptG)
@@ -180,6 +188,9 @@ void FieldSource::update(double time)
       }
     }
   }
+#if defined(HAVE_FENV_H) && defined(DEBUG)
+  genius_assert( !fetestexcept(FE_INVALID) );
+#endif
 }
 
 
@@ -344,7 +355,7 @@ void  FieldSource::SetWaveformUniform(const Parser::Card &c)
   double amplitude = c.get_real("amplitude", 1.0);
   double Tdelay = c.get_real("tdelay",0.0)*s;
 
-  _waveforms[label] = new UniformWaveform(label, Tdelay, amplitude);
+  _waveforms[label] = new WaveformUniform(label, Tdelay, amplitude);
 }
 
 
@@ -358,7 +369,7 @@ void FieldSource::SetWaveformGauss(const Parser::Card &c)
   double t0 = c.get_real("t0",0.0)*s;
   double tao = c.get_real("tao",1e-12)*s;
 
-  _waveforms[label] = new GaussWaveform(label, t0, tao, amplitude);
+  _waveforms[label] = new WaveformGauss(label, t0, tao, amplitude);
 }
 
 
@@ -371,12 +382,12 @@ void  FieldSource::SetWaveformPulse(const Parser::Card &c)
   double Tdelay = c.get_real("tdelay",0.0)*s;
   double tr = c.get_real("tr",1e-12)*s;
   double tf = c.get_real("tf",1e-12)*s;
-  double pw = c.get_real("pw",0.0)*s;
-  double pr = c.get_real("pr",0.0)*s;
+  double pw = c.get_real("pw",9e-12)*s;
+  double pr = c.get_real("pr",20e-12)*s;
   double Alo = c.get_real("amplitude.low",0.0);
   double Ahi = c.get_real("amplitude.high",1.0);
 
-  _waveforms[label] = new PulseWaveform(label, Tdelay, Alo, Ahi, tr, tf, pw, pr);
+  _waveforms[label] = new WaveformPulse(label, Tdelay, Alo, Ahi, tr, tf, pw, pr);
 
 }
 
@@ -389,7 +400,7 @@ void  FieldSource::SetWaveformExpr(const Parser::Card &c)
 
   std::string expr = c.get_string("expression","1.0");
 
-  _waveforms[label] = new ExprWaveform(label, expr);
+  _waveforms[label] = new WaveformExpression(label, expr);
 }
 
 
@@ -402,23 +413,9 @@ void  FieldSource::SetWaveformShell(const Parser::Card &c)
   assert( label!="" );
 
   std::string filename = c.get_string("dll","");
-  std::string funcname = c.get_string("func","");
+  std::string funcname = c.get_string("function","");
 
-#ifdef CYGWIN
-
-  HINSTANCE hInstLibrary = LoadLibrary(filename.c_str());
-  void *fp = GetProcAddress(hInstLibrary, funcname.c_str());
-
-  _waveforms[label] = new ShellWaveform(label, hInstLibrary, fp, s);
-
-#else
-
-  void * dp = dlopen(filename.c_str(), RTLD_LAZY);  assert(dp);
-  void *fp = dlsym(dp,funcname.c_str());  assert(fp);
-
-  _waveforms[label] = new ShellWaveform(label, dp, fp, s);
-
-#endif
+  _waveforms[label] = new WaveformShell(label, filename, funcname, s);
 
 }
 

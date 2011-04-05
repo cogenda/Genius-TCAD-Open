@@ -40,6 +40,7 @@ namespace SolverSpecify
   enum SolverType
   {
     POISSON = 0,
+    HDM,
     DDML1,
     DDML1MIX,
     DDML1MIXA,
@@ -92,15 +93,26 @@ namespace SolverSpecify
   {
     DampingNo=0,
     DampingBankRose,
-    DampingPotential
+    DampingPotential,
+    DampingSuperPotential
   };
 
+
+  /**
+   * enum whether to use the truncated voronoi box
+   */
+  enum  VoronoiTruncationFlag
+  {
+    VoronoiTruncationNo=0,
+    VoronoiTruncationBoundary,
+    VoronoiTruncationAlways
+  };
 
 
   /**
    * define order for ODE solver
    */
-  enum TSType
+  enum TemporalScheme
   {
     BDF1=0,
     BDF2,

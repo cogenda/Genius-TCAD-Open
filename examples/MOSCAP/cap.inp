@@ -6,7 +6,7 @@ GLOBAL    T=300 DopingScale=1e18 Z.Width=1.0
 
 #------------------------------------------------------------------------------
 # Create an initial simulation mesh
-MESH      Type = S_Quad4 #Triangle="pzAQ"
+MESH      Type = S_Quad4
 
 X.MESH    WIDTH=0.6  N.SPACES=6
 X.MESH    WIDTH=0.4  N.SPACES=10
@@ -15,10 +15,10 @@ X.MESH    WIDTH=0.4  N.SPACES=10
 X.MESH    WIDTH=0.6  N.SPACES=6
 
 Y.MESH    DEPTH=0.025  N.SPACES=2
-Y.MESH    DEPTH=0.2    N.SPACES=6
-Y.MESH    DEPTH=0.3    N.SPACES=4
-Y.MESH    DEPTH=0.5    N.SPACES=4
-Y.MESH    DEPTH=1.0    N.SPACES=4
+Y.MESH    DEPTH=0.2    N.SPACES=8
+Y.MESH    DEPTH=0.3    N.SPACES=6
+Y.MESH    DEPTH=0.5    N.SPACES=5
+Y.MESH    DEPTH=1.0    N.SPACES=5
 
 
 #------------------------------------------------------------------------------
@@ -26,19 +26,19 @@ Y.MESH    DEPTH=1.0    N.SPACES=4
 REGION    Label=NSilicon  Material=Si
 REGION    Label=Ox        Material=Ox   IY.MIN=0  IY.MAX=2
 FACE      Label=GATE      Location=Top
-REGION    Label=SUB       Material=Elec IY.MIN=18 IY.MAX=20
+FACE      Label=SUB       Location=Bottom
 
 #------------------------------------------------------------------------------
 # set doping profile of MOS Cap
 DOPING    Type=analytic
 PROFILE   Type=Uniform Ion=Acceptor  N.PEAK=3E15 X.MIN=0.0  \
-          X.MAX=3.0 Y.TOP=0 Y.BOTTOM=2.5 Z.MIN=0 Z.MAX=3.0
+          X.MAX=3.0 Y.TOP=0 Y.BOTTOM=3  Z.MIN=0 Z.MAX=3.0
 PROFILE   Type=analytic   Ion=Acceptor  N.PEAK=2E16 X.MIN=0.0  \
           X.MAX=3.0 Y.TOP=0 Y.CHAR=0.25 Z.MIN=0 Z.MAX=3.0
 
 #------------------------------------------------------------------------------
 # set boundary condition of sub and gate electrode
-CONTACT  ID=SUB  Type=Ohmic
+BOUNDARY ID=SUB  Type=Ohmic
 BOUNDARY ID=GATE Type=Gate Work=4.17
 
 #------------------------------------------------------------------------------
@@ -49,15 +49,26 @@ Vsource Type = VDC    ID = VGATE  Tdelay=0   Vconst=3
 # compute initial condition by poisson solver
 METHOD    Type=Poisson
 SOLVE
+EXPORT    CGNSFILE=cap.cgns VTKFILE=cap0.vtu
 
-# compute DC state of Vg=5V
+# We do not need high field mobility model
+# But we need to tune the carrier lifetime
+MODEL     Region=NSilicon H.Mob=false
+PMI       Region=NSilicon Type=Band print=1 real<TAUN0>=1e-9 real<TAUP0>=1e-9
+
+# ramp up to Vg=3V
+METHOD    Type=EBML3 NS=Basic LS=BCGS maxiteration=20 Damping=Potential
+SOLVE     Type=DCSWEEP VScan=GATE VStart=0  VStep=0.05   VStop=1.0
+SOLVE     Type=DCSWEEP VScan=GATE VStart=1.0 VStep=0.1   VStop=1.5
+SOLVE     Type=DCSWEEP VScan=GATE VStart=1.5 VStep=0.25  VStop=3.0
+
+# compute DC state of Vg=3V
 ATTACH    Elec=GATE    Vapp=VGATE
-METHOD    Type=EBML3 NS=Basic LS=bcgs pc=ilu maxiteration=50 Damping=Potential
 SOLVE     Type=STEADY
 
 # do AC sweep
 METHOD    Type=DDMAC  LS=BCGS PC=LU ksp.rtol=1e-14
-SOLVE     Type=ACSWEEP acscan=GATE  F.Start=1e2 F.stop=1e9 out=cap_ac vac=0.0026
+SOLVE     Type=ACSWEEP acscan=GATE  F.Start=1.0 F.stop=1e5 out=cap_ac vac=0.001
 
 # export result
 EXPORT    CGNSFILE=cap.cgns VTKFILE=cap.vtu

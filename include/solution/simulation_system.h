@@ -37,7 +37,7 @@ class InputParser;
 class Card;
 }
 
-class Mesh;
+class MeshBase;
 class SimulationRegion;
 class BoundaryConditionCollector;
 class ElectricalSource;
@@ -57,7 +57,7 @@ public:
    *
    * @note set PhysicalUnit structure and T_external with default value
    */
-  SimulationSystem(Mesh & mesh);
+  SimulationSystem(MeshBase & mesh);
 
   /**
    * @brief constructor
@@ -66,7 +66,7 @@ public:
    *
    * @note also build PhysicalUnit structure and T_external
    */
-  SimulationSystem(Mesh & mesh, Parser::InputParser & decks);
+  SimulationSystem(MeshBase & mesh, Parser::InputParser & decks);
 
 
   /**
@@ -79,6 +79,11 @@ public:
    */
   void clear(bool clear_mesh=true);
 
+  /**
+   * @return true iff we run in the resistive metal mode
+   */
+  bool resistive_metal_mode() const
+  { return _resistive_metal_mode; }
 
   /**
    * @brief build the simulation system from mesh and mesh boundary
@@ -134,6 +139,11 @@ public:
   void import_tif(const std::string& filename);
 
   /**
+   * @brief load device information from TIF3D file, which is used by our GDSII to 3D model tool.
+   */
+  void import_tif3d(const std::string& filename);
+
+  /**
    * @brief load device information from DF-ISE file, which is used by synopsys sentaurus.
    */
   void import_ise(const std::string& filename);
@@ -143,6 +153,11 @@ public:
    * @brief the main saving mechanism, to cgns file
    */
   void export_cgns(const std::string& filename) const;
+
+  /**
+   * @brief the main saving mechanism, to df-ise file
+   */
+  void export_ise(const std::string& filename) const;
 
   /**
    * @brief the main saving mechanism, to vtk file
@@ -197,13 +212,13 @@ public:
   /**
    * @return writable reference to mesh
    */
-  Mesh & mesh()
+  MeshBase & mesh()
   { return _mesh; }
 
   /**
    * @return const reference to mesh
    */
-  const Mesh & mesh() const
+  const MeshBase & mesh() const
   { return _mesh; }
 
 
@@ -297,24 +312,18 @@ public:
   void do_interpolation(const InterpolationBase *, const std::string &);
 
   /**
-   * set unique solver name to _solver_active_histroy
+   * set unique solver name to _solver_active_history
    */
   void record_active_solver(SolverSpecify::SolverType solver_type)
-  { _solver_active_histroy.push_back(solver_type); }
+  { _solver_active_history.push_back(solver_type); }
 
   /**
    * @return the sequence of solves which have performed on this system.
    */
-  const std::vector<SolverSpecify::SolverType> & solve_histroy() const
-  { return _solver_active_histroy; }
+  const std::vector<SolverSpecify::SolverType> & solve_history() const
+  { return _solver_active_history; }
 
 private:
-
-  /**
-   * data structure for fvm solver
-   * only build nodes which belongs to local processor
-   */
-  void build_region_fvm_mesh();
 
   /**
    * the enveriment temperature
@@ -324,13 +333,24 @@ private:
   /**
    * the reference to mesh
    */
-  Mesh & _mesh;
+  MeshBase & _mesh;
 
   /**
    * the array for all the simulation region.
    * each region contains mesh and mesh data
    */
   std::vector<SimulationRegion *>  _simulation_regions;
+
+  /**
+   * create resistive metal regions instead of electrode region
+   */
+  bool _resistive_metal_mode;
+
+  /**
+   * data structure for fvm solver
+   * only build nodes which belongs to local processor
+   */
+  void build_region_fvm_mesh();
 
   /**
    * all the boundary conditions
@@ -365,10 +385,10 @@ private:
   double  _z_width;
 
   /**
-   * each solver should record itself in this _solver_active_histroy vector when active
+   * each solver should record itself in this _solver_active_history vector when active
    * we can determine the solve sequence by this vector
    */
-  std::vector<SolverSpecify::SolverType> _solver_active_histroy;
+  std::vector<SolverSpecify::SolverType> _solver_active_history;
 
 };
 

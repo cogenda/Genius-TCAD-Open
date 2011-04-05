@@ -123,6 +123,17 @@ public:
   virtual void nodes_on_edge (const unsigned int e,
                               std::vector<unsigned int> & nodes ) const ;
 
+  /**
+   * get the node local index on edge2 e
+   */
+  virtual void nodes_on_edge (const unsigned int e,
+                              std::pair<unsigned int, unsigned int> & nodes ) const;
+
+  /**
+   * @return the length of the ith edge of element.
+   */
+  virtual Real edge_length(const unsigned int e) const;
+
   /*
    * @returns true iff the element map is definitely affine within
    * numerical tolerances
@@ -135,9 +146,15 @@ public:
   Order default_order() const { return FIRST; }
 
   /**
+   * @return the ith node on sth side
+   */
+  unsigned int side_node(unsigned int s, unsigned int i) const
+  { return side_nodes_map[s][i]; }
+
+  /**
    * @returns a proxy element coincident with side \p i.
    */
-  AutoPtr<Elem> build_side (const unsigned int i, bool proxy=true) const;
+  virtual AutoPtr<Elem> build_side (const unsigned int i, bool proxy=true) const;
 
   /**
    * @return the hanging node on side s of this element, NULL for none hanging node
@@ -165,6 +182,11 @@ public:
   virtual void connectivity(const unsigned int sf,
                             const IOPackage iop,
                             std::vector<unsigned int>& conn) const;
+  /**
+   * Returns the side order for this element in a specific
+   * format, which is specified by the IOPackage tag.
+   */
+  virtual void side_order( const IOPackage iop, std::vector<unsigned int>& order) const;
 
   /**
    * This maps the \f$ j^{th} \f$ node of the \f$ i^{th} \f$ side to
@@ -192,6 +214,11 @@ public:
    * get the ray elem intersection result
    */
   virtual void ray_hit(const Point & , const Point & , IntersectionResult &, unsigned int=3) const;
+
+  /**
+   * @return the nearest point on this element to the given point p
+   */
+  virtual Point nearest_point(const Point &p, Real * dist = 0) const;
 
   /**
    * @returns the unit normal vector of a specified side for any element. The return value

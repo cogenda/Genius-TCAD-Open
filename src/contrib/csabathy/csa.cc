@@ -25,15 +25,15 @@
  *
  *****************************************************************************/
 
-#include <stdlib.h>
-#include <stdio.h>
-#include <stdarg.h>
-#include <limits.h>
-#include <float.h>
-#include <math.h>
-#include <assert.h>
-#include <string.h>
-#include <errno.h>
+#include <cstdlib>
+#include <cstdio>
+#include <cstdarg>
+#include <limits>
+#include <cmath>
+#include <cfloat>
+#include <cassert>
+#include <cstring>
+#include <cerrno>
 #include "csa.h"
 
 extern "C"
@@ -65,10 +65,11 @@ namespace CSA
     return NAN;
 #else
     // FIXME: this will raise an divide by zero exception, and cause problem else where.
-    double a,b;
-    a=0.0;
-    b=0.0;
-    return a/b;
+    return std::numeric_limits<double>::quiet_NaN();
+    //double a,b;
+    //a=0.0;
+    //b=0.0;
+    //return a/b;
 #endif
   }
 

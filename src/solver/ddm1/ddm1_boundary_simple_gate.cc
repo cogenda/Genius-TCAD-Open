@@ -25,13 +25,12 @@
 
 #include "simulation_system.h"
 #include "semiconductor_region.h"
-#include "boundary_condition.h"
+#include "boundary_condition_simplegate.h"
 #include "parallel.h"
 
 
 using PhysicalUnit::kb;
 using PhysicalUnit::e;
-using PhysicalUnit::eps0;
 
 
 /*---------------------------------------------------------------------
@@ -40,10 +39,31 @@ using PhysicalUnit::eps0;
 void SimpleGateContactBC::DDM1_Fill_Value(Vec x, Vec L)
 {
 
+  const PetscScalar current_scale = this->z_width();
+
   if(Genius::processor_id() == Genius::n_processors() -1)
   {
     VecSetValue(x, this->global_offset(), this->ext_circuit()->potential(), INSERT_VALUES);
-    VecSetValue(L, this->global_offset(), 1.0, INSERT_VALUES);
+
+    if(this->is_inter_connect_bc())
+    {
+      VecSetValue(L, this->global_offset(), 1.0, INSERT_VALUES);
+    }
+    //for stand alone electrode
+    else
+    {
+      if(ext_circuit()->is_voltage_driven())
+      {
+        const PetscScalar R = this->ext_circuit()->R();
+        VecSetValue(L, this->global_offset(), 1.0/((1.0+R)*current_scale), INSERT_VALUES);
+      }
+
+      if(ext_circuit()->is_current_driven())
+      {
+        VecSetValue(L, this->global_offset(), 1.0/(current_scale), INSERT_VALUES);
+      }
+    }
+
   }
 
 }
@@ -83,7 +103,7 @@ void SimpleGateContactBC::DDM1_Function(PetscScalar * x, Vec f, InsertMode &add_
 
   PetscScalar q = e*this->Qf();            // surface change density
   PetscScalar Thick = this->Thickness();   // the thickness of gate oxide
-  PetscScalar eps_ox = eps0*this->eps();   // the permittivity of gate material
+  PetscScalar eps_ox = this->eps();        // the permittivity of gate material
 
   BoundaryCondition::const_node_iterator node_it = nodes_begin();
   BoundaryCondition::const_node_iterator end_it = nodes_end();
@@ -106,22 +126,11 @@ void SimpleGateContactBC::DDM1_Function(PetscScalar * x, Vec f, InsertMode &add_
     VecSetValue(f, fvm_node->global_offset()+0, dP, ADD_VALUES);
 
     // displacement current, only first order in time.
-    FVM_Node::fvm_neighbor_node_iterator nb_it = fvm_node->neighbor_node_begin();
-    for(; nb_it != fvm_node->neighbor_node_end(); ++nb_it)
+    if(SolverSpecify::TimeDependent == true)
     {
-      const FVM_Node *nb_node = (*nb_it).second;
-      const FVM_NodeData * nb_node_data = nb_node->node_data();
-      // the psi of neighbor node
-      PetscScalar V_nb = x[nb_node->local_offset()+0];
-      // distance from nb node to this node
-      PetscScalar distance = (*(fvm_node->root_node()) - *(nb_node->root_node())).size();
-      // area of out surface of control volume related with neighbor node
-      PetscScalar cv_boundary = fvm_node->cv_surface_area(nb_node->root_node());
-      PetscScalar dEdt = ((V-V_nb)-(node_data->psi()-nb_node_data->psi()))/distance/SolverSpecify::dt;
-
-      current_buffer.push_back( cv_boundary*node_data->eps()*dEdt*current_scale );
+      PetscScalar dEdt = ( (Ve-this->ext_circuit()->potential_old()) - (V-node_data->psi()) ) /Thick;
+      current_buffer.push_back( S*eps_ox*dEdt );
     }
-
   }
 
   // the extra equation of gate boundary
@@ -155,27 +164,45 @@ void SimpleGateContactBC::DDM1_Function(PetscScalar * x, Vec f, InsertMode &add_
   //
   //
 
-  // we first gather the electrode current
-  Parallel::allgather(current_buffer);
-
   // for get the current, we must sum all the terms in current_buffer
-  PetscScalar current = std::accumulate(current_buffer.begin(), current_buffer.end(), 0.0 );
+  // NOTE: only statistic current flow belongs to on processor node
+  PetscScalar current = current_scale*std::accumulate(current_buffer.begin(), current_buffer.end(), 0.0 );
 
-  // switch to INSERT_VALUES
-  VecAssemblyBegin(f);
-  VecAssemblyEnd(f);
-
-  if(Genius::processor_id() == Genius::n_processors() -1)
+  //for inter connect electrode
+  if(this->is_inter_connect_bc())
   {
-    // here we process the external circuit
+    PetscScalar R = ext_circuit()->R();                               // resistance
+    PetscScalar f_ext = R*current;
+    VecSetValue(f, this->global_offset(), f_ext, ADD_VALUES);
+  }
+  // for stand alone electrode
+  else
+  {
+    if(ext_circuit()->is_voltage_driven())
+    {
+      PetscScalar R = ext_circuit()->R();             // resistance
+      PetscScalar L = ext_circuit()->L();             // inductance
+      PetscScalar dt = SolverSpecify::dt;
+      PetscScalar f_ext = (L/dt+R)*current;
+      VecSetValue(f, this->global_offset(), f_ext, ADD_VALUES);
+    }
 
+    if(ext_circuit()->is_current_driven())
+    {
+      PetscScalar f_ext = current;
+      VecSetValue(f, this->global_offset(), f_ext, ADD_VALUES);
+    }
+  }
+
+  if(Genius::is_last_processor())
+  {
     //for inter connect electrode
-    if(this->is_inter_connect_electrode())
+    if(this->is_inter_connect_bc())
     {
       PetscScalar V_ic = x[this->inter_connect_hub()->local_offset()];  // potential at inter connect node
       PetscScalar R = ext_circuit()->R();                               // resistance
-      PetscScalar f_ext = Ve - V_ic + R*current;
-      VecSetValue(f, this->global_offset(), f_ext, INSERT_VALUES);
+      PetscScalar f_ext = Ve - V_ic;
+      VecSetValue(f, this->global_offset(), f_ext, ADD_VALUES);
     }
     // for stand alone electrode
     else
@@ -190,27 +217,27 @@ void SimpleGateContactBC::DDM1_Function(PetscScalar * x, Vec f, InsertMode &add_
         PetscScalar Ic = ext_circuit()->cap_current();  // the previous step current flow pass though cap to ground.
         PetscScalar P  = ext_circuit()->potential();    // the previous step potential of the electrode
         PetscScalar dt = SolverSpecify::dt;
-        PetscScalar f_ext = (L/dt+R)*current + (Ve-Vapp) + (L/dt+R)*C/dt*Ve - (L/dt+R)*C/dt*P - L/dt*(I+Ic);
-        VecSetValue(f, this->global_offset(), f_ext, INSERT_VALUES);
+        PetscScalar f_ext = (Ve-Vapp) + (L/dt+R)*C/dt*Ve - (L/dt+R)*C/dt*P - L/dt*(I+Ic);
+        VecSetValue(f, this->global_offset(), f_ext, ADD_VALUES);
       }
 
       if(ext_circuit()->is_current_driven())
       {
         PetscScalar Iapp = ext_circuit()->Iapp();         // application current
         PetscScalar Ic   = ext_circuit()->cap_current();  // the previous step current flow pass though cap to ground.
-        PetscScalar f_ext = current + Ic - Iapp;
-        VecSetValue(f, this->global_offset(), f_ext, INSERT_VALUES);
+        PetscScalar f_ext = Ic - Iapp;
+        VecSetValue(f, this->global_offset(), f_ext, ADD_VALUES);
       }
     }
-
   }
+
 
   // save the IV of current iteration
   ext_circuit()->current_itering() = current;
   ext_circuit()->potential_itering() = Ve;
 
-  // the last operator is INSERT_VALUES
-  add_value_flag = INSERT_VALUES;
+  // the last operator is ADD_VALUES
+  add_value_flag = ADD_VALUES;
 
 }
 
@@ -274,7 +301,7 @@ void SimpleGateContactBC::DDM1_Jacobian_Reserve(Mat *jac, InsertMode &add_value_
 
       MatSetValue(*jac, bc_global_offset, bc_global_offset, 0, ADD_VALUES);
 
-      if(this->is_inter_connect_electrode())
+      if(this->is_inter_connect_bc())
         MatSetValue(*jac, bc_global_offset, this->inter_connect_hub()->global_offset(), 0, ADD_VALUES);
 
       if(bc_node_reserve.size())
@@ -312,7 +339,7 @@ void SimpleGateContactBC::DDM1_Jacobian(PetscScalar * x, Mat *jac, InsertMode &a
   PetscInt bc_global_offset = this->global_offset();
   PetscScalar q             = e*this->Qf();              // surface change density
   PetscScalar Thick         = this->Thickness();         // the thickness of gate oxide
-  PetscScalar eps_ox        = eps0*this->eps();          // the permittivity of gate material
+  PetscScalar eps_ox        = this->eps();               // the permittivity of gate material
   PetscScalar R             = this->ext_circuit()->R();  // resistance
   PetscScalar C             = this->ext_circuit()->C();  // capacitance
   PetscScalar L             = this->ext_circuit()->L();  // inductance
@@ -352,30 +379,12 @@ void SimpleGateContactBC::DDM1_Jacobian(PetscScalar * x, Mat *jac, InsertMode &a
     MatSetValue(*jac, fvm_node->global_offset(), bc_global_offset, dP.getADValue(1), ADD_VALUES);
 
     // displacement current, only first order in time.
-    FVM_Node::fvm_neighbor_node_iterator nb_it = fvm_node->neighbor_node_begin();
-    for(; nb_it != fvm_node->neighbor_node_end(); ++nb_it)
+    if(SolverSpecify::TimeDependent == true)
     {
-      const FVM_Node *nb_node = (*nb_it).second;
-      const FVM_NodeData * nb_node_data = nb_node->node_data();
-
-      // the psi of this node
-      AutoDScalar  V = x[fvm_node->local_offset()]; V.setADValue(0, 1.0);
-      // the psi of neighbor node
-      AutoDScalar V_nb = x[nb_node->local_offset()+0]; V_nb.setADValue(1, 1.0);
-
-      // distance from nb node to this node
-      PetscScalar distance = (*(fvm_node->root_node()) - *(nb_node->root_node())).size();
-
-      // area of out surface of control volume related with neighbor node
-      PetscScalar cv_boundary = fvm_node->cv_surface_area(nb_node->root_node());
-      AutoDScalar dEdt = ((V-V_nb)-(node_data->psi()-nb_node_data->psi()))/distance/SolverSpecify::dt;
-
-      AutoDScalar current_disp = cv_boundary*node_data->eps()*dEdt*current_scale;
-
-      // consider electrode connect
-
+      AutoDScalar dEdt = ( (Ve-this->ext_circuit()->potential_old()) - (V-node_data->psi()) ) /Thick;
+      AutoDScalar current_disp = S*eps_ox*dEdt*current_scale;
       //for inter connect electrode
-      if(this->is_inter_connect_electrode())
+      if(this->is_inter_connect_bc())
         current_disp = R*current_disp;
       // for stand alone electrode
       else
@@ -385,18 +394,10 @@ void SimpleGateContactBC::DDM1_Jacobian(PetscScalar * x, Mat *jac, InsertMode &a
         else
           current_disp = current_disp;
       }
-
       MatSetValue(*jac, bc_global_offset, fvm_node->global_offset(), current_disp.getADValue(0), ADD_VALUES);
-      MatSetValue(*jac, bc_global_offset, nb_node->global_offset(), current_disp.getADValue(1), ADD_VALUES);
+      MatSetValue(*jac, bc_global_offset, bc_global_offset, current_disp.getADValue(1), ADD_VALUES);
     }
-
-
-
   }
-
-  // switch to INSERT_VALUES
-  MatAssemblyBegin(*jac, MAT_FLUSH_ASSEMBLY);
-  MatAssemblyEnd(*jac, MAT_FLUSH_ASSEMBLY);
 
 
   // the extra equation of gate boundary
@@ -428,21 +429,21 @@ void SimpleGateContactBC::DDM1_Jacobian(PetscScalar * x, Mat *jac, InsertMode &a
   //
   //
 
-  if(Genius::processor_id() == Genius::n_processors() -1)
+  if(Genius::is_last_processor())
   {
     // here we process the external circuit, we do not use AD here
     // NOTE current item such as (L/dt+R)*current and current has already been processed before
 
     //for inter connect electrode
-    if(this->is_inter_connect_electrode())
+    if(this->is_inter_connect_bc())
     {
       // the external electrode equation is:
       // f_ext = Ve - V_ic + R*current;
 
       // d(f_ext)/d(Ve)
-      MatSetValue(*jac, bc_global_offset, bc_global_offset, 1.0, INSERT_VALUES);
+      MatSetValue(*jac, bc_global_offset, bc_global_offset, 1.0, ADD_VALUES);
       // d(f_ext)/d(V_ic)
-      MatSetValue(*jac, bc_global_offset, this->inter_connect_hub()->global_offset(), -1.0, INSERT_VALUES);
+      MatSetValue(*jac, bc_global_offset, this->inter_connect_hub()->global_offset(), -1.0, ADD_VALUES);
     }
     //for stand alone electrode
     else
@@ -453,7 +454,7 @@ void SimpleGateContactBC::DDM1_Jacobian(PetscScalar * x, Mat *jac, InsertMode &a
         // f_ext = (L/dt+R)*current + (Ve-Vapp) + (L/dt+R)*C/dt*Ve - (L/dt+R)*C/dt*P - L/dt*(I+Ic);
 
         // d(f_ext)/d(Ve)
-        MatSetValue(*jac, bc_global_offset, bc_global_offset, 1+(L/dt+R)*C/dt, INSERT_VALUES);
+        MatSetValue(*jac, bc_global_offset, bc_global_offset, 1+(L/dt+R)*C/dt, ADD_VALUES);
       }
 
       if(ext_circuit()->is_current_driven())
@@ -465,8 +466,8 @@ void SimpleGateContactBC::DDM1_Jacobian(PetscScalar * x, Mat *jac, InsertMode &a
     }
   }
 
-  // the last operator is INSERT_VALUES
-  add_value_flag = INSERT_VALUES;
+  // the last operator is ADD_VALUES
+  add_value_flag = ADD_VALUES;
 
 }
 
@@ -478,5 +479,6 @@ void SimpleGateContactBC::DDM1_Jacobian(PetscScalar * x, Mat *jac, InsertMode &a
  */
 void SimpleGateContactBC::DDM1_Update_Solution(PetscScalar *)
 {
+  Parallel::sum(ext_circuit()->current_itering());
   this->ext_circuit()->update();
 }

@@ -115,6 +115,56 @@ Array2D<T> operator-(const Array2D<T> &A, const Array2D<T> &B)
 }
 
 
+
+template <class T>
+    Array2D<T> operator*(const Array2D<T> &A, const T scale)
+{
+  int m = A.dim1();
+  int n = A.dim2();
+  Array2D<T> C(m,n);
+
+  for (int i=0; i<m; i++)
+  {
+    for (int j=0; j<n; j++)
+      C[i][j] = A[i][j] * scale;
+  }
+  return C;
+}
+
+
+template <class T>
+    Array2D<T> operator*( const T scale, const Array2D<T> &A )
+{
+  int m = A.dim1();
+  int n = A.dim2();
+  Array2D<T> C(m,n);
+
+  for (int i=0; i<m; i++)
+  {
+    for (int j=0; j<n; j++)
+      C[i][j] = A[i][j] * scale;
+  }
+  return C;
+}
+
+
+template <class T>
+    Array1D<T> operator*(const Array2D<T> &A, const Array1D<T>&b )
+{
+  int m = A.dim1();
+  int n = A.dim2();
+  Array1D<T> c(m, T(0.0));
+
+  for (int i=0; i<m; i++)
+  {
+    for (int j=0; j<n; j++)
+      c[i] += A[i][j] * b[j];
+  }
+  return c;
+}
+
+
+
 template <class T>
 Array2D<T> operator*(const Array2D<T> &A, const Array2D<T> &B)
 {

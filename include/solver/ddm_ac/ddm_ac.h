@@ -40,13 +40,16 @@ public:
    * solution vector, right hand side (RHS) vector, matrix
    * as well as parallel scatter
    */
-  DDMACSolver(SimulationSystem & system) : FVM_LinearSolver(system)
-  {system.record_active_solver(this->solver_type());};
+  DDMACSolver(SimulationSystem & system)
+  : FVM_LinearSolver(system),_first_create(true)
+  {
+    system.record_active_solver(this->solver_type());
+  }
 
   /**
    * free all the contex
    */
-  virtual ~DDMACSolver(){};
+  virtual ~DDMACSolver() {}
 
   /**
    * @return the solver type
@@ -58,6 +61,11 @@ public:
    * virtual function, create the solver
    */
   virtual int create_solver();
+
+  /**
+   * virtual functions, prepare solution and aux variables used by this solver
+   */
+  virtual int set_variables();
 
   /**
    * call this function before each solve process
@@ -101,7 +109,8 @@ public:
       }
       //dofs for insulator/conductor node
     case InsulatorRegion     :
-    case ConductorRegion     :
+    case ElectrodeRegion     :
+    case MetalRegion         :
       switch(region->get_advanced_model()->EB_Level)
       {
       case ModelSpecify::NONE :
@@ -129,6 +138,7 @@ public:
     case SchottkyContact   :
     case SimpleGateContact :
     case GateContact       :
+    case SolderPad         :
     case ChargedContact    :
       // the above bcs has one extra equation
       return 2;
@@ -149,6 +159,7 @@ public:
     case SchottkyContact   : return 2;  // displacement current
     case SimpleGateContact : return 2;  // displacement current
     case GateContact       : return 2;  // displacement current
+    case SolderPad         : return 2;  // conductance current
     case ChargedContact    : return 2;
     default: return 0;
     }
@@ -166,16 +177,12 @@ public:
     {
     case SemiconductorRegion : return true;
     case InsulatorRegion     : return false;
-    case ConductorRegion     : return false;
+    case ElectrodeRegion     : return false;
+    case MetalRegion         : return false;
     default : return false;
     }
   }
 
-
-  /**
-   * building the Matrix and RHS vector under certain freq omega
-   */
-  void build_ddm_ac(Mat A, Vec b, double omega);
 
 private:
 
@@ -192,8 +199,40 @@ private:
   /**
    * the Jacobian matrix
    */
-  Mat            J;
+  Mat            J_;
 
+  /**
+   * the unpreconditioned AC matrix
+   */
+  Mat            A_;
+
+  /**
+   * the unpreconditioned rhs vector
+   */
+  Vec            b_;
+
+  /**
+   * the transformation matrix, used for precondition
+   * Z.-Y. Wang, K.-C. Wu, and R. W. Dutton, “An approach to construct pre-conditioning matrices
+   * for block iteration of linear equations,” IEEE Trans. CAD, Vol. 11, No. 11, pp. 1334-1343,
+   * 1992.
+   */
+  Mat            T_;
+
+  /**
+   * temp matrix
+   */
+  Mat            C_;
+
+  /**
+   * flag to show if A_ is created
+   */
+  bool           _first_create;
+
+  /**
+   * building the Matrix A, RHS vector b under certain freq omega
+   */
+  void build_ddm_ac(double omega);
 };
 
 

@@ -33,22 +33,22 @@
  * write electrode IV into spice raw file (Ascii format).
  * then user can view the IV curve by some other program.
  * ( can we do real time display here? )
- */ 
-class CVHook : public Hook 
+ */
+class CVHook : public Hook
 {
 
 public:
   CVHook(SolverBase & solver, const std::string & name, void * file);
-  
+
   virtual ~CVHook();
-  
+
   /**
    *   This is executed before the initialization of the solver
    */
   virtual void on_init();
 
   /**
-   *   This is executed previously to each solution step. 
+   *   This is executed previously to each solution step.
    */
   virtual void pre_solve();
 
@@ -66,46 +66,46 @@ public:
    * This is executed after the finalization of the solver
    */
   virtual void on_close();
-  
+
 private:
-  
+
  /**
   * current time
   */
  time_t          _time;
- 
+
  /**
   * the input file name
   */
- std::string     _input_file; 
-  
+ std::string     _input_file;
+
  /**
   * the raw file name
   */
- std::string     _raw_file;  
- 
+ std::string     _raw_file;
+
  /**
   * file stream
   */
  std::ofstream   _out;
- 
+
  /**
   * the variable name buffer
   */
  std::string  _sweep_electrode;
  std::vector<std::string>  _gate_electrodes;
- 
+
  /**
   * the variable value buffer
   */
  std::vector<double> _vsweep;
  std::vector< std::vector<double> > _gate_charge;
- 
+
  /**
-  * the total number of values 
+  * the total number of values
   */
  unsigned int _n_values;
- 
+
 };
 
-#endif 
+#endif

@@ -43,6 +43,12 @@
     <parameter name="id" type="string" default="">
       <description></description>
     </parameter>
+    <parameter name="region.first" type="string" default="">
+      <description></description>
+    </parameter>
+    <parameter name="region.second" type="string" default="">
+      <description></description>
+    </parameter>
     <parameter name="ind" type="num" default="0">
       <description></description>
     </parameter>
@@ -52,10 +58,19 @@
     <parameter name="qf" type="num" default="0">
       <description></description>
     </parameter>
+    <parameter name="charge" type="num" default="0">
+      <description></description>
+    </parameter>
     <parameter name="reflection" type="bool" default="no">
       <description></description>
     </parameter>
     <parameter name="res" type="num" default="0">
+      <description></description>
+    </parameter>
+    <parameter name="elec.recomb.velocity" type="num" default="2.573e6">
+      <description></description>
+    </parameter>
+    <parameter name="hole.recomb.velocity" type="num" default="1.93e6">
       <description></description>
     </parameter>
     <parameter name="thickness" type="num" default="1e-08">
@@ -71,11 +86,14 @@
       <enum>insulatorinterface</enum>
       <enum>neumann</enum>
       <enum>ohmiccontact</enum>
+      <enum>metalohmicinterface</enum>
       <enum>schottkycontact</enum>
+      <enum>metalschottkyinterface</enum>
       <enum>simplegatecontact</enum>
+      <enum>solderpad</enum>
       <enum>sourceboundary</enum>
     </parameter>
-    <parameter name="workfunction" type="num" default="4.7">
+    <parameter name="workfunction" type="num" default="4.17">
       <description></description>
     </parameter>
     <parameter name="z.width" type="num" default="1">
@@ -114,6 +132,9 @@
     <parameter name="qf" type="num" default="0">
       <description></description>
     </parameter>
+    <parameter name="charge" type="num" default="0">
+      <description></description>
+    </parameter>
     <parameter name="res" type="num" default="0">
       <description></description>
     </parameter>
@@ -124,7 +145,7 @@
       <enum>ohmiccontact</enum>
       <enum>schottkycontact</enum>
     </parameter>
-    <parameter name="workfunction" type="num" default="4.7">
+    <parameter name="workfunction" type="num" default="4.17">
       <description></description>
     </parameter>
     <parameter name="z.width" type="num" default="1">
@@ -258,6 +279,7 @@
     <parameter name="ls" type="enum" default="bcgs">
       <description></description>
       <enum>bcgs</enum>
+      <enum>bcgsl</enum>
       <enum>bicg</enum>
       <enum>bicgstab</enum>
       <enum>cg</enum>
@@ -285,14 +307,17 @@
     </parameter>
     <parameter name="pc" type="enum" default="ilu">
       <description></description>
+      <enum>amg</enum>
       <enum>asm</enum>
       <enum>bjacobian</enum>
       <enum>cholesky</enum>
       <enum>icc</enum>
       <enum>identity</enum>
       <enum>ilu</enum>
+      <enum>ilut</enum>
       <enum>jacobian</enum>
       <enum>lu</enum>
+      <enum>parms</enum>
       <enum>sor</enum>
       <enum>ssor</enum>
     </parameter>
@@ -330,6 +355,9 @@
       <description></description>
     </parameter>
     <parameter name="cgnsfile" type="string" default="">
+      <description></description>
+    </parameter>
+    <parameter name="isefile" type="string" default="">
       <description></description>
     </parameter>
     <parameter name="gdml.body" type="string" default="">
@@ -507,9 +535,15 @@
     <parameter name="z.width" type="num" default="1">
       <description></description>
     </parameter>
+    <parameter name="resistivemetal" type="bool" default="false">
+      <description>Resistive-metal mode. In this mode, Ohms law and continuity equation is solved in metal materials.</description>
+    </parameter>
   </command>
   <command name="HOOK">
     <description></description>
+    <parameter name="id" type="string" default="">
+      <description></description>
+    </parameter>
     <parameter name="load" type="string" default="">
       <description></description>
     </parameter>
@@ -532,6 +566,9 @@
       <description></description>
     </parameter>
     <parameter name="tiffile" type="string" default="">
+      <description></description>
+    </parameter>
+    <parameter name="tif3dfile" type="string" default="">
       <description></description>
     </parameter>
     <parameter name="vtkfile" type="string" default="">
@@ -784,6 +821,16 @@
       <enum>bankrose</enum>
       <enum>no</enum>
       <enum>potential</enum>
+      <enum>superpotential</enum>
+    </parameter>
+    <parameter name="truncation" type="enum" default="always">
+      <description></description>
+      <enum>boundary</enum>
+      <enum>no</enum>
+      <enum>always</enum>
+    </parameter>
+    <parameter name="potential.update" type="num" default="1.0">
+      <description></description>
     </parameter>
     <parameter name="elec.continuity.tol" type="num"
     default="5e-18">
@@ -817,6 +864,7 @@
     <parameter name="ls" type="enum" default="bcgs">
       <description></description>
       <enum>bcgs</enum>
+      <enum>bcgsl</enum>
       <enum>bicg</enum>
       <enum>bicgstab</enum>
       <enum>cg</enum>
@@ -824,6 +872,7 @@
       <enum>cgs</enum>
       <enum>chebyshev</enum>
       <enum>cr</enum>
+      <enum>fgmres</enum>
       <enum>gmres</enum>
       <enum>gss</enum>
       <enum>jacobian</enum>
@@ -855,14 +904,17 @@
     </parameter>
     <parameter name="pc" type="enum" default="ilu">
       <description></description>
+      <enum>amg</enum>
       <enum>asm</enum>
       <enum>bjacobian</enum>
       <enum>cholesky</enum>
       <enum>icc</enum>
       <enum>identity</enum>
       <enum>ilu</enum>
+      <enum>ilut</enum>
       <enum>jacobian</enum>
       <enum>lu</enum>
+      <enum>parms</enum>
       <enum>sor</enum>
       <enum>ssor</enum>
     </parameter>
@@ -873,6 +925,9 @@
       <description></description>
     </parameter>
     <parameter name="qpfactor" type="num" default="1">
+      <description></description>
+    </parameter>
+    <parameter name="absolute.tol" type="num" default="1e-03">
       <description></description>
     </parameter>
     <parameter name="relative.tol" type="num" default="1e-05">
@@ -889,13 +944,11 @@
       <enum>ddmac</enum>
       <enum>ddml1</enum>
       <enum>ddml1m</enum>
-      <enum>ddml1s</enum>
       <enum>ddml2</enum>
       <enum>ddml2m</enum>
-      <enum>ddml2s</enum>
       <enum>ebml3</enum>
       <enum>ebml3m</enum>
-      <enum>ebml3s</enum>
+      <enum>hdm</enum>
       <enum>emfem2d</enum>
       <enum>emfem3d</enum>
       <enum>fdtd</enum>
@@ -947,6 +1000,9 @@
     <parameter name="fermi" type="bool" default="no">
       <description></description>
     </parameter>
+    <parameter name="hotcarrier" type="bool" default="no">
+      <description></description>
+    </parameter>
     <parameter name="h.mob" type="bool" default="yes">
       <description></description>
     </parameter>
@@ -976,8 +1032,7 @@
       <enum>no</enum>
       <enum>nonlocal</enum>
     </parameter>
-    <parameter name="incompleteionization" type="bool"
-    default="no">
+    <parameter name="incompleteionization" type="bool" default="no">
       <description></description>
     </parameter>
     <parameter name="mob.force" type="enum" default="esimple">
@@ -1151,6 +1206,7 @@
     <parameter name="profile" type="enum" default="fromfile3d">
       <description></description>
       <enum>analytic</enum>
+      <enum>track</enum>
       <enum>fromfile2d</enum>
       <enum>fromfile3d</enum>
     </parameter>
@@ -1279,6 +1335,16 @@
       <enum>nm</enum>
       <enum>um</enum>
     </parameter>
+    <parameter name="axes" type="enum" default="xy">
+      <description></description>
+      <enum>x</enum>
+      <enum>y</enum>
+      <enum>z</enum>
+      <enum>xy</enum>
+      <enum>xz</enum>
+      <enum>yz</enum>
+      <enum>xyz</enum>
+    </parameter>
     <parameter name="n.peak" type="num" default="0">
       <description></description>
     </parameter>
@@ -1352,6 +1418,9 @@
       <description></description>
     </parameter>
     <parameter name="y.char" type="num" default="0.25">
+      <description></description>
+    </parameter>
+    <parameter name="y.erfc" type="bool" default="no">
       <description></description>
     </parameter>
     <parameter name="y.junction" type="num" default="0">
@@ -1412,6 +1481,16 @@
       <enum>nm</enum>
       <enum>um</enum>
     </parameter>
+    <parameter name="axes" type="enum" default="XY">
+      <description></description>
+      <enum>X</enum>
+      <enum>Y</enum>
+      <enum>Z</enum>
+      <enum>XY</enum>
+      <enum>XZ</enum>
+      <enum>YZ</enum>
+      <enum>XYZ</enum>
+    </parameter>
     <parameter name="n.peak" type="num" default="0">
       <description></description>
     </parameter>
@@ -1485,6 +1564,9 @@
       <description></description>
     </parameter>
     <parameter name="y.char" type="num" default="0.25">
+      <description></description>
+    </parameter>
+    <parameter name="y.erfc" type="bool" default="no">
       <description></description>
     </parameter>
     <parameter name="y.junction" type="num" default="0">
@@ -1874,13 +1956,22 @@
     <parameter name="uic" type="bool" default="yes">
       <description></description>
     </parameter>
-    <parameter name="rampupsteps" type="int" default="1">
+    <parameter name="tranop" type="bool" default="yes">
       <description></description>
     </parameter>
-    <parameter name="rampupvstep" type="num" default="0.25">
+    <parameter name="rampup.steps" type="int" default="1">
       <description></description>
     </parameter>
-    <parameter name="rampupistep" type="num" default="0.1">
+    <parameter name="rampup.vstep" type="num" default="0.25">
+      <description></description>
+    </parameter>
+    <parameter name="rampup.istep" type="num" default="0.1">
+      <description></description>
+    </parameter>
+    <parameter name="gmin.init" type="num" default="1e-6">
+      <description></description>
+    </parameter>
+    <parameter name="gmin" type="num" default="1e-12">
       <description></description>
     </parameter>
     <parameter name="vac" type="num" default="0.0026">
@@ -1899,6 +1990,12 @@
       <description></description>
     </parameter>
     <parameter name="vstop" type="num" default="0">
+      <description></description>
+    </parameter>
+    <parameter name="optical.waveform" type="string" default="">
+      <description></description>
+    </parameter>
+    <parameter name="optical.modulate" type="string" default="">
       <description></description>
     </parameter>
   </command>
@@ -2081,6 +2178,76 @@
       <description></description>
     </parameter>
     <parameter name="v2" type="num" default="0">
+      <description></description>
+    </parameter>
+  </command>
+  <command name="ENVELOP">
+    <description></description>
+    <parameter name="alpha" type="num" default="0">
+      <description></description>
+    </parameter>
+    <parameter name="dll" type="string" default="">
+      <description></description>
+    </parameter>
+    <parameter name="expression" type="string" default="1.0">
+      <description></description>
+    </parameter>
+    <parameter name="freq" type="num" default="0">
+      <description></description>
+    </parameter>
+    <parameter name="function" type="string" default="">
+      <description></description>
+    </parameter>
+    <parameter name="id" type="string" default="">
+      <description></description>
+    </parameter>
+    <parameter name="pr" type="num" default="0">
+      <description></description>
+    </parameter>
+    <parameter name="pw" type="num" default="0">
+      <description></description>
+    </parameter>
+    <parameter name="t0" type="num" default="0">
+      <description></description>
+    </parameter>
+    <parameter name="tao" type="num" default="1e-12">
+      <description></description>
+    </parameter>
+    <parameter name="tdelay" type="num" default="0">
+      <description></description>
+    </parameter>
+    <parameter name="tf" type="num" default="1e-12">
+      <description></description>
+    </parameter>
+    <parameter name="tfc" type="num" default="0">
+      <description></description>
+    </parameter>
+    <parameter name="tfd" type="num" default="0">
+      <description></description>
+    </parameter>
+    <parameter name="tr" type="num" default="1e-12">
+      <description></description>
+    </parameter>
+    <parameter name="trc" type="num" default="0">
+      <description></description>
+    </parameter>
+    <parameter name="type" type="enum" default="uniform">
+      <description></description>
+      <enum>uniform</enum>
+      <enum>sin</enum>
+      <enum>gaussian</enum>
+      <enum>exp</enum>
+      <enum>pulse</enum>
+      <enum>shell</enum>
+      <enum>expression</enum>
+    </parameter>
+    <parameter name="amplitude" type="num" default="0">
+      <description></description>
+    </parameter>
+    <parameter name="amplitude.low" type="num" default="0">
+      <description></description>
+    </parameter>
+    <parameter name="amplitude.high" type="num" default="0">
       <description></description>
     </parameter>
   </command>

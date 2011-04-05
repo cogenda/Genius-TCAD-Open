@@ -25,7 +25,7 @@
 #include "simulation_system.h"
 #include "conductor_region.h"
 #include "insulator_region.h"
-#include "boundary_condition.h"
+#include "boundary_condition_charge.h"
 #include "petsc_utils.h"
 
 
@@ -91,7 +91,7 @@ void ChargedContactBC::DDMAC_Fill_Matrix_Vector( Mat A, Vec b, const Mat J, cons
           {
             // find the ghost region and ghost node
             // since we know only one ghost node exit, there is ghost_node_begin()
-            const SimulationRegion *  ghost_region = get_fvm_node_region(fvm_nodes[i]->root_node(), ConductorRegion);
+            const SimulationRegion *  ghost_region = get_fvm_node_region(fvm_nodes[i]->root_node(), ElectrodeRegion);
             FVM_Node::fvm_ghost_node_iterator gn_it = fvm_nodes[i]->ghost_node_begin();
             const FVM_Node * ghost_fvm_node = (*gn_it).first;
 
@@ -151,7 +151,7 @@ void ChargedContactBC::DDMAC_Fill_Matrix_Vector( Mat A, Vec b, const Mat J, cons
 
         }
         // Electrode-Insulator interface at Conductor side
-      case ConductorRegion:
+      case ElectrodeRegion:
         {
 	  unsigned int n_variables     = regions[i]->ebm_n_variables();
           unsigned int node_psi_offset = regions[i]->ebm_variable_offset(POTENTIAL);

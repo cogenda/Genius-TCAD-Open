@@ -22,13 +22,16 @@
 
 // Local includes
 #include "simulation_system.h"
-#include "boundary_condition.h"
+#include "boundary_condition_electrode_interconnect.h"
 
+
+using PhysicalUnit::V;
+using PhysicalUnit::A;
 
 /*---------------------------------------------------------------------
  * fill initial value to inter-connect node
  */
-void InterConnectBC::inter_connect_fill_value(Vec x, Vec L)
+void ElectrodeInterConnectBC::inter_connect_fill_value(Vec x, Vec L)
 {
   if(Genius::processor_id() == Genius::n_processors() -1)
   {
@@ -89,11 +92,11 @@ void InterConnectBC::inter_connect_fill_value(Vec x, Vec L)
 /*---------------------------------------------------------------------
  * set governing equation for inter-connect node. use nodal analysis method
  */
-void InterConnectBC::inter_connect_function(PetscScalar *x , Vec f, InsertMode &add_value_flag)
+void ElectrodeInterConnectBC::inter_connect_function(PetscScalar *x , Vec f, InsertMode &add_value_flag)
 {
-  // note, we will use INSERT_VALUES to set values of vec f
-  // if the previous operator is not insert_VALUES, we should assembly the vec
-  if( (add_value_flag != INSERT_VALUES) && (add_value_flag != NOT_SET_VALUES) )
+  // note, we will use ADD_VALUES to set values of vec f
+  // if the previous operator is not ADD_VALUES, we should assembly the vec
+  if( (add_value_flag != ADD_VALUES) && (add_value_flag != NOT_SET_VALUES) )
   {
     VecAssemblyBegin(f);
     VecAssemblyEnd(f);
@@ -112,7 +115,7 @@ void InterConnectBC::inter_connect_function(PetscScalar *x , Vec f, InsertMode &
     I += (Vic-Ve)/r;
   }
 
-  // only past processor do this
+  // only last processor do this
   if(Genius::processor_id() == Genius::n_processors() -1)
   {
     // the inter connect node has external voltage source
@@ -130,7 +133,7 @@ void InterConnectBC::inter_connect_function(PetscScalar *x , Vec f, InsertMode &
       PetscScalar Irl = (Vic-Vapp)/(R+L/dt) - L/dt*(ext_circuit()->current() + ext_circuit()->cap_current());
       // total current should be zero
       PetscScalar ff = I + Ic + Irl;
-      VecSetValue(f, this->global_offset(), ff, INSERT_VALUES);
+      VecSetValue(f, this->global_offset(), ff, ADD_VALUES);
     }
 
     // the inter connect node is driven by external current source
@@ -145,7 +148,7 @@ void InterConnectBC::inter_connect_function(PetscScalar *x , Vec f, InsertMode &
       PetscScalar Ic = C/dt*(Vic-ext_circuit()->potential());
       // total current should be zero
       PetscScalar ff = I + Ic + Iapp;
-      VecSetValue(f, this->global_offset(), ff, INSERT_VALUES);
+      VecSetValue(f, this->global_offset(), ff, ADD_VALUES);
     }
 
     // the inter connect node is float
@@ -159,16 +162,19 @@ void InterConnectBC::inter_connect_function(PetscScalar *x , Vec f, InsertMode &
 
       // total current should be zero
       PetscScalar ff = I + Ic;
-      VecSetValue(f, this->global_offset(), ff, INSERT_VALUES);
+      VecSetValue(f, this->global_offset(), ff, ADD_VALUES);
     }
+
+    PetscScalar Is = (Vic - ext_circuit()->potential())*SolverSpecify::Gmin/(V/A);
+    VecSetValue(f, this->global_offset(), Is, ADD_VALUES);
   }
 
   // save the IV of current iteration
   ext_circuit()->current_itering() = I;
   ext_circuit()->potential_itering() = Vic;
 
-  // the last operator is INSERT_VALUES
-  add_value_flag = INSERT_VALUES;
+  // the last operator is ADD_VALUES
+  add_value_flag = ADD_VALUES;
 }
 
 
@@ -177,7 +183,7 @@ void InterConnectBC::inter_connect_function(PetscScalar *x , Vec f, InsertMode &
 /*---------------------------------------------------------------------
  * reserve matrix entries
  */
-void InterConnectBC::inter_connect_reserve(Mat *jac, InsertMode &add_value_flag)
+void ElectrodeInterConnectBC::inter_connect_reserve(Mat *jac, InsertMode &add_value_flag)
 {
   // since we will use ADD_VALUES operat, check the matrix state.
   if( (add_value_flag != ADD_VALUES) && (add_value_flag != NOT_SET_VALUES) )
@@ -209,7 +215,7 @@ void InterConnectBC::inter_connect_reserve(Mat *jac, InsertMode &add_value_flag)
 /*---------------------------------------------------------------------
  * set jacobian matrix entries
  */
-void InterConnectBC::inter_connect_jacobian(PetscScalar * , Mat *jac, InsertMode &add_value_flag)
+void ElectrodeInterConnectBC::inter_connect_jacobian(PetscScalar * , Mat *jac, InsertMode &add_value_flag)
 {
   // since we will use ADD_VALUES operat, check the matrix state.
   if( (add_value_flag != ADD_VALUES) && (add_value_flag != NOT_SET_VALUES) )
@@ -218,7 +224,7 @@ void InterConnectBC::inter_connect_jacobian(PetscScalar * , Mat *jac, InsertMode
     MatAssemblyEnd(*jac, MAT_FLUSH_ASSEMBLY);
   }
 
-  // only past processor do this
+  // only last processor do this
   if(Genius::processor_id() == Genius::n_processors() -1)
   {
     // current flow into each electrode
@@ -276,7 +282,8 @@ void InterConnectBC::inter_connect_jacobian(PetscScalar * , Mat *jac, InsertMode
       MatSetValue(*jac, this->global_offset(), this->global_offset(), C/dt, ADD_VALUES);
     }
 
-
+    //PetscScalar Is = (Vic - ext_circuit()->potential())*SolverSpecify::Gmin/(V/A);
+    MatSetValue(*jac, this->global_offset(), this->global_offset(), SolverSpecify::Gmin/(V/A), ADD_VALUES);
   }
 
   // the last operator is ADD_VALUES
@@ -290,7 +297,7 @@ void InterConnectBC::inter_connect_jacobian(PetscScalar * , Mat *jac, InsertMode
 /*---------------------------------------------------------------------
  * update solution data
  */
-void InterConnectBC::inter_connect_update_solution(PetscScalar *)
+void ElectrodeInterConnectBC::inter_connect_update_solution(PetscScalar *)
 {
   this->ext_circuit()->update();
 }

@@ -5,7 +5,7 @@ include ../make.defs
 GENIUS_INCLUDE:=-I../include -I../
 
 SRCS   := $(wildcard *.cc)
-SRCS   += ../adolc_init.cc
+SRCS   += ../adolc_init.cc ../PMI.cc
 
 OBJS   := $(patsubst %.cc, %$(obj-suffix), $(SRCS))
 

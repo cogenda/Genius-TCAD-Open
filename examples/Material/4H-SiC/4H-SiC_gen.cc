@@ -11,8 +11,11 @@
 /*       A Two-Dimensional General Purpose Semiconductor Simulator.          */
 /*                                                                           */
 /*  GSS material database Version 0.4                                        */
+/*  Last update: Feb 17, 2006                                                */
 /*                                                                           */
 /*  Gong Ding                                                                */
+/*  gdiso@ustc.edu                                                           */
+/*  NINT, No.69 P.O.Box, Xi'an City, China                                   */
 /*                                                                           */
 /*****************************************************************************/
 //

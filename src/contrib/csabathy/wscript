@@ -1,0 +1,9 @@
+def build(bld):
+  bld.objects( source    = bld.path.ant_glob('*.cc *.c'),
+                includes  = '. ../../..',
+                features  = 'c cxx',
+                use       = 'opt',
+                target    = 'csa_objs',
+             )
+  bld.contrib_objs.append('csa_objs')
+

@@ -108,6 +108,16 @@ class Edge2 : public Edge
   virtual void nodes_on_edge (const unsigned int e,
                               std::vector<unsigned int> & nodes ) const ;
 
+  /**
+   * get the node local index on edge2 e
+   */
+  virtual void nodes_on_edge (const unsigned int e,
+                              std::pair<unsigned int, unsigned int> & nodes ) const;
+
+  /**
+   * @return the length of the ith edge of element.
+   */
+  virtual Real edge_length(const unsigned int e) const { return volume(); }
 
   /**
    * @returns true if the point p is contained in this element,
@@ -132,9 +142,18 @@ class Edge2 : public Edge
    */
   Order default_order() const { return FIRST; }
 
+
+  /**
+   * @return the ith node on sth side
+   */
+  unsigned int side_node(unsigned int , unsigned int i) const
+  { return i; }
+
   virtual void connectivity(const unsigned int sc,
                 const IOPackage iop,
                 std::vector<unsigned int>& conn) const;
+
+  virtual void side_order( const IOPackage , std::vector<unsigned int>& ) const  {}
 
   /**
    * This function returns true iff node i and j are neighbors (linked by edge)
@@ -146,6 +165,12 @@ class Edge2 : public Edge
    * get the ray elem intersection result
    */
   virtual void ray_hit(const Point & , const Point & , IntersectionResult &, unsigned int=3) const;
+
+
+  /**
+   * @return the nearest point on this element to the given point p
+   */
+  virtual Point nearest_point(const Point &p, Real * dist = 0) const;
 
   /**
    * An optimized method for computing the length of a 2-node edge.

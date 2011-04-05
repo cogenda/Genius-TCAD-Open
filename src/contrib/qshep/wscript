@@ -1,0 +1,9 @@
+def build(bld):
+  bld.objects( source    = bld.path.ant_glob('qshep3d.f90'),
+                includes  = '. ../../..',
+                features  = 'fc',
+                use       = 'opt',
+                target    = 'qshep_objs',
+             )
+  bld.contrib_objs.append('qshep_objs')
+

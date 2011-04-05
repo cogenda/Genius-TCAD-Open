@@ -4,9 +4,6 @@ extern int yylineno;
 extern int yylex();
 int yyerror(BLOCK *, char *s);
 
-std::vector<TOKEN *> TOKENS;
-
-
 //#define VERBOSE
 
 %}
@@ -20,6 +17,8 @@ std::vector<TOKEN *> TOKENS;
     char   cval;
     char   sval[256];
     BLOCK * bval;
+    std::vector<TOKEN *> * tokens;
+    TOKEN * token;
    }
 
 %token <sval> DFISE   FILE_FORMAT
@@ -28,6 +27,8 @@ std::vector<TOKEN *> TOKENS;
 %token <sval> STRING KEYWORD PARAMETER
 
 %type <bval> block body bodyitem
+%type <token> value
+%type <tokens> values data
 
 %%
 
@@ -108,14 +109,14 @@ bodyitem :  block
 {
             $$ = new BLOCK;
             /* data is pushed into TOKENS vector */
-            $$->add_values(TOKENS);
-            TOKENS.clear();
+            $$->add_values(*$1);
+            delete $1;
 }
          | KEYWORD '=' data
 {
            $$ = new BLOCK;
-           $$->add_parameter($1, TOKENS);
-           TOKENS.clear();
+           $$->add_parameter($1, *$3);
+           delete $3;
 }
          | KEYWORD '=' KEYWORD
 {
@@ -124,54 +125,61 @@ bodyitem :  block
            new_token->token_type = TOKEN::string_token;
            new_token->value = new std::string;
            *((std::string*)new_token->value) = $3;
-           TOKENS.push_back(new_token);
-           $$->add_parameter($1, TOKENS);
-           TOKENS.clear();
+           std::vector<TOKEN *> tokens;
+           tokens.push_back(new_token);
+           $$->add_parameter($1, tokens);
 }
          ;
 
 
 
 data     : value
+{
+         $$ = new std::vector<TOKEN *>;
+         $$->push_back($1);
+}
          | '[' values ']'
+{
+         $$ = $2;
+}
          ;
 
 values   :  value
+{
+         $$ = new std::vector<TOKEN *>;
+         $$->push_back($1);
+}
          |  values value
+{
+         $$ = $1;
+         $$->push_back($2);
+}
          ;
+
 
 value    : INTEGER
 {
-
          // read integer data, insert into vector TOKENS
-         TOKEN * new_token = new TOKEN;
-         new_token->token_type = TOKEN::int_token;
-         new_token->value = new int;
-         *((int*)new_token->value) = $1;
-         TOKENS.push_back(new_token);
-
+         $$ = new TOKEN;
+         $$->token_type = TOKEN::int_token;
+         $$->value = new int;
+         *((int*)$$->value) = $1;
 }
          | FLOAT
 {
-
          // read float data, insert into vector TOKENS
-         TOKEN * new_token = new TOKEN;
-         new_token->token_type = TOKEN::float_token;
-         new_token->value = new double;
-         *((double*)new_token->value) = $1;
-         TOKENS.push_back(new_token);
-
+         $$ = new TOKEN;
+         $$->token_type = TOKEN::float_token;
+         $$->value = new double;
+         *((double*)$$->value) = $1;
 }
          | STRING
 {
-
          // read string data, insert into vector TOKENS
-         TOKEN * new_token = new TOKEN;
-         new_token->token_type = TOKEN::string_token;
-         new_token->value = new std::string;
-         *((std::string*)new_token->value) = $1;
-         TOKENS.push_back(new_token);
-
+         $$ = new TOKEN;
+         $$->token_type = TOKEN::string_token;
+         $$->value = new std::string;
+         *((std::string*)$$->value) = $1;
 }
          ;
 
@@ -182,5 +190,6 @@ int yyerror(BLOCK *, char *)
    printf("\nline %d unrecognized chars %s \n",yylineno, yylval.sval);
    return 0;
 }
+
 
 

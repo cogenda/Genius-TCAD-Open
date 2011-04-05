@@ -190,17 +190,36 @@ public:
                      short int boundary_id) const;
 
   /**
+   * @return true when given elem is a boundary element
+   */
+  bool is_boundary_elem(const Elem *e) const
+  { return _boundary_side_id.find(e) != _boundary_side_id.end(); }
+
+
+  /**
    * @returns the number of element-based boundary conditions.
    */
   unsigned int n_boundary_conds () const
   { return _boundary_side_id.size(); }
 
+
+  /**
+   * @return a list of nodes on boundary side, nodes are sorted by their id, node on the interface of two boundary will exist on both side
+   */
+  void boundary_side_nodes_with_id ( std::map<short int, std::set<const Node *> > & boundary_side_nodes_id_map) const;
+
+
+  // NOTE: node are created by build_node_ids_from_priority_order for the following functions.
+
   /**
    * Creates a list of nodes and ids for those nodes.
    */
-  void build_node_list (std::vector<unsigned int>& nl,
-            std::vector<short int>&    il) const;
+  void build_node_list (std::vector<unsigned int>& nl, std::vector<short int>&    il) const;
 
+  /**
+   * Creates a list of on processor nodes and ids for those nodes.
+   */
+  void build_on_processor_node_list (std::vector<unsigned int>& nl, std::vector<short int>&    il) const;
 
   /**
    * @return a list of nodes with the same ids, nodes are sorted by their id
@@ -213,9 +232,24 @@ public:
   void nodes_with_boundary_id (std::vector<const Node *>& nl, short int boundary_id) const;
 
   /**
+   * @return a list of nodes with the same ids, nodes are sorted by their id
+   */
+  void nodes_with_boundary_id ( std::map<short int, std::vector<const Node *> > & node_boundary_id_map) const;
+
+  /**
+   * @return the regions node belongs to
+   */
+  void node_in_regions ( std::map<const Node *, std::set<unsigned int > > & node_region_map) const;
+
+  /**
    * @return active elem and its side with given boundary_id
    */
   void active_elem_with_boundary_id (std::vector<const Elem *>& el, std::vector<unsigned int>& sl, short int boundary_id) const;
+
+  /**
+   * @return active elem and its side with given boundary_id
+   */
+  void active_elem_with_boundary_id ( std::map<short int, std::vector< std::pair<const Elem *, unsigned int> > > & boundary_elem_side_map ) const;
 
   /**
    * Creates a list of element numbers, sides, and ids for those sides.
@@ -231,6 +265,14 @@ public:
                    std::vector<unsigned short int>& sl,
                    std::vector<short int>&          il) const;
 
+
+  /**
+   * Creates a list of on processor element numbers, sides, and ids for those sides.
+   */
+  void build_on_processor_side_list (std::vector<unsigned int>&       el,
+                                     std::vector<unsigned short int>& sl,
+                                     std::vector<short int>&          il) const;
+
   /**
    * @returns the user-specified boundary ids.
    */
@@ -244,6 +286,14 @@ public:
    * if the side is on the BOUNDARY, sub_id2 is set to invalid_id
    */
   void get_subdomains_bd_on(short int boundary_id, unsigned int & sub_id1, unsigned int & sub_id2) const;
+
+
+  /**
+   * @return the subdomain id of this boundary side lies on.
+   * if the side on INTERFACE, sub_id1 and sub_id2 are meanful
+   * if the side is on the BOUNDARY, sub_id2 is set to invalid_id
+   */
+  void get_subdomains_bd_on( std::map<short int,  std::pair<unsigned int, unsigned int > > & boundary_subdomain_map ) const;
 
   /**
    * @return all the boundary ids belongs to some subdomain.
@@ -282,14 +332,43 @@ public:
   std::string get_label_by_id(short int id) const;
 
   /**
+   * @return all the boundary ids on interface of two subdomains
+   */
+  std::set<short int> get_ids_on_region_interface(unsigned int sub1, unsigned int sub2) const;
+
+  /**
    * set the id with description
    */
   void set_description_to_id(short int id, const std::string & description);
 
   /**
-   * get the label by id
+   * get the boundary description by id
    */
   std::string get_description_by_id(short int id) const;
+
+  /**
+   * record extra boundary description
+   */
+  void add_extra_description(const std::string &description)
+  { _extra_descriptions.push_back(description); }
+
+
+  /**
+   * get extra boundary descriptions
+   */
+  std::vector<std::string> & extra_descriptions()
+  { return _extra_descriptions; }
+
+  /**
+   * get extra boundary descriptions
+   */
+  const std::vector<std::string> & extra_descriptions() const
+  { return _extra_descriptions; }
+
+  /**
+   * this function build neighbor information of interface elements
+   */
+  void find_neighbors();
 
   /**
    * rebuild _boundary_ids after node or elem remove.
@@ -316,8 +395,7 @@ public:
    * Data structure that maps nodes in the mesh
    * to boundary ids.
    */
-  std::map<const Node*,
-       short int> _boundary_node_id;
+  std::map<const Node*, short int> _boundary_node_id;
 
   /**
    * Data structure that maps sides of elements
@@ -348,12 +426,17 @@ public:
    * genius will try to assign an uinque label to each boundary_id,
    * this flag indicate that the boundary_id has user defined label.
    */
-  std::map<const short int, int> _boundary_ids_has_label_map;
+  //std::map<const short int, int> _boundary_ids_has_label_map;
 
   /**
    * data structure for boundary description
    */
   std::map<const short int, const std::string> _boundary_ids_to_descriptions;
+
+  /**
+   * extra boundary descriptions
+   */
+  std::vector<std::string> _extra_descriptions;
 
 //   /**
 //    * Functor class for printing a single node's info

@@ -114,6 +114,13 @@ class NodeElem : public Elem
   unsigned int key (const unsigned int) const
   { return 0; }
 
+
+  /**
+   * @return the ith node on sth side
+   */
+  unsigned int side_node(unsigned int , unsigned int ) const
+  { genius_error(); return 0; }
+
   /**
    * The \p Elem::side() member makes no sense for nodes.
    */
@@ -187,6 +194,24 @@ class NodeElem : public Elem
                               std::vector<unsigned int> & ) const
   { genius_error(); }
 
+
+  /**
+   * get the node local index on edge e
+   */
+  virtual void nodes_on_edge (const unsigned int,
+                              std::pair<unsigned int, unsigned int> & ) const
+  { genius_error(); }
+
+
+  /**
+   * @return the nearest point on this element to the given point p
+   */
+  virtual Point nearest_point(const Point &p, Real * dist = 0) const
+  {
+    if(dist) *dist = (p-this->point(0)).size();
+    return this->point(0);
+  }
+
   /*
    * @returns true iff the element map is definitely affine within
    * numerical tolerances
@@ -207,6 +232,7 @@ class NodeElem : public Elem
                 const IOPackage iop,
                 std::vector<unsigned int>& conn) const;
 
+  virtual void side_order( const IOPackage , std::vector<unsigned int>& ) const  {}
 
 protected:
 

@@ -24,7 +24,7 @@
 #ifndef __fvm_node_data_semiconductor_h__
 #define __fvm_node_data_semiconductor_h__
 
-#include "petsc.h"
+
 #include "fvm_node_data.h"
 
 
@@ -34,1146 +34,1179 @@
 class FVM_Semiconductor_NodeData : public FVM_NodeData
 {
 
-public:
-
-  /**
-   * the independent variable for semiconductor region
-   */
-  enum   SemiconductorData
-  {
-    /**
-     * electron density
-     */
-    _n_=0,
+  public:
 
     /**
-     * hole density
+     * the independent variable for semiconductor region
      */
-    _p_,
+    enum   SemiconductorData
+    {
+      /**
+       * electron density
+       */
+      _n_=0,
+
+      /**
+       * hole density
+       */
+      _p_,
+
+      /**
+       * electrostatic potential
+       */
+      _psi_,
+
+      /**
+       * lattice temperature
+       */
+      _T_,
+
+      /**
+       * electron temperature, used in energy balance model simulation
+       */
+      _Tn_,
+
+      /**
+       * hole temperature, used in energy balance model simulation
+       */
+      _Tp_,
+
+      /**
+       * the density of the material
+       */
+      _density_,
+
+      /**
+       * electron affinity
+       */
+      _affinity_,
+
+      /**
+       * conduction band
+       */
+      _Ec_,
+
+      /**
+       * valence band
+       */
+      _Ev_,
+
+      /**
+       * band gap
+       */
+      _Eg_,
+
+      /**
+       * quasi Fermi potential of electron
+       */
+      _qFn_,
+
+      /**
+       * quasi Fermi potential of hole
+       */
+      _qFp_,
+
+      /**
+       * intrinsic Fermi potential
+       */
+      //_phi_intrinsic_,
+
+      /**
+       * effective density of states in the conduction band
+       */
+      _Nc_,
+
+      /**
+       * effective density of states in the valence band
+       */
+      _Nv_,
+
+      /**
+       * the dielectric permittivity
+       */
+      _eps_,
+
+      /**
+       * the megnetic permeability
+       */
+      _mu_,
+
+      /**
+       * general doping concentration of acceptor
+       */
+      _Na_,
+
+      /**
+       * general doping concentration of donor
+       */
+      _Nd_,
+
+      /**
+       * mole fraction for single compound material
+       */
+      _mole_x_,
+
+      /**
+       * mole fraction for dual compound material
+       */
+      _mole_y_,
+
+      /**
+       * electron mobility
+       */
+      _mun_,
+
+      /**
+       * hole mobility
+       */
+      _mup_,
+
+      /**
+       * total recombination
+       */
+      _Recomb_,
+
+      /**
+       * direct(optical) recombination
+       */
+      _Recomb_Dir_,
+
+      /**
+       * SRH recombination
+       */
+      _Recomb_SRH_,
+
+      /**
+       * Auger recombination
+       */
+      _Recomb_Auger_,
+
+      /**
+       * the _OptG_*time +  _PatG_*time
+       */
+      _Field_G_,
+
+      /**
+       * carrier generation due to incident wave
+       */
+      _OptG_,
+
+      /**
+       * heat generation due to incident wave
+       */
+      _OptQ_,
+
+      /**
+       * carrier generation due to high energy particle
+       */
+      _PatG_,
+
+      /**
+       * electron inject ratio
+       */
+      _EIn_,
+
+      /**
+       * hole inject ratio
+       */
+      _HIn_,
+
+      /**
+       * electron density at previous time step
+       */
+      _n_last_,
+
+      /**
+       * hole density at previous time step
+       */
+      _p_last_,
+
+      /**
+       * electrostatic potential at previous time step
+       */
+      _psi_last_,
+
+      /**
+       * lattice temperature at previous time step
+       */
+      _T_last_,
+
+      /**
+       * electron temperature, at previous time step
+       */
+      _Tn_last_,
+
+      /**
+       * hole temperature, at previous time step
+       */
+      _Tp_last_,
+
+      /**
+       * charge density
+       */
+      _rho_,
+
+      /**
+       * last enum number
+       */
+      ScalarDataCount
+    };
+
 
     /**
-     * electrostatic potential
+     * the vector auxiliary variable for semiconductor region
      */
-    _psi_,
+    enum SemiconductorAuxVecData
+    {
+      /**
+       * electrical field of incident optical wave
+       */
+      //_OpE_,
+
+      /**
+       * magnetic field of incident optical wave
+       */
+      //_OpH_,
+
+      /**
+       * electrical field
+       */
+      _E_,
+
+      /**
+       * electron current
+       */
+      _Jn_,
+
+      /**
+       * hole current
+       */
+      _Jp_,
+
+      /**
+       * last enum number
+       */
+      VectorDataCount
+    };
+
 
     /**
-     * lattice temperature
+     * the complex auxiliary variable for semiconductor region
      */
-    _T_,
+    enum SemiconductorAuxComplexData
+    {
+      /**
+       * electron density
+       */
+      _n_ac_=0,
+
+      /**
+       * hole density
+       */
+      _p_ac_,
+
+      /**
+       * electrostatic potential
+       */
+      _psi_ac_,
+
+      /**
+       * lattice temperature
+       */
+      _T_ac_,
+
+      /**
+       * electron temperature, used in energy balance model simulation
+       */
+      _Tn_ac_,
+
+      /**
+       * hole temperature, used in energy balance model simulation
+       */
+      _Tp_ac_,
+
+      /**
+       * electrical field of incident optical wave
+       */
+      _OpE_complex_,
+
+      /**
+       * magnetic field of incident optical wave
+       */
+      _OpH_complex_,
+
+      /**
+       * last enum number
+       */
+      ComplexDataCount
+    };
+
+
+
+
+  public:
 
     /**
-     * electron temperature, used in energy balance model simulation
+     * constructor
      */
-    _Tn_,
+    FVM_Semiconductor_NodeData ( DataStorage * data_storage , const std::map<std::string, SimulationVariable> & variables )
+    :FVM_NodeData ( data_storage , variables)
+    {}
 
     /**
-     * hole temperature, used in energy balance model simulation
+     * destructor
      */
-    _Tp_,
+    virtual ~FVM_Semiconductor_NodeData()  { }
+
+  public:
+    /**
+     * @return the solution variable number
+     */
+    static size_t n_scalar()
+    { return static_cast<unsigned int> ( ScalarDataCount ) ; /* return last enum*/ }
 
     /**
-     * quantum conduction band
+     * @return the complex variable number
      */
-    _Eqc_,
+    static size_t n_complex()
+    { return static_cast<unsigned int> ( ComplexDataCount ) ; /* return last enum*/ }
 
     /**
-     * quantum valence band
+     * @return the vector variable number
      */
-    _Eqv_
-  };
-
-
-  /**
-   * the auxiliary variable for semiconductor region
-   */
-  enum   SemiconductorAuxData
-  {
-    /**
-     * the density of the material
-     */
-    _density_=0,
+    static size_t n_vector()
+    { return static_cast<unsigned int> ( VectorDataCount ) ; /* return last enum*/ }
 
     /**
-     * electron affinity
+     * @return the tensor variable number
      */
-    _affinity_,
-
-    /**
-     * conduction band
-     */
-    _Ec_,
-
-    /**
-     * valence band
-     */
-    _Ev_,
-
-    /**
-     * band gap
-     */
-    _Eg_,
-
-    /**
-     * quasi Fermi potential of electron
-     */
-    _qFn_,
-
-    /**
-     * quasi Fermi potential of hole
-     */
-    _qFp_,
-
-    /**
-     * intrinsic Fermi potential
-     */
-    //_phi_intrinsic_,
-
-    /**
-     * effective density of states in the conduction band
-     */
-    _Nc_,
-
-    /**
-     * effective density of states in the valence band
-     */
-    _Nv_,
-
-    /**
-     * the dielectric permittivity
-     */
-    _eps_,
-
-    /**
-     * the megnetic permeability
-     */
-    _mu_,
-
-    /**
-     * general doping concentration of acceptor
-     */
-    _Na_,
-
-    /**
-     * general doping concentration of donor
-     */
-    _Nd_,
-
-    /**
-     * concentration of donor atom phosphorus
-     */
-    _P_,
-
-    /**
-     * concentration of donor atom arsenic
-     */
-    _As_,
-
-    /**
-     * concentration of donor atom antimony
-     */
-    _Sb_,
-
-    /**
-     * concentration of acceptor atom boron
-     */
-    _B_,
-
-    /**
-     * mole fraction for single compound material
-     */
-    _mole_x_,
-
-    /**
-     * mole fraction for dual compound material
-     */
-    _mole_y_,
-
-    /**
-     * electron mobility
-     */
-    //_mun_,
-
-    /**
-     * hole mobility
-     */
-    //_mup_,
-
-    /**
-     * the _OptG_*time +  _PatG_*time
-     */
-    _Field_G_,
-
-    /**
-     * carrier generation due to incident wave
-     */
-    _OptG_,
-
-    /**
-     * heat generation due to incident wave
-     */
-    _OptQ_,
-
-    /**
-     * carrier generation due to high energy particle
-     */
-    _PatG_,
-
-    /**
-     * electron density at previous time step
-     */
-    _n_last_,
-
-    /**
-     * hole density at previous time step
-     */
-    _p_last_,
-
-    /**
-     * electrostatic potential at previous time step
-     */
-    _psi_last_,
-
-    /**
-     * lattice temperature at previous time step
-     */
-    _T_last_,
-
-    /**
-     * electron temperature, at previous time step
-     */
-    _Tn_last_,
-
-    /**
-     * hole temperature, at previous time step
-     */
-    _Tp_last_,
-
-    /**
-     * quantum conduction band, at previous time step
-     */
-    _Eqc_last_,
-
-    /**
-     * quantum valence band, at previous time step
-     */
-    _Eqv_last_
-  };
-
-
-  /**
-   * the vector auxiliary variable for semiconductor region
-   */
-  enum SemiconductorAuxVecData
-  {
-    /**
-     * electrical field of incident optical wave
-     */
-    //_OpE_,
-
-    /**
-     * magnetic field of incident optical wave
-     */
-    //_OpH_,
-
-    /**
-     * electrical field
-     */
-    _E_,
-
-    /**
-     * electron current
-     */
-    _Jn_,
-
-    /**
-     * hole current
-     */
-    _Jp_
-  };
-
-
-  /**
-   * the complex auxiliary variable for semiconductor region
-   */
-  enum SemiconductorAuxComplexData
-  {
-    /**
-     * electron density
-     */
-    _n_ac_=0,
-
-    /**
-     * hole density
-     */
-    _p_ac_,
-
-    /**
-     * electrostatic potential
-     */
-    _psi_ac_,
-
-    /**
-     * lattice temperature
-     */
-    _T_ac_,
-
-    /**
-     * electron temperature, used in energy balance model simulation
-     */
-    _Tn_ac_,
-
-    /**
-     * hole temperature, used in energy balance model simulation
-     */
-    _Tp_ac_,
-
-    /**
-     * electrical field of incident optical wave
-     */
-    _OpE_complex_,
-
-    /**
-     * magnetic field of incident optical wave
-     */
-    _OpH_complex_
-  };
-
-
-
-
-public:
-
-  /**
-   * constructor
-   */
-  FVM_Semiconductor_NodeData()
-  {
-    _scalar_value = new PetscScalar[n_scalar()];
-    for(unsigned int i=0; i<n_scalar(); i++) _scalar_value[i]=0.0;
-
-    _aux_scalar_value = new PetscScalar[n_aux_scalar()];
-    for(unsigned int i=0; i<n_aux_scalar(); i++) _aux_scalar_value[i]=0.0;
-
-    _complex_value = new std::complex<PetscScalar>[n_complex()];
-    for(unsigned int i=0; i<n_scalar(); i++) _complex_value[i]=std::complex<PetscScalar>(0.0, 0.0);
-
-    _vecctor_value = new VectorValue<PetscScalar>[n_vector()];
-    for(unsigned int i=0; i<n_vector(); i++) _vecctor_value[i]=VectorValue<PetscScalar>(0.0, 0.0, 0.0);
-  }
-
-  /**
-   * destructor
-   */
-virtual ~FVM_Semiconductor_NodeData()  { }
-
-public:
-  /**
-   * @return the solution variable number
-   */
-  virtual size_t n_scalar() const
-    { return static_cast<unsigned int>(_Eqv_) +1 ; /* return last enum+1*/ }
-
-  /**
-   * @return the scalar aux variable number
-   */
-  virtual size_t n_aux_scalar() const
-    { return static_cast<unsigned int>(_Eqv_last_) +1 ; /* return last enum+1*/ }
-
-  /**
-   * @return the complex variable number
-   */
-  virtual size_t n_complex() const
-    { return static_cast<unsigned int>(_OpH_complex_) +1 ; /* return last enum+1*/ }
-
-  /**
-   * @return the vector variable number
-   */
-  virtual size_t n_vector() const
-    { return static_cast<unsigned int>(_Jp_) +1 ; /* return last enum+1*/ }
-
-  /**
-   * @return the tensor variable number
-   */
-  virtual size_t n_tensor() const
+    static size_t n_tensor()
     { return 0; }
 
-  /**
-   * @return the data type
-   */
-  virtual NodeDataType type() const
+    /**
+     * @return the data type
+     */
+    virtual NodeDataType type() const
     { return FVM_NodeData::SemiconductorData; }
 
 
-public:
+  public:
 
-  /**
-   * @return data by enum name
-   */
-  virtual PetscScalar  get_variable(SolutionVariable variable) const
-  {
-    switch(variable)
+    /**
+     * @return data by enum name
+     */
+    virtual Real  get_variable_real ( SolutionVariable variable ) const
     {
-    case POTENTIAL   :  return  psi();                            /* potential */
-    case E_FIELD     :  return  _vecctor_value[_E_].size();       /* electric field */
-    case ELECTRON    :  return  n();                              /* electron concentration */
-    case HOLE        :  return  p();                              /* hole concentration */
-    case TEMPERATURE :  return  T();                              /* lattice temperature */
-    case E_TEMP      :  return  Tn();                             /* electron temperature */
-    case H_TEMP      :  return  Tp();                             /* hole temperature */
-    case DOPING      :  return  Net_doping();                     /* net doping */
-    case DOPING_Na   :  return  Total_Na();                       /* acceptor */
-    case DOPING_Nd   :  return  Total_Nd();                       /* donor */
-    case MOLE_X      :  return  mole_x();
-    case MOLE_Y      :  return  mole_y();
-    case MIN_CARRIER :  return  Net_doping() > 0 ? n() : p();     /* minority carrier concentration */
-    case NET_CARRIER :  return  p() - n();                        /* net carrier concentration */
-    case NET_CHARGE  :  return  Net_doping() + p() - n();         /* net charge */
-    case OPTICAL_GEN :  return  OptG();                           /* charge genetated by optical ray */
-    case OPTICAL_HEAT:  return  OptQ();                           /* heat genetated by optical ray */
-    case PARTICLE_GEN:  return  PatG();                           /* charge genetated by particle ray */
-    case QFN         :  return  qFn();                            /* electron quasi-Fermi level */
-    case QFP         :  return  qFp();                            /* hole quasi-Fermi level */
-    default          :  return  0.0;
-    }
-  }
+      switch ( variable )
+      {
+        case POTENTIAL      :  return  psi();                            /* potential */
+        case ELECTRON       :  return  n();                              /* electron concentration */
+        case HOLE           :  return  p();                              /* hole concentration */
+        case TEMPERATURE    :  return  T();                              /* lattice temperature */
+        case E_TEMP         :  return  Tn();                             /* electron temperature */
+        case H_TEMP         :  return  Tp();                             /* hole temperature */
 
-  /**
-   * set variable by enum name
-   */
-  virtual void set_variable(SolutionVariable variable, PetscScalar value)
-  {
-    switch(variable)
+        case DOPING         :  return  Net_doping();                     /* net doping */
+        case DOPING_Na      :  return  Total_Na();                       /* acceptor */
+        case DOPING_Nd      :  return  Total_Nd();                       /* donor */
+
+        case SPECIES_Na     :  return Na();                              /* generic species Na */
+        case SPECIES_Nd     :  return Nd();                              /* generic species Na */
+
+
+        case MIN_CARRIER    :  return  Net_doping() > 0 ? n() : p();     /* minority carrier concentration */
+        case NET_CARRIER    :  return  p() - n();                        /* net carrier concentration */
+        case NET_CHARGE     :  return  Net_doping() + p() - n();         /* net charge */
+
+        case RECOMBINATION  :  return  Recomb();                         /* total recombination */
+        case RECOMB_DIR     :  return  Recomb_Dir();                     /* direct recombination */
+        case RECOMB_SHR     :  return  Recomb_SRH();                     /* SHR recombination */
+        case RECOMB_AUGER   :  return  Recomb_Auger();                   /* AUGER recombination */
+
+        case MOLE_X         :  return  mole_x();
+        case MOLE_Y         :  return  mole_y();
+
+        case OPTICAL_GEN    :  return  OptG();                           /* charge genetated by optical ray */
+        case OPTICAL_HEAT   :  return  OptQ();                           /* heat genetated by optical ray */
+        case PARTICLE_GEN   :  return  PatG();                           /* charge genetated by particle ray */
+
+        case QFN            :  return  qFn();                            /* electron quasi-Fermi level */
+        case QFP            :  return  qFp();                            /* hole quasi-Fermi level */
+
+        default             :  return  0.0;
+      }
+    }
+
+    /**
+     * set variable by enum name
+     */
+    virtual void set_variable_real ( SolutionVariable variable, Real value )
     {
-    case POTENTIAL   :  psi() = value;                             /* potential */
-    case ELECTRON    :  n() = value;                               /* electron concentration */
-    case HOLE        :  p() = value;                               /* hole concentration */
-    case TEMPERATURE :  T() = value;                               /* lattice temperature */
-    case E_TEMP      :  Tn() = value;                              /* electron temperature */
-    case H_TEMP      :  Tp() = value;                              /* hole temperature */
-    case DOPING_Na   :  Na() = value;                              /* acceptor */
-    case DOPING_Nd   :  Nd() = value;                              /* donor */
-    case OPTICAL_GEN :  OptG() = value;                            /* charge genetated by optical ray */
-    case OPTICAL_HEAT:  OptQ() = value;                            /* heat genetated by optical ray */
-    case PARTICLE_GEN:  PatG() = value;                            /* charge genetated by particle ray */
-    case MOLE_X      :  mole_x() = value;
-    case MOLE_Y      :  mole_y() = value;
-    default          :  return;
+      switch ( variable )
+      {
+        case POTENTIAL     :  psi() = value;                             /* potential */
+        case ELECTRON      :  n() = value;                               /* electron concentration */
+        case HOLE          :  p() = value;                               /* hole concentration */
+        case TEMPERATURE   :  T() = value;                               /* lattice temperature */
+        case E_TEMP        :  Tn() = value;                              /* electron temperature */
+        case H_TEMP        :  Tp() = value;                              /* hole temperature */
+        case DOPING_Na     :  Na() = value;                              /* acceptor */
+        case DOPING_Nd     :  Nd() = value;                              /* donor */
+        case OPTICAL_GEN   :  OptG() = value;                            /* charge genetated by optical ray */
+        case OPTICAL_HEAT  :  OptQ() = value;                            /* heat genetated by optical ray */
+        case PARTICLE_GEN  :  PatG() = value;                            /* charge genetated by particle ray */
+        case MOLE_X        :  mole_x() = value;
+        case MOLE_Y        :  mole_y() = value;
+        default            :  return;
+      }
     }
-  }
 
-  /**
-   * @return true when this variable valid
-   */
-  virtual bool is_variable_valid(SolutionVariable variable)  const
-  {
-    switch(variable)
+    /**
+     * @return true when this variable valid
+     */
+    virtual bool is_variable_valid ( SolutionVariable variable )  const
     {
-    case POTENTIAL   :
-    case ELECTRON    :
-    case HOLE        :
-    case TEMPERATURE :
-    case E_TEMP      :
-    case H_TEMP      :
-    case DOPING_Na   :
-    case DOPING_Nd   :
-    case OPTICAL_GEN :
-    case OPTICAL_HEAT:
-    case PARTICLE_GEN:
-    case MOLE_X      :
-    case MOLE_Y      :  return true;
-    default          :  return false;
+      switch ( variable )
+      {
+        case POTENTIAL     :
+        case ELECTRON      :
+        case HOLE          :
+        case TEMPERATURE   :
+        case E_TEMP        :
+        case H_TEMP        :
+        case DOPING_Na     :
+        case DOPING_Nd     :
+        case OPTICAL_GEN   :
+        case OPTICAL_HEAT  :
+        case PARTICLE_GEN  :
+        case MOLE_X        :
+        case MOLE_Y        :  return true;
+        default            :  return false;
+      }
     }
-  }
 
-  //--------------------------------------------------------------------
-  // data access function
-  //--------------------------------------------------------------------
+    //--------------------------------------------------------------------
+    // data access function
+    //--------------------------------------------------------------------
 
-  /**
-   * @return the statistic potential
-   */
-  virtual PetscScalar         psi()        const
-  { return _scalar_value[_psi_]; }
+    /**
+     * @return the statistic potential
+     */
+    virtual Real         psi()        const
+    { return _data_storage->scalar ( _psi_, _offset ); }
 
-  /**
-   * @return the statistic potential
-   */
-  virtual PetscScalar &       psi()
-  { return _scalar_value[_psi_]; }
+    /**
+     * @return the statistic potential
+     */
+    virtual Real &       psi()
+    { return _data_storage->scalar ( _psi_, _offset ); }
 
 
 
-  /**
-   * @return the lattice temperature
-   */
-  virtual PetscScalar         T()          const
-    { return _scalar_value[_T_]; }
+    /**
+     * @return the lattice temperature
+     */
+    virtual Real         T()          const
+    { return _data_storage->scalar ( _T_, _offset ); }
 
-  /**
-   * @return the statistic potential
-   */
-  virtual PetscScalar &       T()
-  { return _scalar_value[_T_]; }
+    /**
+     * @return the statistic potential
+     */
+    virtual Real &       T()
+    { return _data_storage->scalar ( _T_, _offset ); }
 
 
 
-  /**
-   * @return the electron density
-   */
-  virtual PetscScalar         n()          const
-    { return _scalar_value[_n_]; }
+    /**
+     * @return the electron density
+     */
+    virtual Real         n()          const
+    { return _data_storage->scalar ( _n_, _offset ); }
 
-  /**
-   * @return the writable reference to electron density
-   */
-  virtual PetscScalar &       n()
-  { return _scalar_value[_n_]; }
+    /**
+     * @return the writable reference to electron density
+     */
+    virtual Real &       n()
+    { return _data_storage->scalar ( _n_, _offset ); }
 
 
 
-  /**
-   * @return the hole density
-   */
-  virtual PetscScalar         p()          const
-    { return _scalar_value[_p_]; }
+    /**
+     * @return the hole density
+     */
+    virtual Real         p()          const
+    { return _data_storage->scalar ( _p_, _offset ); }
 
 
-  /**
-   * @return the writable reference to hole density
-   */
-  virtual PetscScalar &       p()
-  { return _scalar_value[_p_]; }
+    /**
+     * @return the writable reference to hole density
+     */
+    virtual Real &       p()
+    { return _data_storage->scalar ( _p_, _offset ); }
 
 
-  /**
-   * @return the electron temperature
-   */
-  virtual PetscScalar         Tn()          const
-    { return _scalar_value[_Tn_]; }
+    /**
+     * @return the electron temperature
+     */
+    virtual Real         Tn()          const
+    { return _data_storage->scalar ( _Tn_, _offset ); }
 
 
-  /**
-   * @return the writable reference to electron temperature
-   */
-  virtual PetscScalar &       Tn()
-  { return _scalar_value[_Tn_]; }
+    /**
+     * @return the writable reference to electron temperature
+     */
+    virtual Real &       Tn()
+    { return _data_storage->scalar ( _Tn_, _offset ); }
 
 
-  /**
-   * @return the hole temperature
-   */
-  virtual PetscScalar         Tp()          const
-    { return _scalar_value[_Tp_]; }
+    /**
+     * @return the hole temperature
+     */
+    virtual Real         Tp()          const
+    { return _data_storage->scalar ( _Tp_, _offset ); }
 
 
-  /**
-   * @return the writable reference to hole temperature
-   */
-  virtual PetscScalar &       Tp()
-  { return _scalar_value[_Tp_]; }
+    /**
+     * @return the writable reference to hole temperature
+     */
+    virtual Real &       Tp()
+    { return _data_storage->scalar ( _Tp_, _offset ); }
 
 
-  /**
-   * @return the statistic potential
-   */
-  virtual std::complex<PetscScalar>         psi_ac()          const
-    { return _complex_value[_psi_ac_]; }
+    /**
+     * @return the statistic potential
+     */
+    virtual std::complex<Real>         psi_ac()          const
+    { return _data_storage->complex ( _psi_ac_, _offset ); }
 
-  /**
-   * @return the writable reference to statistic potential
-   */
-  virtual std::complex<PetscScalar> &       psi_ac()
-  { return _complex_value[_psi_ac_]; }
-
-
-  /**
-   * @return the lattice temperature
-   */
-  virtual std::complex<PetscScalar>         T_ac()          const
-    { return  _complex_value[_T_ac_]; }
+    /**
+     * @return the writable reference to statistic potential
+     */
+    virtual std::complex<Real> &       psi_ac()
+    { return _data_storage->complex ( _psi_ac_, _offset ); }
 
-  /**
-   * @return the writable reference to lattice temperature
-   */
-  virtual std::complex<PetscScalar> &       T_ac()
-  { return _complex_value[_T_ac_]; }
-
-
-
-  /**
-   * @return the electron density
-   */
-  virtual std::complex<PetscScalar>         n_ac()          const
-    { return _complex_value[_n_ac_]; }
 
-  /**
-   * @return the writable reference to electron density
-   */
-  virtual std::complex<PetscScalar> &       n_ac()
-  { return _complex_value[_n_ac_]; }
+    /**
+     * @return the lattice temperature
+     */
+    virtual std::complex<Real>         T_ac()          const
+    { return  _data_storage->complex ( _T_ac_, _offset ); }
 
-
-
-  /**
-   * @return the hole density
-   */
-  virtual std::complex<PetscScalar>         p_ac()          const
-    { return _complex_value[_p_ac_]; }
+    /**
+     * @return the writable reference to lattice temperature
+     */
+    virtual std::complex<Real> &       T_ac()
+    { return _data_storage->complex ( _T_ac_, _offset ); }
+
+
+
+    /**
+     * @return the electron density
+     */
+    virtual std::complex<Real>         n_ac()          const
+    { return _data_storage->complex ( _n_ac_, _offset ); }
 
-  /**
-   * @return the writable reference to hole density
-   */
-  virtual std::complex<PetscScalar> &       p_ac()
-  { return _complex_value[_p_ac_]; }
+    /**
+     * @return the writable reference to electron density
+     */
+    virtual std::complex<Real> &       n_ac()
+    { return _data_storage->complex ( _n_ac_, _offset ); }
 
 
-  /**
-   * @return the electron temperature
-   */
-  virtual std::complex<PetscScalar>         Tn_ac()          const
-    { return _complex_value[_Tn_ac_]; }
+
+    /**
+     * @return the hole density
+     */
+    virtual std::complex<Real>         p_ac()          const
+    { return _data_storage->complex ( _p_ac_, _offset ); }
 
-  /**
-   * @return the writable reference to electron temperature
-   */
-  virtual std::complex<PetscScalar> &       Tn_ac()
-  { return _complex_value[_Tn_ac_]; }
+    /**
+     * @return the writable reference to hole density
+     */
+    virtual std::complex<Real> &       p_ac()
+    { return _data_storage->complex ( _p_ac_, _offset ); }
 
-  /**
-   * @return the hole temperature
-   */
-  virtual std::complex<PetscScalar>         Tp_ac()          const
-    { return _complex_value[_Tp_ac_]; }
-
-  /**
-   * @return the writable reference to hole temperature
-   */
-  virtual std::complex<PetscScalar> &       Tp_ac()
-  { return _complex_value[_Tp_ac_]; }
 
+    /**
+     * @return the electron temperature
+     */
+    virtual std::complex<Real>         Tn_ac()          const
+    { return _data_storage->complex ( _Tn_ac_, _offset ); }
 
-  /**
-   * @return the complex E file. only used by EM FEM solver
-   */
-  virtual std::complex<PetscScalar>         OptE_complex()          const
-    { return _complex_value[_OpE_complex_]; }
+    /**
+     * @return the writable reference to electron temperature
+     */
+    virtual std::complex<Real> &       Tn_ac()
+    { return _data_storage->complex ( _Tn_ac_, _offset ); }
 
-  /**
-   * @return the writable reference to complex E file. only used by EM FEM solver
-   */
-  virtual std::complex<PetscScalar> &       OptE_complex()
-  { return _complex_value[_OpE_complex_]; }
+    /**
+     * @return the hole temperature
+     */
+    virtual std::complex<Real>         Tp_ac()          const
+    { return _data_storage->complex ( _Tp_ac_, _offset ); }
 
-  /**
-   * @return the complex H file. only used by EM FEM solver
-   */
-  virtual std::complex<PetscScalar>         OptH_complex()          const
-    { return _complex_value[_OpH_complex_]; }
+    /**
+     * @return the writable reference to hole temperature
+     */
+    virtual std::complex<Real> &       Tp_ac()
+    { return _data_storage->complex ( _Tp_ac_, _offset ); }
+
+
+    /**
+     * @return the complex E file. only used by EM FEM solver
+     */
+    virtual std::complex<Real>         OptE_complex()          const
+    { return _data_storage->complex ( _OpE_complex_, _offset ); }
+
+    /**
+     * @return the writable reference to complex E file. only used by EM FEM solver
+     */
+    virtual std::complex<Real> &       OptE_complex()
+    { return _data_storage->complex ( _OpE_complex_, _offset ); }
 
-  /**
-   * @return the writable reference to complex H file. only used by EM FEM solver
-   */
-  virtual std::complex<PetscScalar> &       OptH_complex()
-  { return _complex_value[_OpH_complex_]; }
+    /**
+     * @return the complex H file. only used by EM FEM solver
+     */
+    virtual std::complex<Real>         OptH_complex()          const
+    { return _data_storage->complex ( _OpH_complex_, _offset ); }
+
+    /**
+     * @return the writable reference to complex H file. only used by EM FEM solver
+     */
+    virtual std::complex<Real> &       OptH_complex()
+    { return _data_storage->complex ( _OpH_complex_, _offset ); }
 
-
-  /**
-   * @return the quantum conduction band
-   */
-  virtual PetscScalar         Eqc()          const
-    { return _scalar_value[_Eqc_]; }
-
-  /**
-   * @return the writable reference to quantum conduction band
-   */
-  virtual PetscScalar &       Eqc()
-  { return _scalar_value[_Eqc_]; }
-
-
-
-  /**
-   * @return the quantum valence band
-   */
-  virtual PetscScalar         Eqv()          const
-    { return _scalar_value[_Eqv_]; }
-
-  /**
-   * @return the writable reference to quantum valence band
-   */
-  virtual PetscScalar &       Eqv()
-  { return _scalar_value[_Eqv_]; }
 
+    /**
+     * @return the statistic potential at previous time step
+     */
+    virtual Real         psi_last()          const
+    { return _data_storage->scalar ( _psi_last_, _offset ); }
 
-
-  /**
-   * @return the statistic potential at previous time step
-   */
-  virtual PetscScalar         psi_last()          const
-    { return _aux_scalar_value[_psi_last_]; }
-
-  /**
-   * @return the writable reference to statistic potential at previous time step
-   */
-  virtual PetscScalar &       psi_last()
-  { return _aux_scalar_value[_psi_last_]; }
+    /**
+     * @return the writable reference to statistic potential at previous time step
+     */
+    virtual Real &       psi_last()
+    { return _data_storage->scalar ( _psi_last_, _offset ); }
 
 
 
-  /**
-   * @return the lattice temperature at previous time step
-   */
-  virtual PetscScalar         T_last()          const
-    { return _aux_scalar_value[_T_last_]; }
+    /**
+     * @return the lattice temperature at previous time step
+     */
+    virtual Real         T_last()          const
+    { return _data_storage->scalar ( _T_last_, _offset ); }
 
-  /**
-   * @return the writable reference to lattice temperature at previous time step
-   */
-  virtual PetscScalar &       T_last()
-  { return _aux_scalar_value[_T_last_]; }
+    /**
+     * @return the writable reference to lattice temperature at previous time step
+     */
+    virtual Real &       T_last()
+    { return _data_storage->scalar ( _T_last_, _offset ); }
 
 
 
-  /**
-   * @return the electron density at previous time step
-   */
-  virtual PetscScalar         n_last()          const
-    { return _aux_scalar_value[_n_last_]; }
+    /**
+     * @return the electron density at previous time step
+     */
+    virtual Real         n_last()          const
+    { return _data_storage->scalar ( _n_last_, _offset ); }
 
-  /**
-   * @return the writable reference to electron density at previous time step
-   */
-  virtual PetscScalar &       n_last()
-  { return _aux_scalar_value[_n_last_]; }
+    /**
+     * @return the writable reference to electron density at previous time step
+     */
+    virtual Real &       n_last()
+    { return _data_storage->scalar ( _n_last_, _offset ); }
 
 
 
-  /**
-   * @return the hole density at previous time step
-   */
-  virtual PetscScalar         p_last()          const
-    { return _aux_scalar_value[_p_last_]; }
+    /**
+     * @return the hole density at previous time step
+     */
+    virtual Real         p_last()          const
+    { return _data_storage->scalar ( _p_last_, _offset ); }
 
-  /**
-   * @return the writable reference to hole density at previous time step
-   */
-  virtual PetscScalar &       p_last()
-  { return _aux_scalar_value[_p_last_]; }
+    /**
+     * @return the writable reference to hole density at previous time step
+     */
+    virtual Real &       p_last()
+    { return _data_storage->scalar ( _p_last_, _offset ); }
 
 
-  /**
-   * @return the electron temperature at previous time step
-   */
-  virtual PetscScalar         Tn_last()          const
-    { return _aux_scalar_value[_Tn_last_]; }
+    /**
+     * @return the electron temperature at previous time step
+     */
+    virtual Real         Tn_last()          const
+    { return _data_storage->scalar ( _Tn_last_, _offset ); }
+
+    /**
+     * @return the writable reference to electron temperature at previous time step
+     */
+    virtual Real &       Tn_last()
+    { return _data_storage->scalar ( _Tn_last_, _offset ); }
 
-  /**
-   * @return the writable reference to electron temperature at previous time step
-   */
-  virtual PetscScalar &       Tn_last()
-  { return _aux_scalar_value[_Tn_last_]; }
+    /**
+     * @return the hole temperature at previous time step
+     */
+    virtual Real         Tp_last()          const
+    { return _data_storage->scalar ( _Tp_last_, _offset ); }
+
+    /**
+     * @return the writable reference to hole temperature at previous time step
+     */
+    virtual Real &       Tp_last()
+    { return _data_storage->scalar ( _Tp_last_, _offset ); }
 
-  /**
-   * @return the hole temperature at previous time step
-   */
-  virtual PetscScalar         Tp_last()          const
-    { return _aux_scalar_value[_Tp_last_]; }
 
-  /**
-   * @return the writable reference to hole temperature at previous time step
-   */
-  virtual PetscScalar &       Tp_last()
-  { return _aux_scalar_value[_Tp_last_]; }
+
 
+    /**
+     * @return the mass density of the material
+     */
+    virtual Real         density()          const
+    { return _data_storage->scalar ( _density_, _offset ); }
 
-  /**
-   * @return the quantum conduction band at previous time step
-   */
-  virtual PetscScalar         Eqc_last()          const
-    { return _aux_scalar_value[_Eqc_last_]; }
+    /**
+     * @return the writable reference to the mass density of the material
+     */
+    virtual Real &       density()
+    { return _data_storage->scalar ( _density_, _offset ); }
+
+
+
+
+    /**
+     * @return the electron affinity
+     */
+    virtual Real         affinity()          const
+    { return _data_storage->scalar ( _affinity_, _offset ); }
 
-  /**
-   * @return the writable reference to quantum conduction band at previous time step
-   */
-  virtual PetscScalar &       Eqc_last()
-  { return _aux_scalar_value[_Eqc_last_]; }
+    /**
+     * @return the writable reference to the electron affinity
+     */
+    virtual Real &       affinity()
+    { return _data_storage->scalar ( _affinity_, _offset ); }
+
+
+    /**
+     * @return the conduction band
+     */
+    virtual Real         Ec()          const
+    { return _data_storage->scalar ( _Ec_, _offset ); }
 
+    /**
+     * @return the writable reference to the conduction band
+     */
+    virtual Real &       Ec()
+    { return _data_storage->scalar ( _Ec_, _offset ); }
 
 
-  /**
-   * @return the quantum valence band at previous time step
-   */
-  virtual PetscScalar         Eqv_last()          const
-    { return _aux_scalar_value[_Eqv_last_]; }
-
-  /**
-   * @return the writable reference to quantum valence band at previous time step
-   */
-  virtual PetscScalar &       Eqv_last()
-  { return _aux_scalar_value[_Eqv_last_]; }
-
-
-
-
-  /**
-   * @return the mass density of the material
-   */
-  virtual PetscScalar         density()          const
-    { return _aux_scalar_value[_density_]; }
-
-  /**
-   * @return the writable reference to the mass density of the material
-   */
-  virtual PetscScalar &       density()
-  { return _aux_scalar_value[_density_]; }
-
-
-
-
-  /**
-   * @return the electron affinity
-   */
-  virtual PetscScalar         affinity()          const
-    { return _aux_scalar_value[_affinity_]; }
-
-  /**
-   * @return the writable reference to the electron affinity
-   */
-  virtual PetscScalar &       affinity()
-  { return _aux_scalar_value[_affinity_]; }
-
-
-  /**
-   * @return the conduction band
-   */
-  virtual PetscScalar         Ec()          const
-  { return _aux_scalar_value[_Ec_]; }
-
-  /**
-   * @return the writable reference to the conduction band
-   */
-  virtual PetscScalar &       Ec()
-  { return _aux_scalar_value[_Ec_]; }
-
-
-  /**
-   * @return the valance band
-   */
-  virtual PetscScalar         Ev()          const
-  { return _aux_scalar_value[_Ev_]; }
-
-  /**
-   * @return the writable reference to the valance band
-   */
-  virtual PetscScalar &       Ev()
-  { return _aux_scalar_value[_Ev_]; }
-
-
-  /**
-   * @return the dielectric permittivity
-   */
-  virtual PetscScalar         eps()          const
-    { return _aux_scalar_value[_eps_]; }
-
-  /**
-   * @return the writable reference to the dielectric permittivity
-   */
-  virtual PetscScalar &       eps()
-  { return _aux_scalar_value[_eps_]; }
-
-
-  /**
-   * @return the megnetic permeability
-   */
-  virtual PetscScalar         mu()          const
-    { return _aux_scalar_value[_mu_]; }
-
-  /**
-   * @return the writable reference to the megnetic permeability
-   */
-  virtual PetscScalar &       mu()
-  { return _aux_scalar_value[_mu_]; }
-
-
-  /**
-   * @return the effective density of states in the conduction band
-   */
-  virtual PetscScalar         Nc()          const
-    { return _aux_scalar_value[_Nc_]; }
-
-  /**
-   * @return the writable reference to the effective density of states in the conduction band
-   */
-  virtual PetscScalar &       Nc()
-  { return _aux_scalar_value[_Nc_]; }
-
-
-  /**
-   * @return the effective density of states in the valence band
-   */
-  virtual PetscScalar         Nv()          const
-    { return _aux_scalar_value[_Nv_]; }
-
-  /**
-   * @return the writable reference to the effective density of states in the valence band
-   */
-  virtual PetscScalar &       Nv()
-  { return _aux_scalar_value[_Nv_]; }
-
-  /**
-   * @return the bandgap
-   */
-  virtual PetscScalar         Eg()          const
-    { return _aux_scalar_value[_Eg_]; }
-
-  /**
-   * @return the writable reference to the bandgap
-   */
-  virtual PetscScalar &       Eg()
-  { return _aux_scalar_value[_Eg_]; }
-
-
-
-  /**
-   * @return the mole fraction for single compound material
-   */
-  virtual PetscScalar         mole_x()          const
-    { return _aux_scalar_value[_mole_x_]; }
-
-  /**
-   * @return the writable reference to the mole fraction for single compound material
-   */
-  virtual PetscScalar &       mole_x()
-  { return _aux_scalar_value[_mole_x_]; }
-
-
-
-  /**
-  * @return the mole fraction for dual compound material
-  */
-  virtual PetscScalar         mole_y()          const
-    { return _aux_scalar_value[_mole_y_]; }
-
-  /**
-   * @return the writable reference to the mole fraction for dual compound material
-   */
-  virtual PetscScalar &       mole_y()
-  { return _aux_scalar_value[_mole_y_]; }
-
-
-  /**
-   * @return the general doping concentration of acceptor
-   */
-  virtual PetscScalar         Na()          const
-    { return _aux_scalar_value[_Na_]; }
-
-  /**
-   * @return the writable reference to the general doping concentration of acceptor
-   */
-  virtual PetscScalar &       Na()
-  { return _aux_scalar_value[_Na_]; }
-
-  /**
-   * @return the general doping concentration of donor
-   */
-  virtual PetscScalar         Nd()          const
-    { return _aux_scalar_value[_Nd_]; }
-
-  /**
-   * @return the writable reference to the general doping concentration of donor
-   */
-  virtual PetscScalar &       Nd()
-  { return _aux_scalar_value[_Nd_]; }
-
-
-  /**
-   * @return the concentration of donor atom phosphorus
-   */
-  virtual PetscScalar         P()          const
-    { return _aux_scalar_value[_P_]; }
-
-  /**
-   * @return the writable reference to concentration of donor atom phosphorus
-   */
-  virtual PetscScalar &       P()
-  { return _aux_scalar_value[_P_]; }
-
-  /**
-   * @return the concentration of donor atom arsenic
-   */
-  virtual PetscScalar         As()          const
-    { return _aux_scalar_value[_As_]; }
-
-  /**
-   * @return the writable reference to the concentration of donor atom arsenic
-   */
-  virtual PetscScalar &       As()
-  { return _aux_scalar_value[_As_]; }
-
-
-  /**
-   * @return the concentration of donor atom antimony
-   */
-  virtual PetscScalar         Sb()          const
-    { return _aux_scalar_value[_Sb_]; }
-
-  /**
-   * @return the writable reference to concentration of donor atom antimony
-   */
-  virtual PetscScalar &       Sb()
-  { return _aux_scalar_value[_Sb_]; }
-
-  /**
-   * @return the concentration of acceptor atom boron
-   */
-  virtual PetscScalar         B()          const
-    { return _aux_scalar_value[_B_]; }
-
-  /**
-   * @return the writable reference to the concentration of acceptor atom boron
-   */
-  virtual PetscScalar &       B()
-  { return _aux_scalar_value[_B_]; }
-
-
-  /**
-   * @return the total acceptor concentration
-   */
-  virtual PetscScalar         Total_Na()     const
-    { return _aux_scalar_value[_Na_] + _aux_scalar_value[_B_]; }
-
-  /**
-   * @return the total donor concentration
-   */
-  virtual PetscScalar         Total_Nd()     const
-    {return _aux_scalar_value[_Nd_] + _aux_scalar_value[_P_] + _aux_scalar_value[_As_] + _aux_scalar_value[_Sb_];}
-
-  /**
-   * @return net concentration
-   */
-  virtual PetscScalar         Net_doping()   const
+    /**
+     * @return the valance band
+     */
+    virtual Real         Ev()          const
+    { return _data_storage->scalar ( _Ev_, _offset ); }
+
+    /**
+     * @return the writable reference to the valance band
+     */
+    virtual Real &       Ev()
+    { return _data_storage->scalar ( _Ev_, _offset ); }
+
+
+    /**
+     * @return the dielectric permittivity
+     */
+    virtual Real         eps()          const
+    { return _data_storage->scalar ( _eps_, _offset ); }
+
+    /**
+     * @return the writable reference to the dielectric permittivity
+     */
+    virtual Real &       eps()
+    { return _data_storage->scalar ( _eps_, _offset ); }
+
+
+    /**
+     * @return the megnetic permeability
+     */
+    virtual Real         mu()          const
+    { return _data_storage->scalar ( _mu_, _offset ); }
+
+    /**
+     * @return the writable reference to the megnetic permeability
+     */
+    virtual Real &       mu()
+    { return _data_storage->scalar ( _mu_, _offset ); }
+
+
+    /**
+     * @return the effective density of states in the conduction band
+     */
+    virtual Real         Nc()          const
+    { return _data_storage->scalar ( _Nc_, _offset ); }
+
+    /**
+     * @return the writable reference to the effective density of states in the conduction band
+     */
+    virtual Real &       Nc()
+    { return _data_storage->scalar ( _Nc_, _offset ); }
+
+
+    /**
+     * @return the effective density of states in the valence band
+     */
+    virtual Real         Nv()          const
+    { return _data_storage->scalar ( _Nv_, _offset ); }
+
+    /**
+     * @return the writable reference to the effective density of states in the valence band
+     */
+    virtual Real &       Nv()
+    { return _data_storage->scalar ( _Nv_, _offset ); }
+
+    /**
+     * @return the bandgap
+     */
+    virtual Real         Eg()          const
+    { return _data_storage->scalar ( _Eg_, _offset ); }
+
+    /**
+     * @return the writable reference to the bandgap
+     */
+    virtual Real &       Eg()
+    { return _data_storage->scalar ( _Eg_, _offset ); }
+
+
+
+    /**
+     * @return the mole fraction for single compound material
+     */
+    virtual Real         mole_x()          const
+    { return _data_storage->scalar ( _mole_x_, _offset ); }
+
+    /**
+     * @return the writable reference to the mole fraction for single compound material
+     */
+    virtual Real &       mole_x()
+    { return _data_storage->scalar ( _mole_x_, _offset ); }
+
+
+
+    /**
+    * @return the mole fraction for dual compound material
+    */
+    virtual Real         mole_y()          const
+    { return _data_storage->scalar ( _mole_y_, _offset ); }
+
+    /**
+     * @return the writable reference to the mole fraction for dual compound material
+     */
+    virtual Real &       mole_y()
+    { return _data_storage->scalar ( _mole_y_, _offset ); }
+
+    /**
+     * @return the electron mobility
+     */
+    virtual Real         mun()          const
+    { return _data_storage->scalar ( _mun_, _offset ); }
+
+    /**
+     * @return the writable reference to electron mobility
+     */
+    virtual Real &       mun()
+    { return _data_storage->scalar ( _mun_, _offset ); }
+
+    /**
+     * @return the hole mobility
+     */
+    virtual Real         mup()          const
+    { return _data_storage->scalar ( _mup_, _offset ); }
+
+    /**
+     * @return the writable reference to hole mobility
+     */
+    virtual Real &       mup()
+    { return _data_storage->scalar ( _mup_, _offset ); }
+
+    /**
+     * @return the general doping concentration of acceptor
+     */
+    virtual Real         Na()          const
+    { return _data_storage->scalar ( _Na_, _offset ); }
+
+    /**
+     * @return the writable reference to the general doping concentration of acceptor
+     */
+    virtual Real &       Na()
+    { return _data_storage->scalar ( _Na_, _offset ); }
+
+    /**
+     * @return the general doping concentration of donor
+     */
+    virtual Real         Nd()          const
+    { return _data_storage->scalar ( _Nd_, _offset ); }
+
+    /**
+     * @return the writable reference to the general doping concentration of donor
+     */
+    virtual Real &       Nd()
+    { return _data_storage->scalar ( _Nd_, _offset ); }
+
+
+
+
+
+    /**
+     * @return the total acceptor concentration
+     */
+    virtual Real         Total_Na()     const
+    {
+      return _data_storage->scalar ( _Na_, _offset );
+    }
+
+    /**
+     * @return the total donor concentration
+     */
+    virtual Real         Total_Nd()     const
+    {
+      return _data_storage->scalar ( _Nd_, _offset );
+    }
+
+    /**
+     * @return net concentration
+     */
+    virtual Real         Net_doping()   const
     {return Total_Nd()-Total_Na();}
 
-  /**
-   * @return the total donor concentration
-   */
-  virtual PetscScalar         Total_doping() const
-    {return Total_Nd()+Total_Na();}
+    /**
+     * @return the total donor concentration
+     */
+    virtual Real         Total_doping() const
+    {return Total_Nd() +Total_Na();}
 
-  /**
-   * @return net charge concentration
-   */
-  virtual PetscScalar         Net_charge()   const
-    {return (Total_Nd()-n()) + (p()-Total_Na());}
+    /**
+     * @return net charge concentration
+     */
+    virtual Real         Net_charge()   const
+    {return ( Total_Nd()-n() ) + ( p()-Total_Na() );}
 
-  /**
-   * @return intrinsic carrier concentration.
-   * @note will not consider bandgap narrowing
-   */
-  virtual PetscScalar         ni()           const;
-
-
-  /**
-   * @return the quasi-fermi potential of electron
-   */
-  virtual PetscScalar         qFn()           const;
-
-  /**
-   * @return the quasi-fermi potential of hole
-   */
-  virtual PetscScalar         qFp()           const;
+    /**
+     * @return intrinsic carrier concentration.
+     * @note will not consider bandgap narrowing
+     */
+    virtual Real         ni()           const;
 
 
+    /**
+     * @return the quasi-fermi potential of electron
+     */
+    virtual Real         qFn()           const
+    { return _data_storage->scalar ( _qFn_, _offset ); }
 
-  /**
-   * @return the electrical field
-   */
-  virtual VectorValue<PetscScalar> E()       const
-    { return _vecctor_value[_E_];}
-
-
-  /**
-   * @return the writable reference to electrical field
-   */
-  virtual VectorValue<PetscScalar> & E()
-  { return _vecctor_value[_E_];}
+    /**
+     * @return the quasi-fermi potential of electron
+     */
+    virtual Real &       qFn()
+    { return _data_storage->scalar ( _qFn_, _offset ); }
 
 
-  /**
-   * @return the electron current
-   */
-  virtual VectorValue<PetscScalar> Jn()       const
-  { return _vecctor_value[_Jn_];}
+    /**
+     * @return the quasi-fermi potential of hole
+     */
+    virtual Real         qFp()           const
+    { return _data_storage->scalar ( _qFp_, _offset ); }
+
+    /**
+     * @return the quasi-fermi potential of hole
+     */
+    virtual Real &       qFp()
+    { return _data_storage->scalar ( _qFp_, _offset ); }
+
+    /**
+     * @return the charge density
+     * this variable is used for data exchange
+     * between hdm solver and poisson solver
+     */
+    virtual Real         rho()          const
+    { return _data_storage->scalar ( _rho_, _offset ); }
 
 
-  /**
-   * @return the writable reference to electron current
-   */
-  virtual VectorValue<PetscScalar> & Jn()
-  { return _vecctor_value[_Jn_];}
+    /**
+     * @return the writable reference to charge density
+     */
+    virtual Real &       rho()
+    { return _data_storage->scalar ( _rho_, _offset ); }
 
 
-  /**
-   * @return the hole current
-   */
-  virtual VectorValue<PetscScalar> Jp()       const
-  { return _vecctor_value[_Jp_];}
+    /**
+     * @return the recombnation rate
+     */
+    virtual Real         Recomb()          const
+    { return _data_storage->scalar ( _Recomb_, _offset ); }
+
+    /**
+     * @return the writable reference to recombnation rate
+     */
+    virtual Real &       Recomb()
+    { return _data_storage->scalar ( _Recomb_, _offset ); }
 
 
-  /**
-   * @return the writable reference to hole current
-   */
-  virtual VectorValue<PetscScalar> & Jp()
-  { return _vecctor_value[_Jp_];}
+    /**
+     * @return the direct(optical) recombnation rate
+     */
+    virtual Real         Recomb_Dir()          const
+    { return _data_storage->scalar ( _Recomb_Dir_, _offset ); }
+
+    /**
+     * @return the writable reference to direct(optical) recombnation rate
+     */
+    virtual Real &       Recomb_Dir()
+    { return _data_storage->scalar ( _Recomb_Dir_, _offset ); }
 
 
+    /**
+     * @return the SRH recombnation rate
+     */
+    virtual Real         Recomb_SRH()          const
+    { return _data_storage->scalar ( _Recomb_SRH_, _offset ); }
 
-  /**
-   * @return the carrier generation ratio due to OptG and PatG
-   */
-  virtual PetscScalar         Field_G()          const
-  { return _aux_scalar_value[_Field_G_]; }
+    /**
+     * @return the writable reference to SRH recombnation rate
+     */
+    virtual Real &       Recomb_SRH()
+    { return _data_storage->scalar ( _Recomb_SRH_, _offset ); }
 
-  /**
-   * @return the writable carrier generation ratio due to OptG and PatG
-   */
-  virtual PetscScalar &       Field_G()
-  { return _aux_scalar_value[_Field_G_]; }
 
-  /**
-   * @return the optical generation ratio
-   */
-  virtual  PetscScalar OptG()       const
-  { return _aux_scalar_value[_OptG_];}
+    /**
+     * @return the Auger recombnation rate
+     */
+    virtual Real         Recomb_Auger()          const
+    { return _data_storage->scalar ( _Recomb_Auger_, _offset ); }
 
-  /**
-   * @return the writable optical generation ratio
-   */
-  virtual  PetscScalar & OptG()
-  { return _aux_scalar_value[_OptG_];}
+    /**
+     * @return the writable reference to Auger recombnation rate
+     */
+    virtual Real &       Recomb_Auger()
+    { return _data_storage->scalar ( _Recomb_Auger_, _offset ); }
 
-  /**
-   * @return the heat generation ratio due to optical incident
-   */
-  virtual PetscScalar         OptQ()          const
-  { return _aux_scalar_value[_OptQ_]; }
 
-  /**
-   * @return the writable heat generation ratio due to optical incident
-   */
-  virtual PetscScalar &       OptQ()
-  { return _aux_scalar_value[_OptQ_]; }
+    /**
+     * @return the electrical field
+     */
+    virtual VectorValue<Real> E()       const
+    { return _data_storage->vector ( _E_, _offset );}
 
-  /**
-   * @return the particle generation ratio
-   */
-  virtual PetscScalar         PatG()          const
-  { return _aux_scalar_value[_PatG_]; }
 
-  /**
-   * @return the writable particle generation ratio
-   */
-  virtual PetscScalar &       PatG()
-  { return _aux_scalar_value[_PatG_]; }
+    /**
+     * @return the writable reference to electrical field
+     */
+    virtual VectorValue<Real> & E()
+    { return _data_storage->vector ( _E_, _offset );}
+
+
+    /**
+     * @return the electron current
+     */
+    virtual VectorValue<Real> Jn()       const
+    { return _data_storage->vector ( _Jn_, _offset );}
+
+
+    /**
+     * @return the writable reference to electron current
+     */
+    virtual VectorValue<Real> & Jn()
+    { return _data_storage->vector ( _Jn_, _offset );}
+
+
+    /**
+     * @return the hole current
+     */
+    virtual VectorValue<Real> Jp()       const
+    { return _data_storage->vector ( _Jp_, _offset );}
+
+
+    /**
+     * @return the writable reference to hole current
+     */
+    virtual VectorValue<Real> & Jp()
+    { return _data_storage->vector ( _Jp_, _offset );}
+
+
+    /**
+     * @return the carrier generation ratio due to OptG and PatG
+     */
+    virtual Real         Field_G()          const
+    { return _data_storage->scalar ( _Field_G_, _offset ); }
+
+    /**
+     * @return the writable carrier generation ratio due to OptG and PatG
+     */
+    virtual Real &       Field_G()
+    { return _data_storage->scalar ( _Field_G_, _offset ); }
+
+    /**
+     * @return the optical generation ratio
+     */
+    virtual  Real OptG()       const
+    { return _data_storage->scalar ( _OptG_, _offset );}
+
+    /**
+     * @return the writable optical generation ratio
+     */
+    virtual  Real & OptG()
+    { return _data_storage->scalar ( _OptG_, _offset );}
+
+    /**
+     * @return the heat generation ratio due to optical incident
+     */
+    virtual Real         OptQ()          const
+    { return _data_storage->scalar ( _OptQ_, _offset ); }
+
+    /**
+     * @return the writable heat generation ratio due to optical incident
+     */
+    virtual Real &       OptQ()
+    { return _data_storage->scalar ( _OptQ_, _offset ); }
+
+    /**
+     * @return the particle generation ratio
+     */
+    virtual Real         PatG()          const
+    { return _data_storage->scalar ( _PatG_, _offset ); }
+
+    /**
+     * @return the writable particle generation ratio
+     */
+    virtual Real &       PatG()
+    { return _data_storage->scalar ( _PatG_, _offset ); }
+
+
+    /**
+     * @return the electron injected in to the FVM cell.
+     * NOTE: it is the flux flow into the FVM cell or total electron density generated in the cell
+     */
+    virtual Real         EIn()          const
+    { return _data_storage->scalar ( _EIn_, _offset ); }
+
+    /**
+     * @return the writable reference of electron injected in to the FVM cell.
+     */
+    virtual Real &       EIn()
+    { return _data_storage->scalar ( _EIn_, _offset ); }
+
+
+    /**
+     * @return the hole inject injected in to the FVM cell.
+     */
+    virtual Real         HIn()          const
+    { return _data_storage->scalar ( _HIn_, _offset ); }
+
+    /**
+     * @return the writable reference of hole injected in to the FVM cell.
+     */
+    virtual Real &       HIn()
+    { return _data_storage->scalar ( _HIn_, _offset ); }
+
 
 };
 

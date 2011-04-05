@@ -54,6 +54,13 @@ public:
    */
   virtual int destroy_solver();
 
+
+  /**
+   * do pre-process before each solve action
+   */
+  virtual int pre_solve_process(bool load_solution=true);
+
+
   /**
    * @return the bandwidth contributed by each boundary node
    */
@@ -97,9 +104,14 @@ public:
   void ground_spice_0_node(Mat *jac);
 
   /**
+   * output information about spice node
+   */
+  void print_spice_node() const;
+
+  /**
    * compute steady-state
    */
-  virtual int solve_dcop();
+  virtual int solve_dcop(bool tran_op=false);
 
   /**
    * do dcsweep, can be both voltage scan or current scan
@@ -120,6 +132,7 @@ public:
    * sens convergence criteria for mixed type solvers
    */
   virtual void petsc_snes_convergence_test(PetscInt its, PetscReal , PetscReal pnorm, PetscReal fnorm, SNESConvergedReason *reason);
+
 
 protected:
 

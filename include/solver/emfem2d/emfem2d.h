@@ -63,6 +63,12 @@ public:
    */
   virtual int create_solver();
 
+
+  /**
+   * virtual functions, prepare solution and aux variables used by this solver
+   */
+  virtual int set_variables();
+
   /**
    * virtual function, do the solve process
    */

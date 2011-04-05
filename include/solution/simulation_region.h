@@ -27,7 +27,7 @@
 #include <vector>
 #include <string>
 
-
+#include "variable_define.h"
 #include "fvm_node_info.h"
 #include "fvm_node_data.h"
 #include "fvm_cell_data.h"
@@ -36,11 +36,17 @@
 #include "advanced_model.h"
 #include "enum_region.h"
 
+#if defined(HAVE_TR1_UNORDERED_MAP)
+#include <tr1/unordered_map>
+#elif defined(HAVE_TR1_UNORDERED_MAP_WITH_STD_HEADER) || defined(HAVE_UNORDERED_MAP)
+#include <unordered_map>
+#endif
+
 namespace Parser {
   class Parameter;
 }
 class SolverBase;
-class SimulationSystem;
+class MeshBase;
 class BoundaryCondition;
 namespace Material {
   class MaterialBase;
@@ -61,7 +67,7 @@ public:
   /**
    * constructor
    */
-  SimulationRegion(const std::string &name, const std::string &material, SimulationSystem & system);
+  SimulationRegion(const std::string &name, const std::string &material, const PetscScalar T);
 
   /**
    * destructor
@@ -72,6 +78,11 @@ public:
    * @return the region property
    */
   virtual SimulationRegionType type() const=0;
+
+  /**
+   * @return the region property in string
+   */
+  virtual std::string type_name() const=0;
 
   /**
    * virtual function for region data init,
@@ -96,10 +107,21 @@ public:
   { _subdomain_id = sub_id; }
 
   /**
+   * get subdomain id of the region
+   */
+  unsigned int subdomain_id() const
+  { return _subdomain_id; }
+
+  /**
    * set subdomain id to region pointer map
    */
-  void set_subdomain_id_to_region_map(const std::map<unsigned int,  SimulationRegion *> &_map)
+  static void set_subdomain_id_to_region_map(const std::map<unsigned int,  SimulationRegion *> &_map)
   { _subdomain_id_to_region_map = _map; }
+
+  /**
+   * reseve memory for region data block
+   */
+  void reserve_data_block(unsigned int n_cell_data, unsigned int n_node_data);
 
   /**
    * insert local mesh element into the region, only copy the pointer
@@ -119,6 +141,13 @@ public:
    */
   unsigned int n_cell() const
   { return _region_cell.size(); }
+
+
+  /**
+   * @return the total edge number in this region
+   */
+  unsigned int n_edge() const
+  { return _region_edges.size(); }
 
   /**
    * @return the on processor cell number in this region
@@ -140,7 +169,7 @@ public:
   /**
    * @return nth region elem data
    */
-  FVM_CellData * get_region_elem_Data(unsigned int n)
+  FVM_CellData * get_region_elem_data(unsigned int n)
   { return _region_cell_data[n]; }
 
   /**
@@ -156,12 +185,18 @@ public:
   unsigned int n_on_processor_node() const;
 
   /**
+   * get all the region node ids by order,
+   * must executed in parallel.
+   */
+  void region_node(std::vector<unsigned int> & nodes) const;
+
+  /**
    * @return the fvm_node pointer by Node *
    * if no find, NULL is returned
    */
   FVM_Node * region_fvm_node(const Node* node) const
   {
-    const_node_iterator it = _region_node.find( node->id() );
+    std::map<unsigned int, FVM_Node *>::const_iterator it = _region_node.find( node->id() );
     if( it!=_region_node.end() )
       return (*it).second;
     return NULL;
@@ -173,7 +208,7 @@ public:
    */
   FVM_Node * region_fvm_node(unsigned int id) const
   {
-    const_node_iterator it = _region_node.find( id );
+    std::map<unsigned int, FVM_Node *>::const_iterator it = _region_node.find( id );
     if( it!=_region_node.end() )
       return (*it).second;
     return NULL;
@@ -185,7 +220,7 @@ public:
    */
   FVM_NodeData * region_node_data(const Node* node) const
   {
-    const_node_iterator it = _region_node.find( node->id() );
+    std::map<unsigned int, FVM_Node *>::const_iterator it = _region_node.find( node->id() );
     if( it!=_region_node.end() )
       return (*it).second->node_data();
     return NULL;
@@ -197,7 +232,7 @@ public:
    */
   FVM_NodeData * region_node_data(unsigned int id) const
   {
-    const_node_iterator it = _region_node.find( id );
+    std::map<unsigned int, FVM_Node *>::const_iterator it = _region_node.find( id );
     if( it!=_region_node.end() )
       return (*it).second->node_data();
     return NULL;
@@ -209,11 +244,25 @@ public:
   const std::string & name() const
   { return _region_name; }
 
+
+  /**
+   * @return region's label(name)
+   */
+  const std::string & label() const
+  { return _region_name; }
+
+
   /**
    * @return region's material
    */
   const std::string & material() const
     { return _region_material; }
+
+  /**
+   * @return the boundingbox of the region
+   */
+  const std::pair<Point, Point> & boundingbox() const
+  { return _region_bounding_box; }
 
   /**
    * @return const reference of element in this region
@@ -224,7 +273,7 @@ public:
   /**
    * clear stored data
    */
-  void clear();
+  virtual void clear();
 
 
   typedef std::vector<const Elem*>::iterator             element_iterator;
@@ -263,52 +312,172 @@ public:
     return _region_cell.end();
   }
 
-  /**
-   * typedef node_iterator
-   */
-  typedef std::map< unsigned int, FVM_Node * >::iterator             node_iterator;
+
 
   /**
-   * typedef const_node_iterator
+   * typedef local_node_iterator
    */
-  typedef std::map< unsigned int, FVM_Node * >::const_iterator       const_node_iterator;
+  typedef std::vector<FVM_Node * >::iterator             local_node_iterator;
 
   /**
-   * node default begin() accessor
+   * typedef const_local_node_iterator
    */
-  node_iterator nodes_begin        ()
+  typedef std::vector<FVM_Node * >::const_iterator       const_local_node_iterator;
+
+  /**
+   * local node default begin() accessor
+   */
+  local_node_iterator on_local_nodes_begin        ()
   {
-    return _region_node.begin();
+    return _region_local_node.begin();
   }
 
   /**
-   * node default end() accessor
+   * local node default end() accessor
    */
-  node_iterator nodes_end          ()
+  local_node_iterator on_local_nodes_end          ()
   {
-    return _region_node.end();
+    return _region_local_node.end();
   }
 
   /**
-   * node default const begin() accessor
+   * local node default const begin() accessor
    */
-  const_node_iterator nodes_begin        () const
+  const_local_node_iterator on_local_nodes_begin        () const
   {
-    return _region_node.begin();
+    return _region_local_node.begin();
   }
 
   /**
-   * node default const end() accessor
+   * local node default const end() accessor
    */
-  const_node_iterator nodes_end          () const
+  const_local_node_iterator on_local_nodes_end          () const
   {
-    return _region_node.end();
+    return _region_local_node.end();
+  }
+
+
+  /**
+   * typedef processor_node_iterator
+   */
+  typedef std::vector<FVM_Node * >::iterator             processor_node_iterator;
+
+  /**
+   * typedef const_processor_node_iterator
+   */
+  typedef std::vector<FVM_Node * >::const_iterator       const_processor_node_iterator;
+
+  /**
+   * processor node default begin() accessor
+   */
+  processor_node_iterator on_processor_nodes_begin        ()
+  {
+    return _region_processor_node.begin();
   }
 
   /**
-   * for some post process
+   * processor node default end() accessor
    */
-  void prepare_for_use();
+  processor_node_iterator on_processor_nodes_end          ()
+  {
+    return _region_processor_node.end();
+  }
+
+  /**
+   * processor node default const begin() accessor
+   */
+  const_processor_node_iterator on_processor_nodes_begin        () const
+  {
+    return _region_processor_node.begin();
+  }
+
+  /**
+   * processor node default const end() accessor
+   */
+  const_processor_node_iterator on_processor_nodes_end          () const
+  {
+    return _region_processor_node.end();
+  }
+
+
+
+  /**
+   * typedef edge_iterator
+   */
+  typedef std::vector< std::pair<FVM_Node *, FVM_Node *> >::iterator             edge_iterator;
+
+
+  /**
+   * typedef const_edge_iterator
+   */
+  typedef std::vector< std::pair<FVM_Node *, FVM_Node *> >::const_iterator       const_edge_iterator;
+
+
+  /**
+   * processor edge default begin() accessor
+   */
+  edge_iterator edges_begin        ()
+  {
+    return _region_edges.begin();
+  }
+
+  /**
+   * processor edge default end() accessor
+   */
+  edge_iterator edges_end          ()
+  {
+    return _region_edges.end();
+  }
+
+  /**
+   * processor edge default const begin() accessor
+   */
+  const_edge_iterator edges_begin        () const
+  {
+    return _region_edges.begin();
+  }
+
+  /**
+   * processor edge default const end() accessor
+   */
+  const_edge_iterator edges_end        () const
+  {
+    return _region_edges.end();
+  }
+
+  /**
+   * @return the corresponding location of an element's edge in _region_edges
+   * by given an element pointer, and the local index of the edge
+   */
+  unsigned int elem_edge_index(const Elem* elem, unsigned int e) const
+  { return _region_elem_edge_in_edges_index.find(elem)->second[e]; }
+
+  /**
+   * (re)build _region_local_node and _region_processor_node for fast iteration
+   */
+  void rebuild_region_fvm_node_list();
+
+  /**
+   * for some pre process
+   */
+  virtual void prepare_for_use();
+
+  /**
+   * delete fvm_node NOT on this processor, dangerous
+   */
+  void remove_remote_object();
+
+  /**
+   * @return true if we are neighbor
+   */
+  bool is_neighbor(const SimulationRegion *r) const;
+
+  /**
+   * @return region neighbors
+   */
+  const std::vector<SimulationRegion *> & neighbors() const
+  { return _region_neighbors; }
+
 
   /**
    * setting some physical model to region.
@@ -331,12 +500,71 @@ public:
   /**
    * @return the base class of material database
    */
-  virtual Material::MaterialBase * get_material_base()=0;
+  virtual Material::MaterialBase * get_material_base() const=0;
+
+  /**
+   * set the variables for this region
+   */
+  virtual void set_region_variables()=0;
+
+  /**
+   * add a solution variable by full define, also allocate memory when the variable_valid flag is true
+   * @return variable_index
+   */
+  unsigned int add_variable(const SimulationVariable &v);
+
+  /**
+   * add a predefined solution variable by it's name define, also allocate memory
+   * @return true for success
+   */
+  bool add_variable(const std::string &v, DataLocation);
+
+  /**
+   * @return true when the variable exist
+   */
+  bool has_variable(const std::string &v, DataLocation) const;
+
+  /**
+   * get a SimulationVariable by its name and location
+   * should make sure the variable exist
+   */
+  const SimulationVariable & get_variable(const std::string &v, DataLocation) const;
+
+  /**
+   * get a SimulationVariable by its name and location, @return true when this variable exist
+   */
+  bool get_variable(const std::string &v, DataLocation, SimulationVariable & ) const;
+
+  /**
+   * get all the user_defined SimulationVariable by data location and data type
+   */
+  void get_user_defined_variable(DataLocation, DataType, std::vector<SimulationVariable> & ) const;
+
+  /**
+   * region level data access functions, gather the variable in to the vector
+   * must executed in parallel. the data is ordered by node id or cell id,
+   * thus has the same order as _region_node or _region_cell
+   * @return true for success
+   */
+  template <typename T>
+  bool get_variable_data(const std::string &v, DataLocation, std::vector<T> &) const;
+
+  /**
+   * @return the region node based variables
+   */
+  const std::map<std::string, SimulationVariable> & region_point_variables() const
+  { return _region_point_variables; }
+
+  /**
+   * @return the region cell based variables
+   */
+  const std::map<std::string, SimulationVariable> & region_cell_variables() const
+  { return _region_cell_variables; }
 
   /**
    * @return the optical refraction index of the region
    */
-  virtual Complex get_optical_refraction(double )
+  virtual Complex get_optical_refraction(double lamda)
   { return Complex(0.0, 0.0); }
 
   /**
@@ -354,9 +582,15 @@ public:
   { return 1.0; }
 
   /**
-   * @return maretial density [g cm^-3]
+   * @return material density [g cm^-3]
    */
   virtual double get_density(PetscScalar ) const
+  { return 0.0; }
+
+  /**
+   * @return affinity of material
+   */
+  virtual double get_affinity(PetscScalar T) const
   { return 0.0; }
 
   /**
@@ -367,8 +601,7 @@ public:
   /**
    * virtual function for set different model, calibrate parameters to PMI
    */
-  virtual void set_pmi(const std::string &type, const std::string &model_name,
-                       const std::vector<Parser::Parameter> & pmi_parameters);
+  virtual void set_pmi(const std::string &type, const std::string &model_name, std::vector<Parser::Parameter> & pmi_parameters);
 
   /**
    * get an information string of the PMI models
@@ -382,7 +615,7 @@ public:
   {
     Point p1(1e30,1e30,1e30), p2(-1e30,-1e30,-1e30);
 
-    for(const_node_iterator it=_region_node.begin(); it!=_region_node.end(); ++it )
+    for(std::map<unsigned int, FVM_Node *>::const_iterator it=_region_node.begin(); it!=_region_node.end(); ++it )
     {
       (*it).second->root_node()->assign_min_to(p1);
       (*it).second->root_node()->assign_max_to(p2);
@@ -394,13 +627,13 @@ public:
   /**
    * @return true if 2D hanging node exist
    */
-  bool is_2d_hanging_node() const;
+  bool has_2d_hanging_node() const;
 
 
   /**
    * @return true if 3D hanging node exist
    */
-  bool is_3d_hanging_node() const;
+  bool has_3d_hanging_node() const;
 
 
   /**
@@ -408,7 +641,7 @@ public:
    */
   void add_hanging_node_on_side(const Node * node, const Elem * elem, unsigned int s)
   {
-    node_iterator it = _region_node.find(node->id());
+    std::map<unsigned int, FVM_Node *>::iterator it = _region_node.find(node->id());
     genius_assert( it!=_region_node.end() );
 
     const FVM_Node * fvm_node = (*it).second;
@@ -420,7 +653,7 @@ public:
    */
   void add_hanging_node_on_edge(const Node * node, const Elem * elem, unsigned int e)
   {
-    node_iterator it = _region_node.find(node->id());
+    std::map<unsigned int, FVM_Node *>::iterator it = _region_node.find(node->id());
     genius_assert( it!=_region_node.end() );
 
     const FVM_Node * fvm_node = (*it).second;
@@ -477,11 +710,6 @@ public:
     return _hanging_node_on_elem_edge.end();
   }
 
-  /**
-   * save a pointer of solver in region level
-   */
-  void set_current_solver(SolverBase * sv)
-  { solver = sv; }
 
 protected:
 
@@ -498,9 +726,26 @@ protected:
 
 
   /**
-   * every region hold this data, then one can find neighbor region
+   * region's default temperature
    */
-  std::map<unsigned int,  SimulationRegion *>  _subdomain_id_to_region_map;
+  PetscScalar                    _T_external;
+
+
+  /**
+   * reference to mesh
+   */
+  //MeshBase                   &  _mesh;
+
+
+  /**
+   * set subdomain_id_to_region_map as static member
+   */
+  static std::map<unsigned int,  SimulationRegion *>  _subdomain_id_to_region_map;
+
+  /**
+   * neighbor regions
+   */
+  std::vector<SimulationRegion *> _region_neighbors;
 
   /**
    * record the elements which belong to this region,
@@ -513,6 +758,12 @@ protected:
    */
   std::vector<FVM_CellData *>    _region_cell_data;
 
+
+  /**
+   * data block for cell based value
+   */
+  DataStorage _cell_data_storage;
+
   /**
    *  the node belongs to this region. stored as \< node_id, FVM_Node *\>
    *  all the nodes (on and off processor) are stored.
@@ -522,14 +773,49 @@ protected:
 
 
   /**
+   * on local nodes belong to this region.
+   */
+  std::vector<FVM_Node *>    _region_local_node;
+
+  /**
+   * on processor nodes belong to this region.
+   */
+  std::vector<FVM_Node *>    _region_processor_node;
+
+  /**
+   * data block for node based value
+   */
+  DataStorage _node_data_storage;
+
+  /**
+   * the edges belongs to this regon, for fast FVM integral
+   * the two fvm_node of this edge is ordered as id(1) \< id(2)
+   */
+  std::vector< std::pair<FVM_Node *, FVM_Node *> > _region_edges;
+
+  /**
+   * the corresponding location of an element's edge in _region_edges
+   * by given an element pointer, and the local index of the edge
+   * use unordered_map when possible
+   */
+#if defined(HAVE_UNORDERED_MAP)
+    std::unordered_map<const Elem *, std::vector<unsigned int> > _region_elem_edge_in_edges_index;
+#elif defined(HAVE_TR1_UNORDERED_MAP) || defined(HAVE_TR1_UNORDERED_MAP_WITH_STD_HEADER)
+    std::tr1::unordered_map<const Elem *, std::vector<unsigned int> > _region_elem_edge_in_edges_index;
+#else
+    std::map<const Elem *, std::vector<unsigned int> > _region_elem_edge_in_edges_index;
+#endif
+
+
+  /**
+   * the boundingbox of the region
+   */
+  std::pair<Point, Point>    _region_bounding_box;
+
+  /**
    * sub domain index
    */
   unsigned int             _subdomain_id;
-
-  /**
-   * region advanced models
-   */
-  AdvancedModel            _advanced_model;
 
   /**
    * stores the hanging node which lies on the side center of of an element.
@@ -546,17 +832,23 @@ protected:
    */
   std::map<const FVM_Node *, std::pair<const Elem *, unsigned int> >  _hanging_node_on_elem_edge;
 
-  /**
-   * the reference to corresponding SimulationSystem
-   */
-  SimulationSystem    & _system;
+
+    /**
+   * region advanced models
+     */
+  AdvancedModel            _advanced_model;
 
 
   /**
-   * a pointer to solver, each solver can set this pointer point to itself
-   * then region functions can access some solver level cariable
+   * the point based solution variables defined for region, it should be filled by derived class
    */
-  SolverBase * solver;
+  std::map<std::string, SimulationVariable>  _region_point_variables;
+
+  /**
+   * the cell based solution variables defined for region, it should be filled by derived class
+   */
+  std::map<std::string, SimulationVariable>  _region_cell_variables;
+
 
 public:
 
@@ -756,24 +1048,26 @@ public:
   /**
    * @brief virtual function for evaluating level 1 DDM equation with hall correction.
    *
+   * @param B                magnetic field
    * @param x                local unknown vector
    * @param f                petsc global function vector
    * @param add_value_flag   flag for last operator is ADD_VALUES
    *
    * @note each derived region should override it
    */
-  virtual void HALL_Function(PetscScalar * x, Vec f, InsertMode &add_value_flag)=0;
+  virtual void HALL_Function(const VectorValue<double> & B, PetscScalar * x, Vec f, InsertMode &add_value_flag)=0;
 
   /**
    * @brief virtual function for evaluating Jacobian of level 1 DDM equation with hall correction.
    *
+   * @param B                magnetic field
    * @param x                local unknown vector
    * @param jac              petsc global jacobian matrix
    * @param add_value_flag   flag for last operator is ADD_VALUES
    *
    * @note each derived region should override it
    */
-  virtual void HALL_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_value_flag)=0;
+  virtual void HALL_Jacobian(const VectorValue<double> & B, PetscScalar * x, Mat *jac, InsertMode &add_value_flag)=0;
 
   /**
    * @brief virtual function for evaluating time derivative term of level 1 DDM equation with hall correction.
@@ -1080,6 +1374,21 @@ public:
   virtual void DDMAC_Fill_Matrix_Vector(Mat A, Vec b, const Mat J, const double omega, InsertMode & add_value_flag) const=0;
 
   /**
+   * @brief virtual function for fill transport matrix of DDMAC equation.
+   *
+   * filling AC transformation matrix (as preconditioner) entry by Jacobian matrix
+   *
+   * @param T                AC transformation matrix
+   * @param J                Jacobian matrix
+   * @param omega            AC frequency
+   * @param add_value_flag   flag for last operator is ADD_VALUES
+   *
+   * @note fill entry of AC transpose matrix T with Jacobian matrix J at frequency omega
+   * each derived region should override it
+   */
+  virtual void DDMAC_Fill_Transformation_Matrix(Mat T, const Mat J, const double omega, InsertMode & add_value_flag) const=0;
+
+  /**
    * @brief virtual function for fill matrix of DDMAC equation.
    *
    * filling AC matrix entry by Jacobian matrix of level 3 EBM equation for a specified fvm_node.
@@ -1116,8 +1425,40 @@ public:
    */
   virtual void DDMAC_Fill_Nodal_Matrix_Vector(const FVM_Node *fvm_node, const SolutionVariable var,
                                               Mat A, Vec b, const Mat J, const double omega, InsertMode & add_value_flag,
-                          const SimulationRegion * adjacent_region=NULL,
+                                              const SimulationRegion * adjacent_region=NULL,
                                               const FVM_Node * adjacent_fvm_node=NULL) const=0;
+
+  /**
+   * @brief virtual function for fill matrix of DDMAC equation.
+   *
+   * filling AC matrix entry by force variable of FVM_Node1 equals to FVM_Node2
+   * @param fvm_node           process this node
+   * @param A                  AC matrix
+   * @param add_value_flag     flag for last operator is ADD_VALUES
+   * @param adjacent_region    the AC matrix entry add to adjacent_fvm_node in this region
+   * @param adjacent_fvm_node  the AC matrix entry add to this node in adjacent_region region
+   * each derived region should override it
+   */
+  virtual void DDMAC_Force_equal(const FVM_Node *fvm_node, Mat A, InsertMode & add_value_flag,
+                                 const SimulationRegion * adjacent_region=NULL,
+                                 const FVM_Node * adjacent_fvm_node=NULL) const=0;
+
+  /**
+   * @brief virtual function for fill matrix of DDMAC equation.
+   *
+   * filling AC matrix entry by force given variable of FVM_Node1 equals to FVM_Node2
+   * @param fvm_node           process this node
+   * @param var                process the var of this node
+   * @param A                  AC matrix
+   * @param add_value_flag     flag for last operator is ADD_VALUES
+   * @param adjacent_region    the AC matrix entry add to adjacent_fvm_node in this region
+   * @param adjacent_fvm_node  the AC matrix entry add to this node in adjacent_region region
+   * each derived region should override it
+   */
+  virtual void DDMAC_Force_equal(const FVM_Node *fvm_node, const SolutionVariable var,
+                                 Mat A, InsertMode & add_value_flag,
+                                 const SimulationRegion * adjacent_region=NULL,
+                                 const FVM_Node * adjacent_fvm_node=NULL) const=0;
 
   /**
    * @brief virtual function for update solution value of DDMAC equation.
@@ -1128,6 +1469,90 @@ public:
    * @note each derived region should override it
    */
   virtual void DDMAC_Update_Solution(PetscScalar *lxx)=0;
+
+
+
+  //////////////////////////////////////////////////////////////////////////////////
+  //----------------- functions for Fast Hydrodynamic solver  --------------------//
+  //////////////////////////////////////////////////////////////////////////////////
+
+  /**
+   * @brief virtual function for fill vector of Hydrodynamic equation.
+   *
+   * @param x                global solution vector
+   * @param vol              the 1.0/volume of each CV
+   * @note fill items of global solution vector with belongs to local processor
+   * only semiconductor region need to override it
+   */
+  virtual void HDM_Fill_Value(Vec /*x*/, Vec /*vol*/) {}
+
+  /**
+   * @brief virtual function for evaluating flux of Hydrodynamic equation.
+   *
+   * @param lx               local solution array
+   * @param flux             flux vector
+   * @param t                local time step vector
+   *
+   * @note only semiconductor region need to override it
+   */
+  virtual void HDM_Flux(const PetscScalar * /*lx*/, Vec /*flux*/, Vec /*t*/) {}
+
+
+  /**
+   * @brief virtual function for evaluating flux of Hydrodynamic equation.
+   *
+   * @param lx               local solution array
+   * @param lt               local time step vector
+   * @param x                solution vector
+   *
+   * @note only semiconductor region need to override it
+   */
+  virtual void HDM_Source(const PetscScalar * /*lx*/, const PetscScalar * /*lt*/, Vec /*x*/) {}
+
+
+  /**
+   * @brief virtual function for update solution value of Hydrodynamic equation.
+   *
+   *
+   * @param x                local solution vector
+   *
+   * @note only semiconductor region need to override it
+   */
+  virtual void HDM_Update_Solution(const PetscScalar * /*x*/) {}
+
+
+  //////////////////////////////////////////////////////////////////////////////////
+  //-----------------  functions for Linear Poissin solver   ---------------------//
+  //////////////////////////////////////////////////////////////////////////////////
+
+  /**
+   * @brief virtual function for build matrix of linear poisson's equation.
+   *
+   * @param A                matrix
+   *
+   * @note each derived region should override it
+   */
+  virtual void LinearPoissin_Matrix(Mat A, InsertMode &add_value_flag) = 0;
+
+
+  /**
+   * @brief virtual function for build RHS vector of linear poisson's equation.
+   *
+   * @param b                RHS vector
+   *
+   * @note each derived region should override it
+   */
+  virtual void LinearPoissin_RHS(Vec b, InsertMode &add_value_flag) = 0;
+
+
+  /**
+   * @brief virtual function for update solution value of linear poisson's equation.
+   *
+   * @param x                local solution vector
+   *
+   * @note each derived region should override it
+   */
+  virtual void LinearPoissin_Update_Solution(const PetscScalar * x) = 0;
 
 };
 

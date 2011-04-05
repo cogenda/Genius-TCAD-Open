@@ -28,7 +28,7 @@
 #include "semiconductor_region.h"
 #include "conductor_region.h"
 #include "insulator_region.h"
-#include "boundary_condition.h"
+#include "boundary_condition_gate.h"
 #include "parallel.h"
 #include "petsc_utils.h"
 
@@ -42,10 +42,31 @@ using PhysicalUnit::e;
  */
 void GateContactBC::DDM2_Fill_Value(Vec x, Vec L)
 {
+  const PetscScalar current_scale = this->z_width();
+
   if(Genius::processor_id() == Genius::n_processors() -1)
   {
     VecSetValue(x, this->global_offset(), this->ext_circuit()->potential(), INSERT_VALUES);
-    VecSetValue(L, this->global_offset(), 1.0, INSERT_VALUES);
+
+    if(this->is_inter_connect_bc())
+    {
+      VecSetValue(L, this->global_offset(), 1.0, INSERT_VALUES);
+    }
+    //for stand alone electrode
+    else
+    {
+      if(ext_circuit()->is_voltage_driven())
+      {
+        const PetscScalar R = this->ext_circuit()->R();
+        VecSetValue(L, this->global_offset(), 1.0/((1.0+R)*current_scale), INSERT_VALUES);
+      }
+
+      if(ext_circuit()->is_current_driven())
+      {
+        VecSetValue(L, this->global_offset(), 1.0/(current_scale), INSERT_VALUES);
+      }
+    }
+
   }
 }
 
@@ -53,6 +74,58 @@ void GateContactBC::DDM2_Fill_Value(Vec x, Vec L)
 ///////////////////////////////////////////////////////////////////////
 //----------------Function and Jacobian evaluate---------------------//
 ///////////////////////////////////////////////////////////////////////
+
+/*---------------------------------------------------------------------
+ * do pre-process to function for DDML2 solver
+ */
+void GateContactBC::DDM2_Function_Preprocess(Vec f, std::vector<PetscInt> &src_row,
+    std::vector<PetscInt> &dst_row, std::vector<PetscInt> &clear_row)
+{
+  BoundaryCondition::const_node_iterator node_it = nodes_begin();
+  BoundaryCondition::const_node_iterator end_it = nodes_end();
+  for(; node_it!=end_it; ++node_it )
+  {
+    // skip node not belongs to this processor
+    if( (*node_it)->processor_id()!=Genius::processor_id() ) continue;
+
+    // buffer for saving regions and fvm_nodes this *node_it involves
+    std::vector<const SimulationRegion *> regions;
+    std::vector<const FVM_Node *> fvm_nodes;
+
+    // search all the fvm_node which has *node_it as root node
+    BoundaryCondition::region_node_iterator  rnode_it     = region_node_begin(*node_it);
+    BoundaryCondition::region_node_iterator  end_rnode_it = region_node_end(*node_it);
+
+    // should clear all the rows related with this boundary condition
+    for(unsigned int i=0 ; rnode_it!=end_rnode_it; ++i, ++rnode_it  )
+    {
+      regions.push_back( (*rnode_it).second.first );
+      fvm_nodes.push_back( (*rnode_it).second.second );
+
+      switch ( regions[i]->type() )
+      {
+          // insulator region.
+          case InsulatorRegion:
+          {
+            clear_row.push_back(fvm_nodes[i]->global_offset()+0);
+            break;
+          }
+
+          case ElectrodeRegion:
+          {
+            src_row.push_back(fvm_nodes[i]->global_offset()+1);
+            dst_row.push_back(fvm_nodes[0]->global_offset()+1);
+
+            clear_row.push_back(fvm_nodes[i]->global_offset()+0);
+            clear_row.push_back(fvm_nodes[i]->global_offset()+1);
+
+            break;
+          }
+
+      }
+    }
+  }
+}
 
 
 
@@ -70,11 +143,6 @@ void GateContactBC::DDM2_Function(PetscScalar * x, Vec f, InsertMode &add_value_
     VecAssemblyBegin(f);
     VecAssemblyEnd(f);
   }
-
-  // data buffer for add row to row location
-  std::vector<PetscInt> src_row;
-  std::vector<PetscInt> dst_row;
-
 
   // data buffer for INSERT_VALUES
   std::vector<int> iy;
@@ -114,113 +182,109 @@ void GateContactBC::DDM2_Function(PetscScalar * x, Vec f, InsertMode &add_value_
 
       switch ( regions[i]->type() )
       {
-        // insulator region.
-      case InsulatorRegion:
-        {
-
-          const FVM_NodeData * node_data = fvm_nodes[i]->node_data();
-
-          PetscScalar V = x[fvm_nodes[i]->local_offset()+0];  // psi of this node
-          PetscScalar T = x[fvm_nodes[i]->local_offset()+1];  // lattice temperature
-
-          // the governing equation
-          PetscScalar ff = V + Work_Function() - Ve;
-
-          // set governing equation to function vector
-          iy.push_back(fvm_nodes[i]->global_offset());
-          y.push_back( ff );
-
-
-          // add heat flux out of gate boundary to lattice temperature equatiuon
-          // when this bc is external boundary
-          if( node_on_boundary(*node_it) || has_associated_region(*node_it, VacuumRegion))
+          // insulator region.
+          case InsulatorRegion:
           {
-            PetscScalar h = this->Heat_Transfer();
-            PetscScalar S  = fvm_nodes[i]->outside_boundary_surface_area();
-            PetscScalar fT = h*(T_external()-T)*S;
-            VecSetValue(f, fvm_nodes[i]->global_offset()+1, fT, ADD_VALUES);
-          }
 
-          // MOS gate can have displacement current and tunneling current
+            const FVM_NodeData * node_data = fvm_nodes[i]->node_data();
 
-          // displacement current, only first order in time.
-          FVM_Node::fvm_neighbor_node_iterator nb_it = fvm_nodes[i]->neighbor_node_begin();
-          for(; nb_it != fvm_nodes[i]->neighbor_node_end(); ++nb_it)
-          {
-            const FVM_Node *nb_node = (*nb_it).second;
-            const FVM_NodeData * nb_node_data = nb_node->node_data();
-            // the psi of neighbor node
-            PetscScalar V_nb = x[nb_node->local_offset()+0];
-            // distance from nb node to this node
-            PetscScalar distance = (*(fvm_nodes[i]->root_node()) - *(nb_node->root_node())).size();
-            // area of out surface of control volume related with neighbor node
-            PetscScalar cv_boundary = fvm_nodes[i]->cv_surface_area(nb_node->root_node());
-            PetscScalar dEdt;
-            if(SolverSpecify::TS_type==SolverSpecify::BDF2 && SolverSpecify::BDF2_restart==false) //second order
+            PetscScalar V = x[fvm_nodes[i]->local_offset()+0];  // psi of this node
+            PetscScalar T = x[fvm_nodes[i]->local_offset()+1];  // lattice temperature
+
+            // the governing equation
+            PetscScalar ff = V + Work_Function() - Ve;
+
+            // set governing equation to function vector
+            iy.push_back(fvm_nodes[i]->global_offset());
+            y.push_back( ff );
+
+
+            // add heat flux out of gate boundary to lattice temperature equatiuon
+            // when this bc is external boundary
+            if( node_on_boundary(*node_it) || has_associated_region(*node_it, VacuumRegion))
             {
-              PetscScalar r = SolverSpecify::dt_last/(SolverSpecify::dt_last + SolverSpecify::dt);
-              dEdt = ( (2-r)/(1-r)*(V-V_nb)
-                       - 1.0/(r*(1-r))*(node_data->psi()-nb_node_data->psi())
-                       + (1-r)/r*(node_data->psi_last()-nb_node_data->psi_last()))/distance/(SolverSpecify::dt_last+SolverSpecify::dt);
-            }
-            else//first order
-            {
-              dEdt = ((V-V_nb)-(node_data->psi()-nb_node_data->psi()))/distance/SolverSpecify::dt;
+              PetscScalar h = this->Heat_Transfer();
+              PetscScalar S  = fvm_nodes[i]->outside_boundary_surface_area();
+              PetscScalar fT = h*(T_external()-T)*S;
+              VecSetValue(f, fvm_nodes[i]->global_offset()+1, fT, ADD_VALUES);
             }
 
-            current_buffer.push_back( cv_boundary*node_data->eps()*dEdt*current_scale );
+            // MOS gate can have displacement current and tunneling current
+
+            // displacement current, only first order in time.
+            if(SolverSpecify::TimeDependent == true)
+            {
+              FVM_Node::fvm_neighbor_node_iterator nb_it = fvm_nodes[i]->neighbor_node_begin();
+              for(; nb_it != fvm_nodes[i]->neighbor_node_end(); ++nb_it)
+              {
+                const FVM_Node *nb_node = (*nb_it).second;
+                const FVM_NodeData * nb_node_data = nb_node->node_data();
+                // the psi of neighbor node
+                PetscScalar V_nb = x[nb_node->local_offset()+0];
+                // distance from nb node to this node
+                PetscScalar distance = (*(fvm_nodes[i]->root_node()) - *(nb_node->root_node())).size();
+                // area of out surface of control volume related with neighbor node
+                PetscScalar cv_boundary = fvm_nodes[i]->cv_surface_area(nb_node->root_node());
+                PetscScalar dEdt;
+                if(SolverSpecify::TS_type==SolverSpecify::BDF2 && SolverSpecify::BDF2_restart==false) //second order
+                {
+                  PetscScalar r = SolverSpecify::dt_last/(SolverSpecify::dt_last + SolverSpecify::dt);
+                  dEdt = ( (2-r)/(1-r)*(V-V_nb)
+                           - 1.0/(r*(1-r))*(node_data->psi()-nb_node_data->psi())
+                           + (1-r)/r*(node_data->psi_last()-nb_node_data->psi_last()))/distance/(SolverSpecify::dt_last+SolverSpecify::dt);
+                }
+                else//first order
+                {
+                  dEdt = ((V-V_nb)-(node_data->psi()-nb_node_data->psi()))/distance/SolverSpecify::dt;
+                }
+
+                current_buffer.push_back( cv_boundary*node_data->eps()*dEdt );
+              }
+            }
+            // FIXME: tunneling current.
+
+            break;
           }
 
-          // FIXME: tunneling current.
 
+          // conductor region
+          case ElectrodeRegion:
+          {
+
+            PetscScalar V = x[fvm_nodes[i]->local_offset()+0];   // psi of this node
+            PetscScalar T = x[fvm_nodes[i]->local_offset()+1];   // lattice temperature of this node
+
+            // since the region is sorted, we know region[0] is Insulator region
+            // as a result, x[fvm_nodes[0]->local_offset()] is psi for corresponding Insulator region
+            PetscScalar V_in = x[fvm_nodes[0]->local_offset()+0];
+            PetscScalar T_in = x[fvm_nodes[0]->local_offset()+1];
+
+            // let insulator node process the complete governing equation of heat transfer at interface
+            // then we can set the node temperature of conductor region equal to node temperature at insulator region
+
+            // the psi of this node is equal to corresponding psi of Insulator node
+            PetscScalar ff1 = V - V_in;
+            // the T of this node is equal to corresponding T of Insulator node
+            PetscScalar ff2 = T - T_in;
+
+            // set governing equation to function vector
+            iy.push_back(fvm_nodes[i]->global_offset()+0);
+            y.push_back( ff1 );
+
+            iy.push_back(fvm_nodes[i]->global_offset()+1);
+            y.push_back( ff2 );
+
+            break;
+          }
+          case VacuumRegion:
           break;
-        }
-
-
-        // conductor region
-      case ConductorRegion:
-        {
-
-          PetscScalar V = x[fvm_nodes[i]->local_offset()+0];   // psi of this node
-          PetscScalar T = x[fvm_nodes[i]->local_offset()+1];   // lattice temperature of this node
-
-          // since the region is sorted, we know region[0] is Insulator region
-          // as a result, x[fvm_nodes[0]->local_offset()] is psi for corresponding Insulator region
-          PetscScalar V_in = x[fvm_nodes[0]->local_offset()+0];
-          PetscScalar T_in = x[fvm_nodes[0]->local_offset()+1];
-
-          // let insulator node process the complete governing equation of heat transfer at interface
-          // then we can set the node temperature of conductor region equal to node temperature at insulator region
-          src_row.push_back(fvm_nodes[i]->global_offset()+1);
-          dst_row.push_back(fvm_nodes[0]->global_offset()+1);
-
-          // the psi of this node is equal to corresponding psi of Insulator node
-          PetscScalar ff1 = V - V_in;
-          // the T of this node is equal to corresponding T of Insulator node
-          PetscScalar ff2 = T - T_in;
-
-          // set governing equation to function vector
-          iy.push_back(fvm_nodes[i]->global_offset()+0);
-          y.push_back( ff1 );
-
-          iy.push_back(fvm_nodes[i]->global_offset()+1);
-          y.push_back( ff2 );
-
-          break;
-        }
-      case VacuumRegion:
-        break;
-      default: genius_error(); //we should never reach here
+          default: genius_error(); //we should never reach here
       }
     }
-
   }
 
-  // add src row to dst row, it will assemble vec automatically
-  PetscUtils::VecAddRowToRow(f, src_row, dst_row);
 
-
-  if(iy.size()) VecSetValues(f, iy.size(), &iy[0], &y[0], INSERT_VALUES) ;
+  if(iy.size()) VecSetValues(f, iy.size(), &iy[0], &y[0], ADD_VALUES) ;
 
 
   // the extra equation of gate boundary
@@ -254,21 +318,45 @@ void GateContactBC::DDM2_Function(PetscScalar * x, Vec f, InsertMode &add_value_
   //
   //
 
-  // we first gather the electrode current
-  Parallel::allgather(current_buffer);
-
   // for get the current, we must sum all the terms in current_buffer
-  PetscScalar current = std::accumulate(current_buffer.begin(), current_buffer.end(), 0.0 );
+  // NOTE: only statistic current flow belongs to on processor node
+  PetscScalar current = current_scale*std::accumulate(current_buffer.begin(), current_buffer.end(), 0.0 );
 
-  if(Genius::processor_id() == Genius::n_processors() -1)
+  //for inter connect electrode
+  if(this->is_inter_connect_bc())
+  {
+    PetscScalar R = ext_circuit()->R();                               // resistance
+    PetscScalar f_ext = R*current;
+    VecSetValue(f, this->global_offset(), f_ext, ADD_VALUES);
+  }
+  // for stand alone electrode
+  else
+  {
+    if(ext_circuit()->is_voltage_driven())
+    {
+      PetscScalar R = ext_circuit()->R();             // resistance
+      PetscScalar L = ext_circuit()->L();             // inductance
+      PetscScalar dt = SolverSpecify::dt;
+      PetscScalar f_ext = (L/dt+R)*current;
+      VecSetValue(f, this->global_offset(), f_ext, ADD_VALUES);
+    }
+
+    if(ext_circuit()->is_current_driven())
+    {
+      PetscScalar f_ext = current;
+      VecSetValue(f, this->global_offset(), f_ext, ADD_VALUES);
+    }
+  }
+
+  if(Genius::is_last_processor())
   {
     //for inter connect electrode
-    if(this->is_inter_connect_electrode())
+    if(this->is_inter_connect_bc())
     {
       PetscScalar V_ic = x[this->inter_connect_hub()->local_offset()];  // potential at inter connect node
       PetscScalar R = ext_circuit()->R();                               // resistance
-      PetscScalar f_ext = Ve - V_ic + R*current;
-      VecSetValue(f, this->global_offset(), f_ext, INSERT_VALUES);
+      PetscScalar f_ext = Ve - V_ic;
+      VecSetValue(f, this->global_offset(), f_ext, ADD_VALUES);
     }
     // for stand alone electrode
     else
@@ -283,16 +371,16 @@ void GateContactBC::DDM2_Function(PetscScalar * x, Vec f, InsertMode &add_value_
         PetscScalar Ic = ext_circuit()->cap_current();  // the previous step current flow pass though cap to ground.
         PetscScalar P  = ext_circuit()->potential();    // the previous step potential of the electrode
         PetscScalar dt = SolverSpecify::dt;
-        PetscScalar f_ext = (L/dt+R)*current + (Ve-Vapp) + (L/dt+R)*C/dt*Ve - (L/dt+R)*C/dt*P - L/dt*(I+Ic);
-        VecSetValue(f, this->global_offset(), f_ext, INSERT_VALUES);
+        PetscScalar f_ext = (Ve-Vapp) + (L/dt+R)*C/dt*Ve - (L/dt+R)*C/dt*P - L/dt*(I+Ic);
+        VecSetValue(f, this->global_offset(), f_ext, ADD_VALUES);
       }
 
       if(ext_circuit()->is_current_driven())
       {
         PetscScalar Iapp = ext_circuit()->Iapp();         // application current
         PetscScalar Ic   = ext_circuit()->cap_current();  // the previous step current flow pass though cap to ground.
-        PetscScalar f_ext = current + Ic - Iapp;
-        VecSetValue(f, this->global_offset(), f_ext, INSERT_VALUES);
+        PetscScalar f_ext = Ic - Iapp;
+        VecSetValue(f, this->global_offset(), f_ext, ADD_VALUES);
       }
     }
 
@@ -302,8 +390,8 @@ void GateContactBC::DDM2_Function(PetscScalar * x, Vec f, InsertMode &add_value_
   ext_circuit()->current_itering() = current;
   ext_circuit()->potential_itering() = Ve;
 
-  // the last operator is INSERT_VALUES
-  add_value_flag = INSERT_VALUES;
+  // the last operator is ADD_VALUES
+  add_value_flag = ADD_VALUES;
 
 }
 
@@ -347,43 +435,43 @@ void GateContactBC::DDM2_Jacobian_Reserve(Mat *jac, InsertMode &add_value_flag)
 
       switch ( regions[i]->type() )
       {
-      case InsulatorRegion:
-        {
-          // reserve for electrode potential item
-          MatSetValue(*jac, fvm_nodes[i]->global_offset()+0, this->global_offset(), 0, ADD_VALUES);
-
-          // reserve for heat equation
-          FVM_Node::fvm_ghost_node_iterator gn_it = fvm_nodes[i]->ghost_node_begin();
-          FVM_Node::fvm_ghost_node_iterator gn_it_end = fvm_nodes[i]->ghost_node_end();
-          for(; gn_it != gn_it_end; ++gn_it)
+          case InsulatorRegion:
           {
-            const FVM_Node * ghost_fvm_node = (*gn_it).first;
-            // skip NULL neighbor which means the node is on Neumann boundary
-            if(ghost_fvm_node==NULL) continue;
+            // reserve for electrode potential item
+            MatSetValue(*jac, fvm_nodes[i]->global_offset()+0, this->global_offset(), 0, ADD_VALUES);
 
-            MatSetValue(*jac, fvm_nodes[i]->global_offset()+1, ghost_fvm_node->global_offset()+1, 0, ADD_VALUES);
-
-            FVM_Node::fvm_neighbor_node_iterator nb_it = ghost_fvm_node->neighbor_node_begin();
-            FVM_Node::fvm_neighbor_node_iterator nb_it_end = ghost_fvm_node->neighbor_node_end();
-            for(; nb_it != nb_it_end; ++nb_it)
+            // reserve for heat equation
+            FVM_Node::fvm_ghost_node_iterator gn_it = fvm_nodes[i]->ghost_node_begin();
+            FVM_Node::fvm_ghost_node_iterator gn_it_end = fvm_nodes[i]->ghost_node_end();
+            for(; gn_it != gn_it_end; ++gn_it)
             {
-              const FVM_Node *  ghost_fvm_nb_node = (*nb_it).second;
-              MatSetValue(*jac, fvm_nodes[i]->global_offset()+1, ghost_fvm_nb_node->global_offset()+1, 0, ADD_VALUES);
-            }
-          }
+              const FVM_Node * ghost_fvm_node = (*gn_it).first;
+              // skip NULL neighbor which means the node is on Neumann boundary
+              if(ghost_fvm_node==NULL) continue;
 
+              MatSetValue(*jac, fvm_nodes[i]->global_offset()+1, ghost_fvm_node->global_offset()+1, 0, ADD_VALUES);
+
+              FVM_Node::fvm_neighbor_node_iterator nb_it = ghost_fvm_node->neighbor_node_begin();
+              FVM_Node::fvm_neighbor_node_iterator nb_it_end = ghost_fvm_node->neighbor_node_end();
+              for(; nb_it != nb_it_end; ++nb_it)
+              {
+                const FVM_Node *  ghost_fvm_nb_node = (*nb_it).second;
+                MatSetValue(*jac, fvm_nodes[i]->global_offset()+1, ghost_fvm_nb_node->global_offset()+1, 0, ADD_VALUES);
+              }
+            }
+
+            break;
+          }
+          case ElectrodeRegion:
+          {
+            // insert none zero pattern
+            MatSetValue(*jac, fvm_nodes[i]->global_offset()+0, fvm_nodes[0]->global_offset()+0, 0, ADD_VALUES);
+            MatSetValue(*jac, fvm_nodes[i]->global_offset()+1, fvm_nodes[0]->global_offset()+1, 0, ADD_VALUES);
+            break;
+          }
+          case VacuumRegion:
           break;
-        }
-      case ConductorRegion:
-        {
-          // insert none zero pattern
-          MatSetValue(*jac, fvm_nodes[i]->global_offset()+0, fvm_nodes[0]->global_offset()+0, 0, ADD_VALUES);
-          MatSetValue(*jac, fvm_nodes[i]->global_offset()+1, fvm_nodes[0]->global_offset()+1, 0, ADD_VALUES);
-          break;
-        }
-      case VacuumRegion:
-        break;
-      default: genius_error(); //we should never reach here
+          default: genius_error(); //we should never reach here
       }
     }
   }
@@ -418,7 +506,7 @@ void GateContactBC::DDM2_Jacobian_Reserve(Mat *jac, InsertMode &add_value_flag)
 
       MatSetValue(*jac, bc_global_offset, bc_global_offset, 0, ADD_VALUES);
 
-      if(this->is_inter_connect_electrode())
+      if(this->is_inter_connect_bc())
         MatSetValue(*jac, bc_global_offset, this->inter_connect_hub()->global_offset(), 0, ADD_VALUES);
 
       if(bc_node_reserve.size())
@@ -438,6 +526,58 @@ void GateContactBC::DDM2_Jacobian_Reserve(Mat *jac, InsertMode &add_value_flag)
 
 
 
+/*---------------------------------------------------------------------
+ * do pre-process to jacobian matrix for DDML2 solver
+ */
+void GateContactBC::DDM2_Jacobian_Preprocess(Mat *jac, std::vector<PetscInt> &src_row,
+    std::vector<PetscInt> &dst_row, std::vector<PetscInt> &clear_row)
+{
+  BoundaryCondition::const_node_iterator node_it = nodes_begin();
+  BoundaryCondition::const_node_iterator end_it = nodes_end();
+  for(; node_it!=end_it; ++node_it )
+  {
+    // skip node not belongs to this processor
+    if( (*node_it)->processor_id()!=Genius::processor_id() ) continue;
+
+    // buffer for saving regions and fvm_nodes this *node_it involves
+    std::vector<const SimulationRegion *> regions;
+    std::vector<const FVM_Node *> fvm_nodes;
+
+    // search all the fvm_node which has *node_it as root node
+    BoundaryCondition::region_node_iterator  rnode_it     = region_node_begin(*node_it);
+    BoundaryCondition::region_node_iterator  end_rnode_it = region_node_end(*node_it);
+
+    // should clear all the rows related with this boundary condition
+    for(unsigned int i=0 ; rnode_it!=end_rnode_it; ++i, ++rnode_it  )
+    {
+      regions.push_back( (*rnode_it).second.first );
+      fvm_nodes.push_back( (*rnode_it).second.second );
+
+      switch ( regions[i]->type() )
+      {
+          // insulator region.
+          case InsulatorRegion:
+          {
+            clear_row.push_back(fvm_nodes[i]->global_offset()+0);
+            break;
+          }
+
+          case ElectrodeRegion:
+          {
+            src_row.push_back(fvm_nodes[i]->global_offset()+1);
+            dst_row.push_back(fvm_nodes[0]->global_offset()+1);
+
+            clear_row.push_back(fvm_nodes[i]->global_offset()+0);
+            clear_row.push_back(fvm_nodes[i]->global_offset()+1);
+
+            break;
+          }
+
+      }
+    }
+  }
+}
+
 
 
 /*---------------------------------------------------------------------
@@ -448,71 +588,19 @@ void GateContactBC::DDM2_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_val
   // the Jacobian of GateContact boundary condition is processed here
   // we use AD again. no matter it is overkill here.
 
+  // since we will use ADD_VALUES operat, check the matrix state.
+  if( (add_value_flag != ADD_VALUES) && (add_value_flag != NOT_SET_VALUES) )
+  {
+    MatAssemblyBegin(*jac, MAT_FLUSH_ASSEMBLY);
+    MatAssemblyEnd(*jac, MAT_FLUSH_ASSEMBLY);
+  }
+
+
   PetscInt bc_global_offset = this->global_offset();
   PetscScalar R = ext_circuit()->R();             // resistance
   PetscScalar C = ext_circuit()->C();             // capacitance
   PetscScalar L = ext_circuit()->L();             // inductance
   PetscScalar dt = SolverSpecify::dt;
-
-  // first, we zero all the rows corresponding to GateContact bc.
-  {
-    // data buffer for add row to rwo location
-    std::vector<PetscInt> src_row;
-    std::vector<PetscInt> dst_row;
-
-    // the indicator which rows should be set to zero
-    std::vector<PetscInt> row_for_clear;
-
-
-    BoundaryCondition::const_node_iterator node_it = nodes_begin();
-    BoundaryCondition::const_node_iterator end_it = nodes_end();
-    for(; node_it!=end_it; ++node_it )
-    {
-      // skip node not belongs to this processor
-      if( (*node_it)->processor_id()!=Genius::processor_id() ) continue;
-
-      std::vector<const FVM_Node *> fvm_nodes;
-
-      // search all the fvm_node which has *node_it as root node
-      BoundaryCondition::region_node_iterator  rnode_it     = region_node_begin(*node_it);
-      BoundaryCondition::region_node_iterator  end_rnode_it = region_node_end(*node_it);
-      for(unsigned int i=0 ; rnode_it!=end_rnode_it; ++i, ++rnode_it  )
-      {
-        const SimulationRegion * region = (*rnode_it).second.first;
-        fvm_nodes.push_back((*rnode_it).second.second);
-
-        switch ( region->type() )
-        {
-        case InsulatorRegion:
-          {
-            row_for_clear.push_back(fvm_nodes[i]->global_offset() + 0);
-            break;
-          }
-        case ConductorRegion:
-          {
-            // if code reaches here, then the gate bc is an interface to conductor region
-            src_row.push_back(fvm_nodes[i]->global_offset() + 1);
-            dst_row.push_back(fvm_nodes[0]->global_offset() + 1);
-
-            row_for_clear.push_back(fvm_nodes[i]->global_offset() + 0);
-            row_for_clear.push_back(fvm_nodes[i]->global_offset() + 1);
-            break;
-          }
-        case VacuumRegion:
-          break;
-        default: genius_error();
-        }
-      }
-    }
-
-    //ok, we add source rows to destination rows
-    PetscUtils::MatAddRowToRow(*jac, src_row, dst_row);
-
-    // clear required rows
-    MatZeroRows(*jac, row_for_clear.size(), row_for_clear.empty() ? NULL : &row_for_clear[0], 0.0);
-
-  }
-
 
   // after that, we should do gate boundary process here
 
@@ -543,154 +631,150 @@ void GateContactBC::DDM2_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_val
 
       switch ( regions[i]->type() )
       {
-      case InsulatorRegion:
-        {
-
-          const FVM_NodeData * node_data = fvm_nodes[i]->node_data();
-
-          //the indepedent variable number, we need 3 here.
-          adtl::AutoDScalar::numdir=3;
-
-
-          AutoDScalar  V = x[fvm_nodes[i]->local_offset()+0]; V.setADValue(0, 1.0); // psi of this node
-          AutoDScalar  T = x[fvm_nodes[i]->local_offset()+1]; T.setADValue(1, 1.0); // psi of this node
-
-          // the electrode potential in current iteration
-          genius_assert( local_offset()!=invalid_uint );
-          AutoDScalar Ve = x[this->local_offset()];         Ve.setADValue(2, 1.0);
-
-          // the governing equation of potential
-          AutoDScalar ff = V + Work_Function() - Ve;
-
-          // the insert position
-          std::vector<PetscInt> row, col;
-          row.push_back(fvm_nodes[i]->global_offset()+0);
-          row.push_back(fvm_nodes[i]->global_offset()+1);
-          col = row;
-          col.push_back(this->global_offset()); // the position of electrode equation
-
-          // process the Jacobian of governing equation of potential
-          MatSetValues(*jac, 1, &row[0], col.size(), &col[0], ff.getADValue(), ADD_VALUES);
-
-          // process the Jacobian of equation of T
-          // if this gate bc is external boundary, set heat flux here
-          if( node_on_boundary(*node_it) || has_associated_region(*node_it, VacuumRegion) )
+          case InsulatorRegion:
           {
-            PetscScalar h = this->Heat_Transfer();
-            PetscScalar S  = fvm_nodes[i]->outside_boundary_surface_area();
-            AutoDScalar fT = h*(T_external()-T)*S;
-            MatSetValues(*jac, 1, &row[1], col.size(), &col[0], fT.getADValue(), ADD_VALUES);
+
+            const FVM_NodeData * node_data = fvm_nodes[i]->node_data();
+
+            //the indepedent variable number, we need 3 here.
+            adtl::AutoDScalar::numdir=3;
+
+
+            AutoDScalar  V = x[fvm_nodes[i]->local_offset()+0]; V.setADValue(0, 1.0); // psi of this node
+            AutoDScalar  T = x[fvm_nodes[i]->local_offset()+1]; T.setADValue(1, 1.0); // psi of this node
+
+            // the electrode potential in current iteration
+            genius_assert( local_offset()!=invalid_uint );
+            AutoDScalar Ve = x[this->local_offset()];         Ve.setADValue(2, 1.0);
+
+            // the governing equation of potential
+            AutoDScalar ff = V + Work_Function() - Ve;
+
+            // the insert position
+            std::vector<PetscInt> row, col;
+            row.push_back(fvm_nodes[i]->global_offset()+0);
+            row.push_back(fvm_nodes[i]->global_offset()+1);
+            col = row;
+            col.push_back(this->global_offset()); // the position of electrode equation
+
+            // process the Jacobian of governing equation of potential
+            MatSetValues(*jac, 1, &row[0], col.size(), &col[0], ff.getADValue(), ADD_VALUES);
+
+            // process the Jacobian of equation of T
+            // if this gate bc is external boundary, set heat flux here
+            if( node_on_boundary(*node_it) || has_associated_region(*node_it, VacuumRegion) )
+            {
+              PetscScalar h = this->Heat_Transfer();
+              PetscScalar S  = fvm_nodes[i]->outside_boundary_surface_area();
+              AutoDScalar fT = h*(T_external()-T)*S;
+              MatSetValues(*jac, 1, &row[1], col.size(), &col[0], fT.getADValue(), ADD_VALUES);
+            }
+
+            /*
+             * process the Jacobian of current flow out of gate electrode
+             */
+
+            // compute displacement current
+
+            //the indepedent variable number, we need 2 here.
+            adtl::AutoDScalar::numdir=2;
+
+            // displacement current
+            if(SolverSpecify::TimeDependent == true)
+            {
+              FVM_Node::fvm_neighbor_node_iterator nb_it = fvm_nodes[i]->neighbor_node_begin();
+              for(; nb_it != fvm_nodes[i]->neighbor_node_end(); ++nb_it)
+              {
+                const FVM_Node *nb_node = (*nb_it).second;
+                const FVM_NodeData * nb_node_data = nb_node->node_data();
+
+                // the psi of this node
+                AutoDScalar  V = x[fvm_nodes[i]->local_offset()]; V.setADValue(0, 1.0);
+                // the psi of neighbor node
+                AutoDScalar V_nb = x[nb_node->local_offset()+0]; V_nb.setADValue(1, 1.0);
+
+                // distance from nb node to this node
+                PetscScalar distance = (*(fvm_nodes[i]->root_node()) - *(nb_node->root_node())).size();
+
+                // area of out surface of control volume related with neighbor node
+                PetscScalar cv_boundary = fvm_nodes[i]->cv_surface_area(nb_node->root_node());
+                AutoDScalar dEdt;
+                if(SolverSpecify::TS_type==SolverSpecify::BDF2 && SolverSpecify::BDF2_restart==false) //second order
+                {
+                  PetscScalar r = SolverSpecify::dt_last/(SolverSpecify::dt_last + SolverSpecify::dt);
+                  dEdt = ( (2-r)/(1-r)*(V-V_nb)
+                           - 1.0/(r*(1-r))*(node_data->psi()-nb_node_data->psi())
+                           + (1-r)/r*(node_data->psi_last()-nb_node_data->psi_last()))/distance/(SolverSpecify::dt_last+SolverSpecify::dt);
+                }
+                else//first order
+                {
+                  dEdt = ((V-V_nb)-(node_data->psi()-nb_node_data->psi()))/distance/SolverSpecify::dt;
+                }
+
+                AutoDScalar current_disp = cv_boundary*node_data->eps()*dEdt*current_scale;
+
+                // consider electrode connect
+
+                //for inter connect electrode
+                if(this->is_inter_connect_bc())
+                  current_disp = R*current_disp;
+                // for stand alone electrode
+                else
+                {
+                  if(ext_circuit()->is_voltage_driven())
+                    current_disp = (L/dt+R)*current_disp;
+                  else
+                    current_disp = current_disp;
+                }
+
+                MatSetValue(*jac, bc_global_offset, fvm_nodes[i]->global_offset(), current_disp.getADValue(0), ADD_VALUES);
+                MatSetValue(*jac, bc_global_offset, nb_node->global_offset(), current_disp.getADValue(1), ADD_VALUES);
+              }
+            }
+            //FIXME tunneling current should be considered here
+
+            break;
           }
-
-          /*
-           * process the Jacobian of current flow out of gate electrode
-           */
-
-          // compute displacement current
-
-          //the indepedent variable number, we need 2 here.
-          adtl::AutoDScalar::numdir=2;
-
-          // displacement current
-          FVM_Node::fvm_neighbor_node_iterator nb_it = fvm_nodes[i]->neighbor_node_begin();
-          for(; nb_it != fvm_nodes[i]->neighbor_node_end(); ++nb_it)
+          // conductor region (gate) which has an interface with insulator region
+          case ElectrodeRegion:
           {
-            const FVM_Node *nb_node = (*nb_it).second;
-            const FVM_NodeData * nb_node_data = nb_node->node_data();
 
-            // the psi of this node
-            AutoDScalar  V = x[fvm_nodes[i]->local_offset()]; V.setADValue(0, 1.0);
-            // the psi of neighbor node
-            AutoDScalar V_nb = x[nb_node->local_offset()+0]; V_nb.setADValue(1, 1.0);
+            //the indepedent variable number, we need 4 here.
+            adtl::AutoDScalar::numdir=4;
 
-            // distance from nb node to this node
-            PetscScalar distance = (*(fvm_nodes[i]->root_node()) - *(nb_node->root_node())).size();
+            AutoDScalar  V = x[fvm_nodes[i]->local_offset()+0]; V.setADValue(0,1.0); // psi of this node
+            AutoDScalar  T = x[fvm_nodes[i]->local_offset()+1]; T.setADValue(1,1.0); // lattice temperature of this node
 
-            // area of out surface of control volume related with neighbor node
-            PetscScalar cv_boundary = fvm_nodes[i]->cv_surface_area(nb_node->root_node());
-            AutoDScalar dEdt;
-            if(SolverSpecify::TS_type==SolverSpecify::BDF2 && SolverSpecify::BDF2_restart==false) //second order
-            {
-              PetscScalar r = SolverSpecify::dt_last/(SolverSpecify::dt_last + SolverSpecify::dt);
-              dEdt = ( (2-r)/(1-r)*(V-V_nb)
-                       - 1.0/(r*(1-r))*(node_data->psi()-nb_node_data->psi())
-                       + (1-r)/r*(node_data->psi_last()-nb_node_data->psi_last()))/distance/(SolverSpecify::dt_last+SolverSpecify::dt);
-            }
-            else//first order
-            {
-              dEdt = ((V-V_nb)-(node_data->psi()-nb_node_data->psi()))/distance/SolverSpecify::dt;
-            }
+            // since the region is sorted, we know region[0] is insulator region
+            // as a result, x[fvm_nodes[0]->local_offset()] is psi for corresponding insulator region
+            AutoDScalar  V_in = x[fvm_nodes[0]->local_offset()+0]; V_in.setADValue(2,1.0);
+            AutoDScalar  T_in = x[fvm_nodes[0]->local_offset()+1]; T_in.setADValue(3,1.0);
 
-            AutoDScalar current_disp = cv_boundary*node_data->eps()*dEdt*current_scale;
+            // the psi of this node is equal to corresponding psi of insulator node
+            AutoDScalar  ff1 = V - V_in;
+            // the T of this node is equal to corresponding T of insulator node
+            AutoDScalar  ff2 = T - T_in;
 
-            // consider electrode connect
+            // set Jacobian of governing equation ff1 and ff2
+            std::vector<PetscInt> rows,cols;
+            rows.push_back(fvm_nodes[i]->global_offset()+0);
+            rows.push_back(fvm_nodes[i]->global_offset()+1);
+            cols = rows;
+            cols.push_back(fvm_nodes[0]->global_offset()+0);
+            cols.push_back(fvm_nodes[0]->global_offset()+1);
 
-            //for inter connect electrode
-            if(this->is_inter_connect_electrode())
-              current_disp = R*current_disp;
-            // for stand alone electrode
-            else
-            {
-              if(ext_circuit()->is_voltage_driven())
-                current_disp = (L/dt+R)*current_disp;
-              else
-                current_disp = current_disp;
-            }
+            MatSetValues(*jac, 1, &rows[0], cols.size(), &cols[0], ff1.getADValue(), ADD_VALUES);
+            MatSetValues(*jac, 1, &rows[1], cols.size(), &cols[0], ff2.getADValue(), ADD_VALUES);
 
-            MatSetValue(*jac, bc_global_offset, fvm_nodes[i]->global_offset(), current_disp.getADValue(0), ADD_VALUES);
-            MatSetValue(*jac, bc_global_offset, nb_node->global_offset(), current_disp.getADValue(1), ADD_VALUES);
+            break;
           }
-
-          //FIXME tunneling current should be considered here
-
+          case VacuumRegion:
           break;
-        }
-        // conductor region (gate) which has an interface with insulator region
-      case ConductorRegion:
-        {
-
-          //the indepedent variable number, we need 4 here.
-          adtl::AutoDScalar::numdir=4;
-
-          AutoDScalar  V = x[fvm_nodes[i]->local_offset()+0]; V.setADValue(0,1.0); // psi of this node
-          AutoDScalar  T = x[fvm_nodes[i]->local_offset()+1]; T.setADValue(1,1.0); // lattice temperature of this node
-
-          // since the region is sorted, we know region[0] is insulator region
-          // as a result, x[fvm_nodes[0]->local_offset()] is psi for corresponding insulator region
-          AutoDScalar  V_in = x[fvm_nodes[0]->local_offset()+0]; V_in.setADValue(2,1.0);
-          AutoDScalar  T_in = x[fvm_nodes[0]->local_offset()+1]; T_in.setADValue(3,1.0);
-
-          // the psi of this node is equal to corresponding psi of insulator node
-          AutoDScalar  ff1 = V - V_in;
-          // the T of this node is equal to corresponding T of insulator node
-          AutoDScalar  ff2 = T - T_in;
-
-          // set Jacobian of governing equation ff1 and ff2
-          std::vector<PetscInt> rows,cols;
-          rows.push_back(fvm_nodes[i]->global_offset()+0);
-          rows.push_back(fvm_nodes[i]->global_offset()+1);
-          cols = rows;
-          cols.push_back(fvm_nodes[0]->global_offset()+0);
-          cols.push_back(fvm_nodes[0]->global_offset()+1);
-
-          MatSetValues(*jac, 1, &rows[0], cols.size(), &cols[0], ff1.getADValue(), ADD_VALUES);
-          MatSetValues(*jac, 1, &rows[1], cols.size(), &cols[0], ff2.getADValue(), ADD_VALUES);
-
-          break;
-        }
-      case VacuumRegion:
-        break;
-      default: genius_error(); //we should never reach here
+          default: genius_error(); //we should never reach here
       }
     }
 
   }
-
-
-  // switch to INSERT_VALUES
-  MatAssemblyBegin(*jac, MAT_FLUSH_ASSEMBLY);
-  MatAssemblyEnd(*jac, MAT_FLUSH_ASSEMBLY);
-
 
   // the extra equation of gate boundary
   // For voltage driven
@@ -721,21 +805,21 @@ void GateContactBC::DDM2_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_val
   //
   //
 
-  if(Genius::processor_id() == Genius::n_processors() -1)
+  if(Genius::is_last_processor())
   {
     // here we process the external circuit, we do not use AD here
     // NOTE current item such as (L/dt+R)*current and current has already been processed before
 
     //for inter connect electrode
-    if(this->is_inter_connect_electrode())
+    if(this->is_inter_connect_bc())
     {
       // the external electrode equation is:
       // f_ext = Ve - V_ic + R*current;
 
       // d(f_ext)/d(Ve)
-      MatSetValue(*jac, bc_global_offset, bc_global_offset, 1.0, INSERT_VALUES);
+      MatSetValue(*jac, bc_global_offset, bc_global_offset, 1.0, ADD_VALUES);
       // d(f_ext)/d(V_ic)
-      MatSetValue(*jac, bc_global_offset, this->inter_connect_hub()->global_offset(), -1.0, INSERT_VALUES);
+      MatSetValue(*jac, bc_global_offset, this->inter_connect_hub()->global_offset(), -1.0, ADD_VALUES);
     }
     //for stand alone electrode
     else
@@ -746,7 +830,7 @@ void GateContactBC::DDM2_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_val
         // f_ext = (L/dt+R)*current + (Ve-Vapp) + (L/dt+R)*C/dt*Ve - (L/dt+R)*C/dt*P - L/dt*(I+Ic);
 
         // d(f_ext)/d(Ve)
-        MatSetValue(*jac, bc_global_offset, bc_global_offset, 1+(L/dt+R)*C/dt, INSERT_VALUES);
+        MatSetValue(*jac, bc_global_offset, bc_global_offset, 1+(L/dt+R)*C/dt, ADD_VALUES);
       }
 
       if(ext_circuit()->is_current_driven())
@@ -758,8 +842,8 @@ void GateContactBC::DDM2_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_val
     }
   }
 
-  // the last operator is INSERT_VALUES
-  add_value_flag = INSERT_VALUES;
+  // the last operator is ADD_VALUES
+  add_value_flag = ADD_VALUES;
 
 }
 
@@ -771,5 +855,6 @@ void GateContactBC::DDM2_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_val
  */
 void GateContactBC::DDM2_Update_Solution(PetscScalar *)
 {
+  Parallel::sum(ext_circuit()->current_itering());
   this->ext_circuit()->update();
 }

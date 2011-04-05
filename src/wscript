@@ -1,0 +1,96 @@
+def build(bld):
+
+  # Includes for Genius
+  includes = []
+  includes.extend(bld.path.parent.ant_glob('include/**', dir=True, src=False))
+  bld.genius_includes=includes
+
+  # Contrib libraries
+  contrib_dirs = '''ann csabathy metis qshep expreval spice tetgen tif3d
+                    ctri mxml nn spline triangle tif silvaco dfise'''.split()
+  dirs=[]
+  for d in contrib_dirs:
+    d = 'contrib/%s' % d
+    if bld.path.find_dir(d):
+      dirs.append(d)
+  bld.recurse(dirs)
+
+  # add Includes from contrib libs
+  includes.insert(0, bld.path.find_or_declare('../'))
+  includes.extend(bld.path.ant_glob('contrib/**', dir=True, src=False, excl='contrib/brkpnts'))
+
+  # parser lex/yacc
+  bld( source    = bld.path.ant_glob(['parser/*.l', 'parser/*.y']),
+       name      = 'genius_parser',
+       flexflags = '-i -l'.split(),
+       on_results = True,
+     )
+  includes.insert(0, bld.path.find_dir('parser').get_bld())
+
+  # material library
+  bld.recurse('material')
+
+  # material library
+  bld.recurse('hook')
+
+  # main source tree
+  main_src = []
+  for d in '''base bc fe geom interpolation math mesh meshgen
+              parser partition quadrature solution solver source utils'''.split():
+    main_src.extend(bld.path.ant_glob('%s/**/*.cc' % d))
+  main_src.extend(bld.path.ant_glob('material/*.cc', excl='material/adolc_init.cc'))
+
+  # src objects
+  bld.objects(  source    = main_src,
+                includes  = includes,
+                features  = 'cxx',
+                use       = 'opt SLEPC PETSC  CGNS VTK',
+                depends_on = 'genius_parser',
+                target    = 'genius_objects',
+             )
+
+  # sip module objects
+  # bld.objects ( source    = 'sip/genius.sip',
+  #               includes  = includes,
+  #              features  = 'cxx',
+  #              use       = 'opt PETSC CGNS VTK SIP',
+  #              target    = 'sip_objects',
+  #           )
+
+  bld.objects(  source    = 'main.cc',
+                includes  = includes,
+                features  = 'cxx',
+                use       = 'opt SLEPC PETSC  CGNS VTK VERSION',
+                target    = 'genius_main'
+             )
+
+  all_use = 'opt SLEPC PETSC CGNS VTK'.split()
+  all_use.extend(bld.contrib_objs)
+  all_use.extend(['genius_objects', 'hook_common'])
+
+  # sip module
+  if bld.env.SIP_BIN:
+    sip_use = [x for x in all_use]
+    sip_use.extend(['SIP', 'VERSION'])
+    bld.shlib(
+         source    = 'sip/genius.sip',
+         includes  = includes,
+         features  = 'cxx cxxshlib',
+         use       = sip_use,
+         install_path = '${PREFIX}/lib',
+         target    = bld.path.find_or_declare(bld.env.cxxshlib_PATTERN % 'genius'),
+       )
+  
+  # main executable
+  platform = bld.env.PLATFORM # Windows Linux Darwin ...
+  if   platform=='Linux':    suffix='LINUX'
+  elif platform=='Windows':  suffix='WIN32'
+  elif platform=='Darwin':   suffix='DARWIN'
+
+  all_use.extend(['genius_main'])
+  bld( features  = 'cxx cprogram',
+       use       = all_use,
+       target    = 'genius.%s' % suffix,
+       install_path = '${PREFIX}/bin',
+     )
+

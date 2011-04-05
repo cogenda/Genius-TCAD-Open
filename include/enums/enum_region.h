@@ -30,13 +30,14 @@
 /**
  * the region type genius support
  */
-enum  SimulationRegionType 
-{ 
-  SemiconductorRegion=0, 
-  InsulatorRegion, 
-  ConductorRegion, 
-  VacuumRegion, 
-  PMLRegion, 
+enum  SimulationRegionType
+{
+  SemiconductorRegion=0,
+  InsulatorRegion,
+  MetalRegion,
+  ElectrodeRegion,
+  VacuumRegion,
+  PMLRegion,
   InvalidRegion
 };
 

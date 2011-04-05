@@ -25,7 +25,7 @@
 #include "semiconductor_region.h"
 #include "conductor_region.h"
 #include "insulator_region.h"
-#include "boundary_condition.h"
+#include "boundary_condition_neumann.h"
 
 
 using PhysicalUnit::kb;
@@ -85,9 +85,9 @@ void NeumannBC::DDM2_Function(PetscScalar * x, Vec f, InsertMode &add_value_flag
 
         break;
       }
-
-    case ConductorRegion:
-    case InsulatorRegion:
+    case MetalRegion     :
+    case ElectrodeRegion :
+    case InsulatorRegion :
       {
         // process governing equation of T, which should consider heat exchange to entironment
         PetscScalar T = x[fvm_node->local_offset()+1];  // lattice temperature
@@ -163,9 +163,9 @@ void NeumannBC::DDM2_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_value_f
 
         break;
       }
-
-    case ConductorRegion:
-    case InsulatorRegion:
+    case MetalRegion     :
+    case ElectrodeRegion :
+    case InsulatorRegion :
       {
         //the indepedent variable number, we only need 1 here.
         adtl::AutoDScalar::numdir=1;

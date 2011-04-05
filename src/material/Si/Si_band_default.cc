@@ -20,10 +20,12 @@
 /*****************************************************************************/
 //
 // Material Type: Silicon
+#include <algorithm>
 
 
 #include "PMI.h"
-
+#include "fvm_node_data.h"
+#include "mathfunc.h"
 
 class GSS_Si_BandStructure : public PMIS_BandStructure
 {
@@ -65,7 +67,7 @@ private:
 
     N0_BGN    = 1.300000e+17*std::pow(cm,-3);
     V0_BGN    = 6.920000e-03*V;
-    CON_BGN   = 5.000000e-01*eV;
+    CON_BGN   = 5.000000e-01;
 
 #ifdef __CALIBRATE__
     parameter_map.insert(para_item("EG0",    PARA("EG0",    "The energy bandgap of the material at 0 K", "eV", eV, &EG0)) );
@@ -82,8 +84,9 @@ private:
 
     parameter_map.insert(para_item("N0.BGN",   PARA("N0.BGN",   "The concentration parameter used in Slotboom's band-gap narrowing model", "cm^-3", std::pow(cm,-3), &N0_BGN)) );
     parameter_map.insert(para_item("V0.BGN",   PARA("V0.BGN",   "The voltage parameter used in Slotboom's band-gap narrowing model", "V", V, &V0_BGN)) );
-    parameter_map.insert(para_item("CON.BGN",  PARA("CON.BGN",  "The const parameter used in Slotboom's band-gap narrowing model", "eV", eV, &CON_BGN)) );
+    parameter_map.insert(para_item("CON.BGN",  PARA("CON.BGN",  "The const parameter used in Slotboom's band-gap narrowing model", "-", 1.0, &CON_BGN)) );
 #endif
+
   }
 public:
   //---------------------------------------------------------------------------
@@ -128,19 +131,19 @@ public:
   //electron and hole effect mass
   PetscScalar EffecElecMass (const PetscScalar &Tl)
   {
-        return ELECMASS;
+    return ELECMASS;
   }
   AutoDScalar EffecElecMass (const AutoDScalar &Tl)
   {
-        return ELECMASS;
+    return ELECMASS;
   }
   PetscScalar EffecHoleMass (const PetscScalar &Tl)
   {
-        return HOLEMASS;
+    return HOLEMASS;
   }
   AutoDScalar EffecHoleMass (const AutoDScalar &Tl)
   {
-        return HOLEMASS;
+    return HOLEMASS;
   }
 
   //---------------------------------------------------------------------------
@@ -188,6 +191,294 @@ public:
   }
 
   //end of Bandgap
+public:
+  //
+  int IonType( const std::string & ion_string )
+  {
+    // convert ion_string to lower case
+    std::string ion_string_lower_case(ion_string);
+    std::transform(ion_string_lower_case.begin(), ion_string_lower_case.end(), ion_string_lower_case.begin(), ::tolower);
+
+    // exactly match
+    if( species_map.find(ion_string) != species_map.end() )
+      return species_map.find(ion_string)->second.ion;
+
+    // partly match species
+    std::map<std::string, Species>::const_iterator it = species_map.begin();
+    for(; it != species_map.end(); ++it)
+      if(ion_string_lower_case.find(it->first)!=std::string::npos)
+        return it->second.ion;
+
+    return 0;
+  }
+
+
+  //[incomplete ionization]
+  PetscScalar Na_II(const PetscScalar &p, const PetscScalar &Tl, bool fermi)
+  {
+    PetscScalar Ni = ReadDopingNa() + ReadDopingNd();
+    PetscScalar Nv = this->Nv(Tl);
+
+    PetscScalar gamma = 1.0;
+    if( fermi ) gamma = gamma_f(p/Nv);
+
+    PetscScalar Na_eff = 0.0;
+
+    for(unsigned int i=0; i<p_ions.size(); ++i)
+    {
+      PetscScalar Na = ReadRealVariable(p_ions[i].first);
+      PetscScalar Na_crit = p_ions[i].second.N_crit;
+      PetscScalar E0      = p_ions[i].second.E0;
+      PetscScalar g       = p_ions[i].second.GB;
+      PetscScalar alpha   = p_ions[i].second.alpha;
+      PetscScalar gamma   = p_ions[i].second.gamma;
+      if( Na > 0.0  )
+      {
+        if(Na < Na_crit)
+        {
+          PetscScalar dEa = E0 - alpha*pow(Ni, 1.0/3.0);
+          PetscScalar p1 = gamma*Nv*exp(-dEa/(kb*Tl));
+          Na_eff += Na/( 1 + g*p/p1 );
+        }
+        else
+          Na_eff += Na;
+      }
+    }
+    return Na_eff;
+  }
+
+
+  AutoDScalar Na_II(const AutoDScalar &p, const AutoDScalar &Tl, bool fermi)
+  {
+    PetscScalar Ni = ReadDopingNa() + ReadDopingNd();
+    AutoDScalar Nv = this->Nv(Tl);
+
+    AutoDScalar gamma = 1.0;
+    if( fermi ) gamma = gamma_f(p/Nv);
+
+    AutoDScalar Na_eff = 0.0;
+
+    for(unsigned int i=0; i<p_ions.size(); ++i)
+    {
+      PetscScalar Na = ReadRealVariable(p_ions[i].first);
+      PetscScalar Na_crit = p_ions[i].second.N_crit;
+      PetscScalar E0      = p_ions[i].second.E0;
+      PetscScalar g       = p_ions[i].second.GB;
+      PetscScalar alpha   = p_ions[i].second.alpha;
+      PetscScalar gamma   = p_ions[i].second.gamma;
+      if( Na > 0.0  )
+      {
+        if(Na < Na_crit)
+        {
+          PetscScalar dEa = E0 - alpha*pow(Ni, 1.0/3.0);
+          AutoDScalar p1 = gamma*Nv*exp(-dEa/(kb*Tl));
+          Na_eff += Na/( 1 + g*p/p1 );
+        }
+        else
+          Na_eff += Na;
+      }
+    }
+
+    return Na_eff;
+  }
+
+  PetscScalar Nd_II(const PetscScalar &n, const PetscScalar &Tl, bool fermi)
+  {
+    PetscScalar Ni = ReadDopingNa() + ReadDopingNd();
+    PetscScalar Nc = this->Nc(Tl);
+
+    PetscScalar gamma = 1.0;
+    if( fermi ) gamma = gamma_f(n/Nc);
+
+    PetscScalar Nd_eff = 0.0;
+
+    for(unsigned int i=0; i<n_ions.size(); ++i)
+    {
+      PetscScalar Nd = ReadRealVariable(n_ions[i].first);
+      PetscScalar Nd_crit = n_ions[i].second.N_crit;
+      PetscScalar E0      = n_ions[i].second.E0;
+      PetscScalar g       = n_ions[i].second.GB;
+      PetscScalar alpha   = n_ions[i].second.alpha;
+      PetscScalar gamma   = n_ions[i].second.gamma;
+      if( Nd > 0.0  )
+      {
+        if(Nd < Nd_crit)
+        {
+          PetscScalar dEd = E0 - alpha*pow(Ni, 1.0/3.0);
+          PetscScalar n1 = gamma*Nc*exp(-dEd/(kb*Tl));
+          Nd_eff += Nd/( 1 + g*n/n1 );
+        }
+        else
+          Nd_eff += Nd;
+      }
+    }
+
+    return Nd_eff;
+  }
+
+  AutoDScalar Nd_II(const AutoDScalar &n, const AutoDScalar &Tl, bool fermi)
+  {
+    PetscScalar Ni = ReadDopingNa() + ReadDopingNd();
+    AutoDScalar Nc = this->Nc(Tl);
+
+    AutoDScalar gamma = 1.0;
+    if( fermi ) gamma = gamma_f(n/Nc);
+
+    AutoDScalar Nd_eff = 0.0;
+
+    for(unsigned int i=0; i<n_ions.size(); ++i)
+    {
+      PetscScalar Nd = ReadRealVariable(n_ions[i].first);
+      PetscScalar Nd_crit = n_ions[i].second.N_crit;
+      PetscScalar E0      = n_ions[i].second.E0;
+      PetscScalar g       = n_ions[i].second.GB;
+      PetscScalar alpha   = n_ions[i].second.alpha;
+      PetscScalar gamma   = n_ions[i].second.gamma;
+      if( Nd > 0.0  )
+      {
+        if(Nd < Nd_crit)
+        {
+          PetscScalar dEd = E0 - alpha*pow(Ni, 1.0/3.0);
+          AutoDScalar n1 = gamma*Nc*exp(-dEd/(kb*Tl));
+          Nd_eff += Nd/( 1 + g*n/n1 );
+        }
+        else
+          Nd_eff += Nd;
+      }
+    }
+
+    return Nd_eff;
+  }
+
+
+private:
+
+  struct Species
+  {
+    std::string name;
+    int ion;             // ion type, -1 for p type and +1 for n type
+    PetscScalar E0;      // The constant term used in the calculation of the band ionization energy
+    PetscScalar GB;      // The band degeneracy factor
+    PetscScalar alpha;   // The prefactor for the doping dependent term used in the calculation of the band ionization energy
+    PetscScalar beta;    // The prefactor the temperature dependent term used in the calculation of the band ionization energy.
+    PetscScalar gamma;   // The exponent of temperature used in the calculation of the band ionization energy.
+    PetscScalar N_crit;  // The impurity concentration form which the doping transition from incomplete ionization to complete ionization
+  };
+
+  // predefined and user specified species
+  std::map<std::string, Species> species_map;
+
+  // Init value
+  void IncompleteIonization_Init()
+  {
+    // p type
+    Species boron    = {"boron",    -1, 0.045*eV, 4.0, 3.037e-8, 200.0, 0.950, 1e22*std::pow(cm, -3)  };
+    Species aluminum = {"aluminum", -1, 0.067*eV, 4.0, 3.037e-8, 200.0, 0.950, 1e22*std::pow(cm, -3)  };
+    Species gallium  = {"gallium",  -1, 0.072*eV, 4.0, 3.037e-8, 200.0, 0.950, 1e22*std::pow(cm, -3)  };
+    Species indium   = {"indium",   -1, 0.160*eV, 4.0, 3.037e-8, 200.0, 0.950, 1e22*std::pow(cm, -3)  };
+    Species pdopant  = {"na",       -1, 0.045*eV, 4.0, 3.037e-8, 200.0, 0.950, 1e22*std::pow(cm, -3)  };
+
+    // n type
+    Species nitrogen   = {"nitrogen",   1, 0.045*eV, 2.0, 3.100e-8, 200.0, 1.000, 1e22*std::pow(cm, -3)  };
+    Species phosphorus = {"phosphorus", 1, 0.045*eV, 2.0, 3.100e-8, 200.0, 1.000, 1e22*std::pow(cm, -3)  };
+    Species arsenic    = {"arsenic",    1, 0.054*eV, 2.0, 3.100e-8, 200.0, 1.000, 1e22*std::pow(cm, -3)  };
+    Species antimony   = {"antimony",   1, 0.039*eV, 2.0, 3.100e-8, 200.0, 1.000, 1e22*std::pow(cm, -3)  };
+    Species ndopant    = {"nd",         1, 0.045*eV, 2.0, 3.100e-8, 200.0, 1.000, 1e22*std::pow(cm, -3)  };
+
+    species_map["boron"     ] = boron;
+    species_map["aluminum"  ] = aluminum;
+    species_map["gallium"   ] = gallium;
+    species_map["indium"    ] = indium;
+    species_map["na"        ] = pdopant;
+    species_map["nitrogen"  ] = nitrogen;
+    species_map["phosphorus"] = phosphorus;
+    species_map["arsenic"   ] = arsenic;
+    species_map["antimony"  ] = antimony;
+    species_map["nd"        ] = ndopant;
+
+    // fill n_ions and p_ions
+    std::map<std::string, Species>::const_iterator it = species_map.begin();
+    for( ; it != species_map.end(); ++it)
+    {
+      const std::string & ion_string = it->second.name;
+      if( HasVariable(ion_string) )
+      {
+        if(it->second.ion > 0)
+          n_ions.push_back( std::make_pair( VariableIndex(ion_string),  (it->second)) );
+        if(it->second.ion < 0)
+          p_ions.push_back( std::make_pair( VariableIndex(ion_string),  (it->second)) );
+      }
+    }
+  }
+
+  std::vector< std::pair<unsigned int, Species> > n_ions;
+  std::vector< std::pair<unsigned int, Species> > p_ions;
+
+  void IncompleteIonization_Setup(std::vector<Parser::Parameter> & pmi_parameters)
+  {
+    // check if any user defind species
+    std::string species_name;
+    for(std::vector<Parser::Parameter>::iterator it = pmi_parameters.begin(); it != pmi_parameters.end();)
+    {
+      if( it->type() == Parser::STRING && it->name() == "species" )
+      {
+        species_name = it->get_string();
+        it = pmi_parameters.erase(it);
+      }
+      else
+        ++it;
+    }
+
+    if( !species_name.empty() )
+    {
+      int ion=0 ;
+      PetscScalar E0=0.0;
+      PetscScalar GB=0;
+      PetscScalar alpha=0.0;
+      PetscScalar beta=0.0;
+      PetscScalar gamma=1.0;
+      PetscScalar N_crit=1e22;
+
+      for(std::vector<Parser::Parameter>::iterator it = pmi_parameters.begin(); it != pmi_parameters.end();)
+      {
+        if( it->type() == Parser::INTEGER && it->name() == "ion" )
+        { ion = it->get_int(); it = pmi_parameters.erase(it); }
+        else if( it->type() == Parser::REAL && it->name() == "eb0" )
+        { E0 = it->get_real(); it = pmi_parameters.erase(it); }
+        else if( it->type() == Parser::REAL && it->name() == "gb" )
+        { GB = it->get_real(); it = pmi_parameters.erase(it); }
+        else if( it->type() == Parser::REAL && it->name() == "alpha" )
+        { alpha = it->get_real(); it = pmi_parameters.erase(it); }
+        else if( it->type() == Parser::REAL && it->name() == "beta" )
+        { beta = it->get_real(); it = pmi_parameters.erase(it); }
+        else if( it->type() == Parser::REAL && it->name() == "gamma" )
+        { gamma = it->get_real(); it = pmi_parameters.erase(it); }
+        else if( it->type() == Parser::REAL && it->name() == "ncrit" )
+        { N_crit = it->get_real(); it = pmi_parameters.erase(it); }
+        else
+          ++it;
+      }
+
+      Species species = { species_name, ion, E0*eV, GB, alpha, beta, gamma, N_crit*std::pow(cm, -3) };
+      species_map[species_name] = species;
+    }
+
+    // update n_ions and p_ions
+    n_ions.clear();
+    p_ions.clear();
+    for( std::map<std::string, Species>::const_iterator it = species_map.begin(); it != species_map.end(); ++it)
+    {
+      const std::string & ion_string = it->second.name;
+      if( HasVariable(ion_string) )
+      {
+        if(it->second.ion > 0)
+          n_ions.push_back( std::make_pair( VariableIndex(ion_string),  (it->second)) );
+        if(it->second.ion < 0)
+          p_ions.push_back( std::make_pair( VariableIndex(ion_string),  (it->second)) );
+      }
+    }
+
+  }
 
 private:
   //[Lifetime]
@@ -238,21 +529,25 @@ private:
     parameter_map.insert(para_item("STAUP",    PARA("STAUP",    "The hole surface recombination velocity", "cm/s", cm/s, &STAUP)) );
 
     parameter_map.insert(para_item("NSRHN", PARA("NSRHN", "The Shockley-Read-Hall concentration parameter for electrons", "cm^-3", std::pow(cm,-3), &NSRHN)) );
-//    parameter_map.insert(para_item("AN",    PARA("AN",    "The constant term in the concentration-dependent expression for electron lifetime", "-", 1.0, &AN)) );
-//    parameter_map.insert(para_item("BN",    PARA("BN",    "The linear term coefficient in the concentration-dependent expression for electron lifetime", "-", 1.0, &BN)) );
-//    parameter_map.insert(para_item("CN",    PARA("CN",    "The exponential term coefficient in the concentration-dependent expression for electron lifetime", "-", 1.0, &CN)) );
-//    parameter_map.insert(para_item("EN",    PARA("EN",    "The exponent in the concentration-dependent expression for electron lifetime", "-", 1.0, &EN)) );
+    //    parameter_map.insert(para_item("AN",    PARA("AN",    "The constant term in the concentration-dependent expression for electron lifetime", "-", 1.0, &AN)) );
+    //    parameter_map.insert(para_item("BN",    PARA("BN",    "The linear term coefficient in the concentration-dependent expression for electron lifetime", "-", 1.0, &BN)) );
+    //    parameter_map.insert(para_item("CN",    PARA("CN",    "The exponential term coefficient in the concentration-dependent expression for electron lifetime", "-", 1.0, &CN)) );
+    //    parameter_map.insert(para_item("EN",    PARA("EN",    "The exponent in the concentration-dependent expression for electron lifetime", "-", 1.0, &EN)) );
 
     parameter_map.insert(para_item("NSRHP", PARA("NSRHP", "The Shockley-Read-Hall concentration parameter for holes", "cm^-3", std::pow(cm,-3), &NSRHP)) );
-//    parameter_map.insert(para_item("AP",    PARA("AP",    "The constant term in the concentration-dependent expression for hole lifetime", "-", 1.0, &AP)) );
-//    parameter_map.insert(para_item("BP",    PARA("BP",    "The linear term coefficient in the concentration-dependent expression for hole lifetime", "-", 1.0, &BP)) );
-//    parameter_map.insert(para_item("CP",    PARA("CP",    "The exponential term coefficient in the concentration-dependent expression for hole lifetime", "-", 1.0, &CP)) );
-//    parameter_map.insert(para_item("EP",    PARA("EP",    "The exponent in the concentration-dependent expression for hole lifetime", "-", 1.0, &EP)) );
+    //    parameter_map.insert(para_item("AP",    PARA("AP",    "The constant term in the concentration-dependent expression for hole lifetime", "-", 1.0, &AP)) );
+    //    parameter_map.insert(para_item("BP",    PARA("BP",    "The linear term coefficient in the concentration-dependent expression for hole lifetime", "-", 1.0, &BP)) );
+    //    parameter_map.insert(para_item("CP",    PARA("CP",    "The exponential term coefficient in the concentration-dependent expression for hole lifetime", "-", 1.0, &CP)) );
+    //    parameter_map.insert(para_item("EP",    PARA("EP",    "The exponent in the concentration-dependent expression for hole lifetime", "-", 1.0, &EP)) );
 
     parameter_map.insert(para_item("EXN_TAU",    PARA("EXN_TAU",    "The exponent of lattice temperature dependent electron lifetime", "-", 1.0, &EXN_TAU)) );
     parameter_map.insert(para_item("EXP_TAU",    PARA("EXP_TAU",    "The exponent of lattice temperature dependent hole lifetime", "-", 1.0, &EXP_TAU)) );
 #endif
+
   }
+
+
+
 
 public:
   //---------------------------------------------------------------------------
@@ -315,16 +610,17 @@ private:
     B_RTUN   = 4.000000e+14*std::pow(cm,S_RTUN-3)*std::pow(V,-S_RTUN)/s;
     E_RTUN   = 1.900000e+07*V/cm;
 #ifdef __CALIBRATE__
-//    parameter_map.insert(para_item("ETRAP",    PARA("ETRAP",    "The trap level (Et - Ei) used in determining the Shockley-Read-Hall recombination rate", "eV", eV, &ETRAP)) );
+    //    parameter_map.insert(para_item("ETRAP",    PARA("ETRAP",    "The trap level (Et - Ei) used in determining the Shockley-Read-Hall recombination rate", "eV", eV, &ETRAP)) );
     parameter_map.insert(para_item("AUGN",     PARA("AUGN",     "The Auger coefficient for electrons", "cm^6/s", std::pow(cm,6)/s, &AUGN)) );
     parameter_map.insert(para_item("AUGP",     PARA("AUGP",     "The Auger coefficient for holes", "cm^6/s", std::pow(cm,6)/s, &AUGP)) );
     parameter_map.insert(para_item("C.DIRECT", PARA("C.DIRECT", "The direct generation/recombination coefficient", "cm^3/s", std::pow(cm,3)/s, &C_DIRECT)) );
 
-//    parameter_map.insert(para_item("M_RTUN",   PARA("M_RTUN", "The trap-assisted tunneling effective mass", "-", 1.0, &M_RTUN)) );
-//    parameter_map.insert(para_item("S_RTUN",   PARA("S_RTUN", "Band-to-band field power ratio", "-", 1.0, &S_RTUN)) );
-//    parameter_map.insert(para_item("B_RTUN",   PARA("B_RTUN", "Band-to-band tunneling rate proportionality factor", "cm^(S_RTUN-3)V^(-S_RTUN)/s", std::pow(cm,S_RTUN -3)*std::pow(V,-S_RTUN)/s, &B_RTUN)) );
-//    parameter_map.insert(para_item("E_RTUN",   PARA("E_RTUN", "Band-to-band reference electric field", "V/cm", V/cm, &E_RTUN)) );
+    //    parameter_map.insert(para_item("M_RTUN",   PARA("M_RTUN", "The trap-assisted tunneling effective mass", "-", 1.0, &M_RTUN)) );
+    //    parameter_map.insert(para_item("S_RTUN",   PARA("S_RTUN", "Band-to-band field power ratio", "-", 1.0, &S_RTUN)) );
+    //    parameter_map.insert(para_item("B_RTUN",   PARA("B_RTUN", "Band-to-band tunneling rate proportionality factor", "cm^(S_RTUN-3)V^(-S_RTUN)/s", std::pow(cm,S_RTUN -3)*std::pow(V,-S_RTUN)/s, &B_RTUN)) );
+    //    parameter_map.insert(para_item("E_RTUN",   PARA("E_RTUN", "Band-to-band reference electric field", "V/cm", V/cm, &E_RTUN)) );
 #endif
+
   }
 
 public:
@@ -468,22 +764,22 @@ private:
   // Init value
   void RelaxTime_Init()
   {
-   WTN0 =  1.685200E-13*s;
-   WTN1 =  1.029900E-13*s;
-   WTN2 = -5.184500E-15*s;
-   WTN3 =  0.000000E+00*s;
-   WTN4 =  0.000000E+00*s;
-   WTN5 =  0.000000E+00*s;
-   WTNL =  6.800000E-13*s;
-   TNL  =  2.979800E+03*K;
-   WTP0 = -1.560000E-14*s;
-   WTP1 =  1.380000E-13*s;
-   WTP2 = -2.500000E-14*s;
-   WTP3 =  2.310000E-15*s;
-   WTP4 = -1.050000E-16*s;
-   WTP5 =  1.820000E-18*s;
-   WTPL =  2.000000E-13*s;
-   TPL  =  1.000000E+05*K;
+    WTN0 =  1.685200E-13*s;
+    WTN1 =  1.029900E-13*s;
+    WTN2 = -5.184500E-15*s;
+    WTN3 =  0.000000E+00*s;
+    WTN4 =  0.000000E+00*s;
+    WTN5 =  0.000000E+00*s;
+    WTNL =  6.800000E-13*s;
+    TNL  =  2.979800E+03*K;
+    WTP0 = -1.560000E-14*s;
+    WTP1 =  1.380000E-13*s;
+    WTP2 = -2.500000E-14*s;
+    WTP3 =  2.310000E-15*s;
+    WTP4 = -1.050000E-16*s;
+    WTP5 =  1.820000E-18*s;
+    WTPL =  2.000000E-13*s;
+    TPL  =  1.000000E+05*K;
 #ifdef __CALIBRATE__
     parameter_map.insert(para_item("WTN0",    PARA("WTN0",    "Constant term for electron energy relaxatioin time.", "s", s, &WTN0)) );
     parameter_map.insert(para_item("WTN1",    PARA("WTN1",    "Coefficient of the linear term for the temperature dependence of electron energy relaxatioin time.", "s", s, &WTN1)) );
@@ -500,6 +796,7 @@ private:
     parameter_map.insert(para_item("TPL",     PARA("TPL",     "Hole temperature upper reference.", "K", K, &TPL)) );
     parameter_map.insert(para_item("WTPL",    PARA("WTPL",    "Hole energy relaxation time for electron temperature higher than TPL.", "s", s, &WTPL)) );
 #endif
+
   }
 public:
   //---------------------------------------------------------------------------
@@ -548,6 +845,7 @@ private:
     parameter_map.insert(para_item("ARICHN", PARA("ARICHN", "The effective Richardson constants for electrons", "A/(K^2*cm^2)", A/(K*cm)/(K*cm), &ARICHN)) );
     parameter_map.insert(para_item("ARICHP", PARA("ARICHP", "The effective Richardson constants for holes", "A/(K^2*cm^2)", A/(K*cm)/(K*cm), &ARICHP)) );
 #endif
+
   }
 
 public:
@@ -613,35 +911,132 @@ public:
 
   PetscScalar ThermalVn (PetscScalar Tl)
   {
-        // the following two result should be equivalent in mathmatic.
-        //return ARICHN*Tl*Tl/(e*Nc(Tl));
-        return sqrt(kb*Tl/(2*3.14159265359*EffecElecMass(Tl)));
+    // the following two result should be equivalent in mathmatic.
+    //return ARICHN*Tl*Tl/(e*Nc(Tl));
+    return sqrt(kb*Tl/(2*3.14159265359*EffecElecMass(Tl)));
   }
   AutoDScalar ThermalVn (AutoDScalar Tl)
   {
-        // the following two result should be equivalent in mathmatic.
-        //return ARICHN*Tl*Tl/(e*Nc(Tl));
-        return sqrt(kb*Tl/(2*3.14159265359*EffecElecMass(Tl)));
+    // the following two result should be equivalent in mathmatic.
+    //return ARICHN*Tl*Tl/(e*Nc(Tl));
+    return sqrt(kb*Tl/(2*3.14159265359*EffecElecMass(Tl)));
   }
   PetscScalar ThermalVp (PetscScalar Tl)
   {
-        // the following two result should be equivalent in mathmatic.
-        //return ARICHP*Tl*Tl/(e*Nv(Tl));
-        return sqrt(kb*Tl/(2*3.14159265359*EffecHoleMass(Tl)));
+    // the following two result should be equivalent in mathmatic.
+    //return ARICHP*Tl*Tl/(e*Nv(Tl));
+    return sqrt(kb*Tl/(2*3.14159265359*EffecHoleMass(Tl)));
   }
   AutoDScalar ThermalVp (AutoDScalar Tl)
   {
-        // the following two result should be equivalent in mathmatic.
-        //return ARICHP*Tl*Tl/(e*Nv(Tl));
-        return sqrt(kb*Tl/(2*3.14159265359*EffecHoleMass(Tl)));
+    // the following two result should be equivalent in mathmatic.
+    //return ARICHP*Tl*Tl/(e*Nv(Tl));
+    return sqrt(kb*Tl/(2*3.14159265359*EffecHoleMass(Tl)));
   }
   PetscScalar pdThermalVn_pdTl (PetscScalar Tl)
   {
-        return 0;
+    return 0;
   }
   PetscScalar pdThermalVp_pdTl (PetscScalar Tl)
   {
-        return 0;
+    return 0;
+  }
+
+private:
+  // [Hot Carrier Injection]
+  PetscScalar HCI_LAMHN; // hot-electron scattering mean-free-path
+  PetscScalar HCI_LAMHP; // hot-hole scattering mean-free-path
+
+  PetscScalar HCI_Fiegna_A; // Fiegna Constant
+  PetscScalar HCI_Fiegna_X; // Fiegna Constant
+
+  PetscScalar HCI_Classical_Lsem_n;   // scattering mean free path in the semiconductor
+  PetscScalar HCI_Classical_Lsemr_n;  // redirection mean free path
+  PetscScalar HCI_Classical_Lsem_p;   // scattering mean free path in the semiconductor
+  PetscScalar HCI_Classical_Lsemr_p;  // redirection mean free path
+
+  void HCI_Init()
+  {
+    HCI_LAMHN = 9.200000E-07*cm;
+    HCI_LAMHP = 1.000000E-07*cm;
+
+    HCI_Fiegna_A = 4.87E+02*m/s/pow(eV, 2.5);
+    HCI_Fiegna_X = 1.30E+08*pow(V/(cm*eV*eV), 1.5);
+
+    HCI_Classical_Lsem_n = 8.9E-07*cm;
+    HCI_Classical_Lsemr_n = 6.2E-06*cm;
+    HCI_Classical_Lsem_p = 1.0E-07*cm;
+    HCI_Classical_Lsemr_p = 6.2E-06*cm;
+  }
+
+  PetscScalar Erfc(PetscScalar x)
+  {
+    // Compute the complementary error function erfc(x).
+    // Erfc(x) = (2/sqrt(pi)) Integral(exp(-t^2))dt between x and infinity
+    //
+    //--- Nve 14-nov-1998 UU-SAP Utrecht
+
+    // The parameters of the Chebyshev fit
+    const PetscScalar  a1 = -1.26551223,   a2 = 1.00002368;
+    const PetscScalar  a3 =  0.37409196,   a4 = 0.09678418;
+    const PetscScalar  a5 = -0.18628806,   a6 = 0.27886807;
+    const PetscScalar  a7 = -1.13520398,   a8 = 1.48851587;
+    const PetscScalar  a9 = -0.82215223,   a10 = 0.17087277;
+
+    PetscScalar v = 1; // The return value
+    PetscScalar z = fabs(x);
+
+    if (z <= 0) return v; // erfc(0)=1
+
+    PetscScalar t = 1/(1+0.5*z);
+
+    v = t*exp((-z*z) +a1+t*(a2+t*(a3+t*(a4+t*(a5+t*(a6+t*(a7+t*(a8+t*(a9+t*a10)))))))));
+
+    if (x < 0) v = 2-v; // erfc(-x)=2-erfc(x)
+
+    return v;
+  }
+
+public:
+
+  PetscScalar HCI_Probability_Semiconductor_n(const PetscScalar &dis)
+  {
+    if( dis > 30*HCI_LAMHN  ) return 0;
+    return exp( - dis/ HCI_LAMHN);
+  }
+
+  PetscScalar HCI_Probability_Semiconductor_p(const PetscScalar &dis)
+  {
+    if( dis > 30*HCI_LAMHP  ) return 0;
+    return exp( - dis/ HCI_LAMHP);
+  }
+
+  PetscScalar HCI_Integral_Fiegna_n(const PetscScalar &phin, const PetscScalar &Eeff)
+  {
+    if( HCI_Fiegna_X > 30*Eeff  ) return 0;
+    return HCI_Fiegna_A/(3*HCI_Fiegna_X)*pow(Eeff, 1.5)/sqrt(phin)*exp(-HCI_Fiegna_X*pow(phin, 3.0)/pow(Eeff, 1.5));
+  }
+
+
+  PetscScalar HCI_Integral_Fiegna_p(const PetscScalar &phip, const PetscScalar &Eeff)
+  {
+    if( HCI_Fiegna_X > 30*Eeff  ) return 0;
+    return HCI_Fiegna_A/(3*HCI_Fiegna_X)*pow(Eeff, 1.5)/sqrt(phip)*exp(-HCI_Fiegna_X*pow(phip, 3.0)/pow(Eeff, 1.5));
+  }
+
+
+  PetscScalar HCI_Integral_Classical_n(const PetscScalar &phin, const PetscScalar &Eeff)
+  {
+    if( (HCI_Classical_Lsem_n*Eeff) < phin/30 ) return 0;
+    PetscScalar a = phin/(HCI_Classical_Lsem_n*Eeff);
+    return 1.0/(2*HCI_Classical_Lsemr_n)*(exp(-a) - sqrt(3.14159265359)*sqrt(a)*Erfc(sqrt(a)));
+  }
+
+  PetscScalar HCI_Integral_Classical_p(const PetscScalar &phip, const PetscScalar &Eeff)
+  {
+    if( (HCI_Classical_Lsem_p*Eeff) < phip/30 ) return 0;
+    PetscScalar a = phip/(HCI_Classical_Lsem_p*Eeff);
+    return 1.0/(2*HCI_Classical_Lsemr_p)*(exp(-a) - sqrt(3.14159265359)*sqrt(a)*Erfc(sqrt(a)));
   }
 
 private:
@@ -656,38 +1051,52 @@ private:
     parameter_map.insert(para_item("A.BTBT",    PARA("A.BTBT",    "The prefactor in Kane's model of band-to-band tunneling .", "eV^(-1/2) cm^-1 s^-1 V^-2", sqrt(e*V)/cm/s/V/V, &A_BTBT)) );
     parameter_map.insert(para_item("B.BTBT",    PARA("B.BTBT",    "The prefactor in the exponential factor of Kane's model of band-to-band tunneling .", "V cm^-1 eV^-(2/3)", V/cm/std::pow(e*V,PetscScalar(1.5)), &B_BTBT)) );
 #endif
+
   }
 public:
   //----------------------------------------------------------------
   // band to band Tunneling
   PetscScalar BB_Tunneling(const PetscScalar &Tl, const PetscScalar &E)
   {
-     return A_BTBT*E*E/sqrt(Eg(Tl))*exp(-B_BTBT*std::pow(Eg(Tl),PetscScalar(1.5))/(E+1*V/cm));
+    return A_BTBT*E*E/sqrt(Eg(Tl))*exp(-B_BTBT*std::pow(Eg(Tl),PetscScalar(1.5))/(E+1*V/cm));
   }
   AutoDScalar BB_Tunneling(const AutoDScalar &Tl, const AutoDScalar &E)
   {
-     return A_BTBT*E*E/sqrt(Eg(Tl))*exp(-B_BTBT*adtl::pow(Eg(Tl),PetscScalar(1.5))/(E+1*V/cm));
+    return A_BTBT*E*E/sqrt(Eg(Tl))*exp(-B_BTBT*adtl::pow(Eg(Tl),PetscScalar(1.5))/(E+1*V/cm));
   }
 
 
-// constructor and destructor
+  // constructor and destructor
 public:
   GSS_Si_BandStructure(const PMIS_Environment &env):PMIS_BandStructure(env)
   {
     T300 = 300.0*K;
     PMI_Info = "This is the Default model for band structure parameters of Silicon";
     Eg_Init();
+    IncompleteIonization_Init();
     Lifetime_Init();
     Recomb_Init();
     RelaxTime_Init();
     Schottky_Init();
+    HCI_Init();
     BBTunneling_Init();
   }
 
   ~GSS_Si_BandStructure()
   {}
-}
-;
+
+
+public:
+  // set parameters for each band model
+  int calibrate(std::vector<Parser::Parameter> & pmi_parameters)
+  {
+    IncompleteIonization_Setup(pmi_parameters);
+
+    return PMI_Server::calibrate(pmi_parameters);
+  }
+
+
+};
 
 
 extern "C"

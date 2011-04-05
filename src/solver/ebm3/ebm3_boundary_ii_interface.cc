@@ -23,7 +23,7 @@
 
 #include "simulation_system.h"
 #include "insulator_region.h"
-#include "boundary_condition.h"
+#include "boundary_condition_ii.h"
 #include "petsc_utils.h"
 
 using PhysicalUnit::kb;
@@ -36,15 +36,73 @@ using PhysicalUnit::e;
 
 
 /*---------------------------------------------------------------------
+ * do pre-process to function for EBM3 solver
+ */
+void InsulatorInsulatorInterfaceBC::EBM3_Function_Preprocess(Vec f, std::vector<PetscInt> &src_row,
+    std::vector<PetscInt> &dst_row, std::vector<PetscInt> &clear_row)
+{
+  // search for all the node with this boundary type
+  BoundaryCondition::const_node_iterator node_it = nodes_begin();
+  BoundaryCondition::const_node_iterator end_it = nodes_end();
+
+  for(; node_it!=end_it; ++node_it )
+  {
+
+    // skip node not belongs to this processor
+    if( (*node_it)->processor_id()!=Genius::processor_id() ) continue;
+
+    // buffer for saving regions and fvm_nodes this *node_it involves
+    std::vector<const SimulationRegion *> regions;
+    std::vector<const FVM_Node *> fvm_nodes;
+
+    // search all the fvm_node which has *node_it as root node, these fvm_nodes have the same location in geometry,
+    // but belong to different regions in logic.
+    BoundaryCondition::region_node_iterator  rnode_it     = region_node_begin(*node_it);
+    BoundaryCondition::region_node_iterator  end_rnode_it = region_node_end(*node_it);
+    for(unsigned int i=0 ; rnode_it!=end_rnode_it; ++i, ++rnode_it  )
+    {
+      regions.push_back( (*rnode_it).second.first );
+      fvm_nodes.push_back( (*rnode_it).second.second );
+
+      // the first insulator region
+      if(i==0)
+      {}
+      // other insulator region
+      else
+      {
+        // record the source row and dst row
+        src_row.push_back(fvm_nodes[i]->global_offset());
+        dst_row.push_back(fvm_nodes[0]->global_offset());
+        clear_row.push_back(fvm_nodes[i]->global_offset());
+
+        if(regions[i]->get_advanced_model()->enable_Tl())
+        {
+          src_row.push_back(fvm_nodes[i]->global_offset()+1);
+          dst_row.push_back(fvm_nodes[0]->global_offset()+1);
+          clear_row.push_back(fvm_nodes[i]->global_offset()+1);
+        }
+      }
+    }
+  }
+}
+
+
+
+/*---------------------------------------------------------------------
  * build function and its jacobian for EBM3 solver
  */
 void InsulatorInsulatorInterfaceBC::EBM3_Function(PetscScalar * x, Vec f, InsertMode &add_value_flag)
 {
+  // note, we will use ADD_VALUES to set values of vec f
+  // if the previous operator is not ADD_VALUES, we should assembly the vec
+  if( (add_value_flag != ADD_VALUES) && (add_value_flag != NOT_SET_VALUES) )
+  {
+    VecAssemblyBegin(f);
+    VecAssemblyEnd(f);
+  }
 
-  // buffer for Vec location
-  std::vector<PetscInt> src_row;
-  std::vector<PetscInt> dst_row;
-
+  // buffer for Vec index
+  std::vector<PetscInt> iy;
   // buffer for Vec value
   std::vector<PetscScalar> y_new;
 
@@ -89,19 +147,6 @@ void InsulatorInsulatorInterfaceBC::EBM3_Function(PetscScalar * x, Vec f, Insert
 
 
         const FVM_Node * ghost_fvm_node = fvm_nodes[0];
-        // the ghost node should have the same processor_id with me
-        genius_assert(fvm_nodes[i]->root_node()->processor_id() == ghost_fvm_node->root_node()->processor_id() );
-
-        // record the source row and dst row
-        src_row.push_back(fvm_nodes[i]->global_offset()+node_psi_offset);
-        dst_row.push_back(ghost_fvm_node->global_offset()+node_psi_offset);
-
-        if(regions[i]->get_advanced_model()->enable_Tl())
-        {
-          src_row.push_back(fvm_nodes[i]->global_offset()+node_Tl_offset);
-          dst_row.push_back(ghost_fvm_node->global_offset()+node_Tl_offset);
-        }
-
 
         // the governing equation of this fvm node --
 
@@ -110,6 +155,7 @@ void InsulatorInsulatorInterfaceBC::EBM3_Function(PetscScalar * x, Vec f, Insert
         // the psi of this node is equal to corresponding psi of node in the first insulator region
         // since psi should be continuous for the interface
         PetscScalar ff1 = V - V_in;
+        iy.push_back(fvm_nodes[i]->global_offset()+node_psi_offset);
         y_new.push_back(ff1);
 
         if(regions[i]->get_advanced_model()->enable_Tl())
@@ -119,23 +165,18 @@ void InsulatorInsulatorInterfaceBC::EBM3_Function(PetscScalar * x, Vec f, Insert
           // the T of this node is equal to corresponding T of node in the first insulator region
           // by assuming no heat resistance between 2 region
           PetscScalar ff2 = T - T_in;
+          iy.push_back(fvm_nodes[i]->global_offset()+node_Tl_offset);
           y_new.push_back(ff2);
         }
-
-        genius_assert(src_row.size()==y_new.size());
-
       }
 
     }
 
   }
 
-  // add src row to dst row, it will assemble vec automatically
-  PetscUtils::VecAddRowToRow(f, src_row, dst_row);
-
-  // insert new value to src row
-  if( src_row.size() )
-    VecSetValues(f, src_row.size(), &(src_row[0]), &(y_new[0]), INSERT_VALUES);
+  // set new value to row
+  if( iy.size() )
+    VecSetValues(f, iy.size(), &(iy[0]), &(y_new[0]), ADD_VALUES);
 
   add_value_flag = INSERT_VALUES;
 }
@@ -232,7 +273,56 @@ void InsulatorInsulatorInterfaceBC::EBM3_Jacobian_Reserve(Mat *jac, InsertMode &
 
 
 
+/*---------------------------------------------------------------------
+ * do pre-process to jacobian matrix for EBM3 solver
+ */
+void InsulatorInsulatorInterfaceBC::EBM3_Jacobian_Preprocess(Mat *jac, std::vector<PetscInt> &src_row,
+    std::vector<PetscInt> &dst_row, std::vector<PetscInt> &clear_row)
+{
+  // search for all the node with this boundary type
+  BoundaryCondition::const_node_iterator node_it = nodes_begin();
+  BoundaryCondition::const_node_iterator end_it = nodes_end();
 
+  for(; node_it!=end_it; ++node_it )
+  {
+
+    // skip node not belongs to this processor
+    if( (*node_it)->processor_id()!=Genius::processor_id() ) continue;
+
+    // buffer for saving regions and fvm_nodes this *node_it involves
+    std::vector<const SimulationRegion *> regions;
+    std::vector<const FVM_Node *> fvm_nodes;
+
+    // search all the fvm_node which has *node_it as root node, these fvm_nodes have the same location in geometry,
+    // but belong to different regions in logic.
+    BoundaryCondition::region_node_iterator  rnode_it     = region_node_begin(*node_it);
+    BoundaryCondition::region_node_iterator  end_rnode_it = region_node_end(*node_it);
+    for(unsigned int i=0 ; rnode_it!=end_rnode_it; ++i, ++rnode_it  )
+    {
+      regions.push_back( (*rnode_it).second.first );
+      fvm_nodes.push_back( (*rnode_it).second.second );
+
+      // the first insulator region
+      if(i==0)
+      {}
+      // other insulator region
+      else
+      {
+        // record the source row and dst row
+        src_row.push_back(fvm_nodes[i]->global_offset());
+        dst_row.push_back(fvm_nodes[0]->global_offset());
+        clear_row.push_back(fvm_nodes[i]->global_offset());
+
+        if(regions[i]->get_advanced_model()->enable_Tl())
+        {
+          src_row.push_back(fvm_nodes[i]->global_offset()+1);
+          dst_row.push_back(fvm_nodes[0]->global_offset()+1);
+          clear_row.push_back(fvm_nodes[i]->global_offset()+1);
+        }
+      }
+    }
+  }
+}
 
 
 /*---------------------------------------------------------------------
@@ -241,74 +331,12 @@ void InsulatorInsulatorInterfaceBC::EBM3_Jacobian_Reserve(Mat *jac, InsertMode &
 void InsulatorInsulatorInterfaceBC::EBM3_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_value_flag)
 {
 
-  // here we do several things:
-  // add some row to other, clear some row, insert some value to row
-  // I wonder if there are some more efficient way to do these.
-
+  // since we will use ADD_VALUES operat, check the matrix state.
+  if( (add_value_flag != ADD_VALUES) && (add_value_flag != NOT_SET_VALUES) )
   {
-    // buffer for mat rows which should be added to other row
-    std::vector<PetscInt> src_row;
-    std::vector<PetscInt> dst_row;
-
-    // search for all the node with this boundary type
-    BoundaryCondition::const_node_iterator node_it = nodes_begin();
-    BoundaryCondition::const_node_iterator end_it = nodes_end();
-    for(; node_it!=end_it; ++node_it )
-    {
-
-      // skip node not belongs to this processor
-      if( (*node_it)->processor_id()!=Genius::processor_id() ) continue;
-
-      std::vector<const SimulationRegion *> regions;
-      std::vector<const FVM_Node *> fvm_nodes;
-
-      // search all the fvm_node which has *node_it as root node, these nodes are the same in geometry,
-      // but in different region.
-      BoundaryCondition::region_node_iterator  rnode_it     = region_node_begin(*node_it);
-      BoundaryCondition::region_node_iterator  end_rnode_it = region_node_end(*node_it);
-      for(unsigned int i=0 ; rnode_it!=end_rnode_it; ++i, ++rnode_it  )
-      {
-        const SimulationRegion * region = (*rnode_it).second.first;
-        const FVM_Node * fvm_node = (*rnode_it).second.second;
-        if(!fvm_node->is_valid()) continue;
-
-        regions.push_back( region );
-        fvm_nodes.push_back( fvm_node );
-
-        // the first insulator region
-        if(i==0) continue;
-
-        // other insulator region
-        else
-        {
-          unsigned int node_psi_offset = regions[i]->ebm_variable_offset(POTENTIAL);
-          unsigned int node_Tl_offset  = regions[i]->ebm_variable_offset(TEMPERATURE);
-          // record the source row and dst row
-
-          const FVM_Node * ghost_fvm_node = fvm_nodes[0];
-
-
-          src_row.push_back(fvm_nodes[i]->global_offset()+node_psi_offset);
-          dst_row.push_back(ghost_fvm_node->global_offset()+node_psi_offset);
-
-          if(regions[i]->get_advanced_model()->enable_Tl())
-          {
-            src_row.push_back(fvm_nodes[i]->global_offset()+node_Tl_offset);
-            dst_row.push_back(ghost_fvm_node->global_offset()+node_Tl_offset);
-          }
-        }
-      }
-    }
-
-    //ok, we add source rows to destination rows
-    PetscUtils::MatAddRowToRow(*jac, src_row, dst_row);
-
-    // clear src rows
-    MatZeroRows(*jac, src_row.size(), src_row.empty() ? NULL : &src_row[0], 0.0);
-
-
+    MatAssemblyBegin(*jac, MAT_FLUSH_ASSEMBLY);
+    MatAssemblyEnd(*jac, MAT_FLUSH_ASSEMBLY);
   }
-
 
 
   // after that, set values to source rows

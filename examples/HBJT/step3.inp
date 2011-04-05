@@ -4,7 +4,7 @@
 #==============================================================================
 
 # set 100um width
-GLOBAL    T=300 DopingScale=1e18  Z.width=100
+GLOBAL    T=300 DopingScale=1e20  Z.width=100
 
 #------------------------------------------------------------------------------
 vsource Type = VDC    ID = GND  Tdelay=0 Vconst=0
@@ -28,7 +28,7 @@ ATTACH   Electrode=Base     	 VApp=Vb   # set voltage(Base) to Vb
 ATTACH   Electrode=Collector     VApp=VCC
 
 # call DDML1 to give a initial value for AC sweep.
-METHOD   Type=EBML3  NS=LineSearch LS=LU Damping=Potential
+METHOD   Type=EBML3  NS=Basic LS=MUMPS Damping=Potential
 
 # compute STEADYSTATE to get a initial value
 SOLVE    Type=STEADYSTATE

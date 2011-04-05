@@ -76,6 +76,76 @@ class SerialMesh : public UnstructuredMesh
   virtual void clear();
 
   /**
+   * @returns \p true if all elements and nodes of the mesh
+   * exist on the current processor, \p false otherwise
+   */
+  virtual bool is_serial () const
+  { return _is_serial; }
+
+  /**
+   * set the state of mesh
+   */
+  virtual void set_serial (bool flag)
+  {_is_serial = flag; }
+
+  /**
+   * broadcast all elements and nodes of the mesh onto
+   * other processor
+   */
+  virtual void broadcast (unsigned int root_id=0);
+
+  /**
+   * Gathers all elements and nodes of the mesh onto
+   * root processor. mesh can be totally distributed
+   */
+  virtual void gather(unsigned int root_id=0);
+
+  /**
+   * Gathers all elements and nodes of the mesh onto
+   * every processor. mesh can be totally distributed
+   */
+  virtual void allgather();
+
+  /**
+   * When supported, deletes all nonlocal elements of the mesh
+   * except for "ghosts" which touch a local element, and deletes
+   * all nodes which are not part of a local or ghost element
+   */
+  virtual void delete_remote_elements ();
+
+  /**
+   * pack all the mesh node location (x, y, z) one by one into an real array
+   * with size 3*n_nodes(), should be executed in parallel
+   */
+  virtual void pack_nodes(std::vector<Real> &) const;
+
+  /**
+   * pack all the mesh elem info, should be executed in parallel
+   */
+  virtual void pack_elems(std::vector<int> &) const;
+
+  /**
+   * pack all the mesh boundary info, should be executed in parallel
+   */
+  virtual void pack_boundary_faces (std::vector<unsigned int> &,
+                                    std::vector<unsigned short int> &,
+                                    std::vector<short int> &) const;
+
+  /**
+   * pack all the mesh boundary info, should be executed in parallel
+   */
+  virtual void pack_boundary_nodes (std::vector<unsigned int> &,
+                                    std::vector<short int> &) const;
+
+  /**
+   * @Return the clone of \f$ i^{th} \f$ element, even it is not local
+   * NOTE this function also clone elem nodes
+   * must be executed in parallel
+   * use AutoPtr to prevent memory lost.
+   */
+  virtual AutoPtr<Elem> elem_clone (const unsigned int i) const;
+
+  /**
    * Remove NULL elements from arrays
    */
   virtual void renumber_nodes_and_elements ();
@@ -273,6 +343,9 @@ public:
   node_iterator pid_nodes_begin (const unsigned int proc_id);
   node_iterator pid_nodes_end   (const unsigned int proc_id);
 
+  node_iterator local_nodes_begin             () ;
+  node_iterator local_nodes_end               () ;
+
   /**
    * const Node iterator accessor functions.
    */
@@ -288,6 +361,9 @@ public:
   const_node_iterator pid_nodes_begin (const unsigned int proc_id) const;
   const_node_iterator pid_nodes_end   (const unsigned int proc_id) const;
 
+  const_node_iterator local_nodes_begin             () const;
+  const_node_iterator local_nodes_end               () const;
+
 protected:
   /**
    * The verices (spatial coordinates) of the mesh.
@@ -298,6 +374,11 @@ protected:
    * The elements in the mesh.
    */
   std::vector<Elem*> _elements;
+
+  /**
+   * A boolean remembering whether we're serialized or not
+   */
+  bool _is_serial;
 
 private:
 
@@ -314,6 +395,16 @@ private:
    */
   typedef std::vector<Node*>::iterator             node_iterator_imp;
   typedef std::vector<Node*>::const_iterator const_node_iterator_imp;
+
+private:
+
+  void _unpack_mesh (const std::vector<Real> &pts, const std::vector<int> &conn);
+  void _unpack_bc_faces (const std::vector<unsigned int> &el_id,
+                         const std::vector<unsigned short int> &side_id,
+                         const std::vector<short int> &bc_id);
+  void _unpack_bc_nodes (const std::vector<unsigned int> &node_id,
+                         const std::vector<short int> &bc_id);
+
 };
 
 

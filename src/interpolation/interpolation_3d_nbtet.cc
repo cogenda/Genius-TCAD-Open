@@ -151,7 +151,7 @@ Point ANNSession::getPointCoord(unsigned int i) const
   if (i<_pts.size())
     return _pts[i];
   else
-    return NULL;
+    return Point();
 }
 
 long ANNSession::size() const

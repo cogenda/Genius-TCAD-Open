@@ -12,6 +12,7 @@ std::vector<Edge_t>      edge_array;
 std::vector<Region_t>    region_array;
 std::vector<Interface_t> interface_array;
 std::vector<Tri_t>       tri_array;
+std::vector<Quad_t>      quad_array;
 std::vector<Parameter_t> parameter_array;
 std::vector<Component_t> component_array;
 SolHead_t                sol_head;
@@ -25,6 +26,7 @@ static Edge_t      tmpedge;
 static Region_t    tmpregion;
 static Interface_t tmpinterface;
 static Tri_t       tmptri;
+static Quad_t      tmpquad;
 static Parameter_t tmpparameter;
 static Component_t tmpcomponent;
 static SolData_t   tmpdata;
@@ -43,7 +45,7 @@ static std::string tmpstring;
 
 
 %token <cval> Coordinate Edge Region Boundary Interface
-%token <cval> InterfaceBD Triangle Solution NodalSolution Component
+%token <cval> InterfaceBD Triangle Quadrangle Solution NodalSolution Component
 %token <ival> DataString Dataname DataUnit DataArray CLine MAT
 %token <ival> Integer
 %token <dval> Float
@@ -290,6 +292,19 @@ record	: Coordinate  integer  float  float  float
 	 }
          else
            tri_array.push_back(tmptri);
+}
+         | Quadrangle integer integer integer integer integer integer
+{
+#ifdef VERBOSE
+    printf("YACC Quadrangle node : \t%d\t%d\t%d\n",$4,$5,$6);
+#endif
+         tmpquad.index = $2-1;
+         tmpquad.region = $3-1;
+         tmpquad.c1 = $4-1;
+         tmpquad.c2 = $5-1;
+         tmpquad.c3 = $6-1;
+         tmpquad.c4 = $7-1;
+         quad_array.push_back(tmpquad);
 }
 
 	| Solution integer solname

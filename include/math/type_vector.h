@@ -67,6 +67,11 @@ protected:
                const T y=0.,
                const T z=0.);
 
+  /**
+   * Constructor. set TypeVector by an array
+   */
+  TypeVector  (const T*);
+
 public:
 
   /**
@@ -85,23 +90,28 @@ public:
   void assign (const TypeVector<T> &);
 
   /**
-   * Return the \f$ i^{th} \f$ element of the vector.
+   * @return the \f$ i^{th} \f$ element of the vector.
    */
-  T operator [] (const unsigned int i) const;
+  T coord(const unsigned int i) const;
 
   /**
-   * Return a writeable reference to the \f$ i^{th} \f$ element of the vector.
+   * @return the reference to \f$ i^{th} \f$ element of the vector.
+   */
+  const T & operator [] (const unsigned int i) const;
+
+  /**
+   * @return a writeable reference to the \f$ i^{th} \f$ element of the vector.
    */
   T & operator [] (const unsigned int i);
 
 
   /**
-   * Return the \f$ i^{th} \f$ element of the vector.
+   * @return the reference to \f$ i^{th} \f$ element of the vector.
    */
-  T operator () (const unsigned int i) const;
+  const T & operator () (const unsigned int i) const;
 
   /**
-   * Return a writeable reference to the \f$ i^{th} \f$ element of the vector.
+   * @return a writeable reference to the \f$ i^{th} \f$ element of the vector.
    */
   T & operator () (const unsigned int i);
 
@@ -214,13 +224,16 @@ public:
   /**
    * Think of a vector as a \p dim dimensional vector.  This
    * will return a unit vector aligned in that direction.
+   * when zero is true, return zero vector when my size is zero
    */
-  TypeVector<T> unit() const;
+  TypeVector<T> unit(bool zero=false) const;
+
 
   /**
    * convert itself to unit vector
    */
-  void to_unit();
+  TypeVector<T> & to_unit();
+
 
   /**
    * Returns the magnitude of the vector, i.e. the square-root of the
@@ -342,6 +355,21 @@ TypeVector<T>::TypeVector (const T x,
 }
 
 
+template <typename T>
+inline
+TypeVector<T>::TypeVector (const T* v)
+{
+  _coords[0] = v[0];
+
+  if (DIM > 1)
+  {
+    _coords[1] = v[1];
+
+    if (DIM == 3)
+      _coords[2] = v[2];
+  }
+}
+
 
 template <typename T>
 inline
@@ -372,17 +400,18 @@ void TypeVector<T>::assign (const TypeVector<T> &p)
 
 template <typename T>
 inline
-T TypeVector<T>::operator [] (const unsigned int i) const
+T TypeVector<T>::coord(const unsigned int i) const
 {
   assert (i<3);
+  return _coords[i];
+}
 
-#if DIM < 3
 
-  if (i > (DIM-1))
-    return 0.;
-
-#endif
-
+template <typename T>
+inline
+const T & TypeVector<T>::operator [] (const unsigned int i) const
+{
+  assert (i<3);
   return _coords[i];
 }
 
@@ -413,17 +442,9 @@ T & TypeVector<T>::operator [] (const unsigned int i)
 
 template <typename T>
 inline
-T TypeVector<T>::operator () (const unsigned int i) const
+const T & TypeVector<T>::operator () (const unsigned int i) const
 {
   assert (i<3);
-
-#if DIM < 3
-
-  if (i > (DIM-1))
-    return 0.;
-
-#endif
-
   return _coords[i];
 }
 
@@ -765,6 +786,20 @@ T TypeVector<T>::dot (const TypeVector<T2> &p) const
 #endif
 }
 
+
+template <typename T>
+inline TypeVector<T> TypeVector<T>::cross(const TypeVector<T>& p) const
+{
+  assert (DIM == 3);
+
+  // |     i          j          k    |
+  // |(*this)(0) (*this)(1) (*this)(2)|
+  // |   p(0)       p(1)       p(2)   |
+
+  return TypeVector<T>(  _coords[1]*p._coords[2] - _coords[2]*p._coords[1],
+                         -_coords[0]*p._coords[2] + _coords[2]*p._coords[0],
+                         _coords[0]*p._coords[1] - _coords[1]*p._coords[0]);
+}
 
 
 //angle between the vectors

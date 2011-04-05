@@ -81,6 +81,7 @@ private:
    * last value
    */
   double _t_last;
+  double _f_last;
   double _v_last;
   double _i_last;
 
@@ -88,6 +89,7 @@ private:
    * step
    */
   double _t_step;
+  double _f_step;
   double _v_step;
   double _i_step;
 
@@ -97,9 +99,19 @@ private:
   std::vector< std::pair<double, std::string> > time_sequence;
 
   /**
+   * if we are in ddm mode
+   */
+  bool            _ddm;
+
+  /**
    * if we are in mixA mode
    */
   bool            _mixA;
+
+  /**
+   * if we are in ddmac mode
+   */
+  bool            _ddm_ac;
 };
 
 #endif

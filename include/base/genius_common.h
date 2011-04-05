@@ -12,7 +12,12 @@
 #include <complex>
 
 #include "config.h"
-#include "petsc.h"
+#include "petscsys.h"
+#include "petsc_macro.h"
+
+#ifndef PETSC_VERSION_DEV
+  #define PetscBool PetscTruth
+#endif
 
 #ifdef CYGWIN
   // something required for building windows dll
@@ -163,15 +168,15 @@ typedef float ErrorVectorReal;
 #undef genius_here
 #define genius_here()     { std::cout << "[" << Genius::processor_id() << "] " << __FILE__ << ", line " << __LINE__ << ", compiled " << __DATE__ << " at " << __TIME__ << std::endl; }
 
-// the stop() macro will stop the code until a SIGCONT signal is recieved.  This is useful, for example, when
-// determining the memory used by a given operation.  A stop() could be instered before and after a questionable
+// the stop() macro will stop the code until a SIGCONT signal is received.  This is useful, for example, when
+// determining the memory used by a given operation.  A stop() could be inserted before and after a questionable
 // operation and the delta memory can be obtained from a ps or top.  This macro only works for serial cases.
 #undef genius_stop
 #ifdef HAVE_CSIGNAL
 #  include <csignal>
-#  define genius_stop()     { if (Genius::n_processors() == 0) { here(); std::cout << "Stopping process " << getpid() << "..." << std::endl; std::raise(SIGSTOP); std::cout << "Continuing process " << getpid() << "..." << std::endl; } }
+#  define genius_stop()     { if (Genius::n_processors() == 0) { genius_here(); std::cout << "Stopping process " << getpid() << "..." << std::endl; std::raise(SIGSTOP); std::cout << "Continuing process " << getpid() << "..." << std::endl; } }
 #else
-#  define genius_stop()     { if (Genius::n_processors() == 0) { here(); std::cerr << "WARNING:  stop() does not work without the <csignal> header file!" << std::endl; } }
+#  define genius_stop()     { if (Genius::n_processors() == 0) { genius_here(); std::cerr << "WARNING:  stop() does not work without the <csignal> header file!" << std::endl; } }
 #endif
 
 
@@ -181,12 +186,12 @@ typedef float ErrorVectorReal;
 #  include <csignal>
 #  define genius_assert(a)  {  if (! (a) ) { std::cerr << "Assertion failure at " << __FILE__ << ":" << __LINE__ << std::endl; std::raise(SIGTERM); } }
 #else
-#  define genius_assert(a)  {  if (! (a) ) PetscError(__LINE__, NULL, __FILE__, NULL, -1, 1, "Assertion failure"); }
+#  define genius_assert(a)  {  if (! (a) ) { std::cerr << "Assertion failure at " << __FILE__ << ":" << __LINE__ << std::endl; std::abort(); } }
 #endif
 
 // The genius_error() macro prints a message and aborts the code
 #undef genius_error
-#  define genius_error()    {  PetscError(__LINE__, NULL, __FILE__, NULL, -1, 1, ""); }
+#  define genius_error()    {  std::abort(); }
 
 // The untested macro warns that you are using untested code
 #undef genius_untested

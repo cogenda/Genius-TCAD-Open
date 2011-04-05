@@ -50,26 +50,24 @@ void InsulatorSimulationRegion::DDMAC_Fill_Value(Vec x, Vec L) const
   s.reserve(n_local_dofs);
 
   // for all the on processor node, insert value to petsc vector
-  const_node_iterator it = nodes_begin();
-  const_node_iterator it_end = nodes_end();
-  for(; it!=it_end; ++it)
+  const_processor_node_iterator node_it = on_processor_nodes_begin();
+  const_processor_node_iterator node_it_end = on_processor_nodes_end();
+  for(; node_it!=node_it_end; ++node_it)
   {
-    const FVM_Node * node = (*it).second;
-    //if this node NOT belongs to this processor, continue
-    if( node->root_node()->processor_id() != Genius::processor_id() ) continue;
+    const FVM_Node * fvm_node = *node_it;
 
-    const FVM_NodeData * node_data = node->node_data();
+    const FVM_NodeData * node_data = fvm_node->node_data();
 
     // psi, real part
     genius_assert(node_psi_offset!=invalid_uint);
-    ix.push_back(node->global_offset() + node_psi_offset);
+    ix.push_back(fvm_node->global_offset() + node_psi_offset);
     y.push_back(node_data->psi());
-    s.push_back(1.0/node->volume());
+    s.push_back(1.0/fvm_node->volume());
 
     // image part
-    ix.push_back(node->global_offset() + n_variables + node_psi_offset);
+    ix.push_back(fvm_node->global_offset() + n_variables + node_psi_offset);
     y.push_back(node_data->psi());
-    s.push_back(1.0/node->volume());
+    s.push_back(1.0/fvm_node->volume());
 
 
     // for extra Tl temperature equations
@@ -77,14 +75,14 @@ void InsulatorSimulationRegion::DDMAC_Fill_Value(Vec x, Vec L) const
     {
       // T, real part
       genius_assert(node_Tl_offset!=invalid_uint);
-      ix.push_back(node->global_offset() + node_Tl_offset);
+      ix.push_back(fvm_node->global_offset() + node_Tl_offset);
       y.push_back(node_data->T());
-      s.push_back(1.0/node->volume());
+      s.push_back(1.0/fvm_node->volume());
 
       // T, image part
-      ix.push_back(node->global_offset() + n_variables + node_Tl_offset);
+      ix.push_back(fvm_node->global_offset() + n_variables + node_Tl_offset);
       y.push_back(node_data->T());
-      s.push_back(1.0/node->volume());
+      s.push_back(1.0/fvm_node->volume());
     }
   }
 
@@ -113,14 +111,11 @@ void InsulatorSimulationRegion::DDMAC_Fill_Matrix_Vector(Mat A, Vec b, const Mat
   }
 
   //
-  const_node_iterator it = nodes_begin();
-  const_node_iterator it_end = nodes_end();
-  for(; it!=it_end; ++it)
+  const_processor_node_iterator node_it = on_processor_nodes_begin();
+  const_processor_node_iterator node_it_end = on_processor_nodes_end();
+  for(; node_it!=node_it_end; ++node_it)
   {
-    const FVM_Node * fvm_node = (*it).second;
-
-    //if this node NOT belongs to this processor, continue
-    if( fvm_node->root_node()->processor_id() != Genius::processor_id() ) continue;
+    const FVM_Node * fvm_node = *node_it;
 
     // if the node on electrode boundary, continue
     if( fvm_node->boundary_id() != BoundaryInfo::invalid_id ) continue;
@@ -131,6 +126,55 @@ void InsulatorSimulationRegion::DDMAC_Fill_Matrix_Vector(Mat A, Vec b, const Mat
 }
 
 
+
+void InsulatorSimulationRegion::DDMAC_Fill_Transformation_Matrix ( Mat T, const Mat J, const double omega,  InsertMode &add_value_flag ) const
+{
+
+  // note, we will use ADD_VALUES to set values of matrix A
+  // if the previous operator is not ADD_VALUES, we should flush the matrix
+  if ( add_value_flag != ADD_VALUES && add_value_flag != NOT_SET_VALUES )
+  {
+    MatAssemblyBegin ( T, MAT_FLUSH_ASSEMBLY );
+    MatAssemblyEnd ( T, MAT_FLUSH_ASSEMBLY );
+  }
+
+  // each indepedent variable
+  std::vector<SolutionVariable> indepedent_variable;
+
+  indepedent_variable.push_back ( POTENTIAL );
+
+  if ( this->get_advanced_model()->enable_Tl() )
+    indepedent_variable.push_back ( TEMPERATURE );
+
+  //
+  const_processor_node_iterator node_it = on_processor_nodes_begin();
+  const_processor_node_iterator node_it_end = on_processor_nodes_end();
+  for(; node_it!=node_it_end; ++node_it)
+  {
+    const FVM_Node * fvm_node = *node_it;
+
+    for ( unsigned int n=0; n<indepedent_variable.size(); ++n )
+    {
+      PetscInt diag_index = fvm_node->global_offset() + this->ebm_variable_offset ( indepedent_variable[n] );
+      PetscScalar diag_value;
+
+      MatGetValues(J, 1, &diag_index, 1, &diag_index, &diag_value);
+
+      PetscInt ac_real = diag_index;
+      PetscInt ac_imag = diag_index + this->ebm_n_variables();
+      MatSetValue ( T, ac_real, ac_real, 1.0, ADD_VALUES );
+      if( indepedent_variable[n] != POTENTIAL )
+      {
+        MatSetValue ( T, ac_real, ac_imag, omega/diag_value, ADD_VALUES );
+        MatSetValue ( T, ac_imag, ac_real, -omega/diag_value, ADD_VALUES );
+      }
+      MatSetValue ( T, ac_imag, ac_imag, 1.0, ADD_VALUES );
+    }
+  }
+
+  // the last operator is ADD_VALUES
+  add_value_flag = ADD_VALUES;
+}
 
 
 
@@ -275,11 +319,63 @@ void InsulatorSimulationRegion::DDMAC_Fill_Nodal_Matrix_Vector(
     MatSetValue(A, imag_row, real_row, -node_data->density()*HeatCapacity*omega*fvm_node->volume(), ADD_VALUES );
   }
 
+
   // the last operator is ADD_VALUES
   add_value_flag = ADD_VALUES;
 
 }
 
+
+void InsulatorSimulationRegion::DDMAC_Force_equal(const FVM_Node *fvm_node, Mat A, InsertMode & add_value_flag,
+    const SimulationRegion * adjacent_region, const FVM_Node * adjacent_fvm_node) const
+{
+  genius_assert(add_value_flag == ADD_VALUES);
+
+  // set entry on diag of A
+  PetscInt real_row = fvm_node->global_offset() + this->ebm_variable_offset(POTENTIAL);
+  PetscInt imag_row = fvm_node->global_offset() + this->ebm_n_variables() + adjacent_region->ebm_variable_offset(POTENTIAL);
+  PetscInt real_col[2]={real_row, adjacent_fvm_node->global_offset() + adjacent_region->ebm_variable_offset(POTENTIAL)};
+  PetscInt imag_col[2]={imag_row, adjacent_fvm_node->global_offset() + adjacent_region->ebm_n_variables() + adjacent_region->ebm_variable_offset(POTENTIAL)};
+  PetscScalar diag[2] = {1.0, -1.0};
+  MatSetValues(A, 1, &real_row, 2, real_col, diag, ADD_VALUES);
+  MatSetValues(A, 1, &imag_row, 2, imag_col, diag, ADD_VALUES);
+
+
+  if(this->get_advanced_model()->enable_Tl())
+  {
+    PetscInt real_row = fvm_node->global_offset() + this->ebm_variable_offset(TEMPERATURE);
+    PetscInt imag_row = fvm_node->global_offset() + this->ebm_n_variables() + adjacent_region->ebm_variable_offset(TEMPERATURE);
+    PetscInt real_col[2]={real_row, adjacent_fvm_node->global_offset() + adjacent_region->ebm_variable_offset(TEMPERATURE)};
+    PetscInt imag_col[2]={imag_row, adjacent_fvm_node->global_offset() + adjacent_region->ebm_n_variables() + adjacent_region->ebm_variable_offset(TEMPERATURE)};
+    PetscScalar diag[2] = {1.0, -1.0};
+    MatSetValues(A, 1, &real_row, 2, real_col, diag, ADD_VALUES);
+    MatSetValues(A, 1, &imag_row, 2, imag_col, diag, ADD_VALUES);
+  }
+
+  // the last operator is ADD_VALUES
+  add_value_flag = ADD_VALUES;
+}
+
+
+void InsulatorSimulationRegion::DDMAC_Force_equal(const FVM_Node *fvm_node, const SolutionVariable var, Mat A, InsertMode & add_value_flag,
+    const SimulationRegion * adjacent_region, const FVM_Node * adjacent_fvm_node) const
+{
+  genius_assert(add_value_flag == ADD_VALUES);
+  genius_assert(this->ebm_variable_offset(var)!=invalid_uint);
+  genius_assert(adjacent_region->ebm_variable_offset(var)!=invalid_uint);
+
+  // set entry on diag of A
+  PetscInt real_row = fvm_node->global_offset() + this->ebm_variable_offset(var);
+  PetscInt imag_row = fvm_node->global_offset() + this->ebm_n_variables() + adjacent_region->ebm_variable_offset(var);
+  PetscInt real_col[2]={real_row, adjacent_fvm_node->global_offset() + adjacent_region->ebm_variable_offset(var)};
+  PetscInt imag_col[2]={imag_row, adjacent_fvm_node->global_offset() + adjacent_region->ebm_n_variables() + adjacent_region->ebm_variable_offset(var)};
+  PetscScalar diag[2] = {1.0, -1.0};
+  MatSetValues(A, 1, &real_row, 2, real_col, diag, ADD_VALUES);
+  MatSetValues(A, 1, &imag_row, 2, imag_col, diag, ADD_VALUES);
+
+  // the last operator is ADD_VALUES
+  add_value_flag = ADD_VALUES;
+}
 
 
 
@@ -288,14 +384,11 @@ void InsulatorSimulationRegion::DDMAC_Update_Solution(PetscScalar *lxx)
   unsigned int node_psi_offset = ebm_variable_offset(POTENTIAL);
   unsigned int node_Tl_offset  = ebm_variable_offset(TEMPERATURE);
 
-  node_iterator it = nodes_begin();
-  node_iterator it_end = nodes_end();
-  for(; it!=it_end; ++it)
+  local_node_iterator node_it = on_local_nodes_begin();
+  local_node_iterator node_it_end = on_local_nodes_end();
+  for(; node_it!=node_it_end; ++node_it)
   {
-    FVM_Node * fvm_node = (*it).second;
-
-    // NOTE: here, solution for all the local node should be updated!
-    if( !fvm_node->root_node()->on_local() ) continue;
+    FVM_Node * fvm_node = *node_it;
 
     FVM_NodeData * node_data = fvm_node->node_data();  genius_assert(node_data!=NULL);
 

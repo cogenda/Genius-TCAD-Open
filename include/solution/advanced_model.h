@@ -45,12 +45,14 @@ struct AdvancedModel
   {
     Carrier = ModelSpecify::PN_Both;
 
-    ESurface          = false;
+    ESurface          = true;
+    TransverseMobilityInBoundaryLayer = true;
     HighFieldMobility = true;
     HighFieldMobilityAD = true;
     HighFieldMobilitySelfConsistently = true;
     Mob_Force = ModelSpecify::ESimple;
 
+    HotCarrierInjection = false;
     BandBandTunneling = false;
 
     ImpactIonization = false;
@@ -80,9 +82,14 @@ struct AdvancedModel
   //-----------------------------------------------------------
 
   /**
-   * specify if effect surface elecical field should be used
+   * specify if effective surface elecical field should be used
    */
   bool    ESurface;
+
+  /**
+   * specify if transverse mobility only be considered near the insulator interface
+   */
+  bool    TransverseMobilityInBoundaryLayer;
 
   /**
    * specify if high field mobility should be used
@@ -106,6 +113,17 @@ struct AdvancedModel
    * how to evaluate the driving force in the High Field Mobility
    */
   ModelSpecify::MobilityForce Mob_Force;
+
+
+
+  //-----------------------------------------------------------
+  // parameters for hot carrier injection
+  //-----------------------------------------------------------
+
+  /**
+   * specify if hot carrier injection should be supported
+   */
+  bool HotCarrierInjection;
 
 
   //-----------------------------------------------------------

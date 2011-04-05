@@ -2,17 +2,17 @@
 
 // The libMesh Finite Element Library.
 // Copyright (C) 2002-2007  Benjamin S. Kirk, John W. Peterson
-  
+
 // This library is free software; you can redistribute it and/or
 // modify it under the terms of the GNU Lesser General Public
 // License as published by the Free Software Foundation; either
 // version 2.1 of the License, or (at your option) any later version.
-  
+
 // This library is distributed in the hope that it will be useful,
 // but WITHOUT ANY WARRANTY; without even the implied warranty of
 // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
 // Lesser General Public License for more details.
-  
+
 // You should have received a copy of the GNU Lesser General Public
 // License along with this library; if not, write to the Free Software
 // Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
@@ -56,7 +56,7 @@ class Side : public SideType
 
   /**
    * Constructor.  Creates a side from an element.
-   */ 
+   */
   Side (const Elem* parent,
 	const unsigned int side) :
     SideType(0,0,const_cast<Elem*>(parent)), // Allocate no storage for nodes or neighbors!
@@ -73,10 +73,10 @@ class Side : public SideType
    */
   virtual const Point & point (const unsigned int i) const
   {
-    assert (i < this->n_nodes());    
+    assert (i < this->n_nodes());
     return this->parent()->point (ParentType::side_nodes_map[_side_number][i]);
   }
- 
+
   /**
    * @returns the \p Point associated with local \p Node \p i
    * as a writeable reference.
@@ -86,14 +86,14 @@ class Side : public SideType
     assert (i < this->n_nodes());
     return this->parent()->point (ParentType::side_nodes_map[_side_number][i]);
   }
-  
+
   /**
    * @returns the global id number of local \p Node \p i.
    */
   virtual unsigned int node (const unsigned int i) const
   {
     assert (i < this->n_nodes());
-    return this->parent()->node (ParentType::side_nodes_map[_side_number][i]);  
+    return this->parent()->node (ParentType::side_nodes_map[_side_number][i]);
   }
 
   /**
@@ -101,7 +101,7 @@ class Side : public SideType
    */
   virtual Node* get_node (const unsigned int i) const
   {
-    assert (i < this->n_nodes());    
+    assert (i < this->n_nodes());
     return this->parent()->get_node (ParentType::side_nodes_map[_side_number][i]);
   }
 
@@ -110,7 +110,7 @@ class Side : public SideType
    */
   virtual Node* & set_node (const unsigned int i)
   {
-    assert (i < this->n_nodes());    
+    assert (i < this->n_nodes());
     return this->parent()->set_node (ParentType::side_nodes_map[_side_number][i]);
   }
 
@@ -120,10 +120,10 @@ class Side : public SideType
    */
   virtual unsigned int n_sides () const { return 0; }
 
-  
+
  private:
 
-  
+
   /**
    * The side on the parent element
    */
@@ -154,7 +154,7 @@ class SideEdge : public EdgeType
 
   /**
    * Constructor.  Creates a side from an element.
-   */ 
+   */
   SideEdge (const Elem* parent,
 	    const unsigned int edge) :
     EdgeType(0,0,const_cast<Elem*>(parent)), // Allocate no storage for nodes or neighbors!
@@ -170,10 +170,10 @@ class SideEdge : public EdgeType
    */
   virtual const Point & point (const unsigned int i) const
   {
-    assert (i < this->n_nodes());    
+    assert (i < this->n_nodes());
     return this->parent()->point (ParentType::edge_nodes_map[_edge_number][i]);
   }
- 
+
   /**
    * @returns the \p Point associated with local \p Node \p i
    * as a writeable reference.
@@ -183,14 +183,14 @@ class SideEdge : public EdgeType
     assert (i < this->n_nodes());
     return this->parent()->point (ParentType::edge_nodes_map[_edge_number][i]);
   }
-  
+
   /**
    * @returns the global id number of local \p Node \p i.
    */
   virtual unsigned int node (const unsigned int i) const
   {
     assert (i < this->n_nodes());
-    return this->parent()->node (ParentType::edge_nodes_map[_edge_number][i]);  
+    return this->parent()->node (ParentType::edge_nodes_map[_edge_number][i]);
   }
 
   /**
@@ -198,7 +198,7 @@ class SideEdge : public EdgeType
    */
   virtual Node* get_node (const unsigned int i) const
   {
-    assert (i < this->n_nodes());    
+    assert (i < this->n_nodes());
     return this->parent()->get_node (ParentType::edge_nodes_map[_edge_number][i]);
   }
 
@@ -207,7 +207,7 @@ class SideEdge : public EdgeType
    */
   virtual Node* & set_node (const unsigned int i)
   {
-    assert (i < this->n_nodes());    
+    assert (i < this->n_nodes());
     return this->parent()->set_node (ParentType::edge_nodes_map[_edge_number][i]);
   }
 
@@ -217,10 +217,10 @@ class SideEdge : public EdgeType
    */
   virtual unsigned int n_sides () const { return 0; }
 
-  
+
  private:
 
-  
+
   /**
    * The side on the parent element
    */

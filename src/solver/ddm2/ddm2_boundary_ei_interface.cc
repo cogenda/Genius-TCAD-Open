@@ -24,7 +24,7 @@
 #include "semiconductor_region.h"
 #include "conductor_region.h"
 #include "insulator_region.h"
-#include "boundary_condition.h"
+#include "boundary_condition_ei.h"
 #include "petsc_utils.h"
 
 using PhysicalUnit::kb;
@@ -37,6 +37,63 @@ using PhysicalUnit::e;
 
 // for DDML2 solver, poisson's equation and lattice temperature should be considered in Electrode-Insulator interface
 
+/*---------------------------------------------------------------------
+ * do pre-process to function evaluation for DDM2 solver
+ */
+void ElectrodeInsulatorInterfaceBC::DDM2_Function_Preprocess(Vec, std::vector<PetscInt> &src_row,
+    std::vector<PetscInt> &dst_row, std::vector<PetscInt> &clear_row)
+{
+  // search for all the node with this boundary type
+  BoundaryCondition::const_node_iterator node_it = nodes_begin();
+  BoundaryCondition::const_node_iterator end_it = nodes_end();
+  for(; node_it!=end_it; ++node_it )
+  {
+    // skip node not belongs to this processor
+    if( (*node_it)->processor_id()!=Genius::processor_id() ) continue;
+
+    // buffer for saving regions and fvm_nodes this *node_it involves
+    std::vector<const SimulationRegion *> regions;
+    std::vector<const FVM_Node *> fvm_nodes;
+
+    // search all the fvm_node which has *node_it as root node, these fvm_nodes have the same location in geometry,
+    // but belong to different regions in logic.
+    BoundaryCondition::region_node_iterator  rnode_it     = region_node_begin(*node_it);
+    BoundaryCondition::region_node_iterator  end_rnode_it = region_node_end(*node_it);
+    for(unsigned int i=0 ; rnode_it!=end_rnode_it; ++i, ++rnode_it  )
+    {
+      regions.push_back( (*rnode_it).second.first );
+      fvm_nodes.push_back( (*rnode_it).second.second );
+
+      switch ( regions[i]->type() )
+      {
+        // Electrode-Insulator interface at Insulator side
+        case InsulatorRegion:
+        {
+          clear_row.push_back(fvm_nodes[i]->global_offset()+0);
+          clear_row.push_back(fvm_nodes[i]->global_offset()+1);
+          break;
+        }
+          // Electrode-Insulator interface at Conductor side
+        case ElectrodeRegion:
+        {
+          // record the source row and dst row
+          src_row.push_back(fvm_nodes[0]->global_offset()+0);
+          src_row.push_back(fvm_nodes[0]->global_offset()+1);
+
+          dst_row.push_back(fvm_nodes[i]->global_offset()+0);
+          dst_row.push_back(fvm_nodes[i]->global_offset()+1);
+          break;
+        }
+        case VacuumRegion:
+          break;
+
+        default: genius_error(); //we should never reach here
+      }
+    }
+  }
+}
+
+
 
 /*---------------------------------------------------------------------
  * build function and its jacobian for DDML2 solver
@@ -45,17 +102,13 @@ void ElectrodeInsulatorInterfaceBC::DDM2_Function(PetscScalar * x, Vec f, Insert
 {
   // Electrode-Insulator interface is processed here
 
-  // note, we will use INSERT_VALUES to set values of vec f
-  // if the previous operator is not insert_VALUES, we should assembly the vec
-  if( (add_value_flag != INSERT_VALUES) && (add_value_flag != NOT_SET_VALUES) )
+  // note, we will use ADD_VALUES to set values of vec f
+  // if the previous operator is not ADD_VALUES, we should assembly the vec
+  if( (add_value_flag != ADD_VALUES) && (add_value_flag != NOT_SET_VALUES) )
   {
     VecAssemblyBegin(f);
     VecAssemblyEnd(f);
   }
-
-  // buffer for Vec location
-  std::vector<PetscInt> src_row;
-  std::vector<PetscInt> dst_row;
 
   // buffer for Vec location
   std::vector<PetscInt> iy;
@@ -132,19 +185,12 @@ void ElectrodeInsulatorInterfaceBC::DDM2_Function(PetscScalar * x, Vec f, Insert
           break;
         }
         // Electrode-Insulator interface at Conductor side
-      case ConductorRegion:
+      case ElectrodeRegion:
         {
           // Conductor region should be the second region
           genius_assert(i==1);
           // a node on the Interface of Electrode-Insulator should only have one ghost node.
           genius_assert(fvm_nodes[i]->n_ghost_node()==1);
-
-          // record the source row and dst row
-          src_row.push_back(fvm_nodes[0]->global_offset()+0);
-          src_row.push_back(fvm_nodes[0]->global_offset()+1);
-
-          dst_row.push_back(fvm_nodes[i]->global_offset()+0);
-          dst_row.push_back(fvm_nodes[i]->global_offset()+1);
 
           break;
         }
@@ -156,14 +202,11 @@ void ElectrodeInsulatorInterfaceBC::DDM2_Function(PetscScalar * x, Vec f, Insert
 
   }
 
-  // add src row to dst row, it will assemble vec automatically
-  PetscUtils::VecAddRowToRow(f, src_row, dst_row);
-
   // do insert here
   if( iy.size() )
-    VecSetValues(f, iy.size(), &(iy[0]), &(y_new[0]), INSERT_VALUES);
+    VecSetValues(f, iy.size(), &(iy[0]), &(y_new[0]), ADD_VALUES);
 
-  add_value_flag = INSERT_VALUES;
+  add_value_flag = ADD_VALUES;
 }
 
 
@@ -226,7 +269,7 @@ void ElectrodeInsulatorInterfaceBC::DDM2_Jacobian_Reserve(Mat *jac, InsertMode &
           break;
         }
         // Electrode-Insulator interface at Conductor side
-      case ConductorRegion:
+      case ElectrodeRegion:
         {
           // Conductor region should be the second region
           genius_assert(i==1);
@@ -266,7 +309,61 @@ void ElectrodeInsulatorInterfaceBC::DDM2_Jacobian_Reserve(Mat *jac, InsertMode &
 
 
 
+/*---------------------------------------------------------------------
+ * do pre-process to jacobian matrix for DDML2 solver
+ */
+void ElectrodeInsulatorInterfaceBC::DDM2_Jacobian_Preprocess(Mat *jac, std::vector<PetscInt> &src_row,
+    std::vector<PetscInt> &dst_row, std::vector<PetscInt> &clear_row)
+{
+ // search for all the node with this boundary type
+  BoundaryCondition::const_node_iterator node_it = nodes_begin();
+  BoundaryCondition::const_node_iterator end_it = nodes_end();
+  for(; node_it!=end_it; ++node_it )
+  {
+    // skip node not belongs to this processor
+    if( (*node_it)->processor_id()!=Genius::processor_id() ) continue;
 
+    // buffer for saving regions and fvm_nodes this *node_it involves
+    std::vector<const SimulationRegion *> regions;
+    std::vector<const FVM_Node *> fvm_nodes;
+
+    // search all the fvm_node which has *node_it as root node, these fvm_nodes have the same location in geometry,
+    // but belong to different regions in logic.
+    BoundaryCondition::region_node_iterator  rnode_it     = region_node_begin(*node_it);
+    BoundaryCondition::region_node_iterator  end_rnode_it = region_node_end(*node_it);
+    for(unsigned int i=0 ; rnode_it!=end_rnode_it; ++i, ++rnode_it  )
+    {
+      regions.push_back( (*rnode_it).second.first );
+      fvm_nodes.push_back( (*rnode_it).second.second );
+
+      switch ( regions[i]->type() )
+      {
+        // Electrode-Insulator interface at Insulator side
+        case InsulatorRegion:
+        {
+          clear_row.push_back(fvm_nodes[i]->global_offset()+0);
+          clear_row.push_back(fvm_nodes[i]->global_offset()+1);
+          break;
+        }
+          // Electrode-Insulator interface at Conductor side
+        case ElectrodeRegion:
+        {
+          // record the source row and dst row
+          src_row.push_back(fvm_nodes[0]->global_offset()+0);
+          src_row.push_back(fvm_nodes[0]->global_offset()+1);
+
+          dst_row.push_back(fvm_nodes[i]->global_offset()+0);
+          dst_row.push_back(fvm_nodes[i]->global_offset()+1);
+          break;
+        }
+        case VacuumRegion:
+          break;
+
+          default: genius_error(); //we should never reach here
+      }
+    }
+  }
+}
 
 
 /*---------------------------------------------------------------------
@@ -274,83 +371,12 @@ void ElectrodeInsulatorInterfaceBC::DDM2_Jacobian_Reserve(Mat *jac, InsertMode &
  */
 void ElectrodeInsulatorInterfaceBC::DDM2_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_value_flag)
 {
-
-
-  // Jacobian of Electrode-Insulator interface is processed here
-
+  // since we will use ADD_VALUES operat, check the matrix state.
+  if( (add_value_flag != ADD_VALUES) && (add_value_flag != NOT_SET_VALUES) )
   {
-    // buffer for mat rows which should be added to other row
-    std::vector<PetscInt> src_row;
-    std::vector<PetscInt> dst_row;
-
-    // buffer for mat rows which should be removed
-    std::vector<PetscInt> rm_row;
-
-    // search for all the node with this boundary type
-    BoundaryCondition::const_node_iterator node_it = nodes_begin();
-    BoundaryCondition::const_node_iterator end_it = nodes_end();
-
-    for(; node_it!=end_it; ++node_it )
-    {
-      // skip node not belongs to this processor
-      if( (*node_it)->processor_id()!=Genius::processor_id() ) continue;
-
-      // buffer for saving regions and fvm_nodes this *node_it involves
-      std::vector<const SimulationRegion *> regions;
-      std::vector<const FVM_Node *> fvm_nodes;
-
-      // search all the fvm_node which has *node_it as root node, these fvm_nodes have the same location in geometry,
-      // but belong to different regions in logic.
-      BoundaryCondition::region_node_iterator  rnode_it     = region_node_begin(*node_it);
-      BoundaryCondition::region_node_iterator  end_rnode_it = region_node_end(*node_it);
-      for(unsigned int i=0 ; rnode_it!=end_rnode_it; ++i, ++rnode_it  )
-      {
-        regions.push_back( (*rnode_it).second.first );
-        fvm_nodes.push_back( (*rnode_it).second.second );
-
-        switch ( regions[i]->type() )
-        {
-          // Electrode-Insulator interface at Insulator side
-        case InsulatorRegion:
-          {
-            // a node on the Interface of Insulator-Semiconductor should only have one ghost node.
-            genius_assert(fvm_nodes[i]->n_ghost_node()==1);
-
-            // record the source row
-            rm_row.push_back(fvm_nodes[i]->global_offset()+0);
-            rm_row.push_back(fvm_nodes[i]->global_offset()+1);
-
-            break;
-          }
-          // Electrode-Insulator interface at Conductor side
-        case ConductorRegion:
-          {
-            // record the source row and dst row
-            src_row.push_back(fvm_nodes[0]->global_offset()+0);
-            src_row.push_back(fvm_nodes[0]->global_offset()+1);
-
-            dst_row.push_back(fvm_nodes[i]->global_offset()+0);
-            dst_row.push_back(fvm_nodes[i]->global_offset()+1);
-
-            break;
-          }
-        case VacuumRegion:
-          break;
-        default: genius_error(); //we should never reach here
-        }
-      }
-
-    }
-
-    //ok, we add source rows to destination rows
-    PetscUtils::MatAddRowToRow(*jac, src_row, dst_row);
-
-    // clear source rows
-    MatZeroRows(*jac, rm_row.size(), rm_row.empty() ? NULL : &rm_row[0], 0.0);
-
+    MatAssemblyBegin(*jac, MAT_FLUSH_ASSEMBLY);
+    MatAssemblyEnd(*jac, MAT_FLUSH_ASSEMBLY);
   }
-
-
 
   // after that, set new Jacobian entrance to source rows
   BoundaryCondition::const_node_iterator node_it = nodes_begin();
@@ -424,7 +450,7 @@ void ElectrodeInsulatorInterfaceBC::DDM2_Jacobian(PetscScalar * x, Mat *jac, Ins
 
         }
         // Electrode-Insulator interface at Conductor side
-      case ConductorRegion:
+      case ElectrodeRegion:
         {
           //do nothing
           break;

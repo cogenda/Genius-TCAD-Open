@@ -51,7 +51,7 @@ public:
       delete _doping_funs[n];
     _doping_funs.clear();
     for(size_t n=0; n<_doping_data.size(); n++)
-      delete _doping_data[n];
+      delete _doping_data[n].second;
     _doping_data.clear();
     for(std::map<std::string,DopingFunction *>::iterator it=_custom_profile_funs.begin();
         it!=_custom_profile_funs.end(); it++)
@@ -104,16 +104,21 @@ private:
  void set_doping_function_uniform(const Parser::Card & c);
 
  /**
-  * parse PROFILE card with anaytic doping, build analytic doping function and
+  * parse PROFILE card with analytic doping, build analytic doping function and
   * push into _doping_funs.
   */
- void set_doping_function_anaytic(const Parser::Card & c);
+ void set_doping_function_analytic(const Parser::Card & c);
+
+
+ enum Profile_Data_Axes {AXES_X, AXES_Y, AXES_Z, AXES_XY, AXES_XZ, AXES_YZ, AXES_XYZ};
 
  /**
   * parse PROFILE card with doping file, build doping profile and
   * push into _doping_data.
   */
  void set_doping_function_file(const Parser::Card & c);
+
+ double _do_doping_interp(int i, const Node *node, const std::string &msg=std::string());
 
  /**
   * @return the acceptor concentration of node
@@ -129,7 +134,7 @@ private:
   * the pointer vector to DopingFunction
   */
  std::vector<DopingFunction * >  _doping_funs;
- std::vector<InterpolationBase * >  _doping_data;
+ std::vector<std::pair<int, InterpolationBase * > > _doping_data;
  std::map<std::string,DopingFunction * >  _custom_profile_funs;
 
 };

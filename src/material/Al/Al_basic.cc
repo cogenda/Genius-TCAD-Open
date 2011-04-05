@@ -19,7 +19,7 @@
 /*                                                                           */
 /*****************************************************************************/
 //
-// Material Type: Al
+// Material Type: Aluminum
 
 
 #include "PMI.h"
@@ -38,7 +38,7 @@ private:
   {
     PERMITTI = 1.0;//corrected by zhangxih
     PERMEABI = 1.0;
-    AFFINITY = 4.170000e+00*eV;
+    AFFINITY = 4.250000e+00*eV;
     DENSITY  = 2.700000e-03*kg*std::pow(cm,-3);//corrected by zhangxih
     CONDUCTANCE = 1.0/(2.874e-6*V/A*cm);
 

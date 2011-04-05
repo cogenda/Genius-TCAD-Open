@@ -34,6 +34,7 @@ using PhysicalUnit::e;
 
 void SemiconductorSimulationRegion::EBM3_Function_Hanging_Node(PetscScalar *x, Vec f, InsertMode &add_value_flag)
 {
+  if( !has_2d_hanging_node() && !has_3d_hanging_node()  ) return;
 
   // find the node variable offset
   unsigned int node_psi_offset = ebm_variable_offset(POTENTIAL);
@@ -449,7 +450,7 @@ void SemiconductorSimulationRegion::EBM3_Function_Hanging_Node(PetscScalar *x, V
       VecSetValues(f, insert_index.size(), &insert_index[0], &insert_buffer[0], INSERT_VALUES);
   }
 
-#ifdef HAVE_FENV_H
+#if defined(HAVE_FENV_H) && defined(DEBUG)
   genius_assert( !fetestexcept(FE_INVALID) );
 #endif
 
@@ -465,6 +466,9 @@ void SemiconductorSimulationRegion::EBM3_Function_Hanging_Node(PetscScalar *x, V
 
 void SemiconductorSimulationRegion::EBM3_Jacobian_Hanging_Node(PetscScalar *x, Mat *jac, InsertMode &add_value_flag)
 {
+
+  if( !has_2d_hanging_node() && !has_3d_hanging_node()  ) return;
+
   // find the node variable offset
   unsigned int n_node_var      = ebm_n_variables();
   unsigned int node_psi_offset = ebm_variable_offset(POTENTIAL);
@@ -727,7 +731,7 @@ void SemiconductorSimulationRegion::EBM3_Jacobian_Hanging_Node(PetscScalar *x, M
     PetscUtils::MatAddRowToRow(*jac, src_row, dst_row, alpha_buffer);
 
     // clear row_index
-    MatZeroRows(*jac, row_index.size(), row_index.empty() ? NULL : &row_index[0], 0.0);
+    PetscUtils::MatZeroRows(*jac, row_index.size(), row_index.empty() ? NULL : &row_index[0], 0.0);
 
 
     // insert buffered AD values to Mat
@@ -957,7 +961,7 @@ void SemiconductorSimulationRegion::EBM3_Jacobian_Hanging_Node(PetscScalar *x, M
     PetscUtils::MatAddRowToRow(*jac, src_row, dst_row, alpha_buffer);
 
     // clear row_index
-    MatZeroRows(*jac, row_index.size(), row_index.empty() ? NULL : &row_index[0], 0.0);
+    PetscUtils::MatZeroRows(*jac, row_index.size(), row_index.empty() ? NULL : &row_index[0], 0.0);
 
 
     // insert buffered AD values to Mat

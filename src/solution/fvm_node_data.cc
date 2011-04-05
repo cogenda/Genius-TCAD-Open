@@ -25,10 +25,13 @@
 #include "fvm_node_data_semiconductor.h"
 #include "fvm_node_data_insulator.h"
 #include "fvm_node_data_conductor.h"
+#include "fvm_node_data_resistance.h"
 #include "physical_unit.h"
+
 
 using PhysicalUnit::kb;
 using PhysicalUnit::e;
+
 
 // the static member in simulation region
 PetscScalar FVM_NodeData::_scalar_dummy_ = 0.0;
@@ -44,17 +47,6 @@ VectorValue<PetscScalar> FVM_NodeData::_vector_dummy_(0,0,0);
 PetscScalar  FVM_Semiconductor_NodeData::ni()           const
 { return sqrt(Nc()*Nv())*exp(-Eg()/(2*kb*T())); }
 
-
-PetscScalar  FVM_Semiconductor_NodeData::qFn()           const
-{
-  return Ec() + log(fabs(n()/Nc()))*kb*T();
-}
-
-
-PetscScalar  FVM_Semiconductor_NodeData::qFp()           const
-{
-  return Ev() - log(fabs(p()/Nv()))*kb*T();
-}
 
 //-----------
 
@@ -89,3 +81,21 @@ PetscScalar  FVM_Conductor_NodeData::qFn()           const
 
 PetscScalar  FVM_Conductor_NodeData::qFp()           const
 { return Ev(); }
+
+//----------
+
+PetscScalar  FVM_Resistance_NodeData::Ec()           const
+{ return -(e*psi() + affinity()) ; }
+
+
+PetscScalar  FVM_Resistance_NodeData::Ev()           const
+{ return -(e*psi() + affinity()); }
+
+
+PetscScalar  FVM_Resistance_NodeData::qFn()           const
+{ return Ec(); }
+
+
+PetscScalar  FVM_Resistance_NodeData::qFp()           const
+{ return Ev(); }
+

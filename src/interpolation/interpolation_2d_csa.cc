@@ -60,7 +60,7 @@ void Interpolation2D_CSA::setup(int group)
   field_map[group] = field;
   CSA::csa_addpoints(field, csa_points[group].size(), &(csa_points[group][0]));
   CSA::csa_calculatespline(field);
-#ifdef HAVE_FENV_H
+#if defined(HAVE_FENV_H) && defined(DEBUG)
   feclearexcept(FE_INVALID);
 #endif
 }
@@ -132,7 +132,7 @@ double Interpolation2D_CSA::get_interpolated_value(const Point & point, int grou
   if(pout.z<vmin) pout.z = vmin;
   if(pout.z>vmax) pout.z = vmax;
 
-#ifdef HAVE_FENV_H
+#if defined(HAVE_FENV_H) && defined(DEBUG)
   feclearexcept(FE_INVALID);
 #endif
 

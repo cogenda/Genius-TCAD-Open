@@ -248,7 +248,6 @@ Real FE<1,LAGRANGE>::shape_deriv(const Elem* elem,
 
 
 
-/*
 template <>
 Real FE<1,LAGRANGE>::shape_second_deriv(const ElemType,
                     const Order order,
@@ -345,4 +344,4 @@ Real FE<1,LAGRANGE>::shape_second_deriv(const Elem* elem,
   return FE<1,LAGRANGE>::shape_second_deriv(elem->type(),
                             static_cast<Order>(order + elem->p_level()), i, j, p);
 }
-*/
+

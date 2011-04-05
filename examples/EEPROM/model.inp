@@ -6,15 +6,15 @@
 GLOBAL    T=300 DopingScale=2e20  Z.Width=1.0
 
 # create EEPROM with TRI3 mesh generator
-MESH     Type = S_Tri3   Triangle="pzADq"
-X.MESH    WIDTH=0.4  H1=0.1   H2=0.1
-X.MESH    WIDTH=0.4  H1=0.1   H2=0.025
+MESH     Type = S_Tri3   Triangle="pzAD"
+X.MESH    WIDTH=0.4  H1=0.1   H2=0.05
+X.MESH    WIDTH=0.4  H1=0.05  H2=0.025
 X.MESH    WIDTH=0.25 H1=0.025 H2=0.05
-X.MESH    WIDTH=0.25 H1=0.05  H2=0.025
-X.MESH    WIDTH=0.5  H1=0.025 H2=0.1
+X.MESH    WIDTH=0.25 H1=0.05  H2=0.01
+X.MESH    WIDTH=0.5  H1=0.01  H2=0.05
 
-Y.MESH    DEPTH=0.050 N.SPACES=1 Y.TOP=-0.125
-Y.MESH    DEPTH=0.040 N.SPACES=2
+Y.MESH    DEPTH=0.050 N.SPACES=1 Y.TOP=-0.105
+Y.MESH    DEPTH=0.020 N.SPACES=2
 Y.MESH    DEPTH=0.025 N.SPACES=2
 Y.MESH    DEPTH=0.010 N.SPACES=1
 Y.MESH    DEPTH=2.5 H1=0.01 RATIO=1.1
@@ -25,7 +25,7 @@ ELIMINATE Direction=Y Y.TOP=1.5
 # region and material define
 REGION Label=Silicon   Material=Si
 REGION Label=Oxide     Y.TOP=-0.125 Y.BOTTOM=0.0                  Material=SiO2
-REGION Label=Flt_Gate  X.MIN=0.5 X.MAX=1.4 IY.MIN=3 IY.MAX=5      Material=PolySi
+REGION Label=Flt_Gate  X.MIN=0.5 X.MAX=1.4 IY.MIN=3 IY.MAX=5      Material=NPolySi
 REGION Label=Drain     X.MIN=1.5 Y.TOP=-0.125 Y.BOTTOM=0.0        Material=Elec
 REGION Label=Gate      X.MIN=0.5 X.MAX=1.4 IY.MIN=0  IY.MAX=1     Material=Elec
 REGION Label=Source    X.MAX=0.3 Y.TOP=-0.125 Y.BOTTOM=0.0        Material=Elec
@@ -45,14 +45,17 @@ CONTACT   Type = FloatMetal         ID = Flt_Gate    QF=-1e-15          # the fl
 boundary  Type = OhmicContact       ID = Substrate   Res=0 Cap=0 Ind=0
 
 # refine by doping
-REFINE.C  Variable=Doping Measure=SignedLog cell.fraction=0.1
+#REFINE.C  Variable=Doping Measure=SignedLog cell.fraction=0.1
 
 # refine by potential
-METHOD    Type=Poisson
-SOLVE
-REFINE.C  region=Silicon Variable=potential cell.fraction=0.1
+#METHOD    Type=Poisson LS=MUMPS Damping=potential
+#SOLVE
+#REFINE.C  region=Silicon Variable=potential cell.fraction=0.1
 
-METHOD    Type=Poisson
+METHOD    Type=Poisson LS=MUMPS Damping=potential
 SOLVE
+
+METHOD    Type=DDML1
+SOLVE     Type=equ
 
 EXPORT   CGNSFile = eeprom_init.cgns  VTKFile = eeprom_init.vtu

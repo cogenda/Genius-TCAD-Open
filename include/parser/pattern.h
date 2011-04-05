@@ -84,6 +84,7 @@ namespace Parser
     void clear()
     {
       _key.clear();
+      _description.clear();
       _parameter_map.clear();
     }
 

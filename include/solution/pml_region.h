@@ -26,8 +26,6 @@
 #include <vector>
 #include <string>
 #include "fvm_node_info.h"
-#include "fvm_node_data_pml.h"
-#include "fvm_cell_data_pml.h"
 #include "material.h"
 #include "simulation_region.h"
 
@@ -43,7 +41,7 @@ public:
   /**
    * constructor
    */
-  PMLSimulationRegion(const std::string &name, const std::string &material, SimulationSystem & system);
+  PMLSimulationRegion(const std::string &name, const std::string &material, const PetscScalar T);
 
   /**
    * destructor
@@ -58,6 +56,12 @@ public:
   { return PMLRegion; }
 
   /**
+   * @return the region property in string
+   */
+  virtual std::string type_name() const
+  { return "PMLRegion";}
+
+  /**
    * insert local mesh element into the region, only copy the pointer
    * and create cell data
    */
@@ -67,17 +71,7 @@ public:
    * @note only node belongs to current processor and ghost node
    * own FVM_NodeData
    */
-  virtual void insert_fvm_node(FVM_Node * fn)
-  {
-
-    // node (or ghost node) belongs to this processor
-    // we should build FVM_NodeData structure for it
-
-    if  ( fn->root_node()->on_local() )
-      fn->hold_node_data( new FVM_PML_NodeData );
-
-    _region_node[fn->root_node()->id()] = fn;
-  }
+  virtual void insert_fvm_node(FVM_Node * fn);
 
   /**
    * init node data for this region
@@ -99,7 +93,7 @@ public:
   /**
    * @return the base class of material database
    */
-  virtual Material::MaterialBase * get_material_base()
+  virtual Material::MaterialBase * get_material_base() const
   { return (Material::MaterialBase *)mt; }
 
   /**
@@ -123,6 +117,12 @@ public:
     fraction.clear();
     mt->basic->atom_fraction(atoms, fraction);
   }
+
+
+  /**
+   * set the variables for this region
+   */
+  virtual void set_region_variables();
 
 private:
   /**
@@ -225,12 +225,12 @@ public:
   /**
    * build function and its jacobian for L1 HALL DDM
    */
-  virtual void HALL_Function(PetscScalar * , Vec , InsertMode &) {}
+  virtual void HALL_Function(const VectorValue<double> & , PetscScalar * , Vec , InsertMode &) {}
 
   /**
    * build function and its jacobian for L1 HALL DDM
    */
-  virtual void HALL_Jacobian(PetscScalar * , Mat *, InsertMode &) {}
+  virtual void HALL_Jacobian(const VectorValue<double> & , PetscScalar * , Mat *, InsertMode &) {}
 
   /**
    * process function and its jacobian at hanging node for L1 HALL DDM (experimental)
@@ -374,6 +374,11 @@ public:
   virtual void DDMAC_Fill_Matrix_Vector(Mat ,  Vec , const Mat , const double , InsertMode &) const {}
 
   /**
+   * filling AC transformation matrix (as preconditioner) entry by Jacobian matrix
+   */
+  virtual void DDMAC_Fill_Transformation_Matrix(Mat , const Mat , const double , InsertMode &) const {}
+
+  /**
    * fill matrix of DDMAC equation for fvm_node
    */
   virtual void DDMAC_Fill_Nodal_Matrix_Vector(const FVM_Node *, Mat , Vec , const Mat , const double , InsertMode & ,
@@ -387,9 +392,46 @@ public:
                                               const SimulationRegion * =NULL, const FVM_Node * =NULL) const {}
 
   /**
+   * filling AC matrix entry by force variable of FVM_Node1 equals to FVM_Node2
+   */
+  virtual void DDMAC_Force_equal(const FVM_Node *fvm_node, Mat A, InsertMode & add_value_flag,
+                                 const SimulationRegion * adjacent_region=NULL,
+                                 const FVM_Node * adjacent_fvm_node=NULL) const {}
+
+  /**
+   * filling AC matrix entry by force given variable of FVM_Node1 equals to FVM_Node2
+   */
+  virtual void DDMAC_Force_equal(const FVM_Node *fvm_node, const SolutionVariable var,
+                                 Mat A, InsertMode & add_value_flag,
+                                 const SimulationRegion * adjacent_region=NULL,
+                                 const FVM_Node * adjacent_fvm_node=NULL) const {}
+
+  /**
    * update solution value of DDMAC equation
    */
   virtual void DDMAC_Update_Solution(PetscScalar *) {}
+
+
+  //////////////////////////////////////////////////////////////////////////////////
+  //-----------------  functions for Linear Poissin solver   ---------------------//
+  //////////////////////////////////////////////////////////////////////////////////
+
+  /**
+   * function for build matrix of linear poisson's equation.
+   */
+  virtual void LinearPoissin_Matrix(Mat, InsertMode &) {}
+
+
+  /**
+   * function for build RHS vector of linear poisson's equation.
+   */
+  virtual void LinearPoissin_RHS(Vec, InsertMode &) {}
+
+
+  /**
+   * function for update solution value of linear poisson's equation.
+   */
+  virtual void LinearPoissin_Update_Solution(const PetscScalar * ) {}
 };
 
 

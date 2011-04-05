@@ -148,7 +148,13 @@ public:
   bool valid_processor_id () const;
 
   /**
-   * @returns true if the DofObject should on local processor
+   * @returns true if the DofObject on processor
+   */
+  bool on_processor () const
+  { return _processor_id == Genius::processor_id(); }
+
+  /**
+   * @returns true if the DofObject on local
    */
   bool on_local () const
   { return _on_local; }
@@ -277,7 +283,6 @@ void DofObject::invalidate ()
 inline
 unsigned int DofObject::id () const
 {
-  assert (this->valid_id());
   return _id;
 }
 
@@ -301,7 +306,6 @@ bool DofObject::valid_id () const
 inline
 unsigned short int DofObject::processor_id () const
 {
-  assert (this->valid_processor_id());
   return _processor_id;
 }
 

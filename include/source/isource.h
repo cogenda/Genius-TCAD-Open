@@ -36,11 +36,8 @@
 #include "expr_evaluate.h"
 
 #ifdef CYGWIN
-  #include <Windows.h>
-  #undef max
-  #undef min
-#else
-  #include <dlfcn.h>
+  class HINSTANCE__; // Forward or never
+  typedef HINSTANCE__* HINSTANCE;
 #endif
 
 
@@ -391,30 +388,16 @@ public:
    * constructor
    */
 #ifdef CYGWIN
-  ISHELL(const std::string & s, HINSTANCE dp, void * fp, double s_t,double s_A): ISource(s)
+  ISHELL(const std::string & s, HINSTANCE dp, void * fp, double s_t, double s_A);
 #else
-  ISHELL(const std::string & s, void * dp, void * fp, double s_t,double s_A): ISource(s)
+  ISHELL(const std::string & s, void * dp, void * fp, double s_t, double s_A);
 #endif
-  {
-     dll = dp;
-     Iapp_Shell = (double (*)(double)) fp;
-     scale_t = s_t;
-     scale_A = s_A;
-  }
+
 
   /**
    * destructor, free the pointer
    */
-  ~ISHELL()
-  {
-    //delete Iapp_Shell;
-#ifdef CYGWIN
-    FreeLibrary(dll);
-#else
-    if ( dll )
-      dlclose( dll );
-#endif
-  }
+  ~ISHELL();
 
 
   /**

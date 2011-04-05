@@ -13,7 +13,7 @@ E   [Ee][+-]?{D}+
 L   [a-zA-Z_]
 SIGN    ([+-]?)
 
-
+%option noyywrap
 %%
 
 DF\-ISE                            {

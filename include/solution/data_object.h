@@ -27,12 +27,12 @@
 #include <vector>
 #include <map>
 
-#include "vector_value.h"
-#include "tensor_value.h"
+#include "data_storage.h"
+#include "variable_define.h"
 
 /**
- * The \p DataObject defines an abstract base class for objects that
- * have data associated with them.
+ * The \p DataObject defines an abstract base class for data access interface
+ * it is light weighted since data is storaged in class \p DataStorage
  */
 class DataObject
 {
@@ -42,13 +42,11 @@ protected:
   /**
    * Constructor. Protected so that you can't instantiate one of these.
    */
-  DataObject()
-  : _scalar_value(0),
-    _aux_scalar_value(0),
-    _complex_value(0),
-    _vecctor_value(0),
-    _tensor_value(0)
-  {}
+  DataObject(DataStorage * data_storage, const std::map<std::string, SimulationVariable> & variables)
+      :_data_storage(data_storage), _variables(variables)
+  {
+    _offset = data_storage->increase(1) - 1;
+  }
 
 public:
 
@@ -62,137 +60,149 @@ public:
    * destruction
    */
   virtual ~DataObject()
-  {
-    delete [] _scalar_value;
-    delete [] _aux_scalar_value;
-    delete [] _complex_value;
-    delete [] _vecctor_value;
-    delete [] _tensor_value;
+  {}
 
-    _scalar_value    = 0;
-    _aux_scalar_value  = 0;
-    _complex_value = 0;
-    _vecctor_value = 0;
-    _tensor_value  = 0;
+  /**
+   * @return the pointer to data storage class
+   */
+  DataStorage * data_storage() const
+    { return _data_storage; }
+
+  /**
+   * @return the offset of this data object in data storage
+   */
+  unsigned int offset() const
+    { return _offset; }
+
+
+  /**
+   * universal data access function by variable index via template
+   */
+  template <typename T>
+  T & data(const unsigned int);
+
+
+  /**
+   * universal data access function by variable index via template
+   */
+  template <typename T>
+  const T & data(const unsigned int) const;
+
+
+  /**
+   * @return true when variable exist
+   */
+  bool has_variable(const std::string &v, DataType type) const
+  {
+    if( _variables.find(v) == _variables.end() ) return false;
+    return (_variables.find(v)->second.variable_data_type == type);
   }
 
 
   /**
-   * @return the solution variable number
+   * @return variable index when variable exist. else return static_cast<unsigned int>(-1)
    */
-  virtual size_t n_scalar() const=0;
-
-  /**
-   * @return the scalar aux variable number
-   */
-  virtual size_t n_aux_scalar() const=0;
-
-  /**
-   * @return the complex variable number
-   */
-  virtual size_t n_complex() const=0;
-
-  /**
-   * @return the vector variable number
-   */
-  virtual size_t n_vector() const=0;
-
-  /**
-   * @return the tensor variable number
-   */
-  virtual size_t n_tensor() const=0;
-
-  /**
-   * create a user-defined value at the node
-   */
-  void CreateUserScalarValue(const std::string &name, PetscScalar var=0.0)
+  unsigned int variable_index(const std::string &v) const
   {
-    if(_user_defined_scalar_value_map.find(name) != _user_defined_scalar_value_map.end()) return;
-    _user_defined_scalar_value.push_back(var);
-    unsigned int n_ud_var = _user_defined_scalar_value.size();
-    _user_defined_scalar_value_map.insert(std::pair<std::string, PetscScalar *>(name, &_user_defined_scalar_value[n_ud_var-1]));
+    if( _variables.find(v) == _variables.end() ) return static_cast<unsigned int>(-1);
+    return _variables.find(v)->second.variable_index;
   }
 
   /**
-   * @return the value of a user-defined value at the node
+   * universal data access function by variable name via template
    */
-  PetscScalar UserScalarValue(const std::string &name) const
-  {
-    std::map<std::string, PetscScalar *>::const_iterator it;
-
-    it = _user_defined_scalar_value_map.find(name);
-    genius_assert(it != _user_defined_scalar_value_map.end());
-
-    return *(it->second);
-  }
+  template <typename T>
+  T & data(const std::string &);
 
   /**
-   * @return the reference to a user-defined value at the node
+   * universal data access function by variable name via template
    */
-  PetscScalar & UserScalarValue(const std::string &name)
-  {
-    std::map<std::string,PetscScalar *>::iterator it;
+  template <typename T>
+  const T & data(const std::string &) const;
 
-    it = _user_defined_scalar_value_map.find(name);
-    genius_assert(it != _user_defined_scalar_value_map.end());
-
-    return *(it->second);
-  }
-
-  /**
-   * @return the name list of user defined values
-   */
-  void GetUserScalarList(std::vector<std::string> & name) const
-  {
-    std::map<std::string, PetscScalar *>::const_iterator it;
-    for(it=_user_defined_scalar_value_map.begin(); it!=_user_defined_scalar_value_map.end(); it++)
-    {
-      name.push_back(it->first);
-    }
-  }
 
 protected:
 
-  // change vector<PetscScalar> xxx to PetscScalar  * xxx
-  // hoping to save memory and speed up data access.
+  /**
+   * pointer to data storage class
+   */
+  DataStorage * _data_storage;
 
   /**
-   * the field value for independent variable
+   * const reference to variables
    */
-  PetscScalar  * _scalar_value;
+  const std::map<std::string, SimulationVariable>  & _variables;
 
   /**
-   * the scalar auxiliary value used in solution
+   * the offset in data array
    */
-  PetscScalar * _aux_scalar_value;
-
-  /**
-   * the complex value used in solution
-   */
-  std::complex<PetscScalar> * _complex_value;
-
-  /**
-   * the vector value used in solution
-   */
-  VectorValue<PetscScalar>  * _vecctor_value;
-
-  /**
-   * the tensor value used in solution
-   */
-  TensorValue<PetscScalar>  * _tensor_value;
-
-
-  /**
-   * user-defined values (PMIs stores data here)
-   */
-  std::vector<PetscScalar> _user_defined_scalar_value;
-
-  /**
-   * a map link value name to value
-   */
-  std::map<std::string, PetscScalar *> _user_defined_scalar_value_map;
+  unsigned int _offset;
 
 };
 
+
+template <typename T>
+inline T & data(const unsigned int ) {  }
+
+template<>
+inline Real & DataObject::data< Real >(const unsigned int v)  {  return _data_storage->scalar(v, _offset); }
+
+template<>
+inline std::complex<Real> & DataObject::data< std::complex<Real> >(const unsigned int v) { return _data_storage->complex(v, _offset); }
+
+template<>
+inline VectorValue<Real> & DataObject::data< VectorValue<Real> >(const unsigned int v) { return _data_storage->vector(v, _offset); }
+
+template<>
+inline TensorValue<Real> & DataObject::data< TensorValue<Real> >(const unsigned int v) { return _data_storage->tensor(v, _offset); }
+
+
+template <typename T>
+inline const T & DataObject::data(const unsigned int ) const { }
+
+template<>
+inline const Real & DataObject::data< Real >(const unsigned int v) const { return _data_storage->scalar(v, _offset); }
+
+template<>
+inline const std::complex<Real> & DataObject::data< std::complex<Real> >(const unsigned int v) const { return _data_storage->complex(v, _offset); }
+
+template<>
+inline const VectorValue<Real> & DataObject::data< VectorValue<Real> >(const unsigned int v) const { return _data_storage->vector(v, _offset); }
+
+template<>
+inline const TensorValue<Real> & DataObject::data< TensorValue<Real> >(const unsigned int v) const { return _data_storage->tensor(v, _offset); }
+
+
+template <typename T>
+inline T & DataObject::data(const std::string &) { }
+
+template<>
+inline Real & DataObject::data< Real >(const std::string & v) { return _data_storage->scalar(variable_index(v), _offset); }
+
+template<>
+inline std::complex<Real> & DataObject::data< std::complex<Real> >(const std::string & v) { return _data_storage->complex(variable_index(v), _offset); }
+
+template<>
+inline VectorValue<Real> & DataObject::data< VectorValue<Real> >(const std::string & v) { return _data_storage->vector(variable_index(v), _offset); }
+
+template<>
+inline TensorValue<Real> & DataObject::data< TensorValue<Real> >(const std::string & v) { return _data_storage->tensor(variable_index(v), _offset); }
+
+
+
+template <typename T>
+inline const T & DataObject::data(const std::string & ) const { }
+
+template<>
+inline const Real & DataObject::data< Real >(const std::string & v) const { return _data_storage->scalar(variable_index(v), _offset); }
+
+template<>
+inline const std::complex<Real> & DataObject::data< std::complex<Real> >(const std::string & v) const { return _data_storage->complex(variable_index(v), _offset); }
+
+template<>
+inline const VectorValue<Real> & DataObject::data< VectorValue<Real> >(const std::string & v) const { return _data_storage->vector(variable_index(v), _offset); }
+
+template<>
+inline const TensorValue<Real> & DataObject::data< TensorValue<Real> >(const std::string & v) const { return _data_storage->tensor(variable_index(v), _offset); }
 
 #endif

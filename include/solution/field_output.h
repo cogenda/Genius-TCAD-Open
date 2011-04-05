@@ -1,5 +1,5 @@
 /********************************************************************************/
-/*     888888    888888888   88     888  88888   888      888    88888888       */ 
+/*     888888    888888888   88     888  88888   888      888    88888888       */
 /*   8       8   8           8 8     8     8      8        8    8               */
 /*  8            8           8  8    8     8      8        8    8               */
 /*  8            888888888   8   8   8     8      8        8     8888888        */
@@ -12,7 +12,7 @@
 /*                                                                              */
 /*  Copyright (C) 2007-2008                                                     */
 /*  Cogenda Pte Ltd                                                             */
-/*                                                                              */ 
+/*                                                                              */
 /*  Please contact Cogenda Pte Ltd for license information                      */
 /*                                                                              */
 /*  Author: Gong Ding   gdiso@ustc.edu                                          */
@@ -28,11 +28,6 @@
 
 // C++ inludes
 #include <string>
-#include <vector>
-
-// Local includes
-#include "genius_env.h"
-#include "genius_common.h"
 
 
 
@@ -54,27 +49,27 @@ class FieldOutput
    * rendering this object useless.
    */
   FieldOutput ();
-  
+
   /**
    * Constructor.  Takes a reference to a constant object.
    * This constructor will only allow us to write the object.
    */
   FieldOutput (const MT&);
 
-  
+
  public:
 
   /**
    * Destructor.
    */
   virtual ~FieldOutput ();
-  
+
   /**
    * This method implements writing a mesh to a specified file.
    */
   virtual void write (const std::string&) = 0;
 
-  
+
  protected:
 
 
@@ -83,9 +78,9 @@ class FieldOutput
    */
   const MT& system() const;
 
-  
+
  private:
-  
+
 
   /**
    *  A pointer to a constant object.
@@ -121,9 +116,8 @@ template <class MT>
 inline
 const MT& FieldOutput<MT>::system () const
 {
-  assert (_obj != NULL);
   return *_obj;
 }
 
 
-#endif // #define __mesh_io_h__
+#endif // #define __field_output_h__

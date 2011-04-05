@@ -1,0 +1,72 @@
+#==============================================================================
+# Genius example: PIN Diode with electron inject simulation
+#==============================================================================
+
+
+
+GLOBAL    T=300 DopingScale=1e20  Z.Width=1.0
+
+#------------------------------------------------------------------------------
+# Create an initial simulation mesh
+MESH      Type = S_Tri3 triangle="pzADq30"
+
+X.MESH    WIDTH=1.0   N.SPACES=5
+X.MESH    WIDTH=2.0   N.SPACES=20
+X.MESH    WIDTH=1.0   N.SPACES=5
+
+
+Y.MESH    DEPTH=1.0  N.SPACES=5
+Y.MESH    DEPTH=1.0  N.SPACES=5
+Y.MESH    DEPTH=1.0  N.SPACES=5
+
+
+#------------------------------------------------------------------------------
+# Specify silicon and metal regions.
+REGION    Label=Silicon  Material=Si
+
+#------------------------------------------------------------------------------
+# Specify boundary face
+# boundary for electron beam injection
+FACE      Label=Inject   Location=Top   x.min=1.0 x.max=3.0 
+# electrode
+FACE      Label=Anode    Location=Left
+FACE      Label=Cathode  Location=Right
+
+#------------------------------------------------------------------------------
+# doping profile, PIN
+DOPING Type=Analytic
+PROFILE   Type=Uniform    Ion=Donor     N.PEAK=1E18  X.MIN=0.0 X.MAX=0.2  \
+          Y.min=0.0 Y.max=3.0
+PROFILE   Type=Uniform    Ion=Donor     N.PEAK=1E14  X.MIN=0.2 X.MAX=3.8  \
+          Y.min=0.0 Y.max=3.0
+PROFILE   Type=Uniform    Ion=Accept    N.PEAK=1E18  X.MIN=3.8 X.MAX=4.0  \
+          Y.min=0.0 Y.max=3.0
+
+#------------------------------------------------------------------------------
+# define electrode
+BOUNDARY ID=Anode   Type=Ohmic RES=1000
+BOUNDARY ID=Cathode Type=Ohmic
+
+vsource Type = VDC   ID = VCC   Tdelay=0 VConst=2.0
+
+# get initial condition by poisson's equation
+METHOD    Type=Poisson NS=Basic
+SOLVE
+
+# solver diode forward IV
+MODEL     Region=Silicon Mobility.Force=EQF
+METHOD    Type=DDML1 NS=Basic LS=MUMPS MaxIt=20
+SOLVE     Type=EQ
+
+SOLVE     Type=DC Vscan=Anode Vstart=0 Vstep=0.1 Vstop=2.0 
+
+ATTACH    Electrode=Anode Vapp=VCC
+
+HOOK      Load=vtk
+HOOK      Load=injection string<boundary>=Inject string<current>="electron_beam.so"
+METHOD    Type=DDML1 NS=Basic LS=MUMPS MaxIt=20 toler.relax=1e5
+SOLVE     Type=tran Tstart=0.0 Tstep=0.1e-9 Tstop=10e-9 out.prefix=inject_iv
+
+# export result
+#EXPORT   VTKFILE=pin.vtk 
+

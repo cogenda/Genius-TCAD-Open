@@ -25,7 +25,7 @@
 #include "simulation_system.h"
 #include "conductor_region.h"
 #include "insulator_region.h"
-#include "boundary_condition.h"
+#include "boundary_condition_charge.h"
 #include "petsc_utils.h"
 #include "parallel.h"
 
@@ -127,7 +127,7 @@ void ChargedContactBC::EBM3_Function(PetscScalar * x, Vec f, InsertMode &add_val
           // process lattice temperature equatiuon
           if(regions[i]->get_advanced_model()->enable_Tl())
           {
-            const SimulationRegion *  ghost_region = get_fvm_node_region(fvm_nodes[i]->root_node(), ConductorRegion);
+            const SimulationRegion *  ghost_region = get_fvm_node_region(fvm_nodes[i]->root_node(), ElectrodeRegion);
 
             // record the source row and dst row
             src_row.push_back(fvm_nodes[i]->global_offset()+node_Tl_offset);
@@ -168,7 +168,7 @@ void ChargedContactBC::EBM3_Function(PetscScalar * x, Vec f, InsertMode &add_val
           break;
         }
         // FloatMetal-Insulator interface at Conductor side
-      case ConductorRegion:
+      case ElectrodeRegion:
         {
           // Conductor region should be the second region
           genius_assert(i==1);
@@ -276,7 +276,7 @@ void ChargedContactBC::EBM3_Jacobian_Reserve(Mat *jac, InsertMode &add_value_fla
           // since we know only one ghost node exit, there is ghost_node_begin()
           FVM_Node::fvm_ghost_node_iterator gn_it = fvm_nodes[i]->ghost_node_begin();
           const FVM_Node * ghost_fvm_node = (*gn_it).first;
-          const SimulationRegion *  ghost_region = get_fvm_node_region(fvm_nodes[i]->root_node(), ConductorRegion);
+          const SimulationRegion *  ghost_region = get_fvm_node_region(fvm_nodes[i]->root_node(), ElectrodeRegion);
 
           // reserve for later operator
           MatSetValue(*jac, fvm_nodes[i]->global_offset()+node_psi_offset, this->global_offset(), 0, ADD_VALUES);
@@ -288,7 +288,7 @@ void ChargedContactBC::EBM3_Jacobian_Reserve(Mat *jac, InsertMode &add_value_fla
           break;
         }
         // FloatMetal-Insulator interface at Conductor side
-      case ConductorRegion:
+      case ElectrodeRegion:
         {
           // Conductor region should be the second region
           genius_assert(i==1);
@@ -416,7 +416,7 @@ void ChargedContactBC::EBM3_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_
             break;
           }
           // FloatMetal-Insulator interface at Conductor side
-        case ConductorRegion:
+        case ElectrodeRegion:
           {
             unsigned int node_psi_offset = regions[i]->ebm_variable_offset(POTENTIAL);
             unsigned int node_Tl_offset  = regions[i]->ebm_variable_offset(TEMPERATURE);
@@ -438,7 +438,7 @@ void ChargedContactBC::EBM3_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_
     PetscUtils::MatAddRowToRow(*jac, src_row, dst_row);
 
     // clear rows
-    MatZeroRows(*jac, rm_row.size(), rm_row.empty() ? NULL : &rm_row[0], 0.0);
+    PetscUtils::MatZeroRows(*jac, rm_row.size(), rm_row.empty() ? NULL : &rm_row[0], 0.0);
 
 
   }
@@ -502,7 +502,7 @@ void ChargedContactBC::EBM3_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_
           if(regions[i]->get_advanced_model()->enable_Tl())
           {
 
-            const SimulationRegion *  ghost_region = get_fvm_node_region(fvm_nodes[i]->root_node(), ConductorRegion);
+            const SimulationRegion *  ghost_region = get_fvm_node_region(fvm_nodes[i]->root_node(), ElectrodeRegion);
             unsigned int ghost_node_Tl_offset  = ghost_region->ebm_variable_offset(TEMPERATURE);
 
             // T of this node
@@ -549,7 +549,7 @@ void ChargedContactBC::EBM3_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_
 
         }
         // Electrode-Insulator interface at Conductor side
-      case ConductorRegion:
+      case ElectrodeRegion:
         {
           unsigned int node_psi_offset = regions[i]->ebm_variable_offset(POTENTIAL);
 

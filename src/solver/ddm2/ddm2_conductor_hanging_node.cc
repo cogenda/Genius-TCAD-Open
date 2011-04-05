@@ -26,8 +26,9 @@
 
 
 
-void ConductorSimulationRegion::DDM2_Function_Hanging_Node(PetscScalar *x, Vec f, InsertMode &add_value_flag)
+void ElectrodeSimulationRegion::DDM2_Function_Hanging_Node(PetscScalar *x, Vec f, InsertMode &add_value_flag)
 {
+  if( !has_2d_hanging_node() && !has_3d_hanging_node()  ) return;
 
   // process hanging node lies on side center
   {
@@ -141,7 +142,7 @@ void ConductorSimulationRegion::DDM2_Function_Hanging_Node(PetscScalar *x, Vec f
 
 
 
-#ifdef HAVE_FENV_H
+#if defined(HAVE_FENV_H) && defined(DEBUG)
   genius_assert( !fetestexcept(FE_INVALID) );
 #endif
 
@@ -221,7 +222,7 @@ void ConductorSimulationRegion::DDM2_Function_Hanging_Node(PetscScalar *x, Vec f
       VecSetValues(f, insert_index.size(), &insert_index[0], &insert_buffer[0], INSERT_VALUES);
   }
 
-#ifdef HAVE_FENV_H
+#if defined(HAVE_FENV_H) && defined(DEBUG)
   genius_assert( !fetestexcept(FE_INVALID) );
 #endif
 
@@ -233,8 +234,9 @@ void ConductorSimulationRegion::DDM2_Function_Hanging_Node(PetscScalar *x, Vec f
 
 
 
-void ConductorSimulationRegion::DDM2_Jacobian_Hanging_Node(PetscScalar *x, Mat *jac, InsertMode &add_value_flag)
+void ElectrodeSimulationRegion::DDM2_Jacobian_Hanging_Node(PetscScalar *x, Mat *jac, InsertMode &add_value_flag)
 {
+  if( !has_2d_hanging_node() && !has_3d_hanging_node()  ) return;
 
   // process hanging node lies on side center
   {
@@ -361,7 +363,7 @@ void ConductorSimulationRegion::DDM2_Jacobian_Hanging_Node(PetscScalar *x, Mat *
     PetscUtils::MatAddRowToRow(*jac, src_row, dst_row, alpha_buffer);
 
     // clear row_index
-    MatZeroRows(*jac, row_index.size(), row_index.empty() ? NULL : &row_index[0], 0.0);
+    PetscUtils::MatZeroRows(*jac, row_index.size(), row_index.empty() ? NULL : &row_index[0], 0.0);
 
 
     // insert buffered AD values to Mat
@@ -464,7 +466,7 @@ void ConductorSimulationRegion::DDM2_Jacobian_Hanging_Node(PetscScalar *x, Mat *
     PetscUtils::MatAddRowToRow(*jac, src_row, dst_row, alpha_buffer);
 
     // clear row_index
-    MatZeroRows(*jac, row_index.size(), row_index.empty() ? NULL : &row_index[0], 0.0);
+    PetscUtils::MatZeroRows(*jac, row_index.size(), row_index.empty() ? NULL : &row_index[0], 0.0);
 
 
     // insert buffered AD values to Mat

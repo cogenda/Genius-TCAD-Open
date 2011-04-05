@@ -99,6 +99,11 @@ public:
   void remove_electrode_source(const std::string & electrode_label);
 
   /**
+   * @return limited time step by max allowd voltage/current change
+   */
+  PetscScalar limit_dt(PetscScalar time, PetscScalar dt, PetscScalar v_change, PetscScalar i_change) const;
+
+  /**
    * update Vapp or Iapp for all the electrode bcs to new time step
    * @note the default vapp/iapp is 0 for all the electrode
    */
@@ -152,12 +157,19 @@ private:
   */
  std::map<const std::string, ISource * >  _isource_list;
 
+
  /**
   * the map of electrode bc label to the sources it owns
   */
  std::map<const std::string, std::pair<std::vector<VSource *>, std::vector<ISource *> > > _bc_source_map;
 
  typedef std::map<const std::string, std::pair<std::vector<VSource *>, std::vector<ISource *> > >::iterator BIt;
+
+ typedef std::map<const std::string, std::pair<std::vector<VSource *>, std::vector<ISource *> > >::const_iterator CBIt;
+
+ PetscScalar _vapp(const std::string &bc, PetscScalar time) const;
+
+ PetscScalar _iapp(const std::string &bc, PetscScalar time) const;
 
  /**
   * private functions for setting each source

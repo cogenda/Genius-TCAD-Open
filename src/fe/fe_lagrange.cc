@@ -29,7 +29,7 @@
 
 
 
-/*
+
 // ------------------------------------------------------------
 // Lagrange-specific implementations
 template <unsigned int Dim, FEFamily T>
@@ -284,7 +284,7 @@ void FE<Dim,T>::nodal_soln(const Elem* elem,
       }
     }
 }
-*/
+
 
 
 
@@ -430,7 +430,7 @@ unsigned int FE<Dim,T>::n_dofs(const ElemType t, const Order o)
 }
 
 
-/*
+
 template <unsigned int Dim, FEFamily T>
 unsigned int FE<Dim,T>::n_dofs_at_node(const ElemType t,
                                        const Order o,
@@ -668,7 +668,7 @@ bool FE<Dim,T>::is_hierarchic() const
 }
 
 
-
+/*
 #ifdef ENABLE_AMR
 template <unsigned int Dim, FEFamily T>
 void FE<Dim,T>::compute_constraints (DofConstraints &constraints,

@@ -36,7 +36,7 @@
  */
 GnuplotHook::GnuplotHook(SolverBase & solver, const std::string & name, void * file)
     : Hook(solver, name), _input_file((const char *)file),
-      _gnuplot_file(SolverSpecify::out_prefix + ".dat"), _mixA(false)
+    _gnuplot_file(SolverSpecify::out_prefix + ".dat"), _mixA(false)
 {
   if ( !Genius::processor_id() )
     _out.open(_gnuplot_file.c_str());
@@ -80,13 +80,13 @@ void GnuplotHook::on_init()
 
     switch (SolverSpecify::Type)
     {
-    case SolverSpecify::DCSWEEP   :
-      _out << "# Plotname: DC transfer characteristic" << std::endl; break;
-    case SolverSpecify::TRANSIENT :
-      _out << "# Plotname: Transient Analysis" << std::endl; break;
-    case SolverSpecify::ACSWEEP   :
-      _out << "# Plotname: AC small signal Analysis" << std::endl; break;
-    default: break;
+        case SolverSpecify::DCSWEEP   :
+        _out << "# Plotname: DC transfer characteristic" << std::endl; break;
+        case SolverSpecify::TRANSIENT :
+        _out << "# Plotname: Transient Analysis" << std::endl; break;
+        case SolverSpecify::ACSWEEP   :
+        _out << "# Plotname: AC small signal Analysis" << std::endl; break;
+        default: break;
     }
 
     // write variables
@@ -97,7 +97,10 @@ void GnuplotHook::on_init()
       unsigned int n_var = 0;
       // if transient simulation, we need to record time
       if ( SolverSpecify::Type == SolverSpecify::TRANSIENT )
+      {
         _out << '#' <<'\t' << ++n_var <<'\t' << "time" << " [s]"<< std::endl;
+        _out << '#' <<'\t' << ++n_var <<'\t' << "time_step" << " [s]"<< std::endl;
+      }
 
       if( !_mixA )
       {
@@ -107,16 +110,38 @@ void GnuplotHook::on_init()
         for(unsigned int n=0; n<bcs->n_bcs(); n++)
         {
           const BoundaryCondition * bc = bcs->get_bc(n);
-          // skip bc which is not electrode
-          if( !bc->is_electrode() ) continue;
-          //
-          std::string bc_label = bc->label();
-          if(!bc->electrode_label().empty())
-            	bc_label = bc->electrode_label();
-          //
-          _out << '#' <<'\t' << ++n_var <<'\t' << bc_label + "_Vapp"      << " [V]"<< std::endl;
-          _out << '#' <<'\t' << ++n_var <<'\t' << bc_label + "_potential" << " [V]"<< std::endl;
-          _out << '#' <<'\t' << ++n_var <<'\t' << bc_label + "_current"   << " [A]"<< std::endl;
+          // for electrode
+          if( bc->is_electrode() )
+          {
+            std::string bc_label = bc->label();
+            if(!bc->electrode_label().empty())
+              bc_label = bc->electrode_label();
+
+            _out << '#' <<'\t' << ++n_var <<'\t' << bc_label + "_Vapp"      << " [V]"<< std::endl;
+            _out << '#' <<'\t' << ++n_var <<'\t' << bc_label + "_potential" << " [V]"<< std::endl;
+            _out << '#' <<'\t' << ++n_var <<'\t' << bc_label + "_current"   << " [A]"<< std::endl;
+            continue;
+          }
+
+          if( bc->has_current_flow() )
+          {
+            std::string bc_label = bc->label();
+            _out << '#' <<'\t' << ++n_var <<'\t' << bc_label + "_current"   << " [A]"<< std::endl;
+          }
+
+          if( bc->bc_type() == IF_Metal_Ohmic || bc->bc_type() == IF_Metal_Schottky)
+          {
+            std::string bc_label = bc->label();
+            _out << '#' <<'\t' << ++n_var <<'\t' << bc_label + "_average_potential"   << " [V]"<< std::endl;
+          }
+
+          // charge integral interface
+          if( bc->bc_type() == ChargeIntegral )
+          {
+            std::string bc_label = bc->label();
+            _out << '#' <<'\t' << ++n_var <<'\t' << bc_label + "_Q"          << " [C]"<< std::endl;
+            _out << '#' <<'\t' << ++n_var <<'\t' << bc_label + "_potential"  << " [V]"<< std::endl;
+          }
         }
       }
       else
@@ -149,13 +174,16 @@ void GnuplotHook::on_init()
         //
         std::string bc_label = bc->label();
         if(!bc->electrode_label().empty())
-         	bc_label = bc->electrode_label();
+          bc_label = bc->electrode_label();
         //
         _out << '#' <<'\t' << ++n_var <<'\t' << bc_label + "_potential_magnitude" << " [V]"<< std::endl;
         _out << '#' <<'\t' << ++n_var <<'\t' << bc_label + "_potential_angle"     << "    "<< std::endl;
 
         _out << '#' <<'\t' << ++n_var <<'\t' << bc_label + "_current_magnitude"   << " [A]"<< std::endl;
         _out << '#' <<'\t' << ++n_var <<'\t' << bc_label + "_current_angle"       << "    "<< std::endl;
+
+        _out << '#' <<'\t' << ++n_var <<'\t' << bc_label + "_G"   << " [S]"<< std::endl;
+        _out << '#' <<'\t' << ++n_var <<'\t' << bc_label + "_C"   << " [F]"<< std::endl;
       }
     }
 
@@ -195,7 +223,10 @@ void GnuplotHook::post_solve()
     {
       // if transient simulation, we need to record time
       if (SolverSpecify::Type == SolverSpecify::TRANSIENT)
+      {
         _out << SolverSpecify::clock/PhysicalUnit::s << '\t';
+        _out << std::setw(15) << SolverSpecify::dt/PhysicalUnit::s;
+      }
 
       if( !_mixA )
       {
@@ -204,13 +235,33 @@ void GnuplotHook::post_solve()
         for(unsigned int n=0; n<bcs->n_bcs(); n++)
         {
           const BoundaryCondition * bc = bcs->get_bc(n);
-          // skip bc which is not electrode
-          if( !bc->is_electrode() ) continue;
 
-          //record vapp, electrode potential and electrode current
-          _out << std::setw(15) << bc->ext_circuit()->Vapp()/PhysicalUnit::V;
-          _out << std::setw(15) << bc->ext_circuit()->potential()/PhysicalUnit::V;
-          _out << std::setw(15) << bc->ext_circuit()->current()/PhysicalUnit::A;
+          // electrode
+          if( bc->is_electrode() )
+          {
+            //record vapp, electrode potential and electrode current
+            _out << std::setw(15) << bc->ext_circuit()->Vapp()/PhysicalUnit::V;
+            _out << std::setw(15) << bc->ext_circuit()->potential()/PhysicalUnit::V;
+            _out << std::setw(15) << bc->ext_circuit()->current()/PhysicalUnit::A;
+            continue;
+          }
+
+          if( bc->has_current_flow() )
+          {
+            _out << std::setw(15) << bc->current()/PhysicalUnit::A;
+          }
+
+          if( bc->bc_type() == IF_Metal_Ohmic || bc->bc_type() == IF_Metal_Schottky)
+          {
+            _out << std::setw(15) << bc->psi()/PhysicalUnit::V;
+          }
+
+          // charge integral interface
+          if( bc->bc_type() == ChargeIntegral )
+          {
+            _out << std::setw(15) << bc->Qf()/PhysicalUnit::C;
+            _out << std::setw(15) << bc->psi()/PhysicalUnit::V;
+          }
         }
       }
       else
@@ -226,6 +277,7 @@ void GnuplotHook::post_solve()
 
     if( SolverSpecify::Type==SolverSpecify::ACSWEEP)
     {
+      PetscScalar omega = 2*3.14159265358979323846*SolverSpecify::Freq*PhysicalUnit::s;
       _out << SolverSpecify::Freq*PhysicalUnit::s << '\t';
 
       // search for all the bc
@@ -243,6 +295,13 @@ void GnuplotHook::post_solve()
         _out << std::setw(15) << std::abs(bc->ext_circuit()->current_ac())/PhysicalUnit::A;
         _out << std::setw(15) << std::arg(bc->ext_circuit()->current_ac());
 
+        std::complex<PetscScalar> Y;
+        if(bc->ext_circuit()->potential_ac() != 0.0)
+          Y = (bc->ext_circuit()->current_ac()/PhysicalUnit::A)/(bc->ext_circuit()->potential_ac()/PhysicalUnit::V);
+        else
+          Y = 0.0;
+        _out << std::setw(15) << Y.real();
+        _out << std::setw(15) << Y.imag()/omega;
       }
     }
 

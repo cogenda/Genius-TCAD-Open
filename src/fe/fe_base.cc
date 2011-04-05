@@ -223,7 +223,7 @@ void FEBase::compute_shape_functions (const Elem*)
 
 
 
-/*
+
 void FEBase::print_JxW(std::ostream& os) const
 {
   for (unsigned int i=0; i<JxW.size(); ++i)
@@ -285,4 +285,4 @@ std::ostream& operator << (std::ostream& os, const FEBase& fe)
 {
   fe.print_info(os);
   return os;
-}*/
+}

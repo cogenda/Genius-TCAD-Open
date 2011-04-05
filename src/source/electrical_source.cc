@@ -24,6 +24,14 @@
 #include "simulation_system.h"
 #include "boundary_condition_collector.h"
 
+#ifdef CYGWIN
+  #include <Windows.h>
+  #undef max
+  #undef min
+#else
+  #include <dlfcn.h>
+#endif
+
 // for short
 using  PhysicalUnit::s;
 using  PhysicalUnit::V;
@@ -58,6 +66,11 @@ ElectricalSource::ElectricalSource(Parser::InputParser & decks)
         else if(c.is_enum_value("type","vshell"))    SetVSHELL(c);
 
       }
+      else
+      {
+        MESSAGE<<"ERROR at " <<c.get_fileline()<< " VSOURCE: Missing parameter type in this statement." << std::endl; RECORD();
+        genius_error();
+      }
     }
 
     if( c.key() == "ISOURCE" )  //it is a isource structure
@@ -78,6 +91,11 @@ ElectricalSource::ElectricalSource(Parser::InputParser & decks)
 
         else if(c.is_enum_value("type","ishell"))    SetISHELL(c);
 
+      }
+      else
+      {
+        MESSAGE<<"ERROR at " <<c.get_fileline()<< " ISOURCE: Missing parameter type in this statement." << std::endl; RECORD();
+        genius_error();
       }
     }
 
@@ -206,6 +224,31 @@ void ElectricalSource::remove_electrode_source(const std::string & electrode_lab
 
 
 
+PetscScalar ElectricalSource::limit_dt(PetscScalar time, PetscScalar dt, PetscScalar v_change, PetscScalar i_change) const
+{
+  CBIt it = _bc_source_map.begin();
+  PetscScalar dt_limited = dt;
+
+  for(; it!=_bc_source_map.end(); ++it)
+  {
+    const PetscScalar vapp = _vapp(it->first, time);
+    const PetscScalar iapp = _iapp(it->first, time);
+
+    PetscScalar vapp_next = _vapp(it->first, time+dt_limited);
+    PetscScalar iapp_next = _iapp(it->first, time+dt_limited);
+
+    while( dt_limited>0.1*dt && (std::abs(vapp_next-vapp) > v_change || std::abs(iapp_next-iapp) > i_change) )
+    {
+      dt_limited *= 0.9;
+      vapp_next = _vapp(it->first, time+dt_limited);
+      iapp_next = _iapp(it->first, time+dt_limited);
+    }
+  }
+
+  return dt_limited;
+}
+
+
 
 void ElectricalSource::update(PetscScalar time)
 {
@@ -225,7 +268,7 @@ void ElectricalSource::update(PetscScalar time)
     // we find voltage source
     if( !(*it).second.first.empty() )
     {
-      double vapp = 0;
+      PetscScalar vapp = 0;
       for(unsigned int i=0; i<(*it).second.first.size(); ++i)
         vapp += (*it).second.first[i]->vapp(time);
 
@@ -236,7 +279,7 @@ void ElectricalSource::update(PetscScalar time)
     // or we find current source
     if( !(*it).second.second.empty() )
     {
-      double iapp = 0;
+      PetscScalar iapp = 0;
       for(unsigned int i=0; i<(*it).second.second.size(); ++i)
         iapp += (*it).second.second[i]->iapp(time);
 
@@ -246,6 +289,25 @@ void ElectricalSource::update(PetscScalar time)
   }
 }
 
+
+PetscScalar ElectricalSource::_vapp(const std::string &bc, PetscScalar time) const
+{
+  CBIt it = _bc_source_map.find(bc);
+  PetscScalar vapp = 0;
+  for(unsigned int i=0; i<(*it).second.first.size(); ++i)
+    vapp += (*it).second.first[i]->vapp(time);
+  return vapp;
+}
+
+
+PetscScalar ElectricalSource::_iapp(const std::string &bc, PetscScalar time) const
+{
+  CBIt it = _bc_source_map.find(bc);
+  PetscScalar iapp = 0;
+  for(unsigned int i=0; i<(*it).second.second.size(); ++i)
+    iapp += (*it).second.second[i]->iapp(time);
+  return iapp;
+}
 
 
 void  ElectricalSource::assign_voltage_to(const std::string & electrode_label, PetscScalar vapp)

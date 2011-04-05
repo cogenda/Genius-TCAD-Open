@@ -16,11 +16,13 @@ RB      ^[ \t]*b[ \t]+
 RI      ^[ \t]*i[ \t]+
 RJ      ^[ \t]*j[ \t]+
 RT      ^[ \t]*t[ \t]+
+RQ      ^[ \t]*q[ \t]+
 RS      ^[ \t]*s[ \t]+
 RN      ^[ \t]*n[ \t]+
 COMP    ^[ \t]*comp[ \t]+
 MAT     ^[ \t]*mo[ \t]+blank[ \t]+mat[ \t]+
 
+%option noyywrap
 %Start RECORD MATERIAL IGNORE
 %%
 
@@ -91,6 +93,14 @@ BEGIN  RECORD;
         printf("RECORD Triangle:");ECHO;
 #endif
         return Triangle;
+}
+
+{RQ}         {
+  BEGIN  RECORD;
+#ifdef VERBOSE
+        printf("RECORD Quadrangle:");ECHO;
+#endif
+        return Quadrangle;
 }
 
 

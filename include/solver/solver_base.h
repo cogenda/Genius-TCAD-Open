@@ -24,9 +24,8 @@
 #ifndef __solver_base_h__
 #define __solver_base_h__
 
-#include "genius_env.h"
 #include "genius_common.h"
-#include "petsc_macro.h"
+#include "genius_env.h"
 #include "simulation_system.h"
 #include "boundary_condition_collector.h"
 #include "solver_specify.h"
@@ -47,6 +46,7 @@
 class SolverBase
 {
 public:
+
   /**
    * constructor, take one parameter as SimulationSystem
    */
@@ -56,6 +56,11 @@ public:
    * virtual destructor
    */
   virtual ~SolverBase();
+
+  /**
+   * virtual functions, prepare solution and aux variables used by this solver
+   */
+  virtual int set_variables() { return 0; }
 
   /**
    * virtual function, create the solver
@@ -76,6 +81,12 @@ public:
    * virtual function, do the solve process
    */
   virtual int solve()=0;
+
+  /**
+   * virtual function, write solver intermediate data into system
+   * It can be used to monitor the field data evolution during solve action
+   */
+  virtual void flush_system() {}
 
   /**
    * virtual function, destroy the solver
@@ -103,7 +114,7 @@ public:
    * @return the label of the solver
    */
   const std::string& label() const { return _label; }
-  
+
   /**
    * set the label of the solver
    */

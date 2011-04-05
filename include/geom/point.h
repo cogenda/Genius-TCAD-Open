@@ -51,6 +51,12 @@ public:
           const Real y=0.,
           const Real z=0.);
 
+
+  /**
+   * Constructor.
+   */
+  Point  (const Real *v);
+
   /**
    * Copy-constructor.
    */
@@ -129,6 +135,10 @@ Point::Point (const Real x,
     TypeVector<Real> (x,y,z)
 {}
 
+inline
+Point::Point  (const Real *v):
+    TypeVector<Real> (v)
+{}
 
 
 inline
@@ -144,90 +154,6 @@ Point::Point (const TypeVector<Real>& p) :
 {}
 
 
-/**
- *
- *  Return a positive value if the point pd lies below the
- *  plane passing through pa, pb, and pc; "below" is defined so
- *  that pa, pb, and pc appear in counterclockwise order when
- *  viewed from above the plane.  Returns a negative value if
- *  pd lies above the plane.  Returns zero if the points are
- *  coplanar.  The result is also a rough approximation of six
- *  times the signed volume of the tetrahedron defined by the
- *  four points.
- *
- */
-inline Real orient3dfast(const Point &pa, const Point &pb,
-                         const Point &pc, const Point &pd)
-{
 
-  Point pad = pa-pd;
-  Point pbd = pb-pd;
-  Point pcd = pc-pd;
-  return pad*(pbd.cross(pcd));
-}
-
-
-/**
- *  Return a positive value if the point pe lies inside the
- *  sphere passing through pa, pb, pc, and pd; a negative value
- *  if it lies outside; and zero if the five points are
- *  cospherical.
- *
- *  Original edition:
- *      The points pa, pb, pc, and pd must be ordered
- *      so that they have a positive orientation (as defined by
- *      orient3d()), or the sign of the result will be reversed.
- *
- *  Now the return value is corrected by orient3d() function.
- */
-inline Real inspherefast(const Point &pa, const Point &pb,
-                         const Point &pc, const Point &pd,
-                         const Point &pe)
-{
-  Real aex, bex, cex, dex;
-  Real aey, bey, cey, dey;
-  Real aez, bez, cez, dez;
-  Real alift, blift, clift, dlift;
-  Real ab, bc, cd, da, ac, bd;
-  Real abc, bcd, cda, dab;
-
-  Real orient3d = orient3dfast(pa, pb, pc, pd);
-  genius_assert(std::abs(orient3d)>TOLERANCE);
-
-  // we must compute 4th order det here...
-  // the code should be cleaned later.
-  aex = pa[0] - pe[0];
-  bex = pb[0] - pe[0];
-  cex = pc[0] - pe[0];
-  dex = pd[0] - pe[0];
-  aey = pa[1] - pe[1];
-  bey = pb[1] - pe[1];
-  cey = pc[1] - pe[1];
-  dey = pd[1] - pe[1];
-  aez = pa[2] - pe[2];
-  bez = pb[2] - pe[2];
-  cez = pc[2] - pe[2];
-  dez = pd[2] - pe[2];
-
-  ab = aex * bey - bex * aey;
-  bc = bex * cey - cex * bey;
-  cd = cex * dey - dex * cey;
-  da = dex * aey - aex * dey;
-
-  ac = aex * cey - cex * aey;
-  bd = bex * dey - dex * bey;
-
-  abc = aez * bc - bez * ac + cez * ab;
-  bcd = bez * cd - cez * bd + dez * bc;
-  cda = cez * da + dez * ac + aez * cd;
-  dab = dez * ab + aez * bd + bez * da;
-
-  alift = aex * aex + aey * aey + aez * aez;
-  blift = bex * bex + bey * bey + bez * bez;
-  clift = cex * cex + cey * cey + cez * cez;
-  dlift = dex * dex + dey * dey + dez * dez;
-
-  return orient3d*((dlift * abc - clift * dab) + (blift * cda - alift * bcd));
-}
 
 #endif // #define __point_h__

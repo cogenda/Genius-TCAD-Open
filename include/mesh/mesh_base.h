@@ -35,6 +35,7 @@ class Point;
 class Partitioner;
 class BoundaryInfo;
 class PointLocatorBase;
+class SurfaceLocatorHub;
 
 // Local Includes -----------------------------------
 #include "genius_common.h"
@@ -123,8 +124,58 @@ public:
    * @returns \p true if all elements and nodes of the mesh
    * exist on the current processor, \p false otherwise
    */
-  virtual bool is_serial () const
-  { return true; }
+  virtual bool is_serial () const = 0;
+
+  /**
+   * set the state of mesh
+   */
+  virtual void set_serial (bool ) = 0;
+
+  /**
+   * broadcast all elements and nodes of the root mesh onto
+   * other processor, the root mesh should be serial (integrated)
+   */
+  virtual void broadcast (unsigned int root_id=0) = 0;
+
+  /**
+   * Gathers all elements and nodes of the mesh onto
+   * root processor. mesh can be totally distributed
+   */
+  virtual void gather(unsigned int root_id=0) = 0;
+
+  /**
+   * Gathers all elements and nodes of the mesh onto
+   * every processor. mesh can be totally distributed
+   */
+  virtual void allgather() = 0;
+
+  /**
+   * When supported, deletes all nonlocal elements of the mesh
+   * except for "ghosts" which touch a local element, and deletes
+   * all nodes which are not part of a local or ghost element
+   */
+  virtual void delete_remote_elements () {}
+
+  /**
+   * pack all the mesh node location (x, y, z) one by one into an real array
+   * with size 3*n_nodes(), should be executed in parallel
+   */
+  virtual void pack_nodes(std::vector<Real> &) const {}
+
+  /**
+   * pack all the mesh elem info, should be executed in parallel
+   */
+  virtual void pack_elems(std::vector<int> &) const {}
+
+  /**
+   * pack all the mesh boundary info, should be executed in parallel
+   */
+  virtual void pack_boundary_faces (std::vector<unsigned int> &, std::vector<unsigned short int> &, std::vector<short int> &) const {}
+
+  /**
+   * pack all the mesh boundary info, should be executed in parallel
+   */
+  virtual void pack_boundary_nodes (std::vector<unsigned int> &, std::vector<short int> &) const {}
 
   /**
    * @Returns the logical dimension of the mesh.
@@ -256,6 +307,15 @@ public:
    */
   virtual Elem* elem (const unsigned int i) const = 0;
 
+
+  /**
+   * @Return the clone of \f$ i^{th} \f$ element, even it is not local
+   * NOTE this function also clone elem nodes
+   * must be executed in parallel
+   * use AutoPtr to prevent memory lost.
+   */
+  virtual AutoPtr<Elem> elem_clone (const unsigned int i) const = 0;
+
   /**
    * Add a new \p Node at \p Point \p p to the end of the vertex array,
    * with processor_id \p procid.
@@ -342,7 +402,7 @@ public:
    * the renumbering of nodes and elements.  In general, leave this at
    * the default value of false.
    */
-  void prepare_for_use (const bool skip_renumber_nodes_and_elements=false);
+  virtual void prepare_for_use (const bool skip_renumber_nodes_and_elements=false);
 
   /**
    * Call the default partitioner (currently \p metis_partition()).
@@ -502,6 +562,18 @@ public:
    */
   void clear_point_locator ();
 
+
+  /**
+   * \p returns a reference to a \p SurfaceLocator object for this mesh.
+   *
+   */
+  SurfaceLocatorHub & surface_locator () const;
+
+  /**
+   * Releases the current \p SurfaceLocator object.
+   */
+  void clear_surface_locator ();
+
   /**
    * find element in the mesh who contains this point.
    */
@@ -602,7 +674,8 @@ public:
   virtual node_iterator this_pid_nodes_end    () = 0;
   virtual node_iterator pid_nodes_begin    (const unsigned int proc_id) = 0;
   virtual node_iterator pid_nodes_end      (const unsigned int proc_id) = 0;
-
+  virtual node_iterator local_nodes_begin     () = 0;
+  virtual node_iterator local_nodes_end       () = 0;
 
   /**
    * const Node iterator accessor functions.
@@ -615,7 +688,8 @@ public:
   virtual const_node_iterator this_pid_nodes_end    () const = 0;
   virtual const_node_iterator pid_nodes_begin    (const unsigned int proc_id) const = 0;
   virtual const_node_iterator pid_nodes_end      (const unsigned int proc_id) const = 0;
-
+  virtual const_node_iterator local_nodes_begin     () const = 0;
+  virtual const_node_iterator local_nodes_end       () const = 0;
 
 
 
@@ -635,7 +709,7 @@ protected:
   /**
    * Returns a writeable reference to the number of partitions.
    */
-  unsigned int& set_n_partitions ()
+  unsigned int & set_n_partitions ()
   { return _n_parts; }
 
   /**
@@ -699,6 +773,12 @@ protected:
    * and it operates on a constant reference to the mesh, this is OK.
    */
   mutable AutoPtr<PointLocatorBase> _point_locator;
+
+  /**
+   * A \p SurfaceLocatorHub class for this mesh.
+   * This will not actually be built unless needed.
+   */
+  mutable AutoPtr<SurfaceLocatorHub> _surface_locator;
 
   /**
    * The partitioner class is a friend so that it can set

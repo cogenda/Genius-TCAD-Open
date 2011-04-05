@@ -25,7 +25,7 @@
 #include "simulation_system.h"
 #include "semiconductor_region.h"
 #include "insulator_region.h"
-#include "boundary_condition.h"
+#include "boundary_condition_is.h"
 #include "petsc_utils.h"
 
 using PhysicalUnit::kb;
@@ -35,6 +35,65 @@ using PhysicalUnit::e;
 ///////////////////////////////////////////////////////////////////////
 //----------------Function and Jacobian evaluate---------------------//
 ///////////////////////////////////////////////////////////////////////
+
+/*---------------------------------------------------------------------
+ * do pre-process to function for EBM3 solver
+ */
+void InsulatorSemiconductorInterfaceBC::EBM3_Function_Preprocess(Vec f, std::vector<PetscInt> &src_row,
+    std::vector<PetscInt> &dst_row, std::vector<PetscInt> &clear_row)
+{
+
+  // search for all the node with this boundary type
+  BoundaryCondition::const_node_iterator node_it = nodes_begin();
+  BoundaryCondition::const_node_iterator end_it = nodes_end();
+  for(; node_it!=end_it; ++node_it )
+  {
+    // skip node not belongs to this processor
+    if( (*node_it)->processor_id()!=Genius::processor_id() ) continue;
+
+    // buffer for saving regions and fvm_nodes this *node_it involves
+    std::vector<const SimulationRegion *> regions;
+    std::vector<const FVM_Node *> fvm_nodes;
+
+    // search all the fvm_node which has *node_it as root node, these fvm_nodes have the same location in geometry,
+    // but belong to different regions in logic.
+    BoundaryCondition::region_node_iterator  rnode_it     = region_node_begin(*node_it);
+    BoundaryCondition::region_node_iterator  end_rnode_it = region_node_end(*node_it);
+    for(unsigned int i=0 ; rnode_it!=end_rnode_it; ++i, ++rnode_it  )
+    {
+      regions.push_back( (*rnode_it).second.first );
+      fvm_nodes.push_back( (*rnode_it).second.second );
+
+      switch ( regions[i]->type() )
+      {
+          // Insulator-Semiconductor interface at Semiconductor side, do nothing
+        case SemiconductorRegion:  break;
+
+          // Insulator-Semiconductor interface at Insulator side, we should add the rows to semiconductor region
+        case InsulatorRegion:
+        {
+            // record the source row and dst row
+          src_row.push_back(fvm_nodes[i]->global_offset());
+          dst_row.push_back(fvm_nodes[0]->global_offset());
+          clear_row.push_back(fvm_nodes[i]->global_offset());
+
+          if(regions[i]->get_advanced_model()->enable_Tl())
+          {
+            src_row.push_back(fvm_nodes[i]->global_offset()+regions[i]->ebm_variable_offset(TEMPERATURE));
+            dst_row.push_back(fvm_nodes[0]->global_offset()+regions[0]->ebm_variable_offset(TEMPERATURE));
+            clear_row.push_back(fvm_nodes[i]->global_offset()+regions[i]->ebm_variable_offset(TEMPERATURE));
+          }
+          break;
+        }
+        case VacuumRegion:
+          break;
+
+          default: genius_error(); //we should never reach here
+      }
+    }
+  }
+}
+
 
 
 /*---------------------------------------------------------------------
@@ -51,8 +110,7 @@ void InsulatorSemiconductorInterfaceBC::EBM3_Function(PetscScalar * x, Vec f, In
   }
 
   // buffer for Vec location
-  std::vector<PetscInt> src_row;
-  std::vector<PetscInt> dst_row;
+  std::vector<PetscInt> iy;
 
   // buffer for Vec value
   std::vector<PetscScalar> y_new;
@@ -198,19 +256,6 @@ void InsulatorSemiconductorInterfaceBC::EBM3_Function(PetscScalar * x, Vec f, In
           unsigned int node_psi_offset = regions[i]->ebm_variable_offset(POTENTIAL);
           unsigned int node_Tl_offset  = regions[i]->ebm_variable_offset(TEMPERATURE);
 
-          // record the source row and dst row
-
-          // find the position ff will be add to
-          src_row.push_back(fvm_nodes[i]->global_offset()+node_psi_offset);
-          dst_row.push_back(fvm_nodes[0]->global_offset()+regions[0]->ebm_variable_offset(POTENTIAL));
-
-          if(regions[i]->get_advanced_model()->enable_Tl())
-          {
-            src_row.push_back(fvm_nodes[i]->global_offset()+node_Tl_offset);
-            dst_row.push_back(fvm_nodes[0]->global_offset()+regions[0]->ebm_variable_offset(TEMPERATURE));
-          }
-
-
           // the governing equation of this fvm node
 
           // psi of this node
@@ -225,6 +270,8 @@ void InsulatorSemiconductorInterfaceBC::EBM3_Function(PetscScalar * x, Vec f, In
           // since psi should be continuous for the interface
           PetscScalar ff1 = V - V_semi;
 
+          // find the position ff will be add to
+          iy.push_back(fvm_nodes[i]->global_offset()+node_psi_offset);
           y_new.push_back(ff1);
 
 
@@ -240,10 +287,10 @@ void InsulatorSemiconductorInterfaceBC::EBM3_Function(PetscScalar * x, Vec f, In
             // by assuming no heat resistance between 2 region
             PetscScalar ff2 = T - T_semi;
 
+            iy.push_back(fvm_nodes[i]->global_offset()+node_Tl_offset);
             y_new.push_back(ff2);
           }
 
-          genius_assert(src_row.size()==y_new.size());
           break;
         }
       case VacuumRegion:
@@ -254,14 +301,11 @@ void InsulatorSemiconductorInterfaceBC::EBM3_Function(PetscScalar * x, Vec f, In
 
   }
 
-  // add src row to dst row, it will assemble vec automatically
-  PetscUtils::VecAddRowToRow(f, src_row, dst_row);
+  // insert new value
+  if( iy.size() )
+    VecSetValues(f, iy.size(), &(iy[0]), &(y_new[0]), ADD_VALUES);
 
-  // insert new value to src row
-  if( src_row.size() )
-    VecSetValues(f, src_row.size(), &(src_row[0]), &(y_new[0]), INSERT_VALUES);
-
-  add_value_flag = INSERT_VALUES;
+  add_value_flag = ADD_VALUES;
 }
 
 
@@ -379,6 +423,64 @@ void InsulatorSemiconductorInterfaceBC::EBM3_Jacobian_Reserve(Mat *jac, InsertMo
 
 
 
+/*---------------------------------------------------------------------
+ * do pre-process to jacobian matrix for EBM3 solver
+ */
+void InsulatorSemiconductorInterfaceBC::EBM3_Jacobian_Preprocess(Mat *jac, std::vector<PetscInt> &src_row,
+    std::vector<PetscInt> &dst_row, std::vector<PetscInt> &clear_row)
+{
+  // search for all the node with this boundary type
+  BoundaryCondition::const_node_iterator node_it = nodes_begin();
+  BoundaryCondition::const_node_iterator end_it = nodes_end();
+  for(; node_it!=end_it; ++node_it )
+  {
+    // skip node not belongs to this processor
+    if( (*node_it)->processor_id()!=Genius::processor_id() ) continue;
+
+    // buffer for saving regions and fvm_nodes this *node_it involves
+    std::vector<const SimulationRegion *> regions;
+    std::vector<const FVM_Node *> fvm_nodes;
+
+    // search all the fvm_node which has *node_it as root node, these fvm_nodes have the same location in geometry,
+    // but belong to different regions in logic.
+    BoundaryCondition::region_node_iterator  rnode_it     = region_node_begin(*node_it);
+    BoundaryCondition::region_node_iterator  end_rnode_it = region_node_end(*node_it);
+    for(unsigned int i=0 ; rnode_it!=end_rnode_it; ++i, ++rnode_it  )
+    {
+      regions.push_back( (*rnode_it).second.first );
+      fvm_nodes.push_back( (*rnode_it).second.second );
+
+      switch ( regions[i]->type() )
+      {
+          // Insulator-Semiconductor interface at Semiconductor side, do nothing
+        case SemiconductorRegion:  break;
+
+          // Insulator-Semiconductor interface at Insulator side, we should add the rows to semiconductor region
+        case InsulatorRegion:
+        {
+            // record the source row and dst row
+          src_row.push_back(fvm_nodes[i]->global_offset());
+          dst_row.push_back(fvm_nodes[0]->global_offset());
+          clear_row.push_back(fvm_nodes[i]->global_offset());
+
+          if(regions[i]->get_advanced_model()->enable_Tl())
+          {
+            src_row.push_back(fvm_nodes[i]->global_offset()+regions[i]->ebm_variable_offset(TEMPERATURE));
+            dst_row.push_back(fvm_nodes[0]->global_offset()+regions[0]->ebm_variable_offset(TEMPERATURE));
+            clear_row.push_back(fvm_nodes[i]->global_offset()+regions[i]->ebm_variable_offset(TEMPERATURE));
+          }
+          break;
+        }
+        case VacuumRegion:
+          break;
+
+          default: genius_error(); //we should never reach here
+      }
+    }
+
+  }
+}
+
 
 
 /*---------------------------------------------------------------------
@@ -387,82 +489,11 @@ void InsulatorSemiconductorInterfaceBC::EBM3_Jacobian_Reserve(Mat *jac, InsertMo
 void InsulatorSemiconductorInterfaceBC::EBM3_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_value_flag)
 {
 
-  // here we do several things:
-  // add some row to other, clear some row, insert some value to row
-  // I wonder if there are some more efficient way to do these.
-
+  // since we will use ADD_VALUES operat, check the matrix state.
+  if( (add_value_flag != ADD_VALUES) && (add_value_flag != NOT_SET_VALUES) )
   {
-    // buffer for mat rows which should be added to other row
-    std::vector<PetscInt> src_row;
-    std::vector<PetscInt> dst_row;
-
-    // buffer for mat rows should be clear
-    std::vector<PetscInt> row_for_clear;
-
-    // search for all the node with this boundary type
-    BoundaryCondition::const_node_iterator node_it = nodes_begin();
-    BoundaryCondition::const_node_iterator end_it = nodes_end();
-    for(; node_it!=end_it; ++node_it )
-    {
-
-      // skip node not belongs to this processor
-      if( (*node_it)->processor_id()!=Genius::processor_id() ) continue;
-
-      std::vector<const SimulationRegion *> regions;
-      std::vector<const FVM_Node *> fvm_nodes;
-
-      // search all the fvm_node which has *node_it as root node, these nodes are the same in geometry,
-      // but in different region.
-      BoundaryCondition::region_node_iterator  rnode_it     = region_node_begin(*node_it);
-      BoundaryCondition::region_node_iterator  end_rnode_it = region_node_end(*node_it);
-      for(unsigned int i=0 ; rnode_it!=end_rnode_it; ++i, ++rnode_it  )
-      {
-        regions.push_back( (*rnode_it).second.first );
-        fvm_nodes.push_back( (*rnode_it).second.second );
-
-        switch ( regions[i]->type() )
-        {
-          // Insulator-Semiconductor interface at Semiconductor side, do nothing
-        case SemiconductorRegion:  break;
-
-          // Insulator-Semiconductor interface at Insulator side, we should add the rows to semiconductor region
-        case InsulatorRegion:
-          {
-            unsigned int node_psi_offset = regions[i]->ebm_variable_offset(POTENTIAL);
-            unsigned int node_Tl_offset  = regions[i]->ebm_variable_offset(TEMPERATURE);
-
-            // record the source row and dst row
-
-            src_row.push_back(fvm_nodes[i]->global_offset()+node_psi_offset);
-            dst_row.push_back(fvm_nodes[0]->global_offset()+regions[0]->ebm_variable_offset(POTENTIAL));
-
-            if(regions[i]->get_advanced_model()->enable_Tl())
-            {
-              src_row.push_back(fvm_nodes[i]->global_offset()+node_Tl_offset);
-              dst_row.push_back(fvm_nodes[0]->global_offset()+regions[0]->ebm_variable_offset(TEMPERATURE));
-            }
-
-            row_for_clear.push_back(fvm_nodes[i]->global_offset()+node_psi_offset);
-            if(regions[i]->get_advanced_model()->enable_Tl())
-              row_for_clear.push_back(fvm_nodes[i]->global_offset()+node_Tl_offset);
-
-            break;
-          }
-        case VacuumRegion:
-          break;
-        default: genius_error(); //we should never reach here
-        }
-      }
-
-    }
-
-    //ok, we add source rows to destination rows
-    PetscUtils::MatAddRowToRow(*jac, src_row, dst_row);
-
-    // clear row_for_clear
-    MatZeroRows(*jac, row_for_clear.size(), row_for_clear.empty() ? NULL : &row_for_clear[0], 0.0);
-
-
+    MatAssemblyBegin(*jac, MAT_FLUSH_ASSEMBLY);
+    MatAssemblyEnd(*jac, MAT_FLUSH_ASSEMBLY);
   }
 
 

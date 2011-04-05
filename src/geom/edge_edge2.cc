@@ -84,8 +84,8 @@ bool Edge2::is_node_on_edge(const unsigned int,
   return true;
 }
 
-bool Edge2::is_edge_on_side(const unsigned int e,
-                            const unsigned int s) const
+bool Edge2::is_edge_on_side(const unsigned int /* e */,
+                            const unsigned int /* s */ ) const
 {
   return true;
 }
@@ -98,6 +98,12 @@ void Edge2::nodes_on_edge (const unsigned int ,
   nodes.push_back(1);
 }
 
+void Edge2::nodes_on_edge (const unsigned int e,
+                           std::pair<unsigned int, unsigned int> & nodes ) const
+{
+  nodes.first = 0;
+  nodes.second = 1;
+}
 
 
 bool Edge2::contains_point (const Point& p) const
@@ -240,6 +246,34 @@ void Edge2::ray_hit(const Point &p , const Point &d , IntersectionResult &result
   return;
 
 }
+
+
+
+Point Edge2::nearest_point(const Point &p, Real * dist) const
+{
+  Point p1 = this->point(0);
+  Point p2 = this->point(1);
+
+  Point dir = ( p1 - p2 ).unit();
+  Point proj_point = p1 + dir * ( ( p - p1 ) *dir );
+
+  if ( ( proj_point-p1 ) * ( proj_point-p2 ) <= 1e-6 )
+  {
+    if(dist) *dist = (p-proj_point).size();
+    return  proj_point;
+  }
+
+  Real d1 = ( p - p1 ).size();
+  Real d2 = ( p - p2 ).size();
+
+  if(dist) *dist = std::min(d1, d2);
+
+  if ( d1 < d2 )
+    return p1;
+  else
+    return p2;
+}
+
 
 
 Real Edge2::volume () const

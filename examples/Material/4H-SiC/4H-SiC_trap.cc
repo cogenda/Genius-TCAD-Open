@@ -11,8 +11,11 @@
 /*       A Two-Dimensional General Purpose Semiconductor Simulator.          */
 /*                                                                           */
 /*  GSS material database Version 0.4                                        */
+/*  Last update: Feb 17, 2006                                                */
 /*                                                                           */
 /*  Gong Ding                                                                */
+/*  gdiso@ustc.edu                                                           */
+/*  NINT, No.69 P.O.Box, Xi'an City, China                                   */
 /*                                                                           */
 /*****************************************************************************/
 //
@@ -167,7 +170,7 @@ public:
 
   GSS_SiC4H_Trap_Default(const PMIS_Environment &env):PMIS_Trap(env)
   {
-    PMI_Info = "This is the Default carrier trapping model of 4H-SiC"; 
+    PMI_Info = "This is the Default carrier trapping model of 4H-SiC";
     Trap_Init();
   }
 
@@ -592,7 +595,7 @@ public:
     {
       if (TrapSpecs[i].type!=Bulk) continue;  // we only process bulk traps here
 
-      PetscScalar conc = ReadUserScalarValue(TrapSpecs[i].profile_name); // read concentration from profile
+      PetscScalar conc = ReadRealVariable(TrapSpecs[i].profile_name); // read concentration from profile
       conc=conc*TrapSpecs[i].prefactor;     // concentration is scaled by the prefactor
       if (conc>0)
         AddTrap(*(*pp_point),i,conc);
@@ -771,7 +774,7 @@ public:
   /**
    * Read the parameters of PMI command, and create TrapSpec accordingly
    */
-  int calibrate(const std::vector<Parser::Parameter> & pmi_parameter)
+  int calibrate( std::vector<Parser::Parameter> & pmi_parameter)
   {
 
     std::string profile_name, interface_name;
@@ -803,7 +806,7 @@ public:
       if (name == "profile")
       {
         has_profile_name = true; has_some_param=true;
-        profile_name = "Profile_" + it->get_string();
+        profile_name = it->get_string();
       }
       if (name == "interface")
       {
@@ -819,7 +822,7 @@ public:
           charge_type=Acceptor;
       }
       if (name == "type")
-      { 
+      {
         has_some_param=true;
         if (val=="interface")
           type = Interface;
@@ -891,17 +894,17 @@ public:
   std::string get_parameter_string(const int verbosity)
   {
     std::stringstream output;
-   
+
     // print out bulk traps first
-    bool header_printed = false; 
+    bool header_printed = false;
     for ( std::vector<TrapSpec>::const_iterator it = TrapSpecs.begin();
           it != TrapSpecs.end(); it++ )
     {
       if (it->type != Bulk)
         continue;
-      
+
       int wd_name=15, wd_wide=20, wd_narrow=12;
-      if ( !header_printed) 
+      if ( !header_printed)
       {
         output << "Bulk traps:" << std::endl;
         output << std::setw(wd_name)   << "Profile Name"
@@ -933,9 +936,9 @@ public:
     {
       if (it->type != Interface)
         continue;
-      
+
       int wd_name=15, wd_wide=20, wd_narrow=12;
-      if ( !header_printed) 
+      if ( !header_printed)
       {
         output << "Interface traps:" << std::endl;
         output << std::setw(wd_name)   << "Interface Name"

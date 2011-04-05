@@ -1,0 +1,56 @@
+#==============================================================================
+# GENIUS example:  AlGaAs/GaAs HEMT simulation
+# On the first step, we will generate simulation structure for the transistor.
+# Then the generated CGNS file will be used on later steps.
+#==============================================================================
+
+
+#interface x.min=0 x.max=0.75 y.min=-0.01 y.max=0.005 qf=-1.e12
+
+GLOBAL    T=300  DopingScale=1e18  Z.width=100
+
+MESH      Type=S_Quad4  #Triangle="pzA"
+X.MESH    X.MIN=0.0  X.MAX=0.75   N.SPACES=125
+
+Y.MESH DEPTH=0.03  H1=0.005 H2=0.001
+Y.MESH DEPTH=0.0125 H1=0.001 H2=0.005
+Y.MESH DEPTH=0.0125 H1=0.005 H2=0.001
+Y.MESH DEPTH=0.145 H1=0.001 H2=0.01
+
+REGION    Label=R1   Material=GaAs    Y.TOP= 0.03  Y.BOTTOM= 0.055
+REGION    Label=R2   Material=AlGaAs  Y.TOP= 0.0  Y.BOTTOM= 0.03
+REGION    Label=R3   Material=AlGaAs  Y.TOP= 0.055  Y.BOTTOM= 0.2
+
+
+DOPING    Type=Analytic
+PROFILE   Ion=Donor  Type=Uniform  N.PEAK=2E18  X.MIN=0 \
+           X.MAX=0.75  Y.MIN=0.0   Y.MAX=0.03
+PROFILE   Ion=Donor   Type=Uniform   N.PEAK=1E2 \ 
+          X.MIN=0 X.MAX=0.75 Y.MIN=0.03  Y.MAX=0.2 
+PROFILE   Ion=Donor  Type=Uniform   N.PEAK=1E20  X.MIN=0  \
+          X.MAX=0.05 Y.MIN=0.0  Y.MAX=0.05
+PROFILE   Ion=Donor   Type=Uniform  N.PEAK=1E20 X.MIN=0.7  \
+          X.MAX=0.75 Y.MIN=0.0 Y.MAX=0.05
+
+#------------------------------------------------------------------------------
+Face Label=Source Location=LEFT y.min=0.035 y.max=0.05
+Face Label=Drain Location=Right y.min=0.035  y.max=0.05
+Face Label=Gate Location=TOP x.min=0.1  x.max=0.6
+
+
+Boundary  ID=Drain Type = OhmicContact    
+Boundary ID=Source Type = OhmicContact     
+Boundary ID=Gate Type = SchottkyContact    WorkFunction=4.95
+
+
+MOLE  Region=R2  X.Mole=0.3
+MOLE  Region=R3  X.Mole=0.3
+
+#------------------------------------------------------------------------------
+# drive command, specify the solving process.
+
+METHOD   Type=Poisson LS=mumps #NS=Newton Damping=Potential MaxIteration=100
+SOLVE    
+
+# export mesh and solution
+EXPORT  CGNSFile=step1.cgns  VTKFile=step1.vtu

@@ -238,6 +238,7 @@ namespace Parser
     void clear ()
     {
       _name.clear();
+      _description.clear();
       _string_pattern.clear();
       do_not_check_me = false;
     }
@@ -529,6 +530,7 @@ namespace Parser
     void clear()
     {
       _key.clear();
+      _file_line_info.clear();
       _parameter_map.clear();
       _parameter_vec.clear();
     }
@@ -558,7 +560,8 @@ namespace Parser
     void set_lineno(int line)
     {  _line_number = line ; }
 
-    void output()
+
+    void output() const
     {
       std::cout<< key() <<std::endl;
       for( unsigned int i=0; i < parameter_size(); i++ )

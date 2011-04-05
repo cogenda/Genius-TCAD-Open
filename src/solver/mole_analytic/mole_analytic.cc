@@ -19,7 +19,7 @@
 /*                                                                              */
 /********************************************************************************/
 
-#include "mesh.h"
+#include "mesh_base.h"
 #include "mole_analytic/mole_analytic.h"
 #include "interpolation_2d_csa.h"
 //#include "interpolation_3d_qshep.h"
@@ -67,22 +67,14 @@ int MoleAnalytic::solve()
     //we only process semiconductor region
     if( region->type() != SemiconductorRegion ) continue;
 
-    SimulationRegion::node_iterator it = region->nodes_begin();
-    SimulationRegion::node_iterator it_end = region->nodes_end();
-
-    for(; it!=it_end; ++it)
+    SimulationRegion::local_node_iterator node_it = region->on_local_nodes_begin();
+    SimulationRegion::local_node_iterator node_it_end = region->on_local_nodes_end();
+    for(; node_it!=node_it_end; ++node_it)
     {
-      FVM_Node * fvm_node = (*it).second;
+      FVM_Node * fvm_node = *node_it;
       FVM_NodeData * node_data = fvm_node->node_data();
-
-      // when on_local() is true, this node belongs to current process
-      // or at least it is a ghost node
-      if( fvm_node->on_local() )
-      {
-        genius_assert(node_data!=NULL);
-        node_data->mole_x() = this->mole_x( region->name(), fvm_node->root_node() );
-        node_data->mole_y() = this->mole_y( region->name(), fvm_node->root_node() );
-      }
+      node_data->mole_x() = this->mole_x( region->name(), fvm_node->root_node() );
+      node_data->mole_y() = this->mole_y( region->name(), fvm_node->root_node() );
     }
   }
 
@@ -332,7 +324,7 @@ double MoleAnalytic::mole_x(const std::string & region, const Node * node)
     double mx = interp->get_interpolated_value(*node, 0);
     mx = mx<0.0 ? 0.0 : mx;
     mx = mx>1.0 ? 1.0 : mx;
-#ifdef HAVE_FENV_H
+#if defined(HAVE_FENV_H) && defined(DEBUG)
     if(fetestexcept(FE_INVALID|FE_DIVBYZERO|FE_OVERFLOW))
     {
       MESSAGE<< "Warning: problem in interpolating x mole fraction at ";
@@ -373,7 +365,7 @@ double MoleAnalytic::mole_y(const std::string & region, const Node * node)
     double mx = interp->get_interpolated_value(*node, 0);
     mx = mx<0.0 ? 0.0 : mx;
     mx = mx>1.0 ? 1.0 : mx;
-#ifdef HAVE_FENV_H
+#if defined(HAVE_FENV_H) && defined(DEBUG)
     if(fetestexcept(FE_INVALID|FE_DIVBYZERO|FE_OVERFLOW))
     {
       MESSAGE<< "Warning: problem in interpolating x mole fraction at ";

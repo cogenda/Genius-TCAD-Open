@@ -1,0 +1,11 @@
+def build(bld):
+  bld.objects( source    = bld.path.ant_glob('triangle.c'),
+                includes  = '. ../../..',
+                features  = 'c',
+                defines   = 'TRILIBRARY',
+                use       = 'optoff',
+                target    = 'triangle_objs',
+             )
+
+  bld.contrib_objs.append('triangle_objs')
+

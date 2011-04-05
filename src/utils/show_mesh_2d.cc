@@ -30,7 +30,7 @@
 #include "material_define.h"
 
 #include "mesh_tools.h"
-#include "mesh.h"
+#include "mesh_base.h"
 
 #include "parallel.h"
 
@@ -181,12 +181,12 @@ ShowMesh2D::ShowMesh2D(const SimulationSystem & system, bool inv_y): _system(sys
   {
     std::map<unsigned int, double> node_doping;
     const SimulationRegion * region = _system.region(r);
-    SimulationRegion::const_node_iterator node_it = region->nodes_begin();
-    for (; node_it != region->nodes_end(); ++node_it )
+    SimulationRegion::const_processor_node_iterator node_it = region->on_processor_nodes_begin();
+    SimulationRegion::const_processor_node_iterator node_it_end = region->on_processor_nodes_end();
+    for (; node_it != node_it_end; ++node_it )
     {
       const FVM_Node * fvm_node = node_it->second;
-      if(fvm_node->on_processor())
-        node_doping[node_it->first] = fvm_node->node_data()->Net_doping();
+      node_doping[node_it->first] = fvm_node->node_data()->Net_doping();
     }
     Parallel::gather(0, node_doping);
 

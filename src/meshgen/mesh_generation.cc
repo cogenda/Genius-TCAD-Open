@@ -119,12 +119,20 @@ int MeshGenerator::set_x_line ( const Parser::Card &c )
   else
       dx = width*(ratio-1)/(pow(ratio,nspaces)-1);
 
+  // limit min_space
+  while( dx < min_space && nspaces > 1)
+  {
+      nspaces--;
+      if ( ratio==1.0 )
+        dx = width/nspaces;
+      else
+        dx = width*(ratio-1)/(pow(ratio,nspaces)-1);
+  }
+
   x = xmin;
 
   for(int i=1; i<=nspaces; i++)
   {
-      if( dx < min_space ) dx = min_space;
-
       // record min/max grid size
       if( dx < h_min) h_min = dx;
       if( dx > h_max) h_max = dx;
@@ -232,12 +240,20 @@ int MeshGenerator::set_y_line ( const Parser::Card &c )
   else
       dy = depth*(ratio-1)/(pow(ratio,nspaces)-1);
 
+  // limit min_space
+  while( dy < min_space && nspaces > 1)
+  {
+    nspaces--;
+    if ( ratio==1.0 )
+      dy = depth/nspaces;
+    else
+      dy = depth*(ratio-1)/(pow(ratio,nspaces)-1);
+  }
+
   y = ymin;
 
   for(int i=1; i<=nspaces; i++)
   {
-      if( dy < min_space ) dy = min_space;
-
       // record min/max grid size
       if( dy < h_min) h_min = dy;
       if( dy > h_max) h_max = dy;
@@ -346,12 +362,20 @@ int MeshGenerator::set_z_line ( const Parser::Card &c )
   else
       dz = width*(ratio-1)/(pow(ratio,nspaces)-1);
 
+  // limit min_space
+  while( dz < min_space && nspaces > 1)
+  {
+    nspaces--;
+    if ( ratio==1.0 )
+      dz = width/nspaces;
+    else
+      dz = width*(ratio-1)/(pow(ratio,nspaces)-1);
+  }
+
   z = zmin;
 
   for(int i=1; i<=nspaces; i++)
   {
-      if( dz < min_space ) dz = min_space;
-
       // record min/max grid size
       if( dz < h_min) h_min = dz;
       if( dz > h_max) h_max = dz;

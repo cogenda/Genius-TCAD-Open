@@ -11,12 +11,15 @@
 /*       A Two-Dimensional General Purpose Semiconductor Simulator.          */
 /*                                                                           */
 /*  GSS material database Version 0.4                                        */
+/*  Last update: Feb 17, 2006                                                */
 /*                                                                           */
 /*  Gong Ding                                                                */
+/*  gdiso@ustc.edu                                                           */
+/*  NINT, No.69 P.O.Box, Xi'an City, China                                   */
 /*                                                                           */
 /*****************************************************************************/
 //
-// Material Type: 4H-SiC
+// Material Type: 3C-SiC
 
 
 #include "PMI.h"
@@ -59,7 +62,7 @@ private:
     NV_F      = 1.500000e+00;
     N0_BGN    = 1.000000e+17*std::pow(cm,-3);
     V0_BGN    = 9.000000E-03*V;
-    CON_BGN   = 5.000000e-01*eV;
+    CON_BGN   = 5.000000e-01;
 
 #ifdef __CALIBRATE__
     parameter_map.insert(para_item("TREF",   PARA("TREF",   "The reference temperature for bandgap model", "K", K, &TREF)) );
@@ -76,7 +79,7 @@ private:
 
     parameter_map.insert(para_item("N0.BGN",   PARA("N0.BGN",   "The concentration parameter used in Slotboom's band-gap narrowing model", "cm^-3", std::pow(cm,-3), &N0_BGN)) );
     parameter_map.insert(para_item("V0.BGN",   PARA("V0.BGN",   "The voltage parameter used in Slotboom's band-gap narrowing model", "V", V, &V0_BGN)) );
-    parameter_map.insert(para_item("CON.BGN",  PARA("CON.BGN",  "The const parameter used in Slotboom's band-gap narrowing model", "eV", eV, &CON_BGN)) );
+    parameter_map.insert(para_item("CON.BGN",  PARA("CON.BGN",  "The const parameter used in Slotboom's band-gap narrowing model", "-", 1.0, &CON_BGN)) );
 #endif
   }
 public:

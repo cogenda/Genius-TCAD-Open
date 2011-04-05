@@ -28,6 +28,13 @@
 #include <string>
 
 #include "solver_specify.h"
+#include "physical_unit.h"
+
+using PhysicalUnit::A;
+using PhysicalUnit::V;
+using PhysicalUnit::W;
+using PhysicalUnit::C;
+using PhysicalUnit::s;
 
 
 /**
@@ -58,14 +65,9 @@ namespace SolverSpecify
   std::string      out_prefix;
 
   /**
-   * hooks to be installed
+   * hooks to be installed \<id \<hook_name, hook_parameters\> \>
    */
-  std::deque<std::string> Hooks;
-
-  /**
-   * parameters for the hooks
-   */
-  std::map<std::string, std::vector<Parser::Parameter> > Hook_Parameters;
+  std::map<std::string, std::pair<std::string, std::vector<Parser::Parameter> > > Hooks;
 
   /**
    * nonlinear solver scheme: basic, line search, trust region...
@@ -86,6 +88,12 @@ namespace SolverSpecify
    * Newton damping
    */
   DampingScheme     Damping;
+
+
+  /**
+   * indicate whether voronoi truncation will be used
+   */
+  VoronoiTruncationFlag VoronoiTruncation;
 
 
   //--------------------------------------------
@@ -116,6 +124,17 @@ namespace SolverSpecify
    * Max nonlinear iteration number
    */
   unsigned int      MaxIteration;
+
+  /**
+  * potential damping factor, in kT/q
+  */
+  double   potential_update;
+
+  /**
+   * When absolute error of equation less
+   * than this value, solution is considered converged.
+   */
+  double      absolute_toler;
 
   /**
    * When relative error of solution variable less
@@ -188,7 +207,7 @@ namespace SolverSpecify
   /**
    * transient scheme
    */
-  TSType    TS_type;
+  TemporalScheme    TS_type;
 
   /**
    * start time of transient simulation
@@ -240,6 +259,11 @@ namespace SolverSpecify
    * use initial condition, only for mixA solver
    */
   bool      UIC;
+
+  /**
+   * do operator point calculation before transient simulation, only for mixA solver
+   */
+  bool      tran_op;
 
   /**
    * current time
@@ -340,6 +364,17 @@ namespace SolverSpecify
    */
   double    RampUpIStep;
 
+
+  /**
+   * the initial value of gmin
+   */
+  double    GminInit;
+
+  /**
+   * the final value of gmin
+   */
+  double    Gmin;
+
   //------------------------------------------------------
   // parameters for MIX simulation
   //------------------------------------------------------
@@ -404,29 +439,63 @@ namespace SolverSpecify
    */
   void set_default_parameter()
   {
-    Solver       = DDML1;
-    Type         = EQUILIBRIUM;
-    NS           = LineSearch;
-    LS           = BICGSTAB;
-    PC           = ASM_PRECOND;
-    Damping      = DampingNo;
-    MaxIteration = 20;
+    Solver            = DDML1;
+    Type              = EQUILIBRIUM;
+    NS                = LineSearch;
+#ifdef PETSC_HAVE_MUMPS
+    LS                = MUMPS;
+    PC                = LU_PRECOND;
+#else
+    LS                = BCGSL;
+    PC                = ASM_PRECOND;
+#endif
+    Damping           = DampingPotential;
+    VoronoiTruncation = VoronoiTruncationAlways;
+    MaxIteration      = 20;
 
-    TimeDependent = false;
-    TS_type       = BDF2;
-    BDF2_restart  = true;
-    UIC           = false;
-    AutoStep      = true;
-    Predict       = true;
-    clock         = 0.0;
 
-    RampUpSteps   = 1;
-    RampUpVStep   = 0.25;
-    RampUpIStep   = 0.1;
+    MaxIteration              = 30;
+    potential_update          = 1.0;
 
-    VAC           = 0.0;
-    OptG          = false;
-    PatG          = false;
+    ksp_rtol                  = 1e-8;
+    ksp_atol                  = 1e-20;
+    ksp_atol_fnorm            = 1e-6;
+
+    absolute_toler            = 1e-12;
+    relative_toler            = 1e-5;
+    toler_relax               = 1e4;
+    poisson_abs_toler         = 1e-29*C;
+    elec_continuity_abs_toler = 5e-18*A;
+    hole_continuity_abs_toler = 5e-18*A;
+    heat_equation_abs_toler   = 1e-11*W;
+    elec_energy_abs_toler     = 1e-18*W;
+    hole_energy_abs_toler     = 1e-18*W;
+    electrode_abs_toler       = 1e-9*V;
+    elec_quantum_abs_toler    = 1e-29*C;
+    hole_quantum_abs_toler    = 1e-29*C;
+
+    TimeDependent     = false;
+    TS_type           = BDF2;
+    BDF2_restart      = true;
+    UIC               = false;
+    tran_op           = true;
+    AutoStep          = true;
+    Predict           = true;
+    clock             = 0.0;
+
+    VStepMax          = 1.0;
+    IStepMax          = 1.0;
+
+    RampUpSteps       = 1;
+    RampUpVStep       = 0.25;
+    RampUpIStep       = 0.1;
+
+    GminInit          = 1e-6;
+    Gmin              = 1e-12;
+
+    VAC               = 0.0;
+    OptG              = false;
+    PatG              = false;
   }
 
   SolutionType type_string_to_enum(const std::string s)

@@ -30,6 +30,8 @@
 
 
 
+
+
 // ------------------------------------------------------------
 // MeshTools functions
 unsigned int MeshTools::total_weight(const MeshBase& mesh)
@@ -113,8 +115,7 @@ void MeshTools::find_boundary_nodes (const MeshBase& mesh,
 
 
 
-MeshTools::BoundingBox
-MeshTools::bounding_box(const MeshBase& mesh)
+MeshTools::BoundingBox MeshTools::bounding_box(const MeshBase& mesh)
 {
   // processor bounding box with no arguments
   // computes the global bounding box
@@ -123,8 +124,7 @@ MeshTools::bounding_box(const MeshBase& mesh)
 
 
 
-Sphere
-MeshTools::bounding_sphere(const MeshBase& mesh)
+Sphere MeshTools::bounding_sphere(const MeshBase& mesh)
 {
   BoundingBox bbox = bounding_box(mesh);
 
@@ -136,9 +136,7 @@ MeshTools::bounding_sphere(const MeshBase& mesh)
 
 
 
-MeshTools::BoundingBox
-MeshTools::processor_bounding_box (const MeshBase& mesh,
-                                   const unsigned int pid)
+MeshTools::BoundingBox MeshTools::processor_bounding_box (const MeshBase& mesh, const unsigned int pid)
 {
   assert (mesh.n_nodes() != 0);
 
@@ -179,9 +177,7 @@ MeshTools::processor_bounding_box (const MeshBase& mesh,
 
 
 
-Sphere
-MeshTools::processor_bounding_sphere (const MeshBase& mesh,
-                                      const unsigned int pid)
+Sphere MeshTools::processor_bounding_sphere (const MeshBase& mesh, const unsigned int pid)
 {
   BoundingBox bbox = processor_bounding_box(mesh,pid);
 
@@ -193,9 +189,7 @@ MeshTools::processor_bounding_sphere (const MeshBase& mesh,
 
 
 
-MeshTools::BoundingBox
-MeshTools::subdomain_bounding_box (const MeshBase& mesh,
-                                   const unsigned int sid)
+MeshTools::BoundingBox MeshTools::subdomain_bounding_box (const MeshBase& mesh, const unsigned int sid)
 {
   assert (mesh.n_nodes() != 0);
 
@@ -235,9 +229,7 @@ MeshTools::subdomain_bounding_box (const MeshBase& mesh,
 
 
 
-Sphere
-MeshTools::subdomain_bounding_sphere (const MeshBase& mesh,
-                                      const unsigned int sid)
+Sphere MeshTools::subdomain_bounding_sphere (const MeshBase& mesh, const unsigned int sid)
 {
   BoundingBox bbox = subdomain_bounding_box(mesh,sid);
 
@@ -247,6 +239,101 @@ MeshTools::subdomain_bounding_sphere (const MeshBase& mesh,
   return Sphere (cent, .5*diag);
 }
 
+
+
+bool MeshTools::in_bounding_box(const std::pair<Point, Point> &b, const Point &p)
+{
+  return ( p.x() >= b.first.x() && p.x() <= b.second.x() &&
+           p.y() >= b.first.y() && p.y() <= b.second.y() &&
+           p.z() >= b.first.z() && p.z() <= b.second.z() );
+}
+
+
+bool MeshTools::in_bounding_box(const std::pair<Point, Point> &b, const Point &p, unsigned int d)
+{
+  switch(d)
+  {
+    case 0 : return ( p.y() >= b.first.y() && p.y() <= b.second.y() && p.z() >= b.first.z() && p.z() <= b.second.z() );
+    case 1 : return ( p.x() >= b.first.x() && p.x() <= b.second.x() && p.z() >= b.first.z() && p.z() <= b.second.z() );
+    case 2 : return ( p.x() >= b.first.x() && p.x() <= b.second.x() && p.y() >= b.first.y() && p.y() <= b.second.y() );
+  }
+
+  return false;
+}
+
+
+
+void MeshTools::fill_bounding_box(const std::pair<Point, Point> &b, std::vector<Point> &points)
+{
+  Point _p1 = b.first;
+  Point _p2 = b.second;
+
+  points.resize(8);
+  points[0] = _p1;
+  points[1] = Point(_p2.x(), _p1.y(), _p1.z());
+  points[2] = Point(_p2.x(), _p1.y(), _p2.z());
+  points[3] = Point(_p1.x(), _p1.y(), _p2.z());
+  points[4] = Point(_p1.x(), _p2.y(), _p1.z());
+  points[5] = Point(_p2.x(), _p2.y(), _p1.z());
+  points[6] = _p2;
+  points[7] = Point(_p1.x(), _p2.y(), _p2.z());
+}
+
+
+Real MeshTools::minimal_distance(const std::pair<Point, Point> &b, const Point & p)
+{
+  if( in_bounding_box(b, p ) )
+  {
+    Real d;
+    d = std::min(p.x() - b.first.x(), b.second.x()-p.x());
+    d = std::min(p.y() - b.first.y(), b.second.y()-p.y());
+    d = std::min(p.z() - b.first.z(), b.second.z()-p.z());
+    return -d;
+  }
+  else
+  {
+    Point MPoint;
+    Point _p1 = b.first;
+    Point _p2 = b.second;
+    MPoint.x() = (p.x() < _p1.x()) ? _p1.x() : (p.x() > _p2.x()) ? _p2.x() : p.x();
+    MPoint.y() = (p.y() < _p1.y()) ? _p1.y() : (p.y() > _p2.y()) ? _p2.y() : p.y();
+    MPoint.z() = (p.z() < _p1.z()) ? _p1.z() : (p.z() > _p2.z()) ? _p2.z() : p.z();
+    return (MPoint - p).size();
+  }
+  return 0.0;
+}
+
+
+Real MeshTools::minimal_distance(const std::pair<Point, Point> &b1, const std::pair<Point, Point> & b2)
+{
+  std::vector<Point> vertex1, vertex2;
+  fill_bounding_box(b1, vertex1);
+  fill_bounding_box(b2, vertex2);
+
+  // inside / intersection
+  for(unsigned int n=0; n<8; ++n)
+  {
+    if( in_bounding_box(b1, vertex2[n]) || in_bounding_box(b2, vertex1[n])) return 0.0;
+  }
+
+  Real distance = 1e30;
+  // has project intersection
+  for(unsigned int n=0; n<8; ++n)
+    for(unsigned int d=0; d<3; ++d)
+    {
+      if( in_bounding_box(b1, vertex2[n], d) || in_bounding_box(b2, vertex1[n], d) )
+        distance = std::min(fabs(b1.first(d) - b2.second(d)) , fabs(b1.second(d) - b2.first(d)));
+    }
+
+  // no project intersection
+  for(unsigned int n=0; n<8; ++n)
+  {
+    distance = std::min(distance, minimal_distance(b1, vertex2[n]));
+    distance = std::min(distance, minimal_distance(b2, vertex1[n]));
+  }
+
+  return distance;
+}
 
 
 void MeshTools::elem_types (const MeshBase& mesh,

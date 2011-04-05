@@ -920,6 +920,15 @@ SerialMesh::pid_nodes_begin (const unsigned int proc_id)
 }
 
 
+// on local nodes begin() accessor
+SerialMesh::node_iterator
+    SerialMesh::local_nodes_begin ()
+{
+  Predicates::Local<node_iterator_imp> p;
+  return node_iterator(_nodes.begin(), _nodes.end(), p);
+}
+
+
 
 // default const nodes begin() accessor
 SerialMesh::const_node_iterator
@@ -956,6 +965,15 @@ SerialMesh::const_node_iterator
 SerialMesh::pid_nodes_begin (const unsigned int proc_id) const
 {
   Predicates::PID<const_node_iterator_imp> p(proc_id);
+  return const_node_iterator(_nodes.begin(), _nodes.end(), p);
+}
+
+
+// on local const nodes begin() accessor
+SerialMesh::const_node_iterator
+    SerialMesh::local_nodes_begin () const
+{
+  Predicates::Local<const_node_iterator_imp> p;
   return const_node_iterator(_nodes.begin(), _nodes.end(), p);
 }
 
@@ -1000,6 +1018,15 @@ SerialMesh::pid_nodes_end (const unsigned int proc_id)
 }
 
 
+// on local nodes end() accessor
+SerialMesh::node_iterator
+    SerialMesh::local_nodes_end ()
+{
+  Predicates::Local<node_iterator_imp> p;
+  return node_iterator(_nodes.end(), _nodes.end(), p);
+}
+
+
 
 // default const nodes end() accessor
 SerialMesh::const_node_iterator
@@ -1038,3 +1065,14 @@ SerialMesh::pid_nodes_end (const unsigned int proc_id) const
   Predicates::PID<const_node_iterator_imp> p(proc_id);
   return const_node_iterator(_nodes.end(), _nodes.end(), p);
 }
+
+
+// on local const nodes end() accessor
+SerialMesh::const_node_iterator
+    SerialMesh::local_nodes_end () const
+{
+  Predicates::Local<const_node_iterator_imp> p;
+  return const_node_iterator(_nodes.end(), _nodes.end(), p);
+}
+
+

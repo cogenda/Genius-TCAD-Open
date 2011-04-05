@@ -28,8 +28,6 @@
 
 #ifndef CYGWIN
 
-#include <dlfcn.h>
-
 #include "hook.h"
 
 class DllHook : public Hook
@@ -38,11 +36,7 @@ public:
 
   DllHook(SolverBase & solver, const std::string & name, void *fun_data);
 
-  ~DllHook()
-  {
-    if(hook) delete hook;
-    if ( dll_handle ) dlclose( dll_handle );
-  }
+  ~DllHook();
 
   typedef Hook * GET_HOOK(SolverBase & solver, const std::string & name, void * fun_data);
 
@@ -74,12 +68,27 @@ public:
   virtual void post_solve()
   { if(hook) hook->post_solve();     }
 
+
+  /**
+   *  This is executed before each (nonlinear) iteration
+   *  i.e. for analysis the condition number of jacobian matrix
+   */
+  virtual void pre_iteration()
+  { if(hook) hook->pre_iteration(); }
+
   /**
    *  This is executed after each (nonlinear) iteration
    *  i.e. for collecting convergence information or implementing various damping strategy
    */
   virtual void post_iteration()
   { if(hook) hook->post_iteration(); }
+
+  /**
+   *  This is executed after each (nonlinear) iteration
+   *  i.e. for collecting convergence information or implementing various damping strategy
+   */
+  virtual void post_iteration(void * f, void * x, void * y, void * w, bool & change_y, bool &change_w)
+  { if(hook) hook->post_iteration(f, x, y, w, change_y, change_w); }
 
   /**
    * This is executed after the finalization of the solver

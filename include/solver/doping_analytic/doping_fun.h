@@ -155,9 +155,9 @@ public:
    * @param ZERFC true to use erfc distribution in z direction
    */
   AnalyticDopingFunction(double ion, double xmin, double xmax, double ymin, double ymax, double zmin, double zmax, double N,
-                         double ax, double ay, double az, bool XERFC=false, bool ZERFC=false)
+                         double ax, double ay, double az, bool XERFC=false, bool YERFC=false, bool ZERFC=false)
       : DopingFunction(ion, xmin, xmax, ymin, ymax, zmin, zmax),
-      _PEAK(N), _XCHAR(ax), _YCHAR(ay), _ZCHAR(az), _XERFC(XERFC), _ZERFC(ZERFC)
+      _PEAK(N), _XCHAR(ax), _YCHAR(ay), _ZCHAR(az), _XERFC(XERFC), _YERFC(YERFC), _ZERFC(ZERFC)
   {}
 
   /**
@@ -182,13 +182,21 @@ public:
         dx = exp(-(x-_xmax)*(x-_xmax)/(_XCHAR*_XCHAR));
     }
 
-
-    if(y<_ymin)
-      dy = exp(-(y-_ymin)*(y-_ymin)/(_YCHAR*_YCHAR));
-    else if(y>=_ymin&&y<=_ymax)
-      dy = 1.0;
+    if ( _YERFC )
+#ifdef CYGWIN
+      dy = (Erfc((y-_ymax)/_YCHAR)-Erfc((y-_ymin)/_YCHAR))/2.0;
+#else
+      dy = (erfc((y-_ymax)/_YCHAR)-erfc((y-_ymin)/_YCHAR))/2.0;
+#endif
     else
-      dy = exp(-(y-_ymax)*(y-_ymax)/(_YCHAR*_YCHAR));
+    {
+      if(y<_ymin)
+        dy = exp(-(y-_ymin)*(y-_ymin)/(_YCHAR*_YCHAR));
+      else if(y>=_ymin&&y<=_ymax)
+        dy = 1.0;
+      else
+        dy = exp(-(y-_ymax)*(y-_ymax)/(_YCHAR*_YCHAR));
+    }
 
     if ( _ZERFC )
 #ifdef CYGWIN
@@ -234,6 +242,11 @@ private:
    * when it is true, erfc distribution for x direction is used instead of gauss distribution
    */
   bool   _XERFC;
+
+  /**
+   * when it is true, erfc distribution for y direction is used instead of gauss distribution
+   */
+  bool   _YERFC;
 
   /**
    * when it is true, erfc distribution for z direction is used instead of gauss distribution

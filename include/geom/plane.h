@@ -82,6 +82,22 @@ public:
 				 const Point& p2 );
 
   /**
+   * Returns the inversed plane (with inversed norm)
+   */
+  inline Plane inverse() const;
+
+  /**
+   * Returns the point for the plane.
+   */
+  inline const Point& point () const;
+
+
+  /**
+   * Returns the normal for the plane.
+   */
+  inline const Point& normal () const;
+
+  /**
    * Creates an XY plane located at z=zpos,
    */
   void xy_plane (const Real zpos=0.);
@@ -95,6 +111,11 @@ public:
    * Creates an YZ plane located at x=xpos,
    */
   void yz_plane (const Real xpos=0.);
+
+  /**
+   * @return the signed distance of p to the plane
+   */
+  Real signed_distance (const Point& p) const;
 
   /**
    * @returns true if the point p is above the surface,
@@ -127,14 +148,19 @@ public:
    */
   Point unit_normal (const Point& p=Point(0,0,0)) const;
 
+  /**
+   * @return true when given vector parallel to this plane
+   */
+  bool parallel_to( const Point& p ) const;
+
+  /**
+   * @return the plane - line segment intersection point
+   * line segment should not parallel/on the plane
+   */
+  bool intersect_point(const Point& v1, const Point& v2, Point *result ) const;
 
 private:
 
-
-  /**
-   * Returns the normal for the plane.
-   */
-  inline const Point& normal () const;
 
   /**
    *  The plane is defined by a point and a normal.
@@ -152,6 +178,19 @@ private:
 
 // ------------------------------------------------------------
 // Plane class inline members
+
+Plane Plane::inverse() const
+{
+  return Plane(_point, -_normal);
+}
+
+
+const Point & Plane::point () const
+{
+  return _point;
+}
+
+
 const Point & Plane::normal () const
 {
   return _normal;

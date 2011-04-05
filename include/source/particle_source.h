@@ -50,7 +50,12 @@ public:
   /**
    * calculate carrier generation at time t
    */
-  virtual double carrier_generation(double t)=0;
+  virtual double carrier_generation(double t) const
+  {
+    if( t>= _t0 && (t-_t_max)*(t-_t_max)/(_t_char*_t_char)<30)
+      return exp(-(t-_t_max)*(t-_t_max)/(_t_char*_t_char));
+    return 0;
+  }
 
   /**
    * assign PatG to mesh node
@@ -87,7 +92,9 @@ protected:
 };
 
 
-
+/**
+ * set electron/hole generation by reading energy deposit from external file, old code
+ */
 class  Particle_Source_DataFile : public Particle_Source
 {
 
@@ -101,11 +108,6 @@ public:
    * destructor
    */
   ~Particle_Source_DataFile() {}
-
-  /**
-   * calculate carrier generation at time t
-   */
-  virtual double carrier_generation(double t);
 
   /**
    * assign PatG to mesh node
@@ -124,6 +126,9 @@ private:
 
 
 
+/**
+ * set electron/hole generation by single particle track, old code
+ */
 class  Particle_Source_Analytic : public Particle_Source
 {
 public:
@@ -136,11 +141,6 @@ public:
    * destructor
    */
   ~Particle_Source_Analytic() {}
-
-  /**
-   * calculate carrier generation at time t
-   */
-  virtual double carrier_generation(double t);
 
   /**
    * assign PatG to mesh node
@@ -173,6 +173,51 @@ private:
    * linear energy transfer
    */
   double _LET;
+
+};
+
+
+
+/**
+ * set electron/hole generation by geading particle track from external file, new code
+ */
+class  Particle_Source_Track : public Particle_Source
+{
+public:
+  /**
+   *  constructor, parse track file
+   */
+  Particle_Source_Track(SimulationSystem &, const Parser::Card &);
+
+  /**
+   * destructor
+   */
+  ~Particle_Source_Track() {}
+
+  /**
+   * assign PatG to mesh node
+   */
+  virtual void update_system();
+
+private:
+
+  /// track struct
+  struct track_t
+  {
+    Point start;
+    Point end;
+    double energy;
+  };
+
+  std::vector<track_t> _tracks;
+
+  void _read_particle_profile_track(const std::string &file);
+
+  /**
+   * lateral char. length
+   */
+  double _lateral_char;
+
 
 };
 

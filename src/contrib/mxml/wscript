@@ -1,0 +1,15 @@
+def build(bld):
+  defines = []
+
+  if bld.env.PLATFORM=='Windows':
+    defines.append('WIN32')
+
+  bld.objects( source    = bld.path.ant_glob('*.c *.cpp', excl='mxmldoc.c'),
+                includes  = '. ../../..',
+                features  = 'c cxx',
+                use       = 'opt',
+                defines   = defines,
+                target    = 'mxml_objs',
+             )
+  bld.contrib_objs.append('mxml_objs')
+

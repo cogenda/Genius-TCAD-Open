@@ -1,0 +1,42 @@
+import sys, os, shutil
+from waflib import Build, Utils
+from waflib.TaskGen import before, after, feature
+
+def configure(conf):
+  h = Utils.h_list(conf.env)
+  dir = conf.bldnode.abspath() + os.sep + (sys.platform != 'win32' and '.' or '') + 'conf_check_' + Utils.to_hex(h)
+
+  try: os.makdirs(dir)
+  except: pass
+
+  bdir = os.path.join(dir, 'testbuild')
+  if not os.path.exists(bdir):
+    os.makedirs(bdir)
+
+  bld = Build.BuildContext(top_dir=conf.path.abspath(), out_dir=bdir)
+  bld.init_dirs()
+  bld.progress_bar=0
+  bld.targets='*'
+
+  bld.logger = conf.logger
+  bld.env = conf.env
+
+  fexe = conf.env.cprogram_PATTERN % 'test_brkpnts'
+  bld(features='c cprogram', source='brkpnts.c', target=fexe,
+      use='opt MATH')
+  try:
+    bld.compile()
+  except:
+    conf.fatal('Unable to compile brkpnts.')
+
+  try:
+    conf.exec_command(os.path.join(bdir, fexe), cwd=bdir)
+  except:
+    conf.fatal('Unable to run brkpnts.')
+  
+  try:
+    shutil.copyfile(os.path.join(bdir, 'brkpnts.h'),
+                    os.path.join(conf.bldnode.abspath(), 'brkpnts.h'))
+  except:
+    conf.fatal('Unable to copy brkpnts.h')
+

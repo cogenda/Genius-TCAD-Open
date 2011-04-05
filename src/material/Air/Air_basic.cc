@@ -51,7 +51,6 @@ public:
   PetscScalar Permittivity  ()                      const { return PERMITTI; }
   PetscScalar Permeability  ()                      const { return PERMEABI; }
   PetscScalar Affinity      (const PetscScalar &Tl) const { return AFFINITY; }
-  PetscScalar Eg            (const PetscScalar &Tl) const { return 0.0;  }
 
   void atom_fraction(std::vector<std::string> &atoms, std::vector<double> & fraction) const
   {

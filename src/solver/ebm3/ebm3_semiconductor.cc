@@ -132,66 +132,57 @@ void SemiconductorSimulationRegion::EBM3_Fill_Value(Vec x, Vec L)
   std::vector<PetscScalar> s;
 
   // reserve menory for data buffer
-  PetscInt n_local_dofs;
-  VecGetLocalSize(x, &n_local_dofs);
-  ix.reserve(n_local_dofs);
-  y.reserve(n_local_dofs);
-  s.reserve(n_local_dofs);
+  ix.reserve(6*this->n_node());
+  y.reserve(6*this->n_node());
+  s.reserve(6*this->n_node());
 
   // for all the on processor node, insert value to petsc vector
-  const_node_iterator it = nodes_begin();
-  const_node_iterator it_end = nodes_end();
-  for(; it!=it_end; ++it)
+  const_processor_node_iterator node_it = on_processor_nodes_begin();
+  const_processor_node_iterator node_it_end = on_processor_nodes_end();
+  for(; node_it!=node_it_end; ++node_it)
   {
-    const FVM_Node * node = (*it).second;
-    //if this node NOT belongs to this processor, continue
-    if( node->root_node()->processor_id() != Genius::processor_id() ) continue;
+    const FVM_Node * fvm_node = *node_it;
+    const FVM_NodeData * node_data = fvm_node->node_data();
 
-    const FVM_NodeData * node_data = node->node_data();
+    mt->mapping(fvm_node->root_node(), node_data, 0.0);
 
     // the first variable, psi
-    genius_assert(node_psi_offset!=invalid_uint);
-    ix.push_back(node->global_offset()+node_psi_offset);
+    ix.push_back(fvm_node->global_offset()+node_psi_offset);
     y.push_back(node_data->psi());
-    s.push_back(1.0/node->volume());
+    s.push_back(1.0/(node_data->eps()*fvm_node->volume()));
 
     // the second variable, n
-    genius_assert(node_n_offset!=invalid_uint);
-    ix.push_back(node->global_offset()+node_n_offset);
+    ix.push_back(fvm_node->global_offset()+node_n_offset);
     y.push_back(node_data->n());
-    s.push_back(1.0/node->volume());
+    s.push_back(1.0/fvm_node->volume());
 
     // the third variable, p
-    genius_assert(node_p_offset!=invalid_uint);
-    ix.push_back(node->global_offset()+node_p_offset);
+    ix.push_back(fvm_node->global_offset()+node_p_offset);
     y.push_back(node_data->p());
-    s.push_back(1.0/node->volume());
+    s.push_back(1.0/fvm_node->volume());
 
     // for extra Tl temperature equations
     if(get_advanced_model()->enable_Tl())
     {
-      genius_assert(node_Tl_offset!=invalid_uint);
-      ix.push_back(node->global_offset()+node_Tl_offset);
+      ix.push_back(fvm_node->global_offset()+node_Tl_offset);
       y.push_back(node_data->T());
-      s.push_back(1.0/node->volume());
+      s.push_back(1.0/fvm_node->volume());
     }
 
     // for extra Tn temperature equations, use n*Tn as indepedent variable
     if(get_advanced_model()->enable_Tn())
     {
-      genius_assert(node_Tn_offset!=invalid_uint);
-      ix.push_back(node->global_offset()+node_Tn_offset);
+      ix.push_back(fvm_node->global_offset()+node_Tn_offset);
       y.push_back(node_data->n()*node_data->Tn());
-      s.push_back(1.0/node->volume());
+      s.push_back(1.0/fvm_node->volume());
     }
 
     // for extra Tp temperature equations, use p*Tp as indepedent variable
     if(get_advanced_model()->enable_Tp())
     {
-      genius_assert(node_Tp_offset!=invalid_uint);
-      ix.push_back(node->global_offset()+node_Tp_offset);
+      ix.push_back(fvm_node->global_offset()+node_Tp_offset);
       y.push_back(node_data->p()*node_data->Tp());
-      s.push_back(1.0/node->volume());
+      s.push_back(1.0/fvm_node->volume());
     }
 
   }
@@ -248,6 +239,8 @@ void SemiconductorSimulationRegion::EBM3_Function(PetscScalar * x, Vec f, Insert
   iy.reserve(6*n_node());
   y.reserve(6*n_node());
 
+  bool  highfield_mob   = highfield_mobility() && SolverSpecify::Type!=SolverSpecify::EQUILIBRIUM;
+
   // first, search all the element in this region and process "cell" related terms
   // note, they are all local element, thus must be processed
 
@@ -255,16 +248,20 @@ void SemiconductorSimulationRegion::EBM3_Function(PetscScalar * x, Vec f, Insert
   const_element_iterator it_end = elements_end();
   for(unsigned int nelem=0 ; it!=it_end; ++it, ++nelem)
   {
-    FVM_CellData * elem_data = this->get_region_elem_Data(nelem);
+    const Elem * elem = *it;
+    FVM_CellData * elem_data = this->get_region_elem_data(nelem);
 
-    bool insulator_interface_elem = get_advanced_model()->ESurface && is_elem_on_insulator_interface(*it);
+    bool insulator_interface_elem = is_elem_on_insulator_interface(elem);
+    bool mos_channel_elem = is_elem_in_mos_channel(elem);
+    bool truncation =  SolverSpecify::VoronoiTruncation == SolverSpecify::VoronoiTruncationAlways ||
+        (SolverSpecify::VoronoiTruncation == SolverSpecify::VoronoiTruncationBoundary && (elem->on_boundary() || elem->on_interface())) ;
 
     // build the gradient of psi and fermi potential in this cell.
     // which are the vector of electric field and current density.
 
-    std::vector<PetscScalar> psi_vertex;
-    std::vector<PetscScalar> phin_vertex;
-    std::vector<PetscScalar> phip_vertex;
+    VectorValue<PetscScalar> E;
+    VectorValue<PetscScalar> Jnv;
+    VectorValue<PetscScalar> Jpv;
 
     std::vector<PetscScalar> Jn_edge; //store all the edge Jn
     std::vector<PetscScalar> Jp_edge; //store all the edge Jp
@@ -278,12 +275,17 @@ void SemiconductorSimulationRegion::EBM3_Function(PetscScalar * x, Vec f, Insert
     PetscScalar Etp=0;
 
     // evaluate E field parallel and vertical to current flow
-    if( ( get_advanced_model()->HighFieldMobility || get_advanced_model()->ImpactIonization) &&
-        SolverSpecify::Type!=SolverSpecify::EQUILIBRIUM)
+    if(highfield_mob)
     {
-      for(unsigned int nd=0; nd<(*it)->n_nodes(); ++nd)
+      // build the gradient of psi and fermi potential in this cell.
+      // which are the vector of electric field and current density.
+      std::vector<PetscScalar> psi_vertex(elem->n_nodes());
+      std::vector<PetscScalar> phin_vertex(elem->n_nodes());
+      std::vector<PetscScalar> phip_vertex(elem->n_nodes());
+
+      for(unsigned int nd=0; nd<elem->n_nodes(); ++nd)
       {
-        const FVM_Node * fvm_node = (*it)->get_fvm_node(nd);
+        const FVM_Node * fvm_node = elem->get_fvm_node(nd);
         const FVM_NodeData * fvm_node_data = fvm_node->node_data();
 
         PetscScalar V;  // electrostatic potential
@@ -295,8 +297,8 @@ void SemiconductorSimulationRegion::EBM3_Function(PetscScalar * x, Vec f, Insert
         {
           // use values in the current iteration
           V  =  x[fvm_node->local_offset() + node_psi_offset];
-          n  =  fabs(x[fvm_node->local_offset()+node_n_offset]) + fvm_node_data->ni()*1e-2;
-          p  =  fabs(x[fvm_node->local_offset()+node_p_offset]) + fvm_node_data->ni()*1e-2;
+          n  =  x[fvm_node->local_offset()+node_n_offset] + fvm_node_data->ni()*1e-2;
+          p  =  x[fvm_node->local_offset()+node_p_offset] + fvm_node_data->ni()*1e-2;
         }
         else
         {
@@ -306,27 +308,28 @@ void SemiconductorSimulationRegion::EBM3_Function(PetscScalar * x, Vec f, Insert
           p  =  fvm_node_data->p() + 1.0*std::pow(cm, -3);
         }
 
-        psi_vertex.push_back  ( V );
+        psi_vertex[nd] = V;
         //fermi potential
-        phin_vertex.push_back ( V - Vt*log(fabs(n)/fvm_node_data->ni()) );
-        phip_vertex.push_back ( V + Vt*log(fabs(p)/fvm_node_data->ni()) );
+        phin_vertex[nd] = V - Vt*log(n/fvm_node_data->ni());
+        phip_vertex[nd] = V + Vt*log(p/fvm_node_data->ni());
       }
 
       // compute the gradient
-      VectorValue<PetscScalar> E   = - (*it)->gradient(psi_vertex);  // E = - grad(psi)
-      VectorValue<PetscScalar> Jnv = - (*it)->gradient(phin_vertex); // we only need the direction of Jnv, here Jnv = - gradient of Fn
-      VectorValue<PetscScalar> Jpv = - (*it)->gradient(phip_vertex); // Jpv = - gradient of Fp
-      // prevent zero vector
-      Jnv.add_scaled(VectorValue<PetscScalar>(0, 1e-20, 0), 1.0);
-      Jpv.add_scaled(VectorValue<PetscScalar>(0, 1e-20, 0), 1.0);
+      E   = - elem->gradient(psi_vertex);  // E = - grad(psi)
+      Jnv = - elem->gradient(phin_vertex); // we only need the direction of Jnv, here Jnv = - gradient of Fn
+      Jpv = - elem->gradient(phip_vertex); // Jpv = - gradient of Fp
 
+    }
+
+    if(highfield_mob)
+    {
       // for elem on insulator interface, we will do special treatment to electrical field
-      if(insulator_interface_elem)
+      if(get_advanced_model()->ESurface && insulator_interface_elem)
       {
         // get all the sides on insulator interface
         std::vector<unsigned int> sides;
         std::vector<SimulationRegion *> regions;
-        elem_on_insulator_interface(*it, sides, regions);
+        elem_on_insulator_interface(elem, sides, regions);
 
         VectorValue<PetscScalar> E_insul(0,0,0);
         unsigned int side_insul;
@@ -334,7 +337,7 @@ void SemiconductorSimulationRegion::EBM3_Function(PetscScalar * x, Vec f, Insert
         // find the neighbor element which has max E field
         for(unsigned int ne=0; ne<sides.size(); ++ne)
         {
-          const Elem * elem_neighbor = (*it)->neighbor(sides[ne]);
+          const Elem * elem_neighbor = elem->neighbor(sides[ne]);
           std::vector<PetscScalar> psi_vertex_neighbor;
           for(unsigned int nd=0; nd<elem_neighbor->n_nodes(); ++nd)
           {
@@ -342,7 +345,7 @@ void SemiconductorSimulationRegion::EBM3_Function(PetscScalar * x, Vec f, Insert
             psi_vertex_neighbor.push_back(x[fvm_node_neighbor->local_offset()+0]);
           }
           VectorValue<PetscScalar> E_neighbor = - elem_neighbor->gradient(psi_vertex_neighbor);
-          if(E_neighbor.size()>E_insul.size())
+          if(E_neighbor.size()>=E_insul.size())
           {
             E_insul = E_neighbor;
             side_insul = sides[ne];
@@ -350,7 +353,7 @@ void SemiconductorSimulationRegion::EBM3_Function(PetscScalar * x, Vec f, Insert
           }
         }
         // interface normal, point to semiconductor side
-        Point norm = - (*it)->outside_unit_normal(side_insul);
+        Point norm = - elem->outside_unit_normal(side_insul);
         // effective electric fields in vertical
         PetscScalar ZETAN = mt->mob->ZETAN();
         PetscScalar ETAN  = mt->mob->ETAN();
@@ -378,41 +381,58 @@ void SemiconductorSimulationRegion::EBM3_Function(PetscScalar * x, Vec f, Insert
           // E field parallel to current flow
           Epn = Jnv.size();
           Epp = Jpv.size();
+
+          if(mos_channel_elem)
+          {
+            // E field vertical to current flow
+            Etn = (E.cross(Jnv.unit(true))).size();
+            Etp = (E.cross(Jpv.unit(true))).size();
+          }
         }
+
         if(get_advanced_model()->Mob_Force == ModelSpecify::EJ)
         {
           // E field parallel to current flow
-          Epn = std::max(E.dot(Jnv.unit()), 0.0);
-          Epp = std::max(E.dot(Jpv.unit()), 0.0);
-        }
+          Epn = std::max(E.dot(Jnv.unit(true)), 0.0);
+          Epp = std::max(E.dot(Jpv.unit(true)), 0.0);
 
-        // E field vertical to current flow
-        Etn = (E.cross(Jnv.unit())).size();
-        Etp = (E.cross(Jpv.unit())).size();
+          if(mos_channel_elem)
+          {
+            // E field vertical to current flow
+            Etn = (E.cross(Jnv.unit(true))).size();
+            Etp = (E.cross(Jpv.unit(true))).size();
+          }
+        }
       }
     }
 
     // process \nabla psi and S-G current along the cell's edge
     // search for all the edges this cell own
-    for(unsigned int ne=0; ne<(*it)->n_edges(); ++ne )
+    for(unsigned int ne=0; ne<elem->n_edges(); ++ne )
     {
-      AutoPtr<Elem> edge = (*it)->build_edge (ne);
-      genius_assert(edge->type()==EDGE2);
+      std::pair<unsigned int, unsigned int> edge_nodes;
+      elem->nodes_on_edge(ne, edge_nodes);
 
-      std::vector<unsigned int > edge_nodes;
-      (*it)->nodes_on_edge(ne, edge_nodes);
+      // the length of this edge
+      const double length = elem->edge_length(ne);
+      double partial_area = elem->partial_area_with_edge(ne);  // partial area associated with this edge
+      double partial_volume = elem->partial_volume_with_edge(ne); // partial volume associated with this edge
 
-      VectorValue<double> dir = (edge->point(1) - edge->point(0)).unit(); // unit direction of the edge
-      double length = edge->volume();                           // the length of this edge
-      double partial_area = (*it)->partial_area_with_edge(ne);  // partial area associated with this edge
-      double partial_volume = (*it)->partial_volume_with_edge(ne); // partial volume associated with this edge
+      double truncated_partial_area =  partial_area;
+      double truncated_partial_volume =  partial_volume;
+      if(truncation)
+      {
+        truncated_partial_area =  elem->partial_area_with_edge_truncated(ne);
+        truncated_partial_volume =  elem->partial_volume_with_edge_truncated(ne);
+      }
 
+      // fvm_node of node1
+      const FVM_Node * fvm_n1 = elem->get_fvm_node(edge_nodes.first);
+      // fvm_node of node2
+      const FVM_Node * fvm_n2 = elem->get_fvm_node(edge_nodes.second);
 
-      FVM_Node * fvm_n1 = (*it)->get_fvm_node(edge_nodes[0]);   genius_assert(fvm_n1);  // fvm_node of node1
-      FVM_Node * fvm_n2 = (*it)->get_fvm_node(edge_nodes[1]);   genius_assert(fvm_n2);  // fvm_node of node2
-
-      FVM_NodeData * n1_data = fvm_n1->node_data();  genius_assert(n1_data);            // fvm_node_data of node1
-      FVM_NodeData * n2_data = fvm_n2->node_data();  genius_assert(n2_data);            // fvm_node_data of node2
+      const FVM_NodeData * n1_data = fvm_n1->node_data();  genius_assert(n1_data);            // fvm_node_data of node1
+      const FVM_NodeData * n2_data = fvm_n2->node_data();  genius_assert(n2_data);            // fvm_node_data of node2
 
       unsigned int n1_local_offset = fvm_n1->local_offset();
       unsigned int n2_local_offset = fvm_n2->local_offset();
@@ -449,8 +469,8 @@ void SemiconductorSimulationRegion::EBM3_Function(PetscScalar * x, Vec f, Insert
         // takes care of the change effective DOS.
         // Ec/Ev should not be used except when its difference between two nodes.
         // The same comment applies to Ec2/Ev2.
-        PetscScalar Ec1 =  -(e*V1 + n1_data->affinity() + mt->band->EgNarrowToEc(p1, n1, T1) + kb*T1*log(n1_data->Nc()));
-        PetscScalar Ev1 =  -(e*V1 + n1_data->affinity() - mt->band->EgNarrowToEv(p1, n1, T1) - kb*T1*log(n1_data->Nv()) + mt->band->Eg(T1));
+        PetscScalar Ec1 =  -(e*V1 + n1_data->affinity() + kb*T1*log(mt->band->nie(p1, n1, T1)));
+        PetscScalar Ev1 =  -(e*V1 + n1_data->affinity() - kb*T1*log(mt->band->nie(p1, n1, T1)));
         if(get_advanced_model()->Fermi)
         {
           Ec1 = Ec1 - kb*T1*log(gamma_f(fabs(n1)/n1_data->Nc()));
@@ -485,8 +505,8 @@ void SemiconductorSimulationRegion::EBM3_Function(PetscScalar * x, Vec f, Insert
         if(get_advanced_model()->enable_Tp())
           Tp2 = x[n2_local_offset + node_Tp_offset]/p2;
 
-        PetscScalar Ec2 =  -(e*V2 + n2_data->affinity() + mt->band->EgNarrowToEc(p2, n2, T2) + kb*T2*log(n2_data->Nc()));
-        PetscScalar Ev2 =  -(e*V2 + n2_data->affinity() - mt->band->EgNarrowToEv(p2, n2, T2) - kb*T2*log(n2_data->Nv()) + mt->band->Eg(T2));
+        PetscScalar Ec2 =  -(e*V2 + n2_data->affinity() + kb*T2*log(mt->band->nie(p2, n2, T2)));
+        PetscScalar Ev2 =  -(e*V2 + n2_data->affinity() - kb*T2*log(mt->band->nie(p2, n2, T2)));
         if(get_advanced_model()->Fermi)
         {
           Ec2 = Ec2 - kb*T2*log(gamma_f(fabs(n2)/n2_data->Nc()));
@@ -503,17 +523,23 @@ void SemiconductorSimulationRegion::EBM3_Function(PetscScalar * x, Vec f, Insert
         PetscScalar mun2;  // electron mobility
         PetscScalar mup2;  // hole mobility
 
-        if(get_advanced_model()->HighFieldMobility && SolverSpecify::Type!=SolverSpecify::EQUILIBRIUM)
+        if(highfield_mob)
         {
           if (get_advanced_model()->Mob_Force == ModelSpecify::ESimple && !insulator_interface_elem )
           {
+            Point dir = (*fvm_n1->root_node() - *fvm_n2->root_node()).unit();
+            PetscScalar Ep = fabs((V2-V1)/length);
+            PetscScalar Et = 0;
+            if(mos_channel_elem)
+              Et = (E - dir*(E*dir)).size();
+
             mt->mapping(fvm_n1->root_node(), n1_data, SolverSpecify::clock);
-            mun1 = mt->mob->ElecMob(p1, n1, T1, std::max(fabs(Ec2-Ec1)/e/length, 0.0), Etn, Tn1);
-            mup1 = mt->mob->HoleMob(p1, n1, T1, std::max(fabs(Ev1-Ev2)/e/length, 0.0), Etp, Tp1);
+            mun1 = mt->mob->ElecMob(p1, n1, T1, Ep, Et, Tn1);
+            mup1 = mt->mob->HoleMob(p1, n1, T1, Ep, Et, Tp1);
 
             mt->mapping(fvm_n2->root_node(), n2_data, SolverSpecify::clock);
-            mun2 = mt->mob->ElecMob(p2, n2, T2, std::max(fabs(Ec2-Ec1)/e/length, 0.0), Etn, Tn2);
-            mup2 = mt->mob->HoleMob(p2, n2, T2, std::max(fabs(Ev1-Ev2)/e/length, 0.0), Etp, Tp2);
+            mun2 = mt->mob->ElecMob(p2, n2, T2, Ep, Et, Tn2);
+            mup2 = mt->mob->HoleMob(p2, n2, T2, Ep, Et, Tp2);
           }
           else
           {
@@ -605,18 +631,18 @@ void SemiconductorSimulationRegion::EBM3_Function(PetscScalar * x, Vec f, Insert
 
           // continuity equation of electron
           iy.push_back( fvm_n1->global_offset() + node_n_offset );
-          y.push_back ( Jn*partial_area );
+          y.push_back ( Jn*truncated_partial_area );
 
           // continuity equation of hole
           iy.push_back( fvm_n1->global_offset() + node_p_offset );
-          y.push_back ( - Jp*partial_area );
+          y.push_back ( - Jp*truncated_partial_area );
 
 
           // heat transport equation if required
           if(get_advanced_model()->enable_Tl())
           {
             iy.push_back( fvm_n1->global_offset() + node_Tl_offset );
-            y.push_back ( kap*(T2 - T1)/length*partial_area + H*partial_area);
+            y.push_back ( kap*(T2 - T1)/length*partial_area + H*truncated_partial_area);
           }
 
 
@@ -624,7 +650,7 @@ void SemiconductorSimulationRegion::EBM3_Function(PetscScalar * x, Vec f, Insert
           if(get_advanced_model()->enable_Tn())
           {
             iy.push_back( fvm_n1->global_offset() + node_Tn_offset );
-            y.push_back ( -Sn*partial_area + Hn*partial_area);
+            y.push_back ( -Sn*truncated_partial_area + Hn*truncated_partial_area);
           }
 
 
@@ -632,7 +658,7 @@ void SemiconductorSimulationRegion::EBM3_Function(PetscScalar * x, Vec f, Insert
           if(get_advanced_model()->enable_Tp())
           {
             iy.push_back( fvm_n1->global_offset() + node_Tp_offset );
-            y.push_back ( -Sp*partial_area + Hp*partial_area);
+            y.push_back ( -Sp*truncated_partial_area + Hp*truncated_partial_area);
           }
 
         }
@@ -647,18 +673,18 @@ void SemiconductorSimulationRegion::EBM3_Function(PetscScalar * x, Vec f, Insert
 
           // continuity equation of electron
           iy.push_back( fvm_n2->global_offset() + node_n_offset );
-          y.push_back ( - Jn*partial_area );
+          y.push_back ( - Jn*truncated_partial_area );
 
           // continuity equation of hole
           iy.push_back( fvm_n2->global_offset() + node_p_offset );
-          y.push_back ( Jp*partial_area );
+          y.push_back ( Jp*truncated_partial_area );
 
 
           // heat transport equation if required
           if(get_advanced_model()->enable_Tl())
           {
             iy.push_back( fvm_n2->global_offset() + node_Tl_offset );
-            y.push_back ( kap*(T1 - T2)/length*partial_area + H*partial_area);
+            y.push_back ( kap*(T1 - T2)/length*partial_area + H*truncated_partial_area);
           }
 
 
@@ -666,7 +692,7 @@ void SemiconductorSimulationRegion::EBM3_Function(PetscScalar * x, Vec f, Insert
           if(get_advanced_model()->enable_Tn())
           {
             iy.push_back( fvm_n2->global_offset() + node_Tn_offset );
-            y.push_back ( Sn*partial_area + Hn*partial_area);
+            y.push_back ( Sn*truncated_partial_area + Hn*truncated_partial_area);
           }
 
 
@@ -674,14 +700,13 @@ void SemiconductorSimulationRegion::EBM3_Function(PetscScalar * x, Vec f, Insert
           if(get_advanced_model()->enable_Tp())
           {
             iy.push_back( fvm_n2->global_offset() + node_Tp_offset );
-            y.push_back ( Sp*partial_area + Hp*partial_area);
+            y.push_back ( Sp*truncated_partial_area + Hp*truncated_partial_area);
           }
 
         }
 
         if (get_advanced_model()->BandBandTunneling && SolverSpecify::Type!=SolverSpecify::EQUILIBRIUM)
         {
-          VectorValue<PetscScalar> E   = - (*it)->gradient(psi_vertex);  // E = - grad(psi)
           PetscScalar GBTBT1 = mt->band->BB_Tunneling(T1, E.size());
           PetscScalar GBTBT2 = mt->band->BB_Tunneling(T2, E.size());
 
@@ -689,20 +714,20 @@ void SemiconductorSimulationRegion::EBM3_Function(PetscScalar * x, Vec f, Insert
           {
             // continuity equation
             iy.push_back( fvm_n1->global_offset() + node_n_offset );
-            y.push_back ( 0.5*GBTBT1*partial_volume );
+            y.push_back ( 0.5*GBTBT1*truncated_partial_volume );
 
             iy.push_back( fvm_n1->global_offset() + node_p_offset );
-            y.push_back ( 0.5*GBTBT1*partial_volume );
+            y.push_back ( 0.5*GBTBT1*truncated_partial_volume );
           }
 
           if( fvm_n2->root_node()->processor_id()==Genius::processor_id() )
           {
             // continuity equation
             iy.push_back( fvm_n2->global_offset() + node_n_offset );
-            y.push_back ( 0.5*GBTBT2*partial_volume );
+            y.push_back ( 0.5*GBTBT2*truncated_partial_volume );
 
             iy.push_back( fvm_n2->global_offset() + node_p_offset );
-            y.push_back ( 0.5*GBTBT2*partial_volume );
+            y.push_back ( 0.5*GBTBT2*truncated_partial_volume );
           }
         }
 
@@ -720,23 +745,17 @@ void SemiconductorSimulationRegion::EBM3_Function(PetscScalar * x, Vec f, Insert
           Tn = std::min(Tn1,Tn2);
           Tp = std::min(Tp1,Tp2);
 
-          VectorValue<PetscScalar> E   = - (*it)->gradient(psi_vertex);  // E = - grad(psi)
-          VectorValue<PetscScalar> Jnv = - (*it)->gradient(phin_vertex); // we only need the direction of Jnv, here Jnv = - gradient of Fn
-          VectorValue<PetscScalar> Jpv = - (*it)->gradient(phip_vertex); // Jpv = - gradient of Fpa
-          Jnv.add_scaled(VectorValue<PetscScalar>(0, 1e-20, 0), 1.0);
-          Jpv.add_scaled(VectorValue<PetscScalar>(0, 1e-20, 0), 1.0);
-
-          VectorValue<PetscScalar> ev = ((*it)->point(edge_nodes[1]) - (*it)->point(edge_nodes[0]));
-          PetscScalar riin1 = 0.5 + 0.5* (ev.unit()).dot(Jnv.unit());
+          VectorValue<PetscScalar> ev = (elem->point(edge_nodes.second) - elem->point(edge_nodes.first));
+          PetscScalar riin1 = 0.5 + 0.5* (ev.unit()).dot(Jnv.unit(true));
           PetscScalar riin2 = 1.0 - riin1;
-          PetscScalar riip2 = 0.5 + 0.5* (ev.unit()).dot(Jpv.unit());
+          PetscScalar riip2 = 0.5 + 0.5* (ev.unit()).dot(Jpv.unit(true));
           PetscScalar riip1 = 1.0 - riip2;
 
           switch (get_advanced_model()->II_Force)
           {
             case ModelSpecify::IIForce_EdotJ:
-              Epn = std::max(E.dot(Jnv.unit()), 0.0);
-              Epp = std::max(E.dot(Jpv.unit()), 0.0);
+              Epn = std::max(E.dot(Jnv.unit(true)), 0.0);
+              Epp = std::max(E.dot(Jpv.unit(true)), 0.0);
               IIn = mt->gen->ElecGenRate(T,Epn,Eg);
               IIp = mt->gen->HoleGenRate(T,Epp,Eg);
               break;
@@ -769,22 +788,22 @@ void SemiconductorSimulationRegion::EBM3_Function(PetscScalar * x, Vec f, Insert
           {
             // continuity equation
             iy.push_back( fvm_n1->global_offset() + node_n_offset );
-            y.push_back ( (riin1*GIIn+riip1*GIIp)*partial_volume );
+            y.push_back ( (riin1*GIIn+riip1*GIIp)*truncated_partial_volume );
 
             iy.push_back( fvm_n1->global_offset() + node_p_offset );
-            y.push_back ( (riin1*GIIn+riip1*GIIp)*partial_volume );
+            y.push_back ( (riin1*GIIn+riip1*GIIp)*truncated_partial_volume );
 
             if (get_advanced_model()->enable_Tn())
             {
               Hn = - (Eg+1.5*kb*Tp) * riin1*GIIn + 1.5*kb*Tn * riip1*GIIp;
               iy.push_back(fvm_n1->global_offset()+node_Tn_offset);
-              y.push_back( Hn*partial_volume );
+              y.push_back( Hn*truncated_partial_volume );
             }
             if (get_advanced_model()->enable_Tp())
             {
               Hp = - (Eg+1.5*kb*Tn) * riip1*GIIp + 1.5*kb*Tp * riin1*GIIn;
               iy.push_back(fvm_n1->global_offset()+node_Tp_offset);
-              y.push_back( Hp*partial_volume );
+              y.push_back( Hp*truncated_partial_volume );
             }
           }
 
@@ -792,22 +811,22 @@ void SemiconductorSimulationRegion::EBM3_Function(PetscScalar * x, Vec f, Insert
           {
             // continuity equation
             iy.push_back( fvm_n2->global_offset() + node_n_offset );
-            y.push_back ( (riin2*GIIn+riip2*GIIp)*partial_volume );
+            y.push_back ( (riin2*GIIn+riip2*GIIp)*truncated_partial_volume );
 
             iy.push_back( fvm_n2->global_offset() + node_p_offset );
-            y.push_back ( (riin2*GIIn+riip2*GIIp)*partial_volume );
+            y.push_back ( (riin2*GIIn+riip2*GIIp)*truncated_partial_volume );
 
             if (get_advanced_model()->enable_Tn())
             {
               Hn = - (Eg+1.5*kb*Tp) * riin2*GIIn + 1.5*kb*Tn * riip2*GIIp;
               iy.push_back(fvm_n2->global_offset()+node_Tn_offset);
-              y.push_back( Hn*partial_volume );
+              y.push_back( Hn*truncated_partial_volume );
             }
             if (get_advanced_model()->enable_Tp())
             {
               Hp = - (Eg+1.5*kb*Tn) * riip2*GIIp + 1.5*kb*Tp * riin2*GIIn;
               iy.push_back(fvm_n2->global_offset()+node_Tp_offset);
-              y.push_back( Hp*partial_volume );
+              y.push_back( Hp*truncated_partial_volume );
             }
           }
         }
@@ -816,26 +835,24 @@ void SemiconductorSimulationRegion::EBM3_Function(PetscScalar * x, Vec f, Insert
     }
 
         // the average cell electron/hole current density vector
-     elem_data->Jn() = -(*it)->reconstruct_vector(Jn_edge);
-     elem_data->Jp() =  (*it)->reconstruct_vector(Jp_edge);
+     elem_data->Jn() = -elem->reconstruct_vector(Jn_edge);
+     elem_data->Jp() =  elem->reconstruct_vector(Jp_edge);
 
   }
 
-#ifdef HAVE_FENV_H
+#if defined(HAVE_FENV_H) && defined(DEBUG)
   genius_assert( !fetestexcept(FE_INVALID) );
 #endif
 
   // process node related terms
-  // including \rho of poisson's equation, recombination term of continuation equation and heat consume due to R/G and collision
-  const_node_iterator node_it = nodes_begin();
-  const_node_iterator node_it_end = nodes_end();
+  // including \rho of poisson's equation and recombination term of continuation equation
+  const_processor_node_iterator node_it = on_processor_nodes_begin();
+  const_processor_node_iterator node_it_end = on_processor_nodes_end();
   for(; node_it!=node_it_end; ++node_it)
   {
-    const FVM_Node * fvm_node = (*node_it).second;
-    //if this node NOT belongs to this processor, continue
-    if( fvm_node->root_node()->processor_id() != Genius::processor_id() ) continue;
-
+    const FVM_Node * fvm_node = *node_it;
     const FVM_NodeData * node_data = fvm_node->node_data();
+
 
     PetscScalar n   =  x[fvm_node->local_offset() + node_n_offset];           // electron density
     PetscScalar p   =  x[fvm_node->local_offset() + node_p_offset];           // hole density
@@ -877,8 +894,8 @@ void SemiconductorSimulationRegion::EBM3_Function(PetscScalar * x, Vec f, Insert
 
     iy.push_back(fvm_node->global_offset()+node_n_offset);
     iy.push_back(fvm_node->global_offset()+node_p_offset);
-    y.push_back( Field_G - R );
-    y.push_back( Field_G - R );
+    y.push_back( Field_G - R  + node_data->EIn());
+    y.push_back( Field_G - R  + node_data->HIn());
 
     // process heat consume due to R/G and collision
     PetscScalar H=0, Hn=0, Hp=0;
@@ -984,7 +1001,7 @@ void SemiconductorSimulationRegion::EBM3_Function(PetscScalar * x, Vec f, Insert
   // the last operator is ADD_VALUES
   add_value_flag = ADD_VALUES;
 
-#ifdef HAVE_FENV_H
+#if defined(HAVE_FENV_H) && defined(DEBUG)
   genius_assert( !fetestexcept(FE_INVALID) );
 #endif
 }

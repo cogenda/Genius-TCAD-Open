@@ -31,11 +31,6 @@
 #include <istream>
 #include <string>
 
-// Local includes
-#include "genius_env.h"
-#include "genius_common.h"
-
-
 
 
 /**
@@ -129,7 +124,6 @@ template <class MT>
 inline
 MT& FieldInput<MT>::system ()
 {
-  if (_obj == NULL) genius_error();
   return *_obj;
 }
 

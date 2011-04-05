@@ -232,6 +232,43 @@ namespace TIF
 
 
   /**
+   * Quadrangle structure
+   */
+  struct Quad_t
+  {
+    /**
+     * triangle index (sequential, starts at 0)
+     */
+    int  index;
+
+    /**
+     * region index of the region the triangle is part of
+     */
+    int  region;
+
+    /**
+     * coordinate index of the triangle node 1
+     */
+    int c1;
+
+    /**
+     * coordinate index of the triangle node 2
+     */
+    int c2;
+
+    /**
+     * coordinate index of the triangle node 3
+     */
+    int c3;
+
+    /**
+     * coordinate index of the triangle node 4
+     */
+    int c4;
+  };
+
+
+  /**
    * material parameters
    */
   struct Parameter_t
@@ -381,6 +418,7 @@ namespace TIF
   extern std::vector<Node_t>        node_array;
   extern std::vector<Edge_t>        edge_array;
   extern std::vector<Tri_t>         tri_array;
+  extern std::vector<Quad_t>        quad_array;
   extern std::vector<Region_t>      region_array;
   extern std::vector<Interface_t>   interface_array;
   extern std::vector<Component_t>   component_array;

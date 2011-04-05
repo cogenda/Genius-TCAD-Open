@@ -61,18 +61,13 @@
 #include "emfem2d/emfem2d.h"
 #include "ray_tracing/ray_tracing.h"
 
-#ifndef CYGWIN
- #include "mix1/mix1.h"
- #include "mix2/mix2.h"
- #include "mix3/mix3.h"
-#endif
-
 #include "spice_ckt.h"
 #include "mixA1/mixA1.h"
 #include "mixA2/mixA2.h"
 #include "mixA3/mixA3.h"
 
 #include "hall/hall.h"
+#include "hdm/hdm.h"
 
 #include "stress_solver/stress_solver.h"
 
@@ -123,6 +118,7 @@ SolverControl::SolverControl()
 SolverControl::~SolverControl()
 {
   mxmlDelete(_dom_solution);
+  _dom_solution=NULL;
 }
 
 mxml_node_t* SolverControl::get_dom_solution() const
@@ -285,6 +281,7 @@ int  SolverControl::do_mesh()
             genius_error();
           }
 #endif
+
         }
       }
       // ok, generate the mesh
@@ -369,18 +366,29 @@ int SolverControl::set_method ( const Parser::Card & c )
   // set Newton damping type
   if(c.is_parameter_exist("damping"))
   {
-    if (c.is_enum_value("damping", "no"))        SolverSpecify::Damping = SolverSpecify::DampingNo;
-    if (c.is_enum_value("damping", "potential")) SolverSpecify::Damping = SolverSpecify::DampingPotential;
-    if (c.is_enum_value("damping", "bankrose"))  SolverSpecify::Damping = SolverSpecify::DampingBankRose;
+    if (c.is_enum_value("damping", "no"))             SolverSpecify::Damping = SolverSpecify::DampingNo;
+    if (c.is_enum_value("damping", "potential"))      SolverSpecify::Damping = SolverSpecify::DampingPotential;
+    if (c.is_enum_value("damping", "superpotential")) SolverSpecify::Damping = SolverSpecify::DampingSuperPotential;
+    if (c.is_enum_value("damping", "bankrose"))       SolverSpecify::Damping = SolverSpecify::DampingBankRose;
+  }
+
+   // set voronoi truncation flag
+  if(c.is_parameter_exist("truncation"))
+  {
+    if (c.is_enum_value("truncation", "no"))            SolverSpecify::VoronoiTruncation = SolverSpecify::VoronoiTruncationNo;
+    if (c.is_enum_value("truncation", "boundary"))      SolverSpecify::VoronoiTruncation = SolverSpecify::VoronoiTruncationBoundary;
+    if (c.is_enum_value("truncation", "always"))        SolverSpecify::VoronoiTruncation = SolverSpecify::VoronoiTruncationAlways;
   }
 
   //set convergence test
   SolverSpecify::MaxIteration              = c.get_int("maxiteration", 30);
+  SolverSpecify::potential_update          = c.get_real("potential.update", 1.0);
 
   SolverSpecify::ksp_rtol                  = c.get_real("ksp.rtol", 1e-8);
   SolverSpecify::ksp_atol                  = c.get_real("ksp.atol", 1e-20);
-  SolverSpecify::ksp_atol_fnorm            = c.get_real("ksp.atol.fnorm", 1e-7);
+  SolverSpecify::ksp_atol_fnorm            = c.get_real("ksp.atol.fnorm", 1e-6);
 
+  SolverSpecify::absolute_toler            = c.get_real("absolute.tol", 1e-12);
   SolverSpecify::relative_toler            = c.get_real("relative.tol", 1e-5);
   SolverSpecify::toler_relax               = c.get_real("toler.relax", 1e4);
   SolverSpecify::poisson_abs_toler         = c.get_real("poisson.tol", 1e-29)*C;
@@ -398,15 +406,16 @@ int SolverControl::set_method ( const Parser::Card & c )
   {
     if (c.is_enum_value("type", "poisson"))                 SolverSpecify::Solver = SolverSpecify::POISSON;
     else if (c.is_enum_value("type", "ddml1"))              SolverSpecify::Solver = SolverSpecify::DDML1;
-    else if (c.is_enum_value("type", "ddml1s"))             SolverSpecify::Solver = SolverSpecify::DDML1MIX;
+    else if (c.is_enum_value("type", "ddml1mix"))           SolverSpecify::Solver = SolverSpecify::DDML1MIXA;
     else if (c.is_enum_value("type", "ddml1m"))             SolverSpecify::Solver = SolverSpecify::DDML1MIXA;
     else if (c.is_enum_value("type", "hall"))               SolverSpecify::Solver = SolverSpecify::HALLDDML1;
     else if (c.is_enum_value("type", "ddml2"))              SolverSpecify::Solver = SolverSpecify::DDML2;
-    else if (c.is_enum_value("type", "ddml2s"))             SolverSpecify::Solver = SolverSpecify::DDML2MIX;
+    else if (c.is_enum_value("type", "ddml2mix"))           SolverSpecify::Solver = SolverSpecify::DDML2MIXA;
     else if (c.is_enum_value("type", "ddml2m"))             SolverSpecify::Solver = SolverSpecify::DDML2MIXA;
     else if (c.is_enum_value("type", "ebml3"))              SolverSpecify::Solver = SolverSpecify::EBML3;
-    else if (c.is_enum_value("type", "ebml3s"))             SolverSpecify::Solver = SolverSpecify::EBML3MIX;
+    else if (c.is_enum_value("type", "ebml3mix"))           SolverSpecify::Solver = SolverSpecify::EBML3MIXA;
     else if (c.is_enum_value("type", "ebml3m"))             SolverSpecify::Solver = SolverSpecify::EBML3MIXA;
+    else if (c.is_enum_value("type", "hdm"))                SolverSpecify::Solver = SolverSpecify::HDM;
     else if (c.is_enum_value("type", "ddmac"))              SolverSpecify::Solver = SolverSpecify::DDMAC;
   }
 
@@ -427,7 +436,7 @@ int SolverControl::set_model ( const Parser::Card & c )
   AdvancedModel model;
 
   // advanced mobility model control
-  model.ESurface                          = c.get_bool("esurface", false);
+  model.ESurface                          = c.get_bool("esurface", true);
   model.HighFieldMobility                 = c.get_bool("highfieldmobility", true, "h.mob");
   model.HighFieldMobilityAD               = c.get_bool("highfieldmobilityad", true, "h.mob.ad");
   model.HighFieldMobilitySelfConsistently = c.get_bool("h.mob.selfconsistent", true);
@@ -456,6 +465,10 @@ int SolverControl::set_model ( const Parser::Card & c )
     }
   }
 
+  // hot carrier injection
+  model.HotCarrierInjection    = c.get_bool("hotcarrier", false);
+
+  // band to band tunneling
   model.BandBandTunneling = false;
   if(c.is_parameter_exist("bandbandtunneling") || c.is_parameter_exist("bbt"))
   {
@@ -519,20 +532,21 @@ int SolverControl::set_model ( const Parser::Card & c )
 
 int SolverControl::do_hook( const Parser::Card & c )
 {
-  std::string name;
-  name = c.get_string("load", "");
-
-  std::deque<std::string>::iterator hook_it = SolverSpecify::Hooks.begin();
-  for (;hook_it!=SolverSpecify::Hooks.end();hook_it++)
+  if ( c.is_parameter_exist("load") )
   {
-    if (*hook_it==name)
-      break;
-  }
-  if (name.length()>0 && hook_it==SolverSpecify::Hooks.end())
-  {
-    SolverSpecify::Hooks.push_back(name);
+    std::string dll_name = c.get_string("load", "");
+    std::string id;
+    if ( c.is_parameter_exist("id") )
+      id = c.get_string("id", "");
+    else
+      id = dll_name;
 
-    SolverSpecify::Hook_Parameters.erase(name);
+    if (SolverSpecify::Hooks.find(id) != SolverSpecify::Hooks.end())
+    {
+      MESSAGE<<"Warning at " <<c.get_fileline()<< " HOOK: hook " << id << " already exist, old one will be replaced." << std::endl; RECORD();
+      SolverSpecify::Hooks.erase(id);
+    }
+
     std::vector<Parser::Parameter> plist;
     for(unsigned int idx=0; idx<c.parameter_size(); idx++)
     {
@@ -540,20 +554,24 @@ int SolverControl::do_hook( const Parser::Card & c )
       if ( p.is_user_defined() )
         plist.push_back(p);
     }
-    SolverSpecify::Hook_Parameters.insert(std::pair<std::string, std::vector<Parser::Parameter> >(name,plist));
+    SolverSpecify::Hooks.insert( std::make_pair(id, std::make_pair(dll_name, plist)));
   }
 
-  name = c.get_string("unload", "");
-  hook_it = SolverSpecify::Hooks.begin();
-  for (;hook_it!=SolverSpecify::Hooks.end();hook_it++)
+
+  if ( c.is_parameter_exist("unload") )
   {
-    if (*hook_it==name)
-      break;
-  }
-  if (name.length()>0 && hook_it!=SolverSpecify::Hooks.end())
-  {
-    SolverSpecify::Hooks.erase(hook_it);
-    SolverSpecify::Hook_Parameters.erase(name);
+    std::string id;
+    if ( c.is_parameter_exist("id") )
+      id = c.get_string("id", "");
+    else
+      id = c.get_string("unload", "");
+
+    if (SolverSpecify::Hooks.find(id) != SolverSpecify::Hooks.end())
+      SolverSpecify::Hooks.erase(id);
+    else
+    {
+      MESSAGE<<"Warning at " <<c.get_fileline()<< " HOOK: hook " << id << " can't be found for unloading." << std::endl; RECORD();
+    }
   }
 
   return 0;
@@ -574,32 +592,152 @@ int SolverControl::do_solve( const Parser::Card & c )
   // set more detailed solution parameters
   switch (SolverSpecify::Type)
   {
-  case SolverSpecify::EQUILIBRIUM : break;
-  case SolverSpecify::STEADYSTATE :
-  case SolverSpecify::OP :
-    {
-      SolverSpecify::OptG        = c.get_bool("optical.gen", false);
-      SolverSpecify::PatG        = c.get_bool("particle.gen", false);
-      SolverSpecify::RampUpSteps = c.get_int("rampupsteps", 1);
-      SolverSpecify::RampUpVStep = c.get_real("rampupvstep", 0.25)*V;
-      SolverSpecify::RampUpIStep = c.get_real("rampupistep", 0.1)*A;
-      break;
-    }
-  case SolverSpecify::DCSWEEP     :
-    {
-
-      // user should specify vscan OR iscan
-      genius_assert(c.is_parameter_exist("vscan") || c.is_parameter_exist("iscan"));
-      genius_assert( !(c.is_parameter_exist("vscan") && c.is_parameter_exist("iscan")));
-
-      // clear electrode vector
-      SolverSpecify::Electrode_VScan.clear();
-      SolverSpecify::Electrode_IScan.clear();
-
-      if(c.is_parameter_exist("vscan"))
+      case SolverSpecify::EQUILIBRIUM :
       {
-        // sweep voltage of an electrode
-        if(system().get_circuit()==NULL)
+        SolverSpecify::GminInit    = c.get_real("gmin.init", 1e-6);
+        SolverSpecify::Gmin        = c.get_real("gmin", 1e-12);
+        break;
+      }
+      case SolverSpecify::STEADYSTATE :
+      case SolverSpecify::OP :
+      {
+        SolverSpecify::OptG        = c.get_bool("optical.gen", false);
+        SolverSpecify::PatG        = c.get_bool("particle.gen", false);
+        SolverSpecify::RampUpSteps = c.get_int("rampup.steps", 1);
+        SolverSpecify::RampUpVStep = c.get_real("rampup.vstep", 0.25)*V;
+        SolverSpecify::RampUpIStep = c.get_real("rampup.istep", 0.1)*A;
+        SolverSpecify::GminInit    = c.get_real("gmin.init", 1e-6);
+        SolverSpecify::Gmin        = c.get_real("gmin", 1e-12);
+        break;
+      }
+      case SolverSpecify::DCSWEEP     :
+      {
+
+        // user should specify vscan OR iscan
+        genius_assert(c.is_parameter_exist("vscan") || c.is_parameter_exist("iscan"));
+        genius_assert( !(c.is_parameter_exist("vscan") && c.is_parameter_exist("iscan")));
+
+        // clear electrode vector
+        SolverSpecify::Electrode_VScan.clear();
+        SolverSpecify::Electrode_IScan.clear();
+
+        if(c.is_parameter_exist("vscan"))
+        {
+          // sweep voltage of an electrode
+          if(system().get_circuit()==NULL)
+          {
+            unsigned int elec_num = c.parameter_count("vscan");
+            for(unsigned int n=0; n<elec_num; n++)
+            {
+              std::string electrode = c.get_n_string("vscan", "", n, 0);
+              if( system().get_bcs()->get_bc(electrode) == NULL || system().get_bcs()->get_bc(electrode)->is_electrode() == false )
+              {
+                MESSAGE<<"ERROR at " <<c.get_fileline()<< " SOLVE: Electrode " << electrode << " can't be found in device structure." << std::endl; RECORD();
+                genius_error();
+              }
+              SolverSpecify::Electrode_VScan.push_back(electrode);
+            }
+
+            if( !SolverSpecify::Electrode_VScan.size() )
+            {
+              MESSAGE<<"ERROR at " <<c.get_fileline()<< " SOLVE: You must specify at least one electrode for voltage DC scan."<<std::endl; RECORD();
+              genius_error();
+            }
+          }
+          // vscan spice voltage source
+          else
+          {
+            std::string spice_vsource = c.get_string_lower_case("vscan", "");
+            if( !system().get_circuit()->is_ckt_voltage_source_exist(spice_vsource))
+            {
+              MESSAGE<<"ERROR at " <<c.get_fileline()<< " SOLVE: VSRC " << spice_vsource << " can't be found in SPICE netlist." << std::endl; RECORD();
+              genius_error();
+            }
+            SolverSpecify::Electrode_VScan.push_back(spice_vsource);
+            if( SolverSpecify::Electrode_VScan.size() != 1 )
+            {
+              MESSAGE<<"ERROR at " <<c.get_fileline()<< " SOLVE: You must specify one VSRC for voltage DC scan."<<std::endl; RECORD();
+              genius_error();
+            }
+          }
+          SolverSpecify::VStart    = c.get_real("vstart", 0.0)*V;
+          SolverSpecify::VStep     = c.get_real("vstep", 0.1)*V;
+          SolverSpecify::VStepMax  = c.get_real("vstepmax", SolverSpecify::VStep/V)*V;
+          SolverSpecify::VStop     = c.get_real("vstop", 5.0)*V;
+
+          if(SolverSpecify::VStep == 0.0)
+          {
+            MESSAGE<<"ERROR at " <<c.get_fileline()<< " SOLVE: VStep shoud not be zero."<<std::endl; RECORD();
+            genius_error();
+          }
+        }
+
+        if(c.is_parameter_exist("iscan"))
+        {
+          if(system().get_circuit()==NULL)
+          {
+            unsigned int elec_num = c.parameter_count("iscan");
+            for(unsigned int n=0; n<elec_num; n++)
+            {
+              std::string electrode = c.get_n_string("iscan", "", n, 0);
+              if( system().get_bcs()->get_bc(electrode) == NULL || system().get_bcs()->get_bc(electrode)->is_electrode() == false )
+              {
+                MESSAGE<<"ERROR at " <<c.get_fileline()<< " SOLVE: Electrode " << electrode << " can't be found in device structure." << std::endl; RECORD();
+                genius_error();
+              }
+              SolverSpecify::Electrode_IScan.push_back(electrode);
+            }
+            if( !SolverSpecify::Electrode_IScan.size() )
+            {
+              MESSAGE<<"ERROR at " <<c.get_fileline()<< " SOLVE: You must specify at least one electrode for current DC scan."<<std::endl; RECORD();
+              genius_error();
+            }
+          }
+          // iscan spice current source
+          else
+          {
+            std::string spice_isource = c.get_string_lower_case("iscan", "");
+            if( !system().get_circuit()->is_ckt_current_source_exist(spice_isource))
+            {
+              MESSAGE<<"ERROR at " <<c.get_fileline()<< " SOLVE: ISRC " << spice_isource << " can't be found in SPICE netlist." << std::endl; RECORD();
+              genius_error();
+            }
+            SolverSpecify::Electrode_IScan.push_back(spice_isource);
+            if( SolverSpecify::Electrode_IScan.size() != 1 )
+            {
+              MESSAGE<<"ERROR at " <<c.get_fileline()<< " SOLVE: You must specify one ISRC for current DC scan."<<std::endl; RECORD();
+              genius_error();
+            }
+          }
+          SolverSpecify::IStart    = c.get_real("istart", 0.0)*A;
+          SolverSpecify::IStep     = c.get_real("istep", 1e-5)*A;
+          SolverSpecify::IStepMax  = c.get_real("istepmax", SolverSpecify::IStep/A)*A;
+          SolverSpecify::IStop     = c.get_real("istop", 1e-2)*A;
+
+          if(SolverSpecify::IStep == 0.0)
+          {
+            MESSAGE<<"ERROR at " <<c.get_fileline()<< " SOLVE: IStep shoud not be zero."<<std::endl; RECORD();
+            genius_error();
+          }
+        }
+
+        SolverSpecify::Predict   = c.get_bool("predict", true);
+
+        SolverSpecify::OptG      = c.get_bool("optical.gen", false);
+        SolverSpecify::PatG      = c.get_bool("particle.gen", false);
+        SolverSpecify::GminInit  = c.get_real("gmin.init", 1e-6);
+        SolverSpecify::Gmin      = c.get_real("gmin", 1e-12);
+        // set the modulate envelop of light source
+        std::string waveform = c.get_string("optical.modulate", "");
+        FieldSource * field_source = system().get_field_source();
+        field_source->set_effect_waveform(waveform);
+
+        break;
+      }
+      case SolverSpecify::TRACE       :
+      {
+        // user should specify vscan here
+        genius_assert(c.is_parameter_exist("vscan"));
         {
           unsigned int elec_num = c.parameter_count("vscan");
           for(unsigned int n=0; n<elec_num; n++)
@@ -615,23 +753,7 @@ int SolverControl::do_solve( const Parser::Card & c )
 
           if( !SolverSpecify::Electrode_VScan.size() )
           {
-            MESSAGE<<"ERROR: You must specify at least one electrode for voltage DC scan."<<std::endl; RECORD();
-            genius_error();
-          }
-        }
-        // vscan spice voltage source
-        else
-        {
-          std::string spice_vsource = c.get_string_lower_case("vscan", "");
-          if( !system().get_circuit()->is_ckt_voltage_source_exist(spice_vsource))
-          {
-            MESSAGE<<"ERROR at " <<c.get_fileline()<< " SOLVE: VSRC " << spice_vsource << " can't be found in SPICE netlist." << std::endl; RECORD();
-            genius_error();
-          }
-          SolverSpecify::Electrode_VScan.push_back(spice_vsource);
-          if( SolverSpecify::Electrode_VScan.size() != 1 )
-          {
-            MESSAGE<<"ERROR: You must specify one VSRC for voltage DC scan."<<std::endl; RECORD();
+            MESSAGE<<"ERROR at " <<c.get_fileline()<< " SOLVE: You must specify at least one electrode for IV trace."<<std::endl; RECORD();
             genius_error();
           }
         }
@@ -639,171 +761,97 @@ int SolverControl::do_solve( const Parser::Card & c )
         SolverSpecify::VStep     = c.get_real("vstep", 0.1)*V;
         SolverSpecify::VStepMax  = c.get_real("vstepmax", SolverSpecify::VStep/V)*V;
         SolverSpecify::VStop     = c.get_real("vstop", 5.0)*V;
+        SolverSpecify::IStop     = c.get_real("istop", 1.0)*A; //current limit
+
+        SolverSpecify::Predict   = c.get_bool("predict", true);
+
+        SolverSpecify::OptG      = c.get_bool("optical.gen", false);
+        SolverSpecify::PatG      = c.get_bool("particle.gen", false);
+
+        // set the modulate envelop of light source
+        std::string waveform = c.get_string("optical.modulate", "");
+        FieldSource * field_source = system().get_field_source();
+        field_source->set_effect_waveform(waveform);
+
+        break;
       }
 
-      if(c.is_parameter_exist("iscan"))
+      case SolverSpecify::ACSWEEP     :
       {
-        if(system().get_circuit()==NULL)
-        {
-          unsigned int elec_num = c.parameter_count("iscan");
-          for(unsigned int n=0; n<elec_num; n++)
-          {
-            std::string electrode = c.get_n_string("iscan", "", n, 0);
-            if( system().get_bcs()->get_bc(electrode) == NULL || system().get_bcs()->get_bc(electrode)->is_electrode() == false )
-            {
-              MESSAGE<<"ERROR at " <<c.get_fileline()<< " SOLVE: Electrode " << electrode << " can't be found in device structure." << std::endl; RECORD();
-              genius_error();
-            }
-            SolverSpecify::Electrode_IScan.push_back(electrode);
-          }
-          if( !SolverSpecify::Electrode_IScan.size() )
-          {
-            MESSAGE<<"ERROR: You must specify at least one electrode for current DC scan."<<std::endl; RECORD();
-            genius_error();
-          }
-        }
-        // iscan spice current source
-        else
-        {
-          std::string spice_isource = c.get_string_lower_case("iscan", "");
-          if( !system().get_circuit()->is_ckt_current_source_exist(spice_isource))
-          {
-            MESSAGE<<"ERROR at " <<c.get_fileline()<< " SOLVE: ISRC " << spice_isource << " can't be found in SPICE netlist." << std::endl; RECORD();
-            genius_error();
-          }
-          SolverSpecify::Electrode_IScan.push_back(spice_isource);
-          if( SolverSpecify::Electrode_IScan.size() != 1 )
-          {
-            MESSAGE<<"ERROR: You must specify one ISRC for current DC scan."<<std::endl; RECORD();
-            genius_error();
-          }
-        }
-        SolverSpecify::IStart    = c.get_real("istart", 0.0)*A;
-        SolverSpecify::IStep     = c.get_real("istep", 1e-5)*A;
-        SolverSpecify::IStepMax  = c.get_real("istepmax", SolverSpecify::IStep/A)*A;
-        SolverSpecify::IStop     = c.get_real("istop", 1e-2)*A;
-      }
+        SolverSpecify::Electrode_ACScan.clear();
 
-      SolverSpecify::Predict   = c.get_bool("predict", true);
+        SolverSpecify::FStart    = c.get_real("f.start", 1e6)/s;
+        SolverSpecify::FStop     = c.get_real("f.stop", 10e9)/s;
+        SolverSpecify::FMultiple = c.get_real("f.multiple", 1.1);
+        SolverSpecify::VAC       = c.get_real("vac", 0.0026)*V;
 
-      SolverSpecify::OptG      = c.get_bool("optical.gen", false);
-      SolverSpecify::PatG      = c.get_bool("particle.gen", false);
-
-      // set the waveform of light source
-      std::string waveform = c.get_string("waveform", "");
-      FieldSource * field_source = system().get_field_source();
-      field_source->set_effect_waveform(waveform);
-
-      break;
-    }
-  case SolverSpecify::TRACE       :
-    {
-      // user should specify vscan here
-      genius_assert(c.is_parameter_exist("vscan"));
-      {
-        unsigned int elec_num = c.parameter_count("vscan");
+        unsigned int elec_num = c.parameter_count("acscan");
         for(unsigned int n=0; n<elec_num; n++)
         {
-          std::string electrode = c.get_n_string("vscan", "", n, 0);
+          std::string electrode = c.get_n_string("acscan", "", n, 0);
           if( system().get_bcs()->get_bc(electrode) == NULL || system().get_bcs()->get_bc(electrode)->is_electrode() == false )
           {
             MESSAGE<<"ERROR at " <<c.get_fileline()<< " SOLVE: Electrode " << electrode << " can't be found in device structure." << std::endl; RECORD();
             genius_error();
           }
-          SolverSpecify::Electrode_VScan.push_back(electrode);
+          SolverSpecify::Electrode_ACScan.push_back(electrode);
         }
 
-        if( !SolverSpecify::Electrode_VScan.size() )
+        if( !SolverSpecify::Electrode_ACScan.size() )
         {
-          MESSAGE<<"ERROR: You must specify at least one electrode for IV trace."<<std::endl; RECORD();
+          MESSAGE<<"ERROR at " <<c.get_fileline()<< " SOLVE: You must specify at least one electrode for AC scan."<<std::endl; RECORD();
           genius_error();
         }
+
+        SolverSpecify::Type = SolverSpecify::ACSWEEP;
+
+        break;
       }
-      SolverSpecify::VStart    = c.get_real("vstart", 0.0)*V;
-      SolverSpecify::VStep     = c.get_real("vstep", 0.1)*V;
-      SolverSpecify::VStepMax  = c.get_real("vstepmax", SolverSpecify::VStep/V)*V;
-      SolverSpecify::VStop     = c.get_real("vstop", 5.0)*V;
-      SolverSpecify::IStop     = c.get_real("istop", 1.0)*A; //current limit
 
-      SolverSpecify::Predict   = c.get_bool("predict", true);
-
-      SolverSpecify::OptG      = c.get_bool("optical.gen", false);
-      SolverSpecify::PatG      = c.get_bool("particle.gen", false);
-
-      // set the waveform of light source
-      std::string waveform = c.get_string("waveform", "");
-      FieldSource * field_source = system().get_field_source();
-      field_source->set_effect_waveform(waveform);
-
-      break;
-    }
-
-  case SolverSpecify::ACSWEEP     :
-    {
-      SolverSpecify::Electrode_ACScan.clear();
-
-      SolverSpecify::FStart    = c.get_real("f.start", 1e6)/s;
-      SolverSpecify::FStop     = c.get_real("f.stop", 10e9)/s;
-      SolverSpecify::FMultiple = c.get_real("f.multiple", 1.1);
-      SolverSpecify::VAC       = c.get_real("vac", 0.0026)*V;
-
-      unsigned int elec_num = c.parameter_count("acscan");
-      for(unsigned int n=0; n<elec_num; n++)
+      case SolverSpecify::TRANSIENT  :
       {
-        std::string electrode = c.get_n_string("acscan", "", n, 0);
-        if( system().get_bcs()->get_bc(electrode) == NULL || system().get_bcs()->get_bc(electrode)->is_electrode() == false )
+        SolverSpecify::AutoStep  = c.get_bool("autostep", true);
+        SolverSpecify::Predict   = c.get_bool("predict", true);
+        SolverSpecify::UIC       = c.get_bool("uic", false);
+        SolverSpecify::tran_op   = c.get_bool("tranop", true);
+
+        SolverSpecify::TStart    = c.get_real("tstart", 0.0)*s;
+        SolverSpecify::TStep     = c.get_real("tstep", 1e-9)*s;
+        SolverSpecify::TStepMax  = c.get_real("tstepmax", SolverSpecify::TStep/s)*s;
+
+        SolverSpecify::TStop     = c.get_real("tstop", 1e-6)*s;
+
+        SolverSpecify::TS_rtol   = c.get_real("ts.rtol", 1e-3);
+        SolverSpecify::TS_atol   = c.get_real("ts.atol", 1e-4);
+
+        SolverSpecify::VStepMax  = c.get_real("vstepmax", 1.0)*V;
+        SolverSpecify::IStepMax  = c.get_real("istepmax", 1.0)*A;
+
+        SolverSpecify::RampUpSteps = c.get_int("rampup.steps", 1);
+        SolverSpecify::RampUpVStep = c.get_real("rampup.vstep", 0.25)*V;
+        SolverSpecify::RampUpIStep = c.get_real("rampup.istep", 0.1)*A;
+        SolverSpecify::GminInit    = c.get_real("gmin.init", 1e-6);
+        SolverSpecify::Gmin        = c.get_real("gmin", 1e-12);
+
+        if(c.is_parameter_exist("ts"))
         {
-          MESSAGE<<"ERROR at " <<c.get_fileline()<< " SOLVE: Electrode " << electrode << " can't be found in device structure." << std::endl; RECORD();
-          genius_error();
+          if (c.is_enum_value("ts", "impliciteuler"))   SolverSpecify::TS_type = SolverSpecify::BDF1;
+          if (c.is_enum_value("ts", "bdf1"))            SolverSpecify::TS_type = SolverSpecify::BDF1;
+          if (c.is_enum_value("ts", "bdf2"))            SolverSpecify::TS_type = SolverSpecify::BDF2;
         }
-        SolverSpecify::Electrode_ACScan.push_back(electrode);
+
+        SolverSpecify::OptG      = c.get_bool("optical.gen", false);
+        SolverSpecify::PatG      = c.get_bool("particle.gen", false);
+
+        // set the waveform of light source
+        std::string waveform = c.get_string("optical.modulate", "");
+        FieldSource * field_source = system().get_field_source();
+        field_source->set_effect_waveform(waveform);
+
+        break;
       }
 
-      if( !SolverSpecify::Electrode_ACScan.size() )
-      {
-        MESSAGE<<"ERROR: You must specify at least one electrode for AC scan."<<std::endl; RECORD();
-        genius_error();
-      }
-
-      SolverSpecify::Type = SolverSpecify::ACSWEEP;
-
-      break;
-    }
-
-  case SolverSpecify::TRANSIENT  :
-    {
-      SolverSpecify::AutoStep  = c.get_bool("autostep", true);
-      SolverSpecify::Predict   = c.get_bool("predict", true);
-      SolverSpecify::UIC       = c.get_bool("uic", false);
-
-      SolverSpecify::TStart    = c.get_real("tstart", 0.0)*s;
-      SolverSpecify::TStep     = c.get_real("tstep", 1e-9)*s;
-      SolverSpecify::TStepMax  = c.get_real("tstepmax", SolverSpecify::TStep/s)*s;
-
-      SolverSpecify::TStop     = c.get_real("tstop", 1e-6)*s;
-
-      SolverSpecify::TS_rtol   = c.get_real("ts.rtol", 1e-3);
-      SolverSpecify::TS_atol   = c.get_real("ts.atol", 1e-4);
-
-      if(c.is_parameter_exist("ts"))
-      {
-        if (c.is_enum_value("ts", "impliciteuler"))   SolverSpecify::TS_type = SolverSpecify::BDF1;
-        if (c.is_enum_value("ts", "bdf1"))            SolverSpecify::TS_type = SolverSpecify::BDF1;
-        if (c.is_enum_value("ts", "bdf2"))            SolverSpecify::TS_type = SolverSpecify::BDF2;
-      }
-
-      SolverSpecify::OptG      = c.get_bool("optical.gen", false);
-      SolverSpecify::PatG      = c.get_bool("particle.gen", false);
-
-      // set the waveform of light source
-      std::string waveform = c.get_string("waveform", "");
-      FieldSource * field_source = system().get_field_source();
-      field_source->set_effect_waveform(waveform);
-
-      break;
-    }
-
-  default: break;
+      default: break;
 
   }
 
@@ -814,73 +862,61 @@ int SolverControl::do_solve( const Parser::Card & c )
   // call each solver here
   switch (SolverSpecify::Solver)
   {
-  case SolverSpecify::POISSON :
-    {
-      solver = new PoissonSolver(system());
-      break;
-    }
-  case SolverSpecify::DDML1 :
-    {
-      // if spice circuit exist, use MixA1Solver
-      solver = new DDM1Solver(system());
-      break;
-    }
-  case SolverSpecify::DDML1MIXA :
-    {
-      solver = new MixA1Solver(system());
-      break;
-    }
-  case SolverSpecify::HALLDDML1 :
-    {
-      solver = new HallSolver(system());
-      break;
-    }
-  case SolverSpecify::DDML2 :
-    {
-      solver = new DDM2Solver(system());
-      break;
-    }
-  case SolverSpecify::DDML2MIXA :
-    {
-      solver = new MixA2Solver(system());
-      break;
-    }
-  case SolverSpecify::EBML3 :
-    {
-      solver = new EBM3Solver(system());
-      break;
-    }
-  case SolverSpecify::EBML3MIXA:
-    {
-      solver = new MixA3Solver(system());
-      break;
-    }
-  case SolverSpecify::DDMAC :
-    {
-      solver = new DDMACSolver(system());
-      break;
-    }
-#ifndef CYGWIN
-  case SolverSpecify::DDML1MIX :
-    {
-      solver = new Mix1Solver(system());
-      break;
-    }
-  case SolverSpecify::DDML2MIX :
-    {
-      solver = new Mix2Solver(system());
-      break;
-    }
-  case SolverSpecify::EBML3MIX :
-    {
-      solver = new Mix3Solver(system());
-      break;
-    }
-#endif
+      case SolverSpecify::POISSON :
+      {
+        solver = new PoissonSolver(system());
+        break;
+      }
+      case SolverSpecify::DDML1 :
+      {
+        // if spice circuit exist, use MixA1Solver
+        solver = new DDM1Solver(system());
+        break;
+      }
+      case SolverSpecify::DDML1MIXA :
+      {
+        solver = new MixA1Solver(system());
+        break;
+      }
+      case SolverSpecify::HALLDDML1 :
+      {
+        solver = new HallSolver(system());
+        break;
+      }
+      case SolverSpecify::DDML2 :
+      {
+        solver = new DDM2Solver(system());
+        break;
+      }
+      case SolverSpecify::DDML2MIXA :
+      {
+        solver = new MixA2Solver(system());
+        break;
+      }
+      case SolverSpecify::EBML3 :
+      {
+        solver = new EBM3Solver(system());
+        break;
+      }
+      case SolverSpecify::EBML3MIXA:
+      {
+        solver = new MixA3Solver(system());
+        break;
+      }
+      case SolverSpecify::DDMAC :
+      {
+        solver = new DDMACSolver(system());
+        break;
+      }
+      case SolverSpecify::HDM:
+      {
+        solver = new HDMSolver(system());
+        break;
+      }
 
-  default: break;
-    MESSAGE<<"ERROR: Selected solver is not supported at present." << std::endl; RECORD();
-    break;
+      default: break;
+      MESSAGE<<"ERROR: Selected solver is not supported at present." << std::endl; RECORD();
+      break;
   }
 
   if (solver)
@@ -927,33 +963,28 @@ int SolverControl::do_solve( const Parser::Card & c )
 
 #ifdef CYGWIN
     // load static user defined hooks, only support predefined hooks, sigh
-    for (std::deque<std::string>::iterator it=SolverSpecify::Hooks.begin();
-           it!=SolverSpecify::Hooks.end(); it++)
-      {
-        Hook * hook=NULL;
+    for (std::map<std::string, std::pair<std::string, std::vector<Parser::Parameter> > >::iterator it=SolverSpecify::Hooks.begin();
+         it!=SolverSpecify::Hooks.end(); it++)
+    {
+      Hook * hook=NULL;
 
-        if((*it)=="vtk")
-          hook = new VTKHook(*solver, "vtk_hook", (void *)(Genius::input_file()));
-        if((*it)=="cv")
-          hook = new CVHook (*solver, "cv_hook",  (void *)(Genius::input_file()));
-        if((*it)=="probe")
-          hook = new ProbeHook (*solver, "probe_hook",  (void *)(Genius::input_file()));
+      if((*it).second.first=="vtk")
+        hook = new VTKHook(*solver, "vtk_hook", (void *)(&(*it).second.second));
+      if((*it).second.first=="cv")
+        hook = new CVHook (*solver, "cv_hook",  (void *)(&(*it).second.second));
+      if((*it).second.first=="probe")
+        hook = new ProbeHook (*solver, "probe_hook",  (void *)(&(*it).second.second));
 
-        if(hook) solver->add_hook(hook);
-      }
+      if(hook) solver->add_hook(hook);
+    }
 
 #else
     // dynamic load user defined hooks, stupid win32 platform does not support this function.
-    for (std::deque<std::string>::iterator it=SolverSpecify::Hooks.begin();
-           it!=SolverSpecify::Hooks.end(); it++)
-      {
-#ifdef ENABLE_VISIT
-        if((*it)=="visit")
-          solver->add_hook( new VisitHook (*solver, "visit_hook",  (void *)(Genius::input_file())) );
-        else
-#endif
-          solver->add_hook( new DllHook(*solver, (*it)+"_hook", (void *)(Genius::input_file())) );
-      }
+    for (std::map<std::string, std::pair<std::string, std::vector<Parser::Parameter> > >::iterator it=SolverSpecify::Hooks.begin();
+         it!=SolverSpecify::Hooks.end(); it++)
+    {
+      solver->add_hook( new DllHook(*solver, ((*it).second.first)+"_hook", (void *)(&(*it).second.second)) );
+    }
 #endif
 
     {
@@ -995,13 +1026,25 @@ int  SolverControl::set_electrode_source  ( const Parser::Card & c )
     genius_error();
   }
 
-  bool voltage = true;
-
-  if(c.is_parameter_exist("type"))
+  if( c.is_parameter_exist("vconst") )
   {
-    if (c.is_enum_value("type", "voltage"))   voltage = true;
-    if (c.is_enum_value("type", "current"))   voltage = false;
+    system().get_sources()->attach_voltage_to_electrode(electrode, c.get_real("vconst", 0.0)*V);
+    return 0;
   }
+
+  if ( c.is_parameter_exist("iconst") )
+  {
+    system().get_sources()->attach_current_to_electrode(electrode, c.get_real("iconst", 0.0)*A);
+    return 0;
+  }
+
+  // check if user mixed vsource and isource
+  if( c.is_parameter_exist("vapp") && c.is_parameter_exist("iapp") )
+  {
+    MESSAGE<<"ERROR at " <<c.get_fileline()<< " ATTACH: Vapp and Iapp can not be mix defined." << std::endl; RECORD();
+    genius_error();
+  }
+
 
   if( c.is_parameter_exist("vapp") || c.is_parameter_exist("iapp") )
   {
@@ -1012,7 +1055,7 @@ int  SolverControl::set_electrode_source  ( const Parser::Card & c )
     for(unsigned int idx=0; idx<c.parameter_size(); idx++)
     {
       Parser::Parameter p = c.get_parameter(idx);
-      if ( p.name() == "vapp" && voltage == true)
+      if ( p.name() == "vapp" )
       {
         if(system().get_sources()->is_vsource_exist(p.get_string()))
           source_list.push_back( p.get_string() );
@@ -1023,7 +1066,7 @@ int  SolverControl::set_electrode_source  ( const Parser::Card & c )
         }
       }
 
-      if ( p.name() == "iapp" && voltage == false)
+      if ( p.name() == "iapp" )
       {
         if(system().get_sources()->is_isource_exist(p.get_string()))
           source_list.push_back( p.get_string() );
@@ -1039,19 +1082,8 @@ int  SolverControl::set_electrode_source  ( const Parser::Card & c )
     return 0;
   }
 
-  if( c.is_parameter_exist("vconst") )
-  {
-    system().get_sources()->attach_voltage_to_electrode(electrode, c.get_real("vconst", 0.0)*V);
-    return 0;
-  }
-
-  if ( c.is_parameter_exist("iconst") )
-  {
-    system().get_sources()->attach_current_to_electrode(electrode, c.get_real("iconst", 0.0)*A);
-    return 0;
-  }
-
   return 0;
+
 }
 
 
@@ -1125,17 +1157,38 @@ int SolverControl::do_export( const Parser::Card & c )
     system().export_cgns(cgns_filename);
   }
 
+  // if export to CGNS format is required
+  if(c.is_parameter_exist("isefile"))
+  {
+    std::string ise_filename = c.get_string("isefile", "");
+    system().export_ise(ise_filename);
+  }
+
   // if export GDML surface file is required
   if(c.is_parameter_exist("gdml.surface"))
   {
-    std::string gdml_filename = c.get_string("gdml.surface", "");
-    system().export_gdml_surface(gdml_filename);
+    if( mesh().mesh_dimension()==3 )
+    {
+      std::string gdml_filename = c.get_string("gdml.surface", "");
+      system().export_gdml_surface(gdml_filename);
+    }
+    else
+    {
+      MESSAGE<<"WARNING at " <<c.get_fileline()<< " EXPORT: Only 3D device structure have GDML support" << std::endl; RECORD();
+    }
   }
 
   if(c.is_parameter_exist("gdml.body"))
   {
-    std::string gdml_filename = c.get_string("gdml.body", "");
-    system().export_gdml_body(gdml_filename);
+    if( mesh().mesh_dimension()==3 )
+    {
+      std::string gdml_filename = c.get_string("gdml.body", "");
+      system().export_gdml_body(gdml_filename);
+    }
+    else
+    {
+      MESSAGE<<"WARNING at " <<c.get_fileline()<< " EXPORT: Only 3D device structure have GDML support" << std::endl; RECORD();
+    }
   }
 
   // if export boundary condition is required
@@ -1231,6 +1284,21 @@ int SolverControl::do_import( const Parser::Card & c )
     system().import_tif(tif_filename);
   }
 
+  if(c.is_parameter_exist("tif3dfile"))
+  {
+    std::string tif3d_filename = c.get_string("tif3dfile", "");
+#ifdef CYGWIN
+    if ( _access( (char *)tif3d_filename.c_str(),  04 ) == -1 )
+#else
+    if (  access( (char *)tif3d_filename.c_str(),  R_OK ) == -1 )
+#endif
+    {
+      MESSAGE<<"ERROR at " <<c.get_fileline()<< " IMPORT: TIF3DFile " << tif3d_filename << " doesn't exist." << std::endl; RECORD();
+      genius_error();
+    }
+    system().import_tif3d(tif3d_filename);
+  }
+
 
   if(c.is_parameter_exist("isefile"))
   {
@@ -1319,6 +1387,9 @@ int SolverControl::do_refine_conform(const Parser::Card & c)
   ErrorVector error_per_cell;
   system().estimate_error(c, error_per_cell);
 
+  // gather mesh to processor 0 since we may have a distributed mesh
+  mesh().gather(0);
+
   if (Genius::processor_id() == 0)
   {
 
@@ -1360,7 +1431,9 @@ int SolverControl::do_refine_conform(const Parser::Card & c)
     }
 
   }
-
+#if defined(HAVE_FENV_H) && defined(DEBUG)
+  genius_assert( !fetestexcept(FE_INVALID) );
+#endif
   // clear the system. however we should reserve mesh information
   system().clear(false);
 
@@ -1400,6 +1473,10 @@ int SolverControl::do_refine_conform(const Parser::Card & c)
 
   // after doping profile is set, we can init system data.
   system().init_region();
+
+#if defined(HAVE_FENV_H) && defined(DEBUG)
+  genius_assert( !fetestexcept(FE_INVALID) );
+#endif
 
   return 0;
 
@@ -1601,5 +1678,8 @@ void SolverControlHook::post_solve()
 }
 
 void SolverControlHook::post_iteration()
+{}
+
+void SolverControlHook::post_iteration(void * , void * , void * , bool &, bool &)
 {}
 

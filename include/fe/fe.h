@@ -134,11 +134,11 @@ public:
    *
    * On a p-refined element, \p o should be the total order of the element.
    */
-  //static Real shape_second_deriv(const ElemType t,
-	//			 const Order o,
-	//			 const unsigned int i,
-	//			 const unsigned int j,
-	//			 const Point& p);
+  static Real shape_second_deriv(const ElemType t,
+				 const Order o,
+				 const unsigned int i,
+				 const unsigned int j,
+				 const Point& p);
 
   /**
    * @returns the second \f$ j^{th} \f$ derivative of the \f$ i^{th} \f$
@@ -158,11 +158,11 @@ public:
    *
    * On a p-refined element, \p o should be the base order of the element.
    */
-  //static Real shape_second_deriv(const Elem* elem,
-	//			 const Order o,
-	//			 const unsigned int i,
-	//			 const unsigned int j,
-	//			 const Point& p);
+  static Real shape_second_deriv(const Elem* elem,
+				 const Order o,
+				 const unsigned int i,
+				 const unsigned int j,
+				 const Point& p);
 
   /**
    * Build the nodal soln from the element soln.
@@ -170,15 +170,15 @@ public:
    *
    * On a p-refined element, \p o should be the base order of the element.
    */
-  //static void nodal_soln(const Elem* elem, const Order o,
-	//		 const std::vector<Number>& elem_soln,
-	//		 std::vector<Number>& nodal_soln);
+  static void nodal_soln(const Elem* elem, const Order o,
+			 const std::vector<Number>& elem_soln,
+			 std::vector<Number>& nodal_soln);
 
   /**
    * @returns the number of shape functions associated with
    * this finite element.
    */
-  //virtual unsigned int n_shape_functions () const;
+  virtual unsigned int n_shape_functions () const;
 
   /**
    * @returns the number of shape functions associated with
@@ -205,9 +205,9 @@ public:
    *
    * On a p-refined element, \p o should be the total order of the element.
    */
-  //static unsigned int n_dofs_at_node(const ElemType t,
-	//			     const Order o,
-	//			     const unsigned int n);
+  static unsigned int n_dofs_at_node(const ElemType t,
+				     const Order o,
+				     const unsigned int n);
 
   /**
    * @returns the number of dofs interior to the element,
@@ -215,19 +215,19 @@ public:
    *
    * On a p-refined element, \p o should be the total order of the element.
    */
-  //static unsigned int n_dofs_per_elem(const ElemType t,
-	//			      const Order o);
+  static unsigned int n_dofs_per_elem(const ElemType t,
+				      const Order o);
 
   /**
    * @returns the continuity level of the finite element.
    */
-  //virtual FEContinuity get_continuity() const;
+  virtual FEContinuity get_continuity() const;
 
   /**
    * @returns true if the finite element's higher order shape functions are
    * hierarchic
    */
-  //virtual bool is_hierarchic() const;
+  virtual bool is_hierarchic() const;
 
   /**
    * Fills the vector di with the local degree of freedom indices
@@ -235,20 +235,20 @@ public:
    *
    * On a p-refined element, \p o should be the base order of the element.
    */
-  //static void dofs_on_side(const Elem* const elem,
-	//	           const Order o,
-	//	           unsigned int s,
-	//	           std::vector<unsigned int>& di);
+  static void dofs_on_side(const Elem* const elem,
+		           const Order o,
+		           unsigned int s,
+		           std::vector<unsigned int>& di);
   /**
    * Fills the vector di with the local degree of freedom indices
    * associated with edge \p e of element \p elem
    *
    * On a p-refined element, \p o should be the base order of the element.
    */
-  //static void dofs_on_edge(const Elem* const elem,
-	//	           const Order o,
-	//	           unsigned int e,
-	//	           std::vector<unsigned int>& di);
+  static void dofs_on_edge(const Elem* const elem,
+		           const Order o,
+		           unsigned int e,
+		           std::vector<unsigned int>& di);
 
   /**
    * @returns the location (on the reference element) of the
@@ -259,10 +259,10 @@ public:
    * computes the sequence \f$ \{ p_n \} \f$, and the iteration is
    * terminated when \f$ \|p - p_n\| < \mbox{\texttt{tolerance}} \f$
    */
-  //static Point inverse_map (const Elem* elem,
-	//		    const Point& p,
-	//		    const Real tolerance = TOLERANCE,
-	//		    const bool secure = true);
+  static Point inverse_map (const Elem* elem,
+			    const Point& p,
+			    const Real tolerance = TOLERANCE,
+			    const bool secure = true);
 
   /**
    * Takes a number points in physical space (in the \p
@@ -274,11 +274,11 @@ public:
    * sequence \f$ \{ p_n \} \f$, and the iteration is terminated when
    * \f$ \|p - p_n\| < \mbox{\texttt{tolerance}} \f$
    */
-  //static void inverse_map (const Elem* elem,
-	//		   const std::vector<Point>& physical_points,
-	//		   std::vector<Point>&       reference_points,
-	//		   const Real tolerance = TOLERANCE,
-	//		   const bool secure = true);
+  static void inverse_map (const Elem* elem,
+			   const std::vector<Point>& physical_points,
+			   std::vector<Point>&       reference_points,
+			   const Real tolerance = TOLERANCE,
+			   const bool secure = true);
 
   /**
    * This is at the core of this class. Use this for each
@@ -298,18 +298,18 @@ public:
    * the \p side of \p face.  The \p tolerance paremeter is passed to
    * the involved call to \p inverse_map().
    */
-  //virtual void reinit (const Elem* elem,
-	//	       const unsigned int side,
-	//	       const Real tolerance = TOLERANCE);
+  virtual void reinit (const Elem* elem,
+		       const unsigned int side,
+		       const Real tolerance = TOLERANCE);
 
   /**
    * Reinitializes all the physical element-dependent data based on
    * the \p edge.  The \p tolerance paremeter is passed to the
    * involved call to \p inverse_map().
    */
-  //virtual void edge_reinit (const Elem* elem,
-	//	            const unsigned int edge,
-	//		    const Real tolerance = TOLERANCE);
+  virtual void edge_reinit (const Elem* elem,
+		            const unsigned int edge,
+			    const Real tolerance = TOLERANCE);
 
   /**
    * Provides the class with the quadrature rule, which provides the
@@ -323,7 +323,7 @@ public:
    * to get an upper bound for the \p for loop in your simulation
    * for matrix assembly of the current element.
    */
-  //virtual unsigned int n_quadrature_points () const;
+  virtual unsigned int n_quadrature_points () const;
 
 
   /**
@@ -362,29 +362,29 @@ public:
    * @returns the location (in physical space) of the point
    * \p p located on the reference element.
    */
-  //static Point map (const Elem* elem,
-	//	    const Point& reference_point);
+  static Point map (const Elem* elem,
+		    const Point& reference_point);
 
   /**
    * @returns d(xyz)/dxi (in physical space) of the point
    * \p p located on the reference element.
    */
-  //static Point map_xi (const Elem* elem,
-	//	       const Point& reference_point);
+  static Point map_xi (const Elem* elem,
+		       const Point& reference_point);
 
   /**
    * @returns d(xyz)/deta (in physical space) of the point
    * \p p located on the reference element.
    */
-  //static Point map_eta (const Elem* elem,
-	//		const Point& reference_point);
+  static Point map_eta (const Elem* elem,
+			const Point& reference_point);
 
   /**
    * @returns d(xyz)/dzeta (in physical space) of the point
    * \p p located on the reference element.
    */
-  //static Point map_zeta (const Elem* elem,
-	//		 const Point& reference_point);
+  static Point map_zeta (const Elem* elem,
+			 const Point& reference_point);
 
 
 protected:
@@ -453,6 +453,39 @@ namespace FiniteElements
 
 
 
+/**
+ * Hermite finite elements.  Still templated on the dimension,
+ * \p Dim.
+ *
+ * \author Roy Stogner
+ * \date 2005
+ * \version $Revision: 1.30 $
+ */
+
+//-------------------------------------------------------------
+// FEHierarchic class definition
+template <unsigned int Dim>
+    class FEHermite : public FE<Dim,HERMITE>
+{
+  public:
+
+  /**
+   * Constructor. Creates a hierarchic finite element
+   * to be used in dimension \p Dim.
+   */
+    FEHermite(const FEType& fet);
+
+   /**
+    * 1D hermite functions on unit interval
+    */
+    static Real hermite_raw_shape_second_deriv(const unsigned int basis_num,
+                                               const Real xi);
+    static Real hermite_raw_shape_deriv(const unsigned int basis_num,
+                                        const Real xi);
+    static Real hermite_raw_shape(const unsigned int basis_num,
+                                  const Real xi);
+};
+
 
 // ------------------------------------------------------------
 // FE class inline members
@@ -469,6 +502,15 @@ FE<Dim,T>::FE (const FEType& fet) :
   assert (T == fe_type.family);
 }
 
+
+// ------------------------------------------------------------
+// FEHermite class inline members
+template <unsigned int Dim>
+    inline
+FEHermite<Dim>::FEHermite (const FEType& fet) :
+    FE<Dim,HERMITE> (fet)
+{
+}
 
 
 // ------------------------------------------------------------

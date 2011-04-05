@@ -35,12 +35,11 @@
 #include "expr_evaluate.h"
 
 #ifdef CYGWIN
-  #include <Windows.h>
-  #undef max
-  #undef min
-#else
-  #include <dlfcn.h>
+  class HINSTANCE__; // Forward or never
+  typedef HINSTANCE__* HINSTANCE;
 #endif
+
+
 
 
 /**
@@ -390,31 +389,16 @@ public:
    * constructor, hold the pointer to dll file and function
    */
 #ifdef CYGWIN
-  VSHELL(const std::string & s, HINSTANCE dp, void * fp, double s_t,double s_V=1.0): VSource(s)
+  VSHELL(const std::string & s, HINSTANCE dp, void * fp, double s_t, double s_V);
 #else
-  VSHELL(const std::string & s, void * dp, void * fp, double s_t,double s_V=1.0): VSource(s)
+  VSHELL(const std::string & s, void * dp, void * fp, double s_t, double s_V);
 #endif
-  {
-     dll = dp;
-     Vapp_Shell = (double (*)(double)) fp;
-     genius_assert(Vapp_Shell);
-     scale_t = s_t;
-     scale_V = s_V;
-  }
+
 
   /**
    * destructor, free the pointer
    */
-  ~VSHELL()
-  {
-     //delete Vapp_Shell;
-#ifdef CYGWIN
-    FreeLibrary(dll);
-#else
-    if ( dll )
-      dlclose( dll );
-#endif
-  }
+  ~VSHELL();
 
   /**
    * call Vapp_Shell to get the user provide value

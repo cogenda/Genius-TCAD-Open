@@ -25,7 +25,7 @@
 #include "simulation_system.h"
 #include "semiconductor_region.h"
 #include "insulator_region.h"
-#include "boundary_condition.h"
+#include "boundary_condition_is.h"
 #include "petsc_utils.h"
 
 

@@ -35,11 +35,11 @@ void FVM_PDESolver::set_serial_dof_map()
   {
     SimulationRegion * region = _system.region(n);
 
-    SimulationRegion::node_iterator it = region->nodes_begin();
-    SimulationRegion::node_iterator it_end = region->nodes_end();
+    SimulationRegion::local_node_iterator it = region->on_local_nodes_begin();
+    SimulationRegion::local_node_iterator it_end = region->on_local_nodes_end();
     for(; it!=it_end; ++it)
     {
-      FVM_Node * fvm_node = (*it).second;
+      FVM_Node * fvm_node = (*it);
       fvm_node->set_local_offset(invalid_uint);
       fvm_node->set_global_offset(invalid_uint);
     }
@@ -52,22 +52,17 @@ void FVM_PDESolver::set_serial_dof_map()
   for(unsigned int n=0; n<_system.n_regions(); ++n)
   {
     SimulationRegion * region = _system.region(n);
+    const unsigned int region_node_dofs = this->node_dofs( region );
 
-    SimulationRegion::node_iterator it = region->nodes_begin();
-    SimulationRegion::node_iterator it_end = region->nodes_end();
+    SimulationRegion::local_node_iterator it = region->on_local_nodes_begin();
+    SimulationRegion::local_node_iterator it_end = region->on_local_nodes_end();
     for(; it!=it_end; ++it)
     {
-      FVM_Node * node = (*it).second;
-      assert(node!=NULL);
+      FVM_Node * fvm_node = (*it);
 
-      //if this node belongs to this processor, set the local offset
-      // then we can make sure that each partition has a continuous block
-      assert ( node->root_node()->processor_id() == Genius::processor_id() );
-      {
-        node->set_local_offset(n_local_dofs);
-        node->set_global_offset(n_local_dofs);
-        n_local_dofs += this->node_dofs( region );
-      }
+      fvm_node->set_local_offset(n_local_dofs);
+      fvm_node->set_global_offset(n_local_dofs);
+      n_local_dofs += region_node_dofs;
     }
   }
 
@@ -136,23 +131,21 @@ void FVM_PDESolver::set_serial_dof_map()
   // compute the nonzero pattern of matrix
   // search for all the regions...
   n_nz.resize(n_local_dofs, 0);
+  n_oz.resize(n_local_dofs, 0); // always 0
 
   for(unsigned int n=0; n<_system.n_regions(); ++n)
   {
     const SimulationRegion * region = _system.region(n);
 
-    SimulationRegion::const_node_iterator it = region->nodes_begin();
-    SimulationRegion::const_node_iterator it_end = region->nodes_end();
+    SimulationRegion::const_processor_node_iterator it = region->on_processor_nodes_begin();
+    SimulationRegion::const_processor_node_iterator it_end = region->on_processor_nodes_end();
     for(; it!=it_end; ++it)
     {
-      const FVM_Node * fvm_node = (*it).second;
-
-      // skip node not belongs to this processor
-      if( fvm_node->root_node()->processor_id() != Genius::processor_id() ) continue;
+      const FVM_Node * fvm_node = *it;
 
       unsigned int local_offset = fvm_node->local_offset();
       unsigned int local_node_dofs = this->node_dofs( region );
-      assert(local_offset!=invalid_uint);
+      genius_assert(local_offset!=invalid_uint);
 
       std::vector<std::pair<unsigned int, unsigned int> > v_region_nodes;
       std::vector<std::pair<unsigned int, unsigned int> >::iterator itn;
@@ -186,6 +179,9 @@ void FVM_PDESolver::set_serial_dof_map()
       const BoundaryCondition * bc = _system.get_bcs()->get_bc(bc_index);
       // the dof of this boundary condition
       unsigned int bc_dofs = this->bc_dofs( bc );
+      // or this bc belongs to other bc_hub
+      if( bc->is_inter_connect_bc() )
+        bc_dofs += this->bc_dofs( bc->inter_connect_hub() );
 
       // reserve for bc_dofs
       for(unsigned int i=0; i<local_node_dofs; ++i)
@@ -197,14 +193,11 @@ void FVM_PDESolver::set_serial_dof_map()
   //  set n_nz and n_oz for boundary extra equation
   if(_system.get_bcs()!=NULL)
   {
-    unsigned int id = 0;
-
     for(unsigned int b=0; b<_system.get_bcs()->n_bcs(); ++b )
     {
       // get the boundary condition
       const BoundaryCondition * bc = _system.get_bcs()->get_bc(b);
-      // get the nodes belongs to this boundary condition
-      const std::vector<const Node *> & bc_nodes = bc->nodes();
+      if( bc->local_offset() == invalid_uint ) continue;
 
       // the dofs of this boundary condition
       unsigned int bc_dofs = this->bc_dofs( bc );
@@ -212,14 +205,48 @@ void FVM_PDESolver::set_serial_dof_map()
       // the bandwidth of this boundary condition
       unsigned int bc_bandwidth = this->bc_bandwidth( bc );
 
+      // statistic neighbor information of boundary node
+      std::vector<unsigned int> neighbors;
+      // statistic dof information of boundary node
+      std::vector<unsigned int> node_dofs;
+
+      // get the nodes belongs to this boundary condition
+      // these nodes are sorted by their id,
+      // and should keep the same order for all processors.
+
+      std::vector<const Node *> bc_nodes;
+      if( !bc->is_inter_connect_hub() )
+      {
+        const std::vector<const Node *> & nodes = bc->nodes();
+        bc_nodes.insert( bc_nodes.end(),  nodes.begin(), nodes.end());
+        for(unsigned int n=0; n<bc_nodes.size(); ++n  )
+        {
+          neighbors.push_back( bc->n_node_neighbors(bc_nodes[n]) );
+          node_dofs.push_back(this->bc_node_dofs( bc ));
+        }
+      }
+      else
+      {
+        const std::vector<BoundaryCondition * > & inter_connect_bcs = bc->inter_connect();
+        for(unsigned int b=0; b<inter_connect_bcs.size(); ++b)
+        {
+          const BoundaryCondition * inter_connect_bc = inter_connect_bcs[b];
+          const std::vector<const Node *> & nodes = inter_connect_bc->nodes();
+          bc_nodes.insert( bc_nodes.end(),  nodes.begin(), nodes.end());
+          for(unsigned int n=0; n<nodes.size(); ++n  )
+          {
+            neighbors.push_back( inter_connect_bc->n_node_neighbors(nodes[n]) );
+            node_dofs.push_back(this->bc_node_dofs( inter_connect_bc ));
+          }
+        }
+      }
+
+
       // statistic the matrix bandwidth contributed by boundary node
       unsigned int on_processor_dofs = 0;
-
-      // here has some over kill
       for(unsigned int n=0; n<bc_nodes.size(); ++n  )
       {
-        unsigned int neighbors = bc->n_node_neighbors(bc_nodes[n]);
-        on_processor_dofs += (neighbors+1)*this->bc_node_dofs( bc ) ;
+        on_processor_dofs += (neighbors[n]+1)*node_dofs[n] ;
       }
 
       // prevent overflow, this may be happened for very small problems.
@@ -227,10 +254,10 @@ void FVM_PDESolver::set_serial_dof_map()
       { on_processor_dofs = n_local_dofs - bc_bandwidth; }
 
       // assign to n_nz
-      for(unsigned int i=0; i<bc_dofs; ++i, ++id)
+      for(unsigned int i=0; i<bc_dofs; ++i)
       {
-        //n_local_dofs - n_global_bc_dofs is the beginning offset of boundary dofs
-        n_nz[n_local_dofs - n_global_bc_dofs + id] = on_processor_dofs + bc_bandwidth;
+        //bc->array_offset() is the beginning offset of boundary dofs
+        n_nz[bc->array_offset() +i] = on_processor_dofs + bc_bandwidth;
       }
     }
   }

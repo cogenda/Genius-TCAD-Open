@@ -73,20 +73,21 @@ void GENIUS_LOG_STREAM::removeStream(const std::string &name)
 {
   {
     std::map<std::string, std::ostream*>::iterator it = _streams.find(name);
-    if (it != _streams.end())
+    for (;it != _streams.end(); ++it)
     {
-      _streams.erase(it);
       delete it->second;
     }
+    _streams.clear();
   }
 
   {
     std::map<std::string, std::filebuf*>::iterator it = _bufs.find(name);
-    if (it != _bufs.end())
+    for (; it != _bufs.end(); ++it)
     {
-      _bufs.erase(it);
       it->second->close();
       delete it->second;
     }
+    _bufs.clear();
   }
 }
+

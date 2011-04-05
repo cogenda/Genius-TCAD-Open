@@ -25,6 +25,7 @@
 
 #include <vector>
 
+#include "config.h"
 #include "enum_petsc_type.h"
 #include "fvm_pde_solver.h"
 //#include "petscis.h"
@@ -32,6 +33,8 @@
 //#include "petscmat.h"
 //#include "petscksp.h"
 #include "petscsnes.h"
+
+
 
 /**
  * The nonlinear solver contex.
@@ -59,9 +62,54 @@ public:
   void setup_nonlinear_data();
 
   /**
+   * dump jacobian matrix in petsc format to external file
+   * for more detailed analysis of the properties of jacobian matrix
+   */
+  void dump_jacobian_matrix_petsc(const std::string &file) const;
+
+  /**
+   * dump jacobian matrix in Harwell-Boeing format to external file
+   * for more detailed analysis of the properties of jacobian matrix
+   * when rhs is true, also dump rhs vector
+   * however, this must run in serial
+   */
+  //void dump_jacobian_matrix_hb(const std::string &file, bool rhs=false) const;
+
+  /**
+   * dump function to external file
+   * for more detailed analysis of the properties
+   */
+  void dump_function_vector_petsc(const std::string &file) const;
+
+  /**
+   * @return the condition number of jacobian matrix
+   */
+  double condition_number_of_jacobian_matrix();
+
+  /**
+   * calculate eigen value of jacobian matrix
+   */
+  void eigen_value_of_jacobian_matrix();
+
+  /**
+   * @return the jacobian_matrix
+   */
+  Mat & jacobian_matrix()  { return J; }
+
+  /**
+   * @return the rhs vector
+   */
+  Vec & rhs_vector()  { return f; }
+
+  /**
+   * @return the solution vector
+   */
+  Vec & solution_vector()  { return x; }
+
+  /**
    * do snes solve!
    */
-  void sens_solve();
+  virtual void sens_solve();
 
   /**
    * clear all the nonlinear solver contex
@@ -120,12 +168,13 @@ public:
   /**
    * virtual function for line search pre check. derived class can override it as needed.
    */
-  virtual void sens_line_search_pre_check(Vec x, Vec y, PetscTruth *changed_y);
+  virtual void sens_line_search_pre_check(Vec x, Vec y, PetscBool *changed_y);
 
   /**
    * virtual function for line search post check. derived class can override it as needed.
    */
-  virtual void sens_line_search_post_check(Vec x, Vec y, Vec w, PetscTruth *changed_y, PetscTruth *changed_w);
+  virtual void sens_line_search_post_check(Vec x, Vec y, Vec w, PetscBool *changed_y, PetscBool *changed_w);
+
 
 protected:
 
@@ -220,6 +269,11 @@ protected:
    * Enum stating which type of iterative solver to use.
    */
   SolverSpecify::LinearSolverType   _linear_solver_type;
+
+  /**
+   * a stack for previous linear solvers
+   */
+  std::vector<SolverSpecify::LinearSolverType>  _linear_solver_stack;
 
   /**
    * Enum statitng with type of preconditioner to use.

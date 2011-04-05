@@ -40,7 +40,8 @@ public:
   /**
    * construction
    */
-  FVM_CellData() : DataObject()
+  FVM_CellData(DataStorage * data_storage, const std::map<std::string, SimulationVariable> & variables)
+  : DataObject(data_storage, variables)
   {}
 
   /**
@@ -49,37 +50,12 @@ public:
   virtual ~FVM_CellData() {}
 
 
-  enum CellDataType {SemiconductorData, InsulatorData, ConductorData, VacuumData, InvalidData };
+  enum CellDataType {SemiconductorData, InsulatorData, ConductorData, ResistanceData, VacuumData, InvalidData };
 
   /**
    * @return the data type
    */
   virtual CellDataType type() const=0;
-
-  /**
-   * @return average electron mobility
-   */
-  virtual PetscScalar         mun()          const
-  { return 0; }
-
-  /**
-   * @return the writable reference to average electron mobility
-   */
-  virtual PetscScalar &       mun()
-  { return FVM_CellData::_scalar_dummy_; }
-
-  /**
-   * @return average hole mobility
-   */
-  virtual PetscScalar         mup()          const
-  { return 0; }
-
-  /**
-   * @return the writable reference to average hole mobility
-   */
-  virtual PetscScalar &       mup()
-  { return FVM_CellData::_scalar_dummy_; }
-
 
   /**
    * @return the electrical field

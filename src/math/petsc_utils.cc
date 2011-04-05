@@ -30,8 +30,17 @@
 
 namespace PetscUtils
 {
-
-
+  /**
+   * wrap to petsc MatZeroRows
+   */
+  PetscErrorCode MatZeroRows(Mat mat,PetscInt numRows,const PetscInt rows[],PetscScalar diag)
+  {
+#ifdef PETSC_VERSION_DEV // next version
+      return ::MatZeroRows(mat, numRows, rows, diag, PETSC_NULL, PETSC_NULL);
+#else
+      return ::MatZeroRows(mat, numRows, rows, diag);
+#endif
+  }
 
   /*-------------------------------------------------------------------
    * @brief add source rows to destination rows, multi by alpha
@@ -187,7 +196,49 @@ namespace PetscUtils
   }
 
 
+ /*-------------------------------------------------------------------
+  * @brief add source rows to destination rows, and clear some rows
+  *
+  * @param  vec        Petsc Vector
+  * @param  src_rows   source rows
+  * @param  dst_rows   the destination rows will be added to
+  * @param  clear_rows the rows to be cleared .
+  *
+  * @note   If vec is not assembled, this function will do it for you. the src row should on local processor.
+  *
+   */
+  PetscErrorCode  VecAddClearRow(Vec vec, std::vector<PetscInt> & src_rows, std::vector<PetscInt> & dst_rows, std::vector<PetscInt> & clear_rows)
+  {
+    // we assembly vec for any case!
+    VecAssemblyBegin(vec);
+    VecAssemblyEnd(vec);
 
+    genius_assert(src_rows.size() == dst_rows.size());
+    if( src_rows.size() )
+    {
+      // get source value from vec
+      std::vector<PetscScalar> y(src_rows.size());
+      VecGetValues(vec, src_rows.size(), &src_rows[0], &y[0]);
+      // add value to vec destination
+      VecSetValues(vec, dst_rows.size(), &dst_rows[0], &y[0], ADD_VALUES);
+    }
+
+    // we assembly vec for INSERT_VALUES!
+    VecAssemblyBegin(vec);
+    VecAssemblyEnd(vec);
+
+    if( clear_rows.size() )
+    {
+      std::vector<PetscScalar> y(clear_rows.size(), 0.0);
+      VecSetValues(vec, clear_rows.size(), &clear_rows[0], &y[0], INSERT_VALUES);
+    }
+
+    // we assembly vec for any case!
+    VecAssemblyBegin(vec);
+    VecAssemblyEnd(vec);
+
+    return 0;
+  }
 
   /*-------------------------------------------------------------------
    * @brief add source rows to destination rows, multi by alpha
@@ -207,7 +258,7 @@ namespace PetscUtils
     // test if the matrix is assembled
     // note: the test is not work properly! if it is a bug...
 
-    //PetscTruth assembled;
+    //PetscBool assembled;
     //MatAssembled(mat, &assembled);
     //if( !assembled )
     {
@@ -277,7 +328,7 @@ namespace PetscUtils
     // test if the matrix is assembled
     // note: the test is not work properly! if it is a bug...
 
-    //PetscTruth assembled;
+    //PetscBool assembled;
     //MatAssembled(mat, &assembled);
 
     //if( !assembled )
@@ -349,7 +400,7 @@ namespace PetscUtils
     // test if the matrix is assembled
     // note: the test is not work properly! if it is a bug...
 
-    //PetscTruth assembled;
+    //PetscBool assembled;
     //MatAssembled(mat, &assembled);
 
     //if( !assembled )
@@ -425,7 +476,7 @@ namespace PetscUtils
     // test if the matrix is assembled
     // note: the test is not work properly! if it is a bug...
 
-    //PetscTruth assembled;
+    //PetscBool assembled;
     //MatAssembled(mat, &assembled);
 
     //if( !assembled )

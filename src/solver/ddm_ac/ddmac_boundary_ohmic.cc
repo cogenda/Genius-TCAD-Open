@@ -30,7 +30,7 @@
 #include "semiconductor_region.h"
 #include "conductor_region.h"
 #include "insulator_region.h"
-#include "boundary_condition.h"
+#include "boundary_condition_ohmic.h"
 #include "parallel.h"
 #include "mathfunc.h"
 #include "petsc_utils.h"
@@ -175,8 +175,8 @@ void OhmicContactBC::DDMAC_Fill_Matrix_Vector( Mat A, Vec b, const Mat J, const 
           AutoDScalar ff1,ff2,ff3;
           if(semi_region->get_advanced_model()->Fermi) //Fermi
           {
-            AutoDScalar Ec =  -(e*V + node_data->affinity() + semi_region->material()->band->EgNarrowToEc(p, n, T) + kb*T*log(Nc));
-            AutoDScalar Ev =  -(e*V + node_data->affinity() - semi_region->material()->band->EgNarrowToEv(p, n, T) - kb*T*log(Nv) + Eg);
+            AutoDScalar Ec =  -(e*V + node_data->affinity() );
+            AutoDScalar Ev =  -(e*V + node_data->affinity() + Eg);
 
             // the quasi-fermi potential equals to electrode Vapp
             AutoDScalar phin = Ve;
@@ -263,57 +263,17 @@ void OhmicContactBC::DDMAC_Fill_Matrix_Vector( Mat A, Vec b, const Mat J, const 
         // the boundary for the corner point may be Ohmic.
       case InsulatorRegion:
         // conductor region which has an interface with OhmicContact boundary to semiconductor region
-      case ConductorRegion:
+      case ElectrodeRegion:
         {
 
-          //the indepedent variable number, we need 2 here.
+          //let psi and T of node in this region equal to psi(T) of node in the insulator region
+          regions[i]->DDMAC_Force_equal(fvm_nodes[i], POTENTIAL, A, add_value_flag, regions[0], fvm_nodes[0]);
 
-          adtl::AutoDScalar::numdir=2;
-
-          unsigned int n_variables     = regions[i]->ebm_n_variables();
-          unsigned int node_psi_offset = regions[i]->ebm_variable_offset(POTENTIAL);
-          unsigned int node_Tl_offset  = regions[i]->ebm_variable_offset(TEMPERATURE);
-
-          unsigned int semiregion_n_variables     = regions[0]->ebm_n_variables();
-          unsigned int semiregion_node_psi_offset = regions[0]->ebm_variable_offset(POTENTIAL);
-          unsigned int semiregion_node_Tl_offset  = regions[0]->ebm_variable_offset(TEMPERATURE);
-
-          {
-            // psi of this node
-            AutoDScalar  V = fvm_nodes[i]->node_data()->psi();  V.setADValue(0,1.0);
-            // psi for corresponding semiconductor region
-            AutoDScalar  V_semi = fvm_nodes[0]->node_data()->psi(); V_semi.setADValue(1,1.0);
-            // the psi of this node is equal to corresponding psi of semiconductor node
-            AutoDScalar  ff1 = V - V_semi;
-
-            PetscInt row_re = fvm_nodes[i]->global_offset() + node_psi_offset;
-            PetscInt row_im = fvm_nodes[i]->global_offset() + n_variables + node_psi_offset;
-
-            PetscInt col_re[2] = {row_re, fvm_nodes[0]->global_offset() + semiregion_node_psi_offset};
-            PetscInt col_im[2] = {row_im, fvm_nodes[0]->global_offset() + semiregion_n_variables + semiregion_node_psi_offset};
-
-            MatSetValues(A, 1, &row_re, 2, &col_re[0], ff1.getADValue(), ADD_VALUES);
-            MatSetValues(A, 1, &row_im, 2, &col_im[0], ff1.getADValue(), ADD_VALUES);
-
-          }
-
+          // the T of this node is equal to corresponding T of insulator node
           if(regions[i]->get_advanced_model()->enable_Tl())
           {
             regions[i]->DDMAC_Fill_Nodal_Matrix_Vector(fvm_nodes[i], TEMPERATURE, A, b, J, omega, add_value_flag, regions[0], fvm_nodes[0]);
-
-            AutoDScalar  T = fvm_nodes[i]->node_data()->T();      T.setADValue(0,1.0); // lattice temperature of this node
-            AutoDScalar  T_semi = fvm_nodes[0]->node_data()->T(); T_semi.setADValue(1,1.0);
-            // the T of this node is equal to corresponding T of semiconductor node
-            AutoDScalar  ff2 = T - T_semi;
-
-            PetscInt row_re = fvm_nodes[i]->global_offset() + node_Tl_offset;
-            PetscInt row_im = fvm_nodes[i]->global_offset() + n_variables + node_Tl_offset;
-
-            PetscInt col_re[2] = {row_re, fvm_nodes[0]->global_offset() + semiregion_node_Tl_offset};
-            PetscInt col_im[2] = {row_im, fvm_nodes[0]->global_offset() + semiregion_n_variables + semiregion_node_Tl_offset};
-
-            MatSetValues(A, 1, &row_re, 2, &col_re[0], ff2.getADValue(), ADD_VALUES);
-            MatSetValues(A, 1, &row_im, 2, &col_im[0], ff2.getADValue(), ADD_VALUES);
+            regions[i]->DDMAC_Force_equal(fvm_nodes[i], TEMPERATURE, A, add_value_flag, regions[0], fvm_nodes[0]);
           }
 
 
@@ -437,7 +397,7 @@ void OhmicContactBC::DDMAC_Fill_Matrix_Vector( Mat A, Vec b, const Mat J, const 
         // process displacement current. we can't neglect displacement current when frequency is high.
         adtl::AutoDScalar::numdir =2;
 
-    // the psi of this node
+        // the psi of this node
         AutoDScalar  V = node_data->psi(); V.setADValue(0, 1.0);
         // the psi of neighbor node
         AutoDScalar V_nb = fvm_nb_node->node_data()->psi(); V_nb.setADValue(1, 1.0);

@@ -43,10 +43,13 @@ namespace Trees
    * connectivity, \p ELEMENTS will populate the tree with the elements
    * directly.
    */
-  enum BuildType {NODES=0,
-		  ELEMENTS,
-		  BOUNDARY_ELEMENTS,
-		  INVALID_BUILD_TYPE };
+  enum BuildType
+  {
+    NODES=0,
+    ELEMENTS,             // all the element
+    ELEMENTS_ON_BOUNDARY, // elements on outside boundary
+    SURFACE_ELEMENTS,     // surface element (on boundary or on interface), dim-1
+    INVALID_BUILD_TYPE };
 }
 
 /**

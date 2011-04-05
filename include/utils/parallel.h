@@ -31,6 +31,8 @@
 // Local includes
 #include "genius_env.h"
 #include "genius_common.h" // for Real
+#include "vector_value.h"
+#include "tensor_value.h"
 #include "perf_log.h"
 
 
@@ -338,8 +340,22 @@ namespace Parallel
    * to include values from all processors
    */
   template <typename T>
-  inline void gather(const unsigned int root_id,
-                     std::vector<T> &r);
+  inline void gather(const unsigned int root_id, std::vector<T> &r);
+
+
+  //-------------------------------------------------------------------
+  /**
+   * Take a distributed set
+   */
+  template <typename T>
+  inline void gather(const unsigned int root_id, std::set<T> &r);
+
+  //-------------------------------------------------------------------
+  /**
+   * gather a distributed map
+   */
+  template <typename T1, typename T2>
+  inline void gather(const unsigned int root_id, std::map<T1, T2> &map);
 
   //-------------------------------------------------------------------
   /**
@@ -360,6 +376,20 @@ namespace Parallel
   inline void allgather(std::vector<T> &r);
 
 
+  //-------------------------------------------------------------------
+  /**
+   * Take a set of local variables and expand it to include
+   * values from all processors
+   */
+  template <typename T>
+  inline void allgather(std::set<T> &r);
+
+  //-------------------------------------------------------------------
+  /**
+   * allgather a distributed map
+   */
+  template <typename T1, typename T2>
+  inline void allgather(std::map<T1, T2> &map);
 
   //-------------------------------------------------------------------
   /**
@@ -468,7 +498,13 @@ namespace Parallel
   inline MPI_Datatype datatype<long>() { return MPI_LONG; }
 
   template<>
+  inline MPI_Datatype datatype<long long>() { return MPI_LONG_LONG; }
+
+  template<>
   inline MPI_Datatype datatype<unsigned long>() { return MPI_UNSIGNED_LONG; }
+
+  template<>
+  inline MPI_Datatype datatype<unsigned long long>() { return MPI_UNSIGNED_LONG_LONG; }
 
   template<>
   inline MPI_Datatype datatype<float>() { return MPI_FLOAT; }
@@ -487,6 +523,9 @@ namespace Parallel
 
   template<>
   inline MPI_Datatype datatype_with_int<long>() { return MPI_LONG_INT; }
+
+  template<>
+  inline MPI_Datatype datatype_with_int<long long>() { return MPI_LONG_LONG_INT; }
 
   template<>
   inline MPI_Datatype datatype_with_int<float>() { return MPI_FLOAT_INT; }
@@ -1496,6 +1535,42 @@ namespace Parallel
   }
 
 
+  /**
+   * gather a distributed set
+   */
+  template <typename T>
+  inline void gather(const unsigned int root_id,
+                     std::set<T> &set)
+  {
+    if (Genius::n_processors() == 1)
+    {
+      assert (Genius::processor_id()==root_id);
+      return;
+    }
+
+    START_LOG("gather()", "Parallel");
+
+    std::vector<T> key;
+    key.reserve(set.size());
+
+    typename std::set<T>::iterator set_it = set.begin();
+    typename std::set<T>::iterator set_it_end = set.end();
+    for(; set_it!=set_it_end; ++set_it)
+    {
+      key.push_back(*set_it);
+    }
+
+    gather(root_id, key);
+
+
+    if(Genius::processor_id()==root_id)
+    {
+      for(unsigned int n=0; n<key.size(); n++)
+        set.insert(key[n]);
+    }
+
+    STOP_LOG("gather()", "Parallel");
+  }
 
   /**
    * gather a distributed map
@@ -1518,8 +1593,8 @@ namespace Parallel
     value.reserve(map.size());
 
     typename std::map<T1, T2>::iterator map_it = map.begin();
-
-    for(; map_it!=map.end(); ++map_it)
+    typename std::map<T1, T2>::iterator map_it_end = map.end();
+    for(; map_it!=map_it_end; ++map_it)
     {
       key.push_back((*map_it).first);
       value.push_back((*map_it).second);
@@ -1714,6 +1789,156 @@ namespace Parallel
     STOP_LOG("allgather()", "Parallel");
   }
 
+  template <typename T>
+  inline void allgather(std::vector< VectorValue<T> > &r)
+  {
+    if (Genius::n_processors() == 1)
+      return;
+
+    START_LOG("allgather()", "Parallel");
+
+    std::vector<int>
+        sendlengths  (Genius::n_processors(), 0),
+    displacements(Genius::n_processors(), 0);
+
+    const int mysize = r.size() * 3;
+    Parallel::allgather(mysize, sendlengths);
+
+    // Find the total size of the final array and
+    // set up the displacement offsets for each processor.
+    unsigned int globalsize = 0;
+    for (unsigned int i=0; i != Genius::n_processors(); ++i)
+    {
+      displacements[i] = globalsize;
+      globalsize += sendlengths[i];
+    }
+
+    // Check for quick return
+    if (globalsize == 0)
+    {
+      STOP_LOG("allgather()", "Parallel");
+      return;
+    }
+
+    // set the input/output buffer
+    std::vector< T > r_src(mysize), r_dst(globalsize);
+    for(unsigned int n=0; n<r.size(); ++n)
+    {
+      r_src[3*n+0] = r[n][0];
+      r_src[3*n+1] = r[n][1];
+      r_src[3*n+2] = r[n][2];
+    }
+
+    // and get the data from the remote processors.
+    // Pass NULL if our vector is empty.
+    const int ierr =
+        MPI_Allgatherv (r_src.empty() ? NULL : &r_src[0], mysize, datatype<T>(),
+                        r.empty()     ? NULL : &r_dst[0], &sendlengths[0],
+                        &displacements[0], datatype<T>(),
+                        PETSC_COMM_WORLD);
+    assert (ierr == MPI_SUCCESS);
+
+    r.clear();
+    for(unsigned int n=0; n<r_dst.size(); )
+    {
+      r.push_back( VectorValue<T>(r_dst[n++], r_dst[n++], r_dst[n++]) );
+    }
+
+    STOP_LOG("allgather()", "Parallel");
+  }
+
+  template <typename T>
+  inline void allgather(std::vector< TensorValue<T> > &r)
+  {
+    if (Genius::n_processors() == 1)
+      return;
+
+    START_LOG("allgather()", "Parallel");
+
+    std::vector<int>
+        sendlengths  (Genius::n_processors(), 0),
+    displacements(Genius::n_processors(), 0);
+
+    const int mysize = r.size() * 9;
+    Parallel::allgather(mysize, sendlengths);
+
+    // Find the total size of the final array and
+    // set up the displacement offsets for each processor.
+    unsigned int globalsize = 0;
+    for (unsigned int i=0; i != Genius::n_processors(); ++i)
+    {
+      displacements[i] = globalsize;
+      globalsize += sendlengths[i];
+    }
+
+    // Check for quick return
+    if (globalsize == 0)
+    {
+      STOP_LOG("allgather()", "Parallel");
+      return;
+    }
+
+    // set the input/output buffer
+    std::vector< T > r_src(mysize), r_dst(globalsize);
+    for(unsigned int n=0; n<r.size(); ++n)
+    {
+      r_src[9*n+0] = r[n][0];  r_src[9*n+1] = r[n][1];  r_src[9*n+2] = r[n][2];
+      r_src[9*n+3] = r[n][3];  r_src[9*n+4] = r[n][4];  r_src[9*n+5] = r[n][5];
+      r_src[9*n+6] = r[n][6];  r_src[9*n+7] = r[n][7];  r_src[9*n+8] = r[n][8];
+    }
+
+    // and get the data from the remote processors.
+    // Pass NULL if our vector is empty.
+    const int ierr =
+        MPI_Allgatherv (r_src.empty() ? NULL : &r_src[0], mysize, datatype<T>(),
+                        r.empty()     ? NULL : &r_dst[0], &sendlengths[0],
+                        &displacements[0], datatype<T>(),
+                        PETSC_COMM_WORLD);
+    assert (ierr == MPI_SUCCESS);
+
+    r.clear();
+    for(unsigned int n=0; n<r_dst.size(); )
+    {
+      r.push_back( TensorValue<T>(r_dst[n++], r_dst[n++], r_dst[n++],
+                                  r_dst[n++], r_dst[n++], r_dst[n++],
+                                  r_dst[n++], r_dst[n++], r_dst[n++]
+                                 ) );
+    }
+
+    STOP_LOG("allgather()", "Parallel");
+  }
+
+
+
+  /**
+   * allgather a distributed set
+   */
+  template <typename T>
+  inline void allgather(std::set<T> &set)
+  {
+    if (Genius::n_processors() == 1)
+      return;
+
+    START_LOG("allgather()", "Parallel");
+
+    std::vector<T> key;
+    key.reserve(set.size());
+
+    typename  std::set<T>::iterator set_it = set.begin();
+    typename  std::set<T>::iterator set_it_end = set.end();
+    for(; set_it!=set_it_end; ++set_it)
+    {
+      key.push_back(*set_it);
+    }
+
+    allgather(key);
+
+    for(unsigned int n=0; n<key.size(); ++n)
+      set.insert(key[n]);
+
+    STOP_LOG("allgather()", "Parallel");
+  }
+
 
   /**
    * allgather a distributed map
@@ -1732,7 +1957,8 @@ namespace Parallel
     value.reserve(map.size());
 
     typename  std::map<T1, T2>::iterator map_it = map.begin();
-    for(; map_it!=map.end(); ++map_it)
+    typename  std::map<T1, T2>::iterator map_it_end = map.end();
+    for(; map_it!=map_it_end; ++map_it)
     {
       key.push_back((*map_it).first);
       value.push_back((*map_it).second);
@@ -1842,6 +2068,13 @@ namespace Parallel
     unsigned int data_size = data.size();
     Parallel::broadcast(data_size, root_id);
 
+    // empty string?
+    if(data_size==0)
+    {
+      data.clear();
+      return;
+    }
+
     std::vector<char> data_c(data_size);
     std::string orig(data);
 
@@ -1875,6 +2108,9 @@ namespace Parallel
     unsigned int data_size = data.size();
     Parallel::broadcast(data_size, root_id);
 
+    // empty
+    if(data_size==0)    { data.clear(); return; }
+
     data.resize(data_size);
 
     // and get the data from the remote processors.
@@ -1897,6 +2133,9 @@ namespace Parallel
 
     unsigned int data_size = data.size();
     Parallel::broadcast(data_size, root_id);
+
+    // empty
+    if(data_size==0)    { data.clear(); return; }
 
     data.resize(data_size);
 
@@ -1921,6 +2160,9 @@ namespace Parallel
 
     unsigned int data_size = data.size();
     Parallel::broadcast(data_size, root_id);
+
+    // empty
+    if(data_size==0)    { data.clear(); return; }
 
     data.resize(data_size);
 
@@ -1955,6 +2197,9 @@ namespace Parallel
 
     unsigned int data_size = key.size();
     Parallel::broadcast(data_size, root_id);
+
+    // empty
+    if(data_size==0)    { set.clear(); return; }
 
     key.resize(data_size);
 
@@ -1994,15 +2239,8 @@ namespace Parallel
         value.push_back((*map_it).second);
       }
     }
-
-    unsigned int data_size = key.size();
-    Parallel::broadcast(data_size, root_id);
-
-    key.resize(data_size);
-    value.resize(data_size);
-
-    genius_assert( MPI_Bcast (&key[0], data_size, datatype<T1>(), root_id, PETSC_COMM_WORLD)== MPI_SUCCESS );
-    genius_assert( MPI_Bcast (&value[0], data_size, datatype<T2>(), root_id, PETSC_COMM_WORLD)== MPI_SUCCESS );
+    broadcast(key, root_id);
+    broadcast(value, root_id);
 
     genius_assert(key.size()==value.size());
 
@@ -2096,6 +2334,10 @@ namespace Parallel
   inline void gather(const unsigned int, std::vector<T> &) {}
 
 
+  template <typename T>
+  inline void gather(const unsigned int, std::set<T> &) {}
+
+
   template <typename T1, typename T2>
   inline void gather(const unsigned int, std::map<T1, T2> &) {}
 
@@ -2110,6 +2352,12 @@ namespace Parallel
 
   template <typename T>
   inline void allgather(std::vector<T> &) {}
+
+  template <typename T>
+  inline void allgather(std::set<T> &) {}
+
+  template <typename T1, typename T2>
+  inline void allgather(std::map<T1, T2> &) {}
 
   template <typename T>
   inline void alltoall(std::vector<T> &) {}

@@ -25,7 +25,7 @@
 #include "tree.h"
 #include "mesh_base.h"
 #include "mesh_tools.h"
-
+#include "boundary_info.h"
 
 
 // ------------------------------------------------------------
@@ -77,7 +77,7 @@ Tree<N>::Tree (const MeshBase& m,
     }
   }
 
-  else if (build_type == Trees::BOUNDARY_ELEMENTS)
+  else if (build_type == Trees::ELEMENTS_ON_BOUNDARY)
   {
     // Add all active elements on BOUNDARY to the root node.  It will
     // automatically build the tree for us.
@@ -90,8 +90,31 @@ Tree<N>::Tree (const MeshBase& m,
         root.insert (*it);
     }
   }
+
+  else if (build_type == Trees::SURFACE_ELEMENTS)
+  {
+    std::vector<unsigned int>       elems;
+    std::vector<unsigned short int> sides;
+    std::vector<short int>          bds;
+    mesh.boundary_info->build_active_side_list (elems, sides, bds);
+
+    for(unsigned int n=0; n<elems.size(); ++n)
+    {
+      const Elem * surface_elem = mesh.elem(elems[n])->build_side(sides[n], false).release();
+      root.insert (surface_elem);
+      surface_elems.push_back(surface_elem);
+    }
+  }
 }
 
+
+template <unsigned int N>
+Tree<N>::~Tree()
+{
+  for(unsigned int n=0; n<surface_elems.size(); ++n)
+    delete surface_elems[n];
+  surface_elems.clear();
+}
 
 
 template <unsigned int N>
@@ -109,7 +132,7 @@ const Elem * Tree<N>::hit_element(const Point & p, const Point & dir) const
 
   const Elem * elem = root.hit_element(p, dir);
 
-#ifdef HAVE_FENV_H
+#if defined(HAVE_FENV_H) && defined(DEBUG)
   feclearexcept(FE_ALL_EXCEPT);
 #endif
 
@@ -124,7 +147,7 @@ bool Tree<N>::hit_boundbox(const Point & p, const Point & dir) const
   std::pair<double, double> t;
   bool result = root.hit_boundbox(p, dir, t);
 
-#ifdef HAVE_FENV_H
+#if defined(HAVE_FENV_H) && defined(DEBUG)
   feclearexcept(FE_ALL_EXCEPT);
 #endif
 

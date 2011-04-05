@@ -32,27 +32,18 @@
 
 // ------------------------------------------------------------
 // TypeVector<T> class member funcions
-template <typename T>
-TypeVector<T> TypeVector<T>::cross(const TypeVector<T>& p) const
-{
-  assert (DIM == 3);
 
-  // |     i          j          k    |
-  // |(*this)(0) (*this)(1) (*this)(2)|
-  // |   p(0)       p(1)       p(2)   |
-
-  return TypeVector<T>(  _coords[1]*p._coords[2] - _coords[2]*p._coords[1],
-			-_coords[0]*p._coords[2] + _coords[2]*p._coords[0],
-			 _coords[0]*p._coords[1] - _coords[1]*p._coords[0]);
-}
 
 
 
 template <typename T>
-TypeVector<T> TypeVector<T>::unit() const
+TypeVector<T> TypeVector<T>::unit(bool zero) const
 {
 
   const T length = size();
+
+  if(zero && length == static_cast<Real>(0.))
+    return TypeVector<T>();
 
   assert (length != static_cast<Real>(0.));
 
@@ -75,7 +66,7 @@ TypeVector<T> TypeVector<T>::unit() const
 
 
 template <typename T>
-void TypeVector<T>::to_unit()
+TypeVector<T> & TypeVector<T>::to_unit()
 {
 
   const T length = size();
@@ -97,6 +88,7 @@ void TypeVector<T>::to_unit()
   _coords[2] /= length;
 #endif
 
+  return *this;
 }
 
 

@@ -31,7 +31,7 @@
 #include "field_input.h"
 #include "field_output.h"
 #include "simulation_system.h"
-#include "simulation_region.h"
+
 
 // Forward declarations
 class MeshBase;
@@ -91,6 +91,8 @@ private:
   void write_gdml_body(const std::string &file);
 
   std::map<unsigned int, double> Na, Nd;
+
+  double Na_max, Nd_max;
 
   void cell_average_doping(const Elem *elem, double &, double &);
 

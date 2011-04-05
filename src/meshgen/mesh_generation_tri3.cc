@@ -642,6 +642,17 @@ int MeshGeneratorTri3::set_region_ellipse(const Parser::Card &c)
   region.label    = c.get_string("label", "");
   region.material = c.get_string("material", "");
 
+  // test if region label is unique
+  for(unsigned int n=0; n<region_array1d.size(); ++n)
+  {
+    if(region_array1d[n].label == region.label)
+    {
+      MESSAGE<<"ERROR at " <<c.get_fileline()<< " REGION: Region label " << region.label << " has been defined before!\n";
+      RECORD();
+      return 1;
+    }
+  }
+
   region_array1d.push_back(region);
 
   return 0;
@@ -707,6 +718,17 @@ int MeshGeneratorTri3::set_region_rectangle(const Parser::Card &c)
     MESSAGE<<"ERROR at " <<c.get_fileline()<< " REGION: Can't locate top/bottom boundary of region!\n";
     RECORD();
     return 1;
+  }
+
+  // test if region label is unique
+  for(unsigned int n=0; n<region_array1d.size(); ++n)
+  {
+    if(region_array1d[n].label == region.label)
+    {
+      MESSAGE<<"ERROR at " <<c.get_fileline()<< " REGION: Region label " << region.label << " has been defined before!\n";
+      RECORD();
+      return 1;
+    }
   }
 
   region_array1d.push_back(region);
@@ -1143,7 +1165,7 @@ int MeshGeneratorTri3::do_mesh()
   _mesh.boundary_info->build_side_list (elems, sides, bds);
 
   //build neighbor information for mesh. then elem->neighbor() is functional
-  _mesh.find_neighbors();
+  _mesh.boundary_info->find_neighbors();
 
 
   for (size_t nbd=0; nbd<elems.size(); nbd++ )

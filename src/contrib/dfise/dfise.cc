@@ -1,13 +1,35 @@
+/********************************************************************************/
+/*     888888    888888888   88     888  88888   888      888    88888888       */
+/*   8       8   8           8 8     8     8      8        8    8               */
+/*  8            8           8  8    8     8      8        8    8               */
+/*  8            888888888   8   8   8     8      8        8     8888888        */
+/*  8      8888  8           8    8  8     8      8        8            8       */
+/*   8       8   8           8     8 8     8      8        8            8       */
+/*     888888    888888888  888     88   88888     88888888     88888888        */
+/*                                                                              */
+/*       A Three-Dimensional General Purpose Semiconductor Simulator.           */
+/*                                                                              */
+/*                                                                              */
+/*  Copyright (C) 2007-2008                                                     */
+/*  Cogenda Pte Ltd                                                             */
+/*                                                                              */
+/*  Please contact Cogenda Pte Ltd for license information                      */
+/*                                                                              */
+/*  Author: Gong Ding   gdiso@ustc.edu                                          */
+/*                                                                              */
+/********************************************************************************/
+
+#include <cmath>
 #include <cstdio>
+#include <map>
+#include <set>
 #include <iostream>
 #include <fstream>
-
-#include "config.h"
-#include "genius_env.h"
 
 #include "dfise_block.h"
 #include "dfise.h"
 
+#include "config.h"
 #ifdef CYGWIN
   #include <io.h>      // for windows _access function
 #else
@@ -16,6 +38,12 @@
 
 namespace DFISE
 {
+
+
+  //---------------------------------------------------
+  // functions for class DFISE_MESH
+
+
   // avoid isatty() problem of Bison 2.3
 #define YY_NEVER_INTERACTIVE 1
 #ifdef CYGWIN
@@ -64,6 +92,32 @@ namespace DFISE
     return 0;
   }
 
+
+
+  void DFISE_MESH::write_dfise(const std::string & file) const
+  {
+    std::string grid_file = file + ".grd";
+    std::string data_file = file + ".dat";
+
+    // write grid file
+    std::cout<<"  Writing DF-ISE grid file " << grid_file << "..."<< std::endl;
+    std::ofstream grid_out(grid_file.c_str());
+    grid_out<<"DF-ISE text\n"<<std::endl;
+    grid_info.print(grid_out);
+    grid.print(grid_out);
+    grid_out.close();
+
+    // write data file
+    std::cout<<"  Writing DF-ISE dataset file " << data_file << "..."<< std::endl;
+    std::ofstream data_out(data_file.c_str());
+    data_out<<"DF-ISE text\n"<<std::endl;
+    data_info.print(data_out);
+    data_out<<"Data {"<<std::endl;
+    for(unsigned int n=0; n<data_sets.size(); ++n)
+      data_sets[n]->print(data_out);
+    data_out<<"}"<<std::endl;
+    data_out.close();
+  }
 
 
 
@@ -117,10 +171,13 @@ namespace DFISE
     assert(regions == grid_info.nb_regions);
     assert(materials == grid_info.nb_regions);
 
+    // save region name and materials here
     for(unsigned int n=0; n<grid_info.nb_regions; ++n)
     {
-      grid_info.regions.push_back((block->get_string_parameter("regions", n)));
-      grid_info.materials.push_back((block->get_string_parameter("materials", n)));
+      // replace any black char ' ' in region name with '_'
+      std::string region_name = fix_region_name(block->get_string_parameter("regions", n));
+      grid_info.regions.push_back(region_name);
+      grid_info.materials.push_back(block->get_string_parameter("materials", n));
     }
 
     // set field region and boundary region information
@@ -130,9 +187,7 @@ namespace DFISE
     {
       if(grid_info.is_boundary_region(n))
       {
-        grid_info.region_to_boundaryregion_map[n] = n_boundary_region;
-        grid_info.boundaryregion_to_region_map[n_boundary_region] = n;
-        ++n_boundary_region;
+        grid_info.set_boundary_region(n, n_boundary_region++);
       }
       else if(grid_info.is_interface_region(n))
       {
@@ -140,19 +195,19 @@ namespace DFISE
       }
       else
       {
-        grid_info.region_to_fieldregion_map[n] = n_field_region;
-        grid_info.fieldregion_to_region_map[n_field_region] = n;
-        ++n_field_region;
+        grid_info.set_field_region(n, n_field_region++);
       }
     }
 
-    //grid_info.print();
+    //grid_info.print(std::cout);
   }
 
 
 
   void DFISE_MESH::read_grid_data(BLOCK *block)
   {
+    grid.dimension = grid_info.dimension;
+
     // set CoordSystem
     {
       BLOCK * CoordSystem = block->get_sub_block("CoordSystem");
@@ -163,7 +218,7 @@ namespace DFISE
 
       for(unsigned int m=0; m<3; ++m)
         for(unsigned int n=0; n<3; ++n)
-          grid.transform(m,n) = (CoordSystem->get_float_parameter("transform", m*3+n));
+          grid.transform[m*3+n] = (CoordSystem->get_float_parameter("transform", m*3+n));
     }
 
     // read Vertices
@@ -176,19 +231,20 @@ namespace DFISE
       if(grid_info.dimension == 3)
         for(unsigned int n=0; n<grid_info.nb_vertices; ++n)
         {
-          VectorValue<double> point((Vertices->get_float_value(3*n)),
-                                    (Vertices->get_float_value(3*n+1)),
-                                    (Vertices->get_float_value(3*n+2)));
-          point = grid.transform*point + grid.translate;
-          grid.Vertices.push_back(point);
+          Point p;
+          p[0] = Vertices->get_float_value(3*n);
+          p[1] = Vertices->get_float_value(3*n+1);
+          p[2] = Vertices->get_float_value(3*n+2);
+          grid.Vertices.push_back(p);
         }
       if(grid_info.dimension == 2)
         for(unsigned int n=0; n<grid_info.nb_vertices; ++n)
         {
-          VectorValue<double> point((Vertices->get_float_value(2*n)),
-                                    (Vertices->get_float_value(2*n+1)), 0.0);
-          point = grid.transform*point + grid.translate;
-          grid.Vertices.push_back(point);
+          Point p;
+          p[0] = Vertices->get_float_value(2*n);
+          p[1] = Vertices->get_float_value(2*n+1);
+          p[2] = 0;
+          grid.Vertices.push_back(p);
         }
     }
 
@@ -201,7 +257,7 @@ namespace DFISE
       grid.Edges.reserve(grid_info.nb_edges);
       for(unsigned int n=0; n<grid_info.nb_edges; ++n)
       {
-        grid.Edges.push_back(std::make_pair((Edges->get_int_value(2*n)), (Edges->get_int_value(2*n+1))));
+        grid.add_edge(std::make_pair((Edges->get_int_value(2*n)), (Edges->get_int_value(2*n+1))));
       }
     }
 
@@ -224,7 +280,23 @@ namespace DFISE
 
     // read locations
     {
+      BLOCK * Locations = block->get_sub_block("Locations");
+      assert(Locations!=NULL);
 
+      if(grid_info.dimension == 2)
+        assert(Locations->index()==static_cast<int>(grid_info.nb_edges));
+
+      if(grid_info.dimension == 3)
+        assert(Locations->index()==static_cast<int>(grid_info.nb_faces));
+
+      for(unsigned int n=0; n<Locations->n_values(); ++n)
+      {
+        std::string location_string = Locations->get_string_value(n);
+        for(unsigned int c=0; c<location_string.size(); ++c )
+          grid.Locations.push_back(location_string[c]);
+      }
+
+      assert( grid.Locations.size() == Locations->index() );
 
     }
 
@@ -238,72 +310,60 @@ namespace DFISE
       unsigned int next=0;
       for(unsigned int n=0; n<grid_info.nb_elements; ++n)
       {
-        int elem_id = Elements->get_int_value(next++);
-        switch(elem_id)
+        int elem_code = Elements->get_int_value(next++);
+        grid.Elements[n].elem_code = elem_code;
+        switch(elem_code)
         {
         case 1: //Segment
           {
-            grid.Elements[n].elem_type = EDGE2;
             for(unsigned int i=0; i<2; i++)
               grid.Elements[n].faces.push_back((Elements->get_int_value(next++)));
-            grid.build_edge2_node(grid.Elements[n]);
             break;
           }
         case 2: //Triangle
           {
-            grid.Elements[n].elem_type = TRI3;
             for(unsigned int i=0; i<3; i++)
               grid.Elements[n].faces.push_back((Elements->get_int_value(next++)));
-            grid.build_tri3_node(grid.Elements[n]);
             break;
           }
         case 3: //Rectangle
           {
-            grid.Elements[n].elem_type = QUAD4;
             for(unsigned int i=0; i<4; i++)
               grid.Elements[n].faces.push_back((Elements->get_int_value(next++)));
-            grid.build_quad4_node(grid.Elements[n]);
             break;
           }
         case 5: //Tetrahedron
           {
-            grid.Elements[n].elem_type = TET4;
             for(unsigned int i=0; i<4; i++)
               grid.Elements[n].faces.push_back((Elements->get_int_value(next++)));
-            grid.build_tet4_node(grid.Elements[n]);
             break;
           }
         case 6: //Pyramid
           {
-            grid.Elements[n].elem_type = PYRAMID5;
             for(unsigned int i=0; i<5; i++)
               grid.Elements[n].faces.push_back((Elements->get_int_value(next++)));
-            grid.build_pyramid5_node(grid.Elements[n]);
             break;
           }
         case 7: //Prism
           {
-            grid.Elements[n].elem_type = PRISM6;
             for(unsigned int i=0; i<5; i++)
               grid.Elements[n].faces.push_back((Elements->get_int_value(next++)));
-            grid.build_prism6_node(grid.Elements[n]);
             break;
           }
         case 8: //Brick
           {
-            grid.Elements[n].elem_type = HEX8;
             for(unsigned int i=0; i<6; i++)
               grid.Elements[n].faces.push_back((Elements->get_int_value(next++)));
-            grid.build_hex8_node(grid.Elements[n]);
             break;
           }
         default :
           {
             //
             std::cout<<"  ERROR: DFISE with unsupported element."<< std::endl;
-            genius_error(); //not supported
+            exit(0);
           }
         }
+        grid.build_node(grid.Elements[n]);
       }
     }
 
@@ -317,9 +377,13 @@ namespace DFISE
 
       if(region->keyword()=="Region")
       {
+        region->set_label( fix_region_name(region->label()) );
         assert(region->label()==grid_info.regions[region_index]);
         std::string material = region->get_string_parameter("material", 0);
         assert(material==grid_info.materials[region_index]);
+
+        grid.regions.push_back(region->label());
+        grid.materials.push_back(material);
 
         BLOCK * Elements = region->get_sub_block("Elements");
         unsigned int n_elem = Elements->index();
@@ -395,7 +459,7 @@ namespace DFISE
       data_info.functions.push_back((block->get_string_parameter("functions", n)));
     }
 
-    //data_info.print();
+    //data_info.print(std::cout);
   }
 
 
@@ -417,7 +481,7 @@ namespace DFISE
       int n_validity = dataset_block->n_values_in_parameter("validity");
       for(int i=0; i<n_validity; ++i)
       {
-        std::string region = dataset_block->get_string_parameter("validity", i);
+        std::string region = fix_region_name(dataset_block->get_string_parameter("validity", i));
         int region_index = grid_info.fieldregion_index_by_label(region);
         assert(region_index>=0);
 
@@ -475,13 +539,49 @@ namespace DFISE
       }
 
       for(std::set<unsigned int>::iterator it=node_set.begin(); it!=node_set.end(); ++it)
-        dataset->node_to_value_index_map.insert(std::make_pair(*it, dataset->node_to_value_index_map.size()));
+          dataset->node_to_value_index_map.insert(std::make_pair(*it, dataset->node_to_value_index_map.size()));
 
       assert(dataset->node_to_value_index_map.size() == dataset->n_data);
 
       data_sets.push_back(dataset);
     }
   }
+
+
+  void DFISE_MESH::add_dataset(DATASET * dataset, bool copy)
+  {
+    if(copy)
+    {
+      DATASET * new_dataset = new DATASET(*dataset);
+      data_sets.push_back(new_dataset);
+    }
+    else
+    {
+      data_sets.push_back(dataset);
+    }
+  }
+
+
+  std::string DFISE_MESH::fix_region_name(const std::string &name)
+  {
+    std::string fixed_name = name;
+    // remove any blank char at the begin/end of string
+    if( fixed_name.find_first_not_of(' ') != 0 )
+      fixed_name  = fixed_name.substr(fixed_name.find_first_not_of(' '), fixed_name.size()-1);
+
+    if( fixed_name.rfind(' ') != std::string::npos )
+      fixed_name  = fixed_name.substr(0, fixed_name.find_last_not_of(' ')+1);
+
+    // replace blank char with '_'
+    std::string filt_elems(" \t");
+    std::string::size_type pos = 0;
+    while (( pos = fixed_name.find_first_of( filt_elems, pos )) != std::string::npos )
+    {
+      fixed_name.replace(pos, 1, "_");
+    }
+    return fixed_name;
+  }
+
 
 
   void DFISE_MESH::export_vtk(const std::string & file)
@@ -497,7 +597,7 @@ namespace DFISE
     // write out nodal data
     for(unsigned int n=0; n<grid.Vertices.size(); ++n)
     {
-      out << grid.Vertices[n](0) << " " << grid.Vertices[n](1) << " " << grid.Vertices[n](2) << '\n';
+      out << grid.Vertices[n][0] << " " << grid.Vertices[n][1] << " " << grid.Vertices[n][2] << '\n';
     }
 
     out << std::endl;
@@ -515,34 +615,34 @@ namespace DFISE
     {
       const Element & elem = grid.Elements[n];
       out << elem.vertices.size()<<" ";
-      switch(elem.elem_type)
+      switch(elem.elem_code)
       {
-      case EDGE2:
+      case 1:
         out << elem.vertices[0]<<" "<< elem.vertices[1];  //VTK_LINE;
         break;
-      case TRI3:
+      case 2:
         out << elem.vertices[0]<<" "<< elem.vertices[1]<<" "<< elem.vertices[2];  //VTK_TRIANGLE;
         break;// 3
-      case QUAD4:
+      case 3:
         out << elem.vertices[0]<<" "<< elem.vertices[1]<<" "<< elem.vertices[2]<<" "<< elem.vertices[3];  //VTK_QUAD;
         break;// 5
-      case TET4:
+      case 5:
         out << elem.vertices[2]<<" "<< elem.vertices[1]<<" "<< elem.vertices[0]<<" "<< elem.vertices[3]; //VTK_TETRA;
         break;// 8
-      case HEX8:
-        out << elem.vertices[3]<<" "<< elem.vertices[2]<<" "<< elem.vertices[1]<<" "<< elem.vertices[0]<<" "
-        << elem.vertices[4]<<" "<< elem.vertices[5]<<" "<< elem.vertices[6]<<" "<< elem.vertices[7]; //VTK_HEXAHEDRON;
-        break;// 10
-      case PRISM6:
+      case 6:
+        out << elem.vertices[3]<<" "<< elem.vertices[2]<<" "<< elem.vertices[1]<<" "<< elem.vertices[0]<<" "<< elem.vertices[4]; //VTK_PYRAMID;
+        break;// 16
+      case 7:
         out << elem.vertices[2]<<" "<< elem.vertices[1]<<" "<< elem.vertices[0]<<" "
         << elem.vertices[3]<<" "<< elem.vertices[4]<<" "<< elem.vertices[5]; //VTK_WEDGE;
         break;// 13
-      case PYRAMID5:
-        out << elem.vertices[3]<<" "<< elem.vertices[2]<<" "<< elem.vertices[1]<<" "<< elem.vertices[0]<<" "<< elem.vertices[4]; //VTK_PYRAMID;
-        break;// 16
+      case 8:
+        out << elem.vertices[3]<<" "<< elem.vertices[2]<<" "<< elem.vertices[1]<<" "<< elem.vertices[0]<<" "
+            << elem.vertices[4]<<" "<< elem.vertices[5]<<" "<< elem.vertices[6]<<" "<< elem.vertices[7]; //VTK_HEXAHEDRON;
+        break;// 10
       default:
         {
-          std::cerr<<"element type "<<grid.Elements[n].elem_type<<" not implemented"<<std::endl;
+          std::cerr<<"element type "<<grid.Elements[n].elem_code<<" not implemented"<<std::endl;
         }
       }
       out << std::endl;
@@ -553,32 +653,32 @@ namespace DFISE
     for(unsigned int n=0; n<grid.Elements.size(); ++n)
     {
       unsigned int celltype;
-      switch(grid.Elements[n].elem_type)
+      switch(grid.Elements[n].elem_code)
       {
-      case EDGE2:
+      case 1:
         celltype = 3;  //VTK_LINE;
         break;
-      case TRI3:
+      case 2:
         celltype = 5;  //VTK_TRIANGLE;
         break;// 3
-      case QUAD4:
+      case 3:
         celltype = 9;  //VTK_QUAD;
         break;// 5
-      case TET4:
+      case 5:
         celltype = 10; //VTK_TETRA;
         break;// 8
-      case HEX8:
-        celltype = 12; //VTK_HEXAHEDRON;
-        break;// 10
-      case PRISM6:
-        celltype = 13; //VTK_WEDGE;
-        break;// 13
-      case PYRAMID5:
+      case 6:
         celltype = 14; //VTK_PYRAMID;
         break;// 16
+      case 7:
+        celltype = 13; //VTK_WEDGE;
+        break;// 13
+      case 8:
+        celltype = 12; //VTK_HEXAHEDRON;
+        break;// 10
       default:
         {
-          std::cerr<<"element type "<<grid.Elements[n].elem_type<<" not implemented"<<std::endl;
+          std::cerr<<"element type "<<grid.Elements[n].elem_code<<" not implemented"<<std::endl;
         }
       }
       out << celltype << std::endl;
@@ -596,20 +696,20 @@ namespace DFISE
     }
     out<<std::endl;
 
-/*
-    //write node based boundary info to vtk
-    out<<"POINT_DATA "<<grid.Vertices.size()      <<'\n';
-    out<<std::endl;
+    /*
+        //write node based boundary info to vtk
+        out<<"POINT_DATA "<<grid.Vertices.size()      <<'\n';
+        out<<std::endl;
 
-    out<<"SCALARS node_value float 1" <<'\n';
-    out<<"LOOKUP_TABLE default"       <<'\n';
-    for(unsigned int n=0; n<grid.Vertices.size(); ++n)
-    {
-      double value = get_scaler_value("DopingConcentration", "body", n);
-      out<<value<<'\n' ;
-    }
-    out<<std::endl;
-*/
+        out<<"SCALARS node_value float 1" <<'\n';
+        out<<"LOOKUP_TABLE default"       <<'\n';
+        for(unsigned int n=0; n<grid.Vertices.size(); ++n)
+        {
+          double value = get_scaler_value("DopingConcentration", "body", n);
+          out<<value<<'\n' ;
+        }
+        out<<std::endl;
+    */
     out.close();
   }
 

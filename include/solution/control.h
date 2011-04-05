@@ -281,6 +281,11 @@ public:
   virtual void post_iteration();
 
   /**
+   *  This is executed after each (nonlinear) iteration
+   */
+  virtual void post_iteration(void * , void * , void * , bool &, bool &);
+
+  /**
    * This is executed after the finalization of the solver
    */
   virtual void on_close();

@@ -1,0 +1,21 @@
+def build(bld):
+  includes = []
+  includes.append(bld.path.find_or_declare('.'))
+  includes.append(bld.path.find_or_declare('../../..'))
+  includes.extend(bld.genius_includes)
+
+  bld( source    = 'dfise_lex.l dfise_parser.y',
+       name      = 'dfise_lex',
+       flexflags = '-i -l'.split(),
+       on_results = True,
+     )
+
+  bld.objects( source = ['dfise.cc', 'dfise_grid.cc'],
+               target = 'dfise_objs',
+               depends_on = 'dfise_lex',
+               includes  = includes,
+               features  = 'cxx',
+               use       = 'opt PETSC',
+             )
+  bld.contrib_objs.append('dfise_objs')
+

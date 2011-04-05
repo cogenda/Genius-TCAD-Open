@@ -47,10 +47,9 @@
 
 
 #include <cassert>
-#include <cstdio>
-#include <cstdlib>
 #include <iostream>
 #include <cmath>
+#include <limits>
 
 #include "asinh.hpp" // for asinh
 #include "acosh.hpp" // for acosh
@@ -75,35 +74,38 @@ extern "C"
 }
 
 
-namespace adtl {
-
-inline PetscScalar fmin( const PetscScalar &x, const PetscScalar &y )
+namespace adtl
 {
+
+  inline PetscScalar fmin( const PetscScalar &x, const PetscScalar &y )
+  {
     return x<y? x:y;
-}
+  }
 
-inline PetscScalar fmax( const PetscScalar &x, const PetscScalar &y )
-{
+  inline PetscScalar fmax( const PetscScalar &x, const PetscScalar &y )
+  {
     return x>y? x:y;
-}
+  }
 
-inline PetscScalar fsign(const PetscScalar &x)
-{return x>0.0? 1.0:-1.0;}
+  inline PetscScalar fsign(const PetscScalar &x)
+  {return x>0.0? 1.0:-1.0;}
 
-inline PetscScalar makeNaN() {
-    PetscScalar a,b;
-    a=0.0;
-    b=0.0;
-    return a/b;
-}
 
-class AutoDScalar {
-public:
+  inline PetscScalar makeNaN()
+  {
+    return std::numeric_limits<PetscScalar>::quiet_NaN();
+  }
+
+  class AutoDScalar
+  {
+  public:
     // ctors
     inline AutoDScalar();
     inline AutoDScalar(const PetscScalar v);
     inline AutoDScalar(const PetscScalar v, const PetscScalar * adv);
+    inline AutoDScalar(const PetscScalar v, const PetscScalar * adv, unsigned int n);
     inline AutoDScalar(const AutoDScalar& a);
+    inline AutoDScalar(const AutoDScalar& a, unsigned int *, unsigned int n);
 
     /*******************  temporary results  ******************************/
     // sign
@@ -241,7 +243,6 @@ public:
     inline PetscScalar getADValue(const unsigned int p) const;
     inline void setADValue(const unsigned int p, const PetscScalar v);
 #endif
-
     /*******************  i/o operations  *********************************/
     inline friend std::ostream& operator << ( std::ostream&, const AutoDScalar& );
     inline friend std::istream& operator >> ( std::istream&, AutoDScalar& );
@@ -249,755 +250,889 @@ public:
     static unsigned int numdir;
     static void setNumDir(const unsigned int p)
     {
-    if (p>NUMBER_DIRECTIONS) numdir=NUMBER_DIRECTIONS;
+      if (p>NUMBER_DIRECTIONS) numdir=NUMBER_DIRECTIONS;
       else numdir=p;
     }
 
-private:
+  private:
     // internal variables
 
     PetscScalar val;
     PetscScalar adval[NUMBER_DIRECTIONS];
-};
+  };
 
-/*******************************  ctors  ************************************/
-AutoDScalar::AutoDScalar(): val(0)
-{
-    for (unsigned int _i=0; _i<NUMBER_DIRECTIONS; ++_i)
-      adval[_i]=0.0;
-}
+  /*******************************  ctors  ************************************/
+  AutoDScalar::AutoDScalar(): val(0)
+  {
+    memset(adval, 0, sizeof(PetscScalar)*NUMBER_DIRECTIONS);
+  }
 
-AutoDScalar::AutoDScalar(const PetscScalar v) : val(v)
-{
-    for (unsigned int _i=0; _i<NUMBER_DIRECTIONS; ++_i)
-      adval[_i]=0.0;
-}
+  AutoDScalar::AutoDScalar(const PetscScalar v) : val(v)
+  {
+    memset(adval, 0, sizeof(PetscScalar)*NUMBER_DIRECTIONS);
+  }
 
-AutoDScalar::AutoDScalar(const PetscScalar v, const PetscScalar * adv) : val(v)
-{
-    for (unsigned int _i=0; _i<NUMBER_DIRECTIONS; ++_i)
-    {
-      if(_i<numdir)
-        adval[_i]=adv[_i];
-      else
-        adval[_i]=0.0;
-    }
-}
+  AutoDScalar::AutoDScalar(const PetscScalar v, const PetscScalar * adv) : val(v)
+  {
+    memset(adval, 0, sizeof(PetscScalar)*NUMBER_DIRECTIONS);
 
-AutoDScalar::AutoDScalar(const AutoDScalar& a) : val(a.val)
-{
-    for (unsigned int _i=0; _i<NUMBER_DIRECTIONS; ++_i)
-    {
-      if(_i<numdir)
-        adval[_i]=a.adval[_i];
-      else
-        adval[_i]=0.0;
-    }
-}
+    for (unsigned int _i=0; _i<numdir; ++_i)
+      adval[_i]=adv[_i];
+  }
 
-/*************************  temporary results  ******************************/
-// sign
-const AutoDScalar AutoDScalar::operator - () const {
+  AutoDScalar::AutoDScalar(const PetscScalar v, const PetscScalar * adv, unsigned int n) : val(v)
+  {
+    memset(adval, 0, sizeof(PetscScalar)*NUMBER_DIRECTIONS);
+
+    for (unsigned int _i=0; _i<n; ++_i)
+      adval[_i]=adv[_i];
+  }
+
+  AutoDScalar::AutoDScalar(const AutoDScalar& a) : val(a.val)
+  {
+    memset(adval, 0, sizeof(PetscScalar)*NUMBER_DIRECTIONS);
+
+    for (unsigned int _i=0; _i<numdir; ++_i)
+      adval[_i]=a.adval[_i];
+  }
+
+  AutoDScalar::AutoDScalar(const AutoDScalar& a, unsigned int *order, unsigned int n) : val(a.val)
+  {
+    memset(adval, 0, sizeof(PetscScalar)*NUMBER_DIRECTIONS);
+
+    for (unsigned int _i=0; _i<n; ++_i)
+      adval[order[_i]]=a.adval[_i];
+  }
+
+
+  /*************************  temporary results  ******************************/
+  // sign
+  const AutoDScalar AutoDScalar::operator - () const
+  {
     AutoDScalar tmp;
     tmp.val=-val;
-    for (unsigned int _i=0; _i<numdir; ++_i)
-    tmp.adval[_i]=-adval[_i];
+    for (unsigned int _i=0; _i<AutoDScalar::numdir; ++_i)
+      tmp.adval[_i]=-adval[_i];
     return tmp;
-}
+  }
 
-const AutoDScalar AutoDScalar::operator + () const {
+  const AutoDScalar AutoDScalar::operator + () const
+  {
     return *this;
-}
+  }
 
-// addition
-const AutoDScalar AutoDScalar::operator + (const PetscScalar v) const {
+  // addition
+  const AutoDScalar AutoDScalar::operator + (const PetscScalar v) const
+  {
     return AutoDScalar(val+v, adval);
-}
+  }
 
-const AutoDScalar AutoDScalar::operator + (const AutoDScalar& a) const {
+  const AutoDScalar AutoDScalar::operator + (const AutoDScalar& a) const
+  {
     AutoDScalar tmp;
     tmp.val=val+a.val;
-    for (unsigned int _i=0; _i<numdir; ++_i)
-    tmp.adval[_i]=adval[_i]+a.adval[_i];
+    for (unsigned int _i=0; _i<AutoDScalar::numdir; ++_i)
+      tmp.adval[_i]=adval[_i]+a.adval[_i];
     return tmp;
-}
+  }
 
-const AutoDScalar operator + (const PetscScalar v, const AutoDScalar& a) {
+  const AutoDScalar operator + (const PetscScalar v, const AutoDScalar& a)
+  {
     return AutoDScalar(v+a.val, a.adval);
-}
+  }
 
-// subtraction
-const AutoDScalar AutoDScalar::operator - (const PetscScalar v) const {
+  // subtraction
+  const AutoDScalar AutoDScalar::operator - (const PetscScalar v) const
+  {
     return AutoDScalar(val-v, adval);
-}
+  }
 
-const AutoDScalar AutoDScalar::operator - (const AutoDScalar& a) const {
+  const AutoDScalar AutoDScalar::operator - (const AutoDScalar& a) const
+  {
     AutoDScalar tmp;
     tmp.val=val-a.val;
-    for (unsigned int _i=0; _i<numdir; ++_i)
-    tmp.adval[_i]=adval[_i]-a.adval[_i];
+    for (unsigned int _i=0; _i<AutoDScalar::numdir; ++_i)
+      tmp.adval[_i]=adval[_i]-a.adval[_i];
     return tmp;
-}
+  }
 
-const AutoDScalar operator - (const PetscScalar v, const AutoDScalar& a) {
+  const AutoDScalar operator - (const PetscScalar v, const AutoDScalar& a)
+  {
     AutoDScalar tmp;
     tmp.val=v-a.val;
     for (unsigned int _i=0; _i<AutoDScalar::numdir; ++_i)
-    tmp.adval[_i]=-a.adval[_i];
+      tmp.adval[_i]=-a.adval[_i];
     return tmp;
-}
+  }
 
-// multiplication
-const AutoDScalar AutoDScalar::operator * (const PetscScalar v) const {
+  // multiplication
+  const AutoDScalar AutoDScalar::operator * (const PetscScalar v) const
+  {
     AutoDScalar tmp;
     tmp.val=val*v;
     for (unsigned int _i=0; _i<numdir; ++_i)
-    tmp.adval[_i]=adval[_i]*v;
+      tmp.adval[_i]=adval[_i]*v;
     return tmp;
-}
+  }
 
-const AutoDScalar AutoDScalar::operator * (const AutoDScalar& a) const {
+  const AutoDScalar AutoDScalar::operator * (const AutoDScalar& a) const
+  {
     AutoDScalar tmp;
     tmp.val=val*a.val;
     for (unsigned int _i=0; _i<numdir; ++_i)
-    tmp.adval[_i]=adval[_i]*a.val+val*a.adval[_i];
+      tmp.adval[_i]=adval[_i]*a.val+val*a.adval[_i];
     return tmp;
-}
+  }
 
-const AutoDScalar operator * (const PetscScalar v, const AutoDScalar& a) {
+  const AutoDScalar operator * (const PetscScalar v, const AutoDScalar& a)
+  {
     AutoDScalar tmp;
     tmp.val=v*a.val;
     for (unsigned int _i=0; _i<AutoDScalar::numdir; ++_i)
-    tmp.adval[_i]=v*a.adval[_i];
+      tmp.adval[_i]=v*a.adval[_i];
     return tmp;
-}
+  }
 
-// division
-const AutoDScalar AutoDScalar::operator / (const PetscScalar v) const {
+  // division
+  const AutoDScalar AutoDScalar::operator / (const PetscScalar v) const
+  {
     AutoDScalar tmp;
     PetscScalar t=1.0/v;
     tmp.val=val*t;
     for (unsigned int _i=0; _i<numdir; ++_i)
-    tmp.adval[_i]=adval[_i]*t;
+      tmp.adval[_i]=adval[_i]*t;
     return tmp;
-}
+  }
 
-const AutoDScalar AutoDScalar::operator / (const AutoDScalar& a) const {
+  const AutoDScalar AutoDScalar::operator / (const AutoDScalar& a) const
+  {
     AutoDScalar tmp;
     tmp.val=val/a.val;
     for (unsigned int _i=0; _i<numdir; ++_i)
-    tmp.adval[_i]=(adval[_i]*a.val-val*a.adval[_i])/a.val/a.val;
+      tmp.adval[_i]=(adval[_i]*a.val-val*a.adval[_i])/a.val/a.val;
     return tmp;
-}
+  }
 
-const AutoDScalar operator / (const PetscScalar v, const AutoDScalar& a) {
+  const AutoDScalar operator / (const PetscScalar v, const AutoDScalar& a)
+  {
     AutoDScalar tmp;
     tmp.val=v/a.val;
     for (unsigned int _i=0; _i<AutoDScalar::numdir; ++_i)
-    tmp.adval[_i]=(-v*a.adval[_i])/a.val/a.val;
+      tmp.adval[_i]=(-v*a.adval[_i])/a.val/a.val;
     return tmp;
-}
+  }
 
-// inc/dec
-const AutoDScalar AutoDScalar::operator ++ () {
+  // inc/dec
+  const AutoDScalar AutoDScalar::operator ++ ()
+  {
     ++val;
     return *this;
-}
+  }
 
-const AutoDScalar AutoDScalar::operator ++ (int) {
+  const AutoDScalar AutoDScalar::operator ++ (int)
+  {
     AutoDScalar tmp;
     tmp.val=val++;
     for (unsigned int _i=0; _i<numdir; ++_i)
-    tmp.adval[_i]=adval[_i];
+      tmp.adval[_i]=adval[_i];
     return tmp;
-}
+  }
 
-const AutoDScalar AutoDScalar::operator -- () {
+  const AutoDScalar AutoDScalar::operator -- ()
+  {
     --val;
     return *this;
-}
+  }
 
-const AutoDScalar AutoDScalar::operator -- (int) {
+  const AutoDScalar AutoDScalar::operator -- (int)
+  {
     AutoDScalar tmp;
     tmp.val=val--;
     for (unsigned int _i=0; _i<numdir; ++_i)
-    tmp.adval[_i]=adval[_i];
+      tmp.adval[_i]=adval[_i];
     return tmp;
-}
+  }
 
-// functions
-const AutoDScalar tan(const AutoDScalar& a) {
+  // functions
+  const AutoDScalar tan(const AutoDScalar& a)
+  {
     AutoDScalar tmp;
     PetscScalar tmp2;
     tmp.val=::tan(a.val);
     tmp2=::cos(a.val);
     tmp2*=tmp2;
     for (unsigned int _i=0; _i<AutoDScalar::numdir; ++_i)
-    tmp.adval[_i]=a.adval[_i]/tmp2;
+      tmp.adval[_i]=a.adval[_i]/tmp2;
     return tmp;
-}
+  }
 
-const AutoDScalar exp(const AutoDScalar &a) {
+  const AutoDScalar exp(const AutoDScalar &a)
+  {
     AutoDScalar tmp;
     tmp.val=::exp(a.val);
     for (unsigned int _i=0; _i<AutoDScalar::numdir; ++_i)
-    tmp.adval[_i]=tmp.val*a.adval[_i];
+      tmp.adval[_i]=tmp.val*a.adval[_i];
     return tmp;
-}
+  }
 
-const AutoDScalar log(const AutoDScalar &a) {
+  const AutoDScalar log(const AutoDScalar &a)
+  {
     AutoDScalar tmp;
     tmp.val=::log(a.val);
     for (unsigned int _i=0; _i<AutoDScalar::numdir; ++_i)
-    if (a.val>0 || (a.val==0 && a.adval[_i]>=0)) tmp.adval[_i]=a.adval[_i]/a.val;
-    else tmp.adval[_i]=makeNaN();
+      if (a.val>0 || (a.val==0 && a.adval[_i]>=0)) tmp.adval[_i]=a.adval[_i]/a.val;
+      else tmp.adval[_i]=makeNaN();
     return tmp;
-}
+  }
 
-const AutoDScalar sqrt(const AutoDScalar &a) {
+  const AutoDScalar sqrt(const AutoDScalar &a)
+  {
     AutoDScalar tmp;
     tmp.val=::sqrt(a.val);
     for (unsigned int _i=0; _i<AutoDScalar::numdir; ++_i)
     {
       if (a.val>0)
-         tmp.adval[_i]=a.adval[_i]/tmp.val/2;
+        tmp.adval[_i]=0.5*a.adval[_i]/tmp.val;
       else if (a.val==0 && a.adval[_i]==0)
-         tmp.adval[_i]=0;
+        tmp.adval[_i]=0;
       else
-         tmp.adval[_i]=makeNaN();
+        tmp.adval[_i]=makeNaN();
     }
     return tmp;
-}
+  }
 
-const AutoDScalar sin(const AutoDScalar &a) {
+  const AutoDScalar sin(const AutoDScalar &a)
+  {
     AutoDScalar tmp;
     PetscScalar tmp2;
     tmp.val=::sin(a.val);
     tmp2=::cos(a.val);
     for (unsigned int _i=0; _i<AutoDScalar::numdir; ++_i)
-    tmp.adval[_i]=tmp2*a.adval[_i];
+      tmp.adval[_i]=tmp2*a.adval[_i];
     return tmp;
-}
+  }
 
-const AutoDScalar cos(const AutoDScalar &a) {
+  const AutoDScalar cos(const AutoDScalar &a)
+  {
     AutoDScalar tmp;
     PetscScalar tmp2;
     tmp.val=::cos(a.val);
     tmp2=-::sin(a.val);
     for (unsigned int _i=0; _i<AutoDScalar::numdir; ++_i)
-    tmp.adval[_i]=tmp2*a.adval[_i];
+      tmp.adval[_i]=tmp2*a.adval[_i];
     return tmp;
-}
+  }
 
-const AutoDScalar asin(const AutoDScalar &a) {
+  const AutoDScalar asin(const AutoDScalar &a)
+  {
     AutoDScalar tmp;
     tmp.val=::asin(a.val);
     PetscScalar tmp2=::sqrt(1-a.val*a.val);
     for (unsigned int _i=0; _i<AutoDScalar::numdir; ++_i)
-    tmp.adval[_i]=a.adval[_i]/tmp2;
+      tmp.adval[_i]=a.adval[_i]/tmp2;
     return tmp;
-}
+  }
 
-const AutoDScalar acos(const AutoDScalar &a) {
+  const AutoDScalar acos(const AutoDScalar &a)
+  {
     AutoDScalar tmp;
     tmp.val=::acos(a.val);
     PetscScalar tmp2=-::sqrt(1-a.val*a.val);
     for (unsigned int _i=0; _i<AutoDScalar::numdir; ++_i)
-    tmp.adval[_i]=a.adval[_i]/tmp2;
+      tmp.adval[_i]=a.adval[_i]/tmp2;
     return tmp;
-}
+  }
 
-const AutoDScalar atan(const AutoDScalar &a) {
+  const AutoDScalar atan(const AutoDScalar &a)
+  {
     AutoDScalar tmp;
     tmp.val=::atan(a.val);
     PetscScalar tmp2=1+a.val*a.val;
     tmp2=1/tmp2;
     if (tmp2!=0)
-        for (unsigned int _i=0; _i<AutoDScalar::numdir; ++_i)
+      for (unsigned int _i=0; _i<AutoDScalar::numdir; ++_i)
         tmp.adval[_i]=a.adval[_i]*tmp2;
     else
-        for (unsigned int _i=0; _i<AutoDScalar::numdir; ++_i)
+      for (unsigned int _i=0; _i<AutoDScalar::numdir; ++_i)
         tmp.adval[_i]=0.0;
     return tmp;
-}
+  }
 
-const AutoDScalar atan2(const AutoDScalar &a, const AutoDScalar &b) {
+  const AutoDScalar atan2(const AutoDScalar &a, const AutoDScalar &b)
+  {
     AutoDScalar tmp;
     tmp.val=::atan2(a.val, b.val);
     PetscScalar tmp2=a.val*a.val;
     PetscScalar tmp3=b.val*b.val;
     PetscScalar tmp4=tmp3/(tmp2+tmp3);
     if (tmp4!=0)
-        for (unsigned int _i=0; _i<AutoDScalar::numdir; ++_i)
+      for (unsigned int _i=0; _i<AutoDScalar::numdir; ++_i)
         tmp.adval[_i]=(a.adval[_i]*b.val-a.val*b.adval[_i])/tmp3*tmp4;
     else
-        for (unsigned int _i=0; _i<AutoDScalar::numdir; ++_i)
+      for (unsigned int _i=0; _i<AutoDScalar::numdir; ++_i)
         tmp.adval[_i]=0.0;
     return tmp;
-}
+  }
 
-const AutoDScalar pow(const AutoDScalar &a, PetscScalar v) {
+  const AutoDScalar pow(const AutoDScalar &a, PetscScalar v)
+  {
     AutoDScalar tmp;
     tmp.val=::pow(a.val, v);
     PetscScalar tmp2=v*::pow(a.val, v-1);
     for (unsigned int _i=0; _i<AutoDScalar::numdir; ++_i)
-    tmp.adval[_i]=tmp2*a.adval[_i];
+      tmp.adval[_i]=tmp2*a.adval[_i];
     return tmp;
-}
+  }
 
-const AutoDScalar pow(const AutoDScalar &a, const AutoDScalar &b) {
+  const AutoDScalar pow(const AutoDScalar &a, const AutoDScalar &b)
+  {
     AutoDScalar tmp;
     tmp.val=::pow(a.val, b.val);
     PetscScalar tmp2=b.val*::pow(a.val, b.val-1);
     PetscScalar tmp3=::log(a.val)*tmp.val;
     for (unsigned int _i=0; _i<AutoDScalar::numdir; ++_i)
-    tmp.adval[_i]=tmp2*a.adval[_i]+tmp3*b.adval[_i];
+      tmp.adval[_i]=tmp2*a.adval[_i]+tmp3*b.adval[_i];
     return tmp;
-}
+  }
 
-const AutoDScalar pow(PetscScalar v, const AutoDScalar &a) {
+  const AutoDScalar pow(PetscScalar v, const AutoDScalar &a)
+  {
     AutoDScalar tmp;
     tmp.val=::pow(v, a.val);
     PetscScalar tmp2=tmp.val*::log(v);
     for (unsigned int _i=0; _i<AutoDScalar::numdir; ++_i)
-    tmp.adval[_i]=tmp2*a.adval[_i];
+      tmp.adval[_i]=tmp2*a.adval[_i];
     return tmp;
-}
+  }
 
-const AutoDScalar log10(const AutoDScalar &a) {
+  const AutoDScalar log10(const AutoDScalar &a)
+  {
     AutoDScalar tmp;
     tmp.val=::log10(a.val);
     PetscScalar tmp2=::log((PetscScalar)10)*a.val;
     for (unsigned int _i=0; _i<AutoDScalar::numdir; ++_i)
-    tmp.adval[_i]=a.adval[_i]/tmp2;
+      tmp.adval[_i]=a.adval[_i]/tmp2;
     return tmp;
-}
+  }
 
-const AutoDScalar sinh (const AutoDScalar &a) {
+  const AutoDScalar sinh (const AutoDScalar &a)
+  {
     AutoDScalar tmp;
     tmp.val=::sinh(a.val);
     PetscScalar tmp2=::cosh(a.val);
     for (unsigned int _i=0; _i<AutoDScalar::numdir; ++_i)
-    tmp.adval[_i]=a.adval[_i]*tmp2;
+      tmp.adval[_i]=a.adval[_i]*tmp2;
     return tmp;
-}
+  }
 
-const AutoDScalar cosh (const AutoDScalar &a) {
+  const AutoDScalar cosh (const AutoDScalar &a)
+  {
     AutoDScalar tmp;
     tmp.val=::cosh(a.val);
     PetscScalar tmp2=::sinh(a.val);
     for (unsigned int _i=0; _i<AutoDScalar::numdir; ++_i)
-    tmp.adval[_i]=a.adval[_i]*tmp2;
+      tmp.adval[_i]=a.adval[_i]*tmp2;
     return tmp;
-}
+  }
 
-const AutoDScalar tanh (const AutoDScalar &a) {
+  const AutoDScalar tanh (const AutoDScalar &a)
+  {
     AutoDScalar tmp;
     tmp.val=::tanh(a.val);
     PetscScalar tmp2=::cosh(a.val);
     tmp2*=tmp2;
     for (unsigned int _i=0; _i<AutoDScalar::numdir; ++_i)
-    tmp.adval[_i]=a.adval[_i]/tmp2;
+      tmp.adval[_i]=a.adval[_i]/tmp2;
     return tmp;
-}
+  }
 
 
-const AutoDScalar asinh (const AutoDScalar &a) {
+  const AutoDScalar asinh (const AutoDScalar &a)
+  {
     AutoDScalar tmp;
     tmp.val=boost::math::asinh(a.val);
     PetscScalar tmp2=::sqrt(a.val*a.val+1);
     for (unsigned int _i=0; _i<AutoDScalar::numdir; ++_i)
-    tmp.adval[_i]=a.adval[_i]/tmp2;
+      tmp.adval[_i]=a.adval[_i]/tmp2;
     return tmp;
-}
+  }
 
-const AutoDScalar acosh (const AutoDScalar &a) {
+  const AutoDScalar acosh (const AutoDScalar &a)
+  {
     AutoDScalar tmp;
     tmp.val=boost::math::acosh(a.val);
     PetscScalar tmp2=::sqrt(a.val*a.val-1);
     for (unsigned int _i=0; _i<AutoDScalar::numdir; ++_i)
-    tmp.adval[_i]=a.adval[_i]/tmp2;
+      tmp.adval[_i]=a.adval[_i]/tmp2;
     return tmp;
-}
+  }
 
-const AutoDScalar atanh (const AutoDScalar &a) {
+  const AutoDScalar atanh (const AutoDScalar &a)
+  {
     AutoDScalar tmp;
     tmp.val=boost::math::atanh(a.val);
     PetscScalar tmp2=1-a.val*a.val;
     for (unsigned int _i=0; _i<AutoDScalar::numdir; ++_i)
-    tmp.adval[_i]=a.adval[_i]/tmp2;
+      tmp.adval[_i]=a.adval[_i]/tmp2;
     return tmp;
-}
+  }
 
 
-const AutoDScalar fabs (const AutoDScalar &a) {
+  const AutoDScalar fabs (const AutoDScalar &a)
+  {
     AutoDScalar tmp;
     tmp.val=::fabs(a.val);
     int as=0;
     if (a.val>0) as=1;
     if (a.val<0) as=-1;
     if (as!=0)
-        for (unsigned int _i=0; _i<AutoDScalar::numdir; ++_i)
+      for (unsigned int _i=0; _i<AutoDScalar::numdir; ++_i)
         tmp.adval[_i]=a.adval[_i]*as;
     else
-        for (unsigned int _i=0; _i<AutoDScalar::numdir; ++_i) {
-            as=0;
-            if (a.adval[_i]>0) as=1;
-            if (a.adval[_i]<0) as=-1;
-                tmp.adval[_i]=a.adval[_i]*as;
-            }
-            return tmp;
-}
+      for (unsigned int _i=0; _i<AutoDScalar::numdir; ++_i)
+      {
+        as=0;
+        if (a.adval[_i]>0) as=1;
+        if (a.adval[_i]<0) as=-1;
+        tmp.adval[_i]=a.adval[_i]*as;
+      }
+    return tmp;
+  }
 
-const AutoDScalar ceil (const AutoDScalar &a) {
+  const AutoDScalar ceil (const AutoDScalar &a)
+  {
     AutoDScalar tmp;
     tmp.val=::ceil(a.val);
     for (unsigned int _i=0; _i<AutoDScalar::numdir; ++_i)
-    tmp.adval[_i]=0.0;
+      tmp.adval[_i]=0.0;
     return tmp;
-}
+  }
 
-const AutoDScalar floor (const AutoDScalar &a) {
+  const AutoDScalar floor (const AutoDScalar &a)
+  {
     AutoDScalar tmp;
     tmp.val=::floor(a.val);
     for (unsigned int _i=0; _i<AutoDScalar::numdir; ++_i)
-    tmp.adval[_i]=0.0;
+      tmp.adval[_i]=0.0;
     return tmp;
-}
+  }
 
-const AutoDScalar fmax (const AutoDScalar &a, const AutoDScalar &b) {
+  const AutoDScalar fmax (const AutoDScalar &a, const AutoDScalar &b)
+  {
     AutoDScalar tmp;
     PetscScalar tmp2=a.val-b.val;
-    if (tmp2<0) {
-        tmp.val=b.val;
-        for (unsigned int _i=0; _i<AutoDScalar::numdir; ++_i)
+    if (tmp2<0)
+    {
+      tmp.val=b.val;
+      for (unsigned int _i=0; _i<AutoDScalar::numdir; ++_i)
         tmp.adval[_i]=b.adval[_i];
-    } else {
-        tmp.val=a.val;
-        if (tmp2>0) {
-            for (unsigned int _i=0; _i<AutoDScalar::numdir; ++_i)
-            tmp.adval[_i]=a.adval[_i];
-        } else {
-            for (unsigned int _i=0; _i<AutoDScalar::numdir; ++_i)
-            {
-                if (a.adval[_i]<b.adval[_i]) tmp.adval[_i]=b.adval[_i];
-                else tmp.adval[_i]=a.adval[_i];
-                }
-            }
-}
-return tmp;
-}
+    }
+    else
+    {
+      tmp.val=a.val;
+      if (tmp2>0)
+      {
+        for (unsigned int _i=0; _i<AutoDScalar::numdir; ++_i)
+          tmp.adval[_i]=a.adval[_i];
+      }
+      else
+      {
+        for (unsigned int _i=0; _i<AutoDScalar::numdir; ++_i)
+        {
+          if (a.adval[_i]<b.adval[_i]) tmp.adval[_i]=b.adval[_i];
+          else tmp.adval[_i]=a.adval[_i];
+        }
+      }
+    }
+    return tmp;
+  }
 
-const AutoDScalar fmax (PetscScalar v, const AutoDScalar &a) {
+  const AutoDScalar fmax (PetscScalar v, const AutoDScalar &a)
+  {
     AutoDScalar tmp;
     PetscScalar tmp2=v-a.val;
-    if (tmp2<0) {
-        tmp.val=a.val;
-        for (unsigned int _i=0; _i<AutoDScalar::numdir; ++_i)
+    if (tmp2<0)
+    {
+      tmp.val=a.val;
+      for (unsigned int _i=0; _i<AutoDScalar::numdir; ++_i)
         tmp.adval[_i]=a.adval[_i];
-    } else {
-        tmp.val=v;
-        if (tmp2>0) {
-            for (unsigned int _i=0; _i<AutoDScalar::numdir; ++_i)
-            tmp.adval[_i]=0.0;
-        } else {
-            for (unsigned int _i=0; _i<AutoDScalar::numdir; ++_i)
-            {
-                if (a.adval[_i]>0) tmp.adval[_i]=a.adval[_i];
-                else tmp.adval[_i]=0.0;
-                }
-            }
-}
-return tmp;
-}
+    }
+    else
+    {
+      tmp.val=v;
+      if (tmp2>0)
+      {
+        for (unsigned int _i=0; _i<AutoDScalar::numdir; ++_i)
+          tmp.adval[_i]=0.0;
+      }
+      else
+      {
+        for (unsigned int _i=0; _i<AutoDScalar::numdir; ++_i)
+        {
+          if (a.adval[_i]>0) tmp.adval[_i]=a.adval[_i];
+          else tmp.adval[_i]=0.0;
+        }
+      }
+    }
+    return tmp;
+  }
 
-const AutoDScalar fmax (const AutoDScalar &a, PetscScalar v) {
+  const AutoDScalar fmax (const AutoDScalar &a, PetscScalar v)
+  {
     AutoDScalar tmp;
     PetscScalar tmp2=a.val-v;
-    if (tmp2<0) {
-        tmp.val=v;
-        for (unsigned int _i=0; _i<AutoDScalar::numdir; ++_i)
+    if (tmp2<0)
+    {
+      tmp.val=v;
+      for (unsigned int _i=0; _i<AutoDScalar::numdir; ++_i)
         tmp.adval[_i]=0.0;
-    } else {
-        tmp.val=a.val;
-        if (tmp2>0) {
-            for (unsigned int _i=0; _i<AutoDScalar::numdir; ++_i)
-            tmp.adval[_i]=a.adval[_i];
-        } else {
-            for (unsigned int _i=0; _i<AutoDScalar::numdir; ++_i)
-            {
-                if (a.adval[_i]>0) tmp.adval[_i]=a.adval[_i];
-                else tmp.adval[_i]=0.0;
-                }
-            }
-}
-return tmp;
-}
+    }
+    else
+    {
+      tmp.val=a.val;
+      if (tmp2>0)
+      {
+        for (unsigned int _i=0; _i<AutoDScalar::numdir; ++_i)
+          tmp.adval[_i]=a.adval[_i];
+      }
+      else
+      {
+        for (unsigned int _i=0; _i<AutoDScalar::numdir; ++_i)
+        {
+          if (a.adval[_i]>0) tmp.adval[_i]=a.adval[_i];
+          else tmp.adval[_i]=0.0;
+        }
+      }
+    }
+    return tmp;
+  }
 
-const AutoDScalar fmin (const AutoDScalar &a, const AutoDScalar &b) {
+  const AutoDScalar fmin (const AutoDScalar &a, const AutoDScalar &b)
+  {
     AutoDScalar tmp;
     PetscScalar tmp2=a.val-b.val;
-    if (tmp2<0) {
-        tmp.val=a.val;
-        for (unsigned int _i=0; _i<AutoDScalar::numdir; ++_i)
+    if (tmp2<0)
+    {
+      tmp.val=a.val;
+      for (unsigned int _i=0; _i<AutoDScalar::numdir; ++_i)
         tmp.adval[_i]=a.adval[_i];
-    } else {
-        tmp.val=b.val;
-        if (tmp2>0) {
-            for (unsigned int _i=0; _i<AutoDScalar::numdir; ++_i)
-            tmp.adval[_i]=b.adval[_i];
-        } else {
-            for (unsigned int _i=0; _i<AutoDScalar::numdir; ++_i)
-            {
-                if (a.adval[_i]<b.adval[_i]) tmp.adval[_i]=a.adval[_i];
-                else tmp.adval[_i]=b.adval[_i];
-                }
-            }
-}
-return tmp;
-}
+    }
+    else
+    {
+      tmp.val=b.val;
+      if (tmp2>0)
+      {
+        for (unsigned int _i=0; _i<AutoDScalar::numdir; ++_i)
+          tmp.adval[_i]=b.adval[_i];
+      }
+      else
+      {
+        for (unsigned int _i=0; _i<AutoDScalar::numdir; ++_i)
+        {
+          if (a.adval[_i]<b.adval[_i]) tmp.adval[_i]=a.adval[_i];
+          else tmp.adval[_i]=b.adval[_i];
+        }
+      }
+    }
+    return tmp;
+  }
 
-const AutoDScalar fmin (PetscScalar v, const AutoDScalar &a) {
+  const AutoDScalar fmin (PetscScalar v, const AutoDScalar &a)
+  {
     AutoDScalar tmp;
     PetscScalar tmp2=v-a.val;
-    if (tmp2<0) {
-        tmp.val=v;
-        for (unsigned int _i=0; _i<AutoDScalar::numdir; ++_i)
+    if (tmp2<0)
+    {
+      tmp.val=v;
+      for (unsigned int _i=0; _i<AutoDScalar::numdir; ++_i)
         tmp.adval[_i]=0.0;
-    } else {
-        tmp.val=a.val;
-        if (tmp2>0) {
-            for (unsigned int _i=0; _i<AutoDScalar::numdir; ++_i)
-            tmp.adval[_i]=a.adval[_i];
-        } else {
-            for (unsigned int _i=0; _i<AutoDScalar::numdir; ++_i)
-            {
-                if (a.adval[_i]<0) tmp.adval[_i]=a.adval[_i];
-                else tmp.adval[_i]=0.0;
-                }
-            }
-}
-return tmp;
-}
+    }
+    else
+    {
+      tmp.val=a.val;
+      if (tmp2>0)
+      {
+        for (unsigned int _i=0; _i<AutoDScalar::numdir; ++_i)
+          tmp.adval[_i]=a.adval[_i];
+      }
+      else
+      {
+        for (unsigned int _i=0; _i<AutoDScalar::numdir; ++_i)
+        {
+          if (a.adval[_i]<0) tmp.adval[_i]=a.adval[_i];
+          else tmp.adval[_i]=0.0;
+        }
+      }
+    }
+    return tmp;
+  }
 
-const AutoDScalar fmin (const AutoDScalar &a, PetscScalar v) {
+  const AutoDScalar fmin (const AutoDScalar &a, PetscScalar v)
+  {
     AutoDScalar tmp;
     PetscScalar tmp2=a.val-v;
-    if (tmp2<0) {
-        tmp.val=a.val;
-        for (unsigned int _i=0; _i<AutoDScalar::numdir; ++_i)
+    if (tmp2<0)
+    {
+      tmp.val=a.val;
+      for (unsigned int _i=0; _i<AutoDScalar::numdir; ++_i)
         tmp.adval[_i]=a.adval[_i];
-    } else {
-        tmp.val=v;
-        if (tmp2>0) {
-            for (unsigned int _i=0; _i<AutoDScalar::numdir; ++_i)
-            tmp.adval[_i]=0.0;
-        } else {
-            for (unsigned int _i=0; _i<AutoDScalar::numdir; ++_i)
-            {
-                if (a.adval[_i]<0) tmp.adval[_i]=a.adval[_i];
-                else tmp.adval[_i]=0.0;
-                }
-            }
-}
-return tmp;
-}
+    }
+    else
+    {
+      tmp.val=v;
+      if (tmp2>0)
+      {
+        for (unsigned int _i=0; _i<AutoDScalar::numdir; ++_i)
+          tmp.adval[_i]=0.0;
+      }
+      else
+      {
+        for (unsigned int _i=0; _i<AutoDScalar::numdir; ++_i)
+        {
+          if (a.adval[_i]<0) tmp.adval[_i]=a.adval[_i];
+          else tmp.adval[_i]=0.0;
+        }
+      }
+    }
+    return tmp;
+  }
 
-const AutoDScalar ldexp (const AutoDScalar &a, const AutoDScalar &b) {
+  const AutoDScalar ldexp (const AutoDScalar &a, const AutoDScalar &b)
+  {
     return a*pow(2.,b);
-}
+  }
 
-const AutoDScalar ldexp (const AutoDScalar &a, const PetscScalar v) {
+  const AutoDScalar ldexp (const AutoDScalar &a, const PetscScalar v)
+  {
     return a*::pow(2.,v);
-}
+  }
 
-const AutoDScalar ldexp (const PetscScalar v, const AutoDScalar &a) {
+  const AutoDScalar ldexp (const PetscScalar v, const AutoDScalar &a)
+  {
     return v*pow(2.,a);
-}
+  }
 
-PetscScalar frexp (const AutoDScalar &a, int* v) {
+  PetscScalar frexp (const AutoDScalar &a, int* v)
+  {
     return ::frexp(a.val, v);
-}
+  }
 
 #ifndef CYGWIN
-const AutoDScalar erf (const AutoDScalar &a) {
+  const AutoDScalar erf (const AutoDScalar &a)
+  {
     AutoDScalar tmp;
     tmp.val=::erf(a.val);
     PetscScalar tmp2=2.0/::sqrt(::acos(-1.0))*::exp(-a.val*a.val);
     for (unsigned int _i=0; _i<AutoDScalar::numdir; ++_i)
-    tmp.adval[_i]=tmp2*a.adval[_i];
+      tmp.adval[_i]=tmp2*a.adval[_i];
     return tmp;
-}
+  }
 #endif
 
 
-/*******************  nontemporary results  *********************************/
-void AutoDScalar::operator = (const PetscScalar v) {
+  /*******************  nontemporary results  *********************************/
+  void AutoDScalar::operator = (const PetscScalar v)
+  {
     val=v;
     for (unsigned int _i=0; _i<numdir; ++_i)
-    adval[_i]=0.0;
-}
+      adval[_i]=0.0;
+  }
 
-void AutoDScalar::operator = (const AutoDScalar& a) {
+  void AutoDScalar::operator = (const AutoDScalar& a)
+  {
     val=a.val;
     for (unsigned int _i=0; _i<numdir; ++_i)
-    adval[_i]=a.adval[_i];
-}
+      adval[_i]=a.adval[_i];
+  }
 
-void AutoDScalar::operator += (const PetscScalar v) {
+  void AutoDScalar::operator += (const PetscScalar v)
+  {
     val+=v;
-}
+  }
 
-void AutoDScalar::operator += (const AutoDScalar& a) {
+  void AutoDScalar::operator += (const AutoDScalar& a)
+  {
     val=val+a.val;
     for (unsigned int _i=0; _i<numdir; ++_i)
-    adval[_i]+=a.adval[_i];
-}
+      adval[_i]+=a.adval[_i];
+  }
 
-void AutoDScalar::operator -= (const PetscScalar v) {
+  void AutoDScalar::operator -= (const PetscScalar v)
+  {
     val-=v;
-}
+  }
 
-void AutoDScalar::operator -= (const AutoDScalar& a) {
+  void AutoDScalar::operator -= (const AutoDScalar& a)
+  {
     val=val-a.val;
     for (unsigned int _i=0; _i<numdir; ++_i)
-    adval[_i]-=a.adval[_i];
-}
+      adval[_i]-=a.adval[_i];
+  }
 
-void AutoDScalar::operator *= (const PetscScalar v) {
+  void AutoDScalar::operator *= (const PetscScalar v)
+  {
     val=val*v;
     for (unsigned int _i=0; _i<numdir; ++_i)
-    adval[_i]*=v;
-}
+      adval[_i]*=v;
+  }
 
-void AutoDScalar::operator *= (const AutoDScalar& a) {
+  void AutoDScalar::operator *= (const AutoDScalar& a)
+  {
     for (unsigned int _i=0; _i<numdir; ++_i)
-    adval[_i]=adval[_i]*a.val+val*a.adval[_i];
+      adval[_i]=adval[_i]*a.val+val*a.adval[_i];
     val*=a.val;
-}
+  }
 
-void AutoDScalar::operator /= (const PetscScalar v) {
+  void AutoDScalar::operator /= (const PetscScalar v)
+  {
     val/=v;
     for (unsigned int _i=0; _i<numdir; ++_i)
-    adval[_i]/=v;
-}
+      adval[_i]/=v;
+  }
 
-void AutoDScalar::operator /= (const AutoDScalar& a) {
+  void AutoDScalar::operator /= (const AutoDScalar& a)
+  {
     for (unsigned int _i=0; _i<numdir; ++_i)
-    adval[_i]=(adval[_i]*a.val-val*a.adval[_i])/a.val/a.val;
+      adval[_i]=(adval[_i]*a.val-val*a.adval[_i])/a.val/a.val;
     val=val/a.val;
-}
+  }
 
-// not
-int AutoDScalar::operator ! () const {
+  // not
+  int AutoDScalar::operator ! () const
+  {
     return val==0.0;
-}
+  }
 
-// comparision
-int AutoDScalar::operator != (const AutoDScalar &a) const {
+  // comparision
+  int AutoDScalar::operator != (const AutoDScalar &a) const
+  {
     return val!=a.val;
-}
+  }
 
-int AutoDScalar::operator != (const PetscScalar v) const {
+  int AutoDScalar::operator != (const PetscScalar v) const
+  {
     return val!=v;
-}
+  }
 
-int operator != (const PetscScalar v, const AutoDScalar &a) {
+  int operator != (const PetscScalar v, const AutoDScalar &a)
+  {
     return v!=a.val;
-}
+  }
 
-int AutoDScalar::operator == (const AutoDScalar &a) const {
+  int AutoDScalar::operator == (const AutoDScalar &a) const
+  {
     return val==a.val;
-}
+  }
 
-int AutoDScalar::operator == (const PetscScalar v) const {
+  int AutoDScalar::operator == (const PetscScalar v) const
+  {
     return val==v;
-}
+  }
 
-int operator == (const PetscScalar v, const AutoDScalar &a) {
+  int operator == (const PetscScalar v, const AutoDScalar &a)
+  {
     return v==a.val;
-}
+  }
 
-int AutoDScalar::operator <= (const AutoDScalar &a) const {
+  int AutoDScalar::operator <= (const AutoDScalar &a) const
+  {
     return val<=a.val;
-}
+  }
 
-int AutoDScalar::operator <= (const PetscScalar v) const {
+  int AutoDScalar::operator <= (const PetscScalar v) const
+  {
     return val<=v;
-}
+  }
 
-int operator <= (const PetscScalar v, const AutoDScalar &a) {
+  int operator <= (const PetscScalar v, const AutoDScalar &a)
+  {
     return v<=a.val;
-}
+  }
 
-int AutoDScalar::operator >= (const AutoDScalar &a) const {
+  int AutoDScalar::operator >= (const AutoDScalar &a) const
+  {
     return val>=a.val;
-}
+  }
 
-int AutoDScalar::operator >= (const PetscScalar v) const {
+  int AutoDScalar::operator >= (const PetscScalar v) const
+  {
     return val>=v;
-}
+  }
 
-int operator >= (const PetscScalar v, const AutoDScalar &a) {
+  int operator >= (const PetscScalar v, const AutoDScalar &a)
+  {
     return v>=a.val;
-}
+  }
 
-int AutoDScalar::operator >  (const AutoDScalar &a) const {
+  int AutoDScalar::operator >  (const AutoDScalar &a) const
+  {
     return val>a.val;
-}
+  }
 
-int AutoDScalar::operator >  (const PetscScalar v) const {
+  int AutoDScalar::operator >  (const PetscScalar v) const
+  {
     return val>v;
-}
+  }
 
-int operator >  (const PetscScalar v, const AutoDScalar &a) {
+  int operator >  (const PetscScalar v, const AutoDScalar &a)
+  {
     return v>a.val;
-}
+  }
 
-int AutoDScalar::operator <  (const AutoDScalar &a) const {
+  int AutoDScalar::operator <  (const AutoDScalar &a) const
+  {
     return val<a.val;
-}
+  }
 
-int AutoDScalar::operator <  (const PetscScalar v) const {
+  int AutoDScalar::operator <  (const PetscScalar v) const
+  {
     return val<v;
-}
+  }
 
-int operator <  (const PetscScalar v, const AutoDScalar &a) {
+  int operator <  (const PetscScalar v, const AutoDScalar &a)
+  {
     return v<a.val;
-}
+  }
 
-/*******************  getter / setter  **************************************/
-PetscScalar AutoDScalar::getValue() const {
+  /*******************  getter / setter  **************************************/
+  PetscScalar AutoDScalar::getValue() const
+  {
     return val;
-}
+  }
 
-void AutoDScalar::setValue(const PetscScalar v) {
+  void AutoDScalar::setValue(const PetscScalar v)
+  {
     val=v;
-}
+  }
 
-const PetscScalar * AutoDScalar::getADValue() const {
+  const PetscScalar * AutoDScalar::getADValue() const
+  {
     return adval;
-}
+  }
 
-void AutoDScalar::setADValue(const PetscScalar * v) {
+  void AutoDScalar::setADValue(const PetscScalar * v)
+  {
     for (unsigned int _i=0; _i<numdir; ++_i)
-    adval[_i]=v[_i];
-}
+      adval[_i]=v[_i];
+  }
 
 #  if defined(NUMBER_DIRECTIONS)
-PetscScalar AutoDScalar::getADValue(const unsigned int p) const {
+  PetscScalar AutoDScalar::getADValue(const unsigned int p) const
+  {
     genius_assert(p<NUMBER_DIRECTIONS);
     return adval[p];
-}
+  }
 
-void AutoDScalar::setADValue(const unsigned int p, const PetscScalar v) {
+  void AutoDScalar::setADValue(const unsigned int p, const PetscScalar v)
+  {
     genius_assert(p<NUMBER_DIRECTIONS);
     adval[p]=v;
-}
+  }
 #  endif
 
-/*******************  i/o operations  ***************************************/
-std::ostream& operator << ( std::ostream& out, const AutoDScalar& a) {
+  /*******************  i/o operations  ***************************************/
+  std::ostream& operator << ( std::ostream& out, const AutoDScalar& a)
+  {
     out << "Value: " << a.val;
 #if !defined(NUMBER_DIRECTIONS)
     out << " ADValue: ";
@@ -1005,16 +1140,19 @@ std::ostream& operator << ( std::ostream& out, const AutoDScalar& a) {
     out << " ADValues (" << AutoDScalar::numdir << "): ";
 #endif
     for (unsigned int _i=0; _i<AutoDScalar::numdir; ++_i)
-    out << a.adval[_i] << " ";
+      out << a.adval[_i] << " ";
     out << "(a)";
     return out;
-}
+  }
 
-std::istream& operator >> ( std::istream& in, AutoDScalar& a) {
+  std::istream& operator >> ( std::istream& in, AutoDScalar& a)
+  {
     char c;
-    do {
-        in >> c;
-    } while (c!=':' && !in.eof());
+    do
+    {
+      in >> c;
+    }
+    while (c!=':' && !in.eof());
     in >> a.val;
 #if !defined(NUMBER_DIRECTIONS)
     do in >> c;
@@ -1024,7 +1162,8 @@ std::istream& operator >> ( std::istream& in, AutoDScalar& a) {
     do in >> c;
     while (c!='(' && !in.eof());
     in >> num;
-    if (num>NUMBER_DIRECTIONS) {
+    if (num>NUMBER_DIRECTIONS)
+    {
       std::cout << "ADOL-C error: to many directions in input\n";
       exit(-1);
     }
@@ -1032,11 +1171,11 @@ std::istream& operator >> ( std::istream& in, AutoDScalar& a) {
     while (c!=')' && !in.eof());
 #endif
     for (unsigned int _i=0; _i<AutoDScalar::numdir; ++_i)
-    in >> a.adval[_i];
+      in >> a.adval[_i];
     do in >> c;
     while (c!=')' && !in.eof());
     return in;
-}
+  }
 
 }
 

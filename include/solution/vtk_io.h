@@ -39,9 +39,6 @@
 class MeshBase;
 
 
-//#undef HAVE_VTK
-
-
 #ifdef HAVE_VTK
 class vtkUnstructuredGrid;
 #endif
@@ -79,11 +76,17 @@ public:
   virtual void read (const std::string& );
 
   /**
-   * This method implements writing a mesh to a specified ".poly"   file.
-   * ".poly" files defines so called Piecewise Linear Complex   (PLC).
-  */
+   * This method implements writing a mesh to a specified fil
+   * in VTK format
+   */
   virtual void write (const std::string& );
 
+private:
+
+  // boundary info
+  std::vector<unsigned int>       _el;
+  std::vector<unsigned short int> _sl;
+  std::vector<short int>          _il;
 
 private:
 
@@ -98,23 +101,23 @@ private:
   /**
    * write the nodes from the mesh into a vtkUnstructuredGrid
    */
-  void nodes_to_vtk(const MeshBase& mesh, vtkUnstructuredGrid*& grid);
+  void nodes_to_vtk(const MeshBase& mesh, vtkUnstructuredGrid* grid);
 
   /**
    * write the cells from the mesh into a vtkUnstructuredGrid
    */
-  void cells_to_vtk(const MeshBase& mesh, vtkUnstructuredGrid*& grid);
+  void cells_to_vtk(const MeshBase& mesh, vtkUnstructuredGrid* grid);
 
   /**
    * write out mesh data to the VTK file, this might come in handy to display
    * material data and partition information
    */
-  void meshinfo_to_vtk(const MeshBase& mesh, vtkUnstructuredGrid*& grid);
+  void meshinfo_to_vtk(const MeshBase& mesh, vtkUnstructuredGrid* grid);
 
   /**
    * write mesh relative solution data to vtk file
    */
-  void solution_to_vtk(const MeshBase& mesh, vtkUnstructuredGrid*& grid);
+  void solution_to_vtk(const MeshBase& mesh, vtkUnstructuredGrid* grid);
 
   /**
    * write extra region name/material information and boundary information into xml vtk file
@@ -124,40 +127,42 @@ private:
   /**
    * aux function to write a scaler solution to vtkUnstructuredGrid
    */
-  void write_node_scaler_solution(std::map<unsigned int, float> & sol, const std::string & sol_name, vtkUnstructuredGrid*& grid);
+  void write_node_scaler_solution(const std::vector<unsigned int> & order, std::vector<float> &sol, const std::string & sol_name, vtkUnstructuredGrid* grid);
 
   /**
    * aux function to write a complex solution to vtkUnstructuredGrid
    */
-  void write_node_complex_solution(std::map<unsigned int, std::complex<float> > & sol, const std::string & sol_name, vtkUnstructuredGrid*& grid);
+  void write_node_complex_solution(const std::vector<unsigned int> & order, std::vector<std::complex<float> > & sol, const std::string & sol_name, vtkUnstructuredGrid* grid);
 
   /**
    * aux function to write a vector solution to vtkUnstructuredGrid
    */
-  void write_node_vector_solution (std::map<unsigned int, float > & sol_x,
-                              std::map<unsigned int, float > & sol_y,
-                              std::map<unsigned int, float > & sol_z,
-                              const std::string & sol_name, vtkUnstructuredGrid*& grid);
+  void write_node_vector_solution (const std::vector<unsigned int> & order,
+                              std::vector<float > & sol_x,
+                              std::vector<float > & sol_y,
+                              std::vector<float > & sol_z,
+                              const std::string & sol_name, vtkUnstructuredGrid* grid);
 
   /**
    * aux function to write a cell based scaler solution to vtkUnstructuredGrid
    */
-  void write_cell_scaler_solution(std::map<unsigned int, float> & sol, const std::string & sol_name, vtkUnstructuredGrid*& grid);
+  void write_cell_scaler_solution(const std::vector<unsigned int> & order, std::vector<float> &sol, const std::string & sol_name, vtkUnstructuredGrid* grid);
 
   /**
    * aux function to write a cell based vector solution to vtkUnstructuredGrid
    */
-  void write_cell_vector_solution (std::map<unsigned int, float > & sol_x,
-                              std::map<unsigned int, float > & sol_y,
-                              std::map<unsigned int, float > & sol_z,
-                              const std::string & sol_name, vtkUnstructuredGrid*& grid);
+  void write_cell_vector_solution (const std::vector<unsigned int> & order,
+                                   std::vector<float > & sol_x,
+                                   std::vector<float > & sol_y,
+                                   std::vector<float > & sol_z,
+                                   const std::string & sol_name, vtkUnstructuredGrid* grid);
 
   /**
    * pointer to the VTK grid
    */
   vtkUnstructuredGrid* _vtk_grid;
 
-  class UnstructuredWriter;
+  class XMLUnstructuredGridWriter;
 #endif
 
   /**
@@ -190,33 +195,35 @@ private:
   /**
    * aux function to write a scaler solution to vtkUnstructuredGrid
    */
-  void write_node_scaler_solution(std::map<unsigned int, float> & sol, const std::string & sol_name, std::ofstream& out);
+  void write_node_scaler_solution(const std::vector<unsigned int> & order, std::vector<float> & sol, const std::string & sol_name, std::ofstream& out);
 
   /**
    * aux function to write a complex solution to vtkUnstructuredGrid
    */
-  void write_node_complex_solution(std::map<unsigned int, std::complex<float> > & sol, const std::string & sol_name, std::ofstream& out);
+  void write_node_complex_solution(const std::vector<unsigned int> & order, std::vector<std::complex<float> > & sol, const std::string & sol_name, std::ofstream& out);
 
   /**
    * aux function to write a vector solution to vtkUnstructuredGrid
    */
-  void write_node_vector_solution (std::map<unsigned int, float > & sol_x,
-                              std::map<unsigned int, float > & sol_y,
-                              std::map<unsigned int, float > & sol_z,
-                              const std::string & sol_name, std::ofstream& out);
+  void write_node_vector_solution (const std::vector<unsigned int> & order,
+                                   std::vector<float > & sol_x,
+                                   std::vector<float > & sol_y,
+                                   std::vector<float > & sol_z,
+                                   const std::string & sol_name, std::ofstream& out);
 
   /**
    * aux function to write a cell based scaler solution to vtkUnstructuredGrid
    */
-  void write_cell_scaler_solution(std::map<unsigned int, float> & sol, const std::string & sol_name, std::ofstream& out);
+  void write_cell_scaler_solution(const std::vector<unsigned int> & order, std::vector<float> & sol, const std::string & sol_name, std::ofstream& out);
 
   /**
    * aux function to write a cell based vector solution to vtkUnstructuredGrid
    */
-  void write_cell_vector_solution (std::map<unsigned int, float > & sol_x,
-                              std::map<unsigned int, float > & sol_y,
-                              std::map<unsigned int, float > & sol_z,
-                              const std::string & sol_name, std::ofstream& out);
+  void write_cell_vector_solution (const std::vector<unsigned int> & order,
+                                   std::vector<float > & sol_x,
+                                   std::vector<float > & sol_y,
+                                   std::vector<float > & sol_z,
+                                   const std::string & sol_name, std::ofstream& out);
 
   /**
    * out file stream

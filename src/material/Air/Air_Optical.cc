@@ -28,11 +28,11 @@
 class GSS_Air_Optical : public PMII_Optical
 {
 public:
-  std::complex<PetscScalar> RefractionIndex(PetscScalar lamda, PetscScalar Eg=9.0, PetscScalar Tl=1.0) const 
+  std::complex<PetscScalar> RefractionIndex(PetscScalar lamda, PetscScalar Tl, PetscScalar Eg=0) const
   {
       return std::complex<PetscScalar> (1.0,0.0);
-  }                                            
-  
+  }
+
   // constructions
 public:
   GSS_Air_Optical(const PMII_Environment &env):PMII_Optical(env) {}

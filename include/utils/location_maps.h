@@ -3,17 +3,17 @@
 
 // The libMesh Finite Element Library.
 // Copyright (C) 2002-2007  Benjamin S. Kirk, John W. Peterson
-  
+
 // This library is free software; you can redistribute it and/or
 // modify it under the terms of the GNU Lesser General Public
 // License as published by the Free Software Foundation; either
 // version 2.1 of the License, or (at your option) any later version.
-  
+
 // This library is distributed in the hope that it will be useful,
 // but WITHOUT ANY WARRANTY; without even the implied warranty of
 // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
 // Lesser General Public License for more details.
-  
+
 // You should have received a copy of the GNU Lesser General Public
 // License along with this library; if not, write to the Free Software
 // Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
@@ -26,14 +26,10 @@
 #include "genius_common.h"
 
 // C++ Includes   -----------------------------------
-#if   defined(HAVE_UNORDERED_MAP)
-# include <unordered_map>
-#elif defined(HAVE_TR1_UNORDERED_MAP)
+#if defined(HAVE_TR1_UNORDERED_MAP)
 # include <tr1/unordered_map>
-#elif defined(HAVE_HASH_MAP)
-# include <hash_map>
-#elif defined(HAVE_EXT_HASH_MAP)
-# include <ext/hash_map>
+#elif defined(HAVE_TR1_UNORDERED_MAP_WITH_STD_HEADER) || defined(HAVE_UNORDERED_MAP)
+# include <unordered_map>
 #else
 # include <map>
 #endif
@@ -55,26 +51,15 @@ class Node;
 template <typename T>
 class LocationMap
 {
-#if   defined(HAVE_UNORDERED_MAP)
+#if defined(HAVE_UNORDERED_MAP)
   typedef std::unordered_multimap<unsigned int, T*> map_type;
-#elif defined(HAVE_TR1_UNORDERED_MAP)
+#elif defined(HAVE_TR1_UNORDERED_MAP) || defined(HAVE_TR1_UNORDERED_MAP_WITH_STD_HEADER)
   typedef std::tr1::unordered_multimap<unsigned int, T*> map_type;
-#elif defined(HAVE_HASH_MAP)
-  typedef std::hash_multimap<unsigned int, T*> map_type;
-#elif defined(HAVE_EXT_HASH_MAP)
-# if   (__GNUC__ == 3) && (__GNUC_MINOR__ == 0) // gcc 3.0
-  typedef std::hash_multimap<unsigned int, T*> map_type;
-# elif (__GNUC__ >= 3)                          // gcc 3.1 & newer
-  typedef __gnu_cxx::hash_multimap<unsigned int, T*> map_type;
-# else
-// XLC and who knows what other compilers get here.
-// Try the most standard thing we can:
-  typedef std::multimap<unsigned int, T*> map_type;
-# endif
 #else
-  typedef std::multimap<unsigned int, T*> map_type;
+  typedef std::multimap<unsigned int, T*>  map_type;
 #endif
-public: 
+
+public:
   void init(MeshBase&);
 
   void clear() { _map.clear(); }
@@ -93,7 +78,7 @@ protected:
 
   void fill(MeshBase&);
 
-private: 
+private:
   map_type          _map;
   std::vector<Real> _lower_bound;
   std::vector<Real> _upper_bound;

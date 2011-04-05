@@ -24,7 +24,7 @@
 #ifndef __fvm_cell_data_vacuum_h__
 #define __fvm_cell_data_vacuum_h__
 
-#include "petsc.h"
+
 #include "fvm_cell_data.h"
 
 
@@ -48,14 +48,9 @@ public:
     _E_=0,
 
     /**
-     * electron current field
+     * last enum number
      */
-    _Jn_,
-
-    /**
-     * electron current field
-     */
-    _Jp_
+    VectorDataCount
   };
 
 
@@ -64,11 +59,9 @@ public:
   /**
    * constructor
    */
-  FVM_Vacuum_CellData()
-  {
-    _vecctor_value = new VectorValue<PetscScalar>[n_vector()];
-    for(unsigned int i=0; i<n_vector(); i++) _vecctor_value[i]=VectorValue<PetscScalar>(0.0, 0.0, 0.0);
-  }
+  FVM_Vacuum_CellData(DataStorage * data_storage, const std::map<std::string, SimulationVariable> & variables)
+  :FVM_CellData(data_storage, variables)
+  {}
 
   /**
    * destructor
@@ -80,32 +73,25 @@ public:
   /**
    * @return the solution variable number
    */
-  virtual size_t n_scalar() const
-  { return 0; }
-
-
-  /**
-   * @return the scalar aux variable number
-   */
-  virtual size_t n_aux_scalar() const
+  static size_t n_scalar()
   { return 0; }
 
   /**
    * @return the complex variable number
    */
-  virtual size_t n_complex() const
+  static size_t n_complex()
   { return 0; }
 
   /**
    * @return the vector variable number
    */
-  virtual size_t n_vector() const
-  { return static_cast<unsigned int>(_E_) +1 ; }
+  static size_t n_vector()
+  { return static_cast<unsigned int>(VectorDataCount); }
 
   /**
    * @return the tensor variable number
    */
-  virtual size_t n_tensor() const
+  static size_t n_tensor()
   { return 0; }
 
   /**
@@ -121,14 +107,15 @@ public:
    * @return the electrical field
    */
   virtual VectorValue<PetscScalar> E()       const
-  { return _vecctor_value[_E_];}
+  { return _data_storage->vector(_E_, _offset);}
 
 
   /**
    * @return the writable reference to electrical field
    */
   virtual VectorValue<PetscScalar> & E()
-  { return _vecctor_value[_E_];}
+  { return _data_storage->vector(_E_, _offset);}
+
 
 };
 

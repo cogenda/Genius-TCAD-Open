@@ -22,13 +22,20 @@
 //  $Id: parser.cc,v 1.15 2008/07/09 05:58:16 gdiso Exp $
 
 #include <stdio.h>
+#include <stdio.h>
+#include <string.h>
 #include "config.h"
 #include "parser.h"
+#include "log.h"
 
 // avoid isatty() problem of Bison 2.3
 #define YY_NEVER_INTERACTIVE 1
 #ifdef CYGWIN
   #define YY_NO_UNISTD_H 1
+extern "C"
+{
+extern int isatty (int );
+}
 #endif
 
 namespace InputYY

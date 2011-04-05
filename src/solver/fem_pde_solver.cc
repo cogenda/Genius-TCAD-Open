@@ -25,7 +25,7 @@
 
 #include <numeric>
 
-#include "mesh.h"
+#include "mesh_base.h"
 #include "boundary_info.h"
 #include "fem_pde_solver.h"
 #include "parallel.h"
@@ -36,7 +36,7 @@
 void FEM_PDESolver::set_parallel_dof_map()
 {
 
-  Mesh & mesh = _system.mesh();
+  MeshBase & mesh = _system.mesh();
 
   // the local index of dof
   n_local_dofs = 0;
@@ -45,11 +45,12 @@ void FEM_PDESolver::set_parallel_dof_map()
   std::map<Node *, unsigned int> ghost_map;
 
   //search for all the nodes to build the local index of nodal dof
-  MeshBase::node_iterator nd = mesh.active_nodes_begin();
-  MeshBase::node_iterator nd_end = mesh.active_nodes_end();
+  MeshBase::node_iterator nd = mesh.local_nodes_begin();
+  MeshBase::node_iterator nd_end = mesh.local_nodes_end();
   for ( ; nd!=nd_end; ++nd )
   {
     Node * node = (*nd);
+    genius_assert(node!=NULL);
 
     //if this node belongs to this processor, set the local dof
     // then we can make sure that each partition has a continuous block
@@ -190,7 +191,7 @@ void FEM_PDESolver::set_parallel_dof_map()
 void FEM_PDESolver::set_serial_dof_map()
 {
 
-  Mesh & mesh = _system.mesh();
+  MeshBase & mesh = _system.mesh();
 
   // the local index of dof
   n_local_dofs = 0;

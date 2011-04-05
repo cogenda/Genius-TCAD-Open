@@ -24,7 +24,7 @@
 #ifndef __fvm_cell_data_semiconductor_h__
 #define __fvm_cell_data_semiconductor_h__
 
-#include "petsc.h"
+
 #include "fvm_cell_data.h"
 
 
@@ -35,22 +35,6 @@ class FVM_Semiconductor_CellData : public FVM_CellData
 {
 
 public:
-
-  /**
-   * the auxiliary variable for semiconductor region
-   */
-  enum   SemiconductorAuxData
-  {
-    /**
-     * electron mobility
-     */
-    _mun_,
-
-    /**
-     * hole mobility
-     */
-    _mup_
-  };
 
   /**
    * the vector auxiliary variable for semiconductor region
@@ -70,7 +54,12 @@ public:
     /**
      * electron current field
      */
-    _Jp_
+    _Jp_,
+
+    /**
+     * last enum number
+     */
+    VectorDataCount
   };
 
 
@@ -79,14 +68,9 @@ public:
   /**
    * constructor
    */
-  FVM_Semiconductor_CellData()
-  {
-    _scalar_value = new PetscScalar[n_scalar()];
-    for(unsigned int i=0; i<n_scalar(); i++) _scalar_value[i]=0.0;
-
-    _vecctor_value = new VectorValue<PetscScalar>[n_vector()];
-    for(unsigned int i=0; i<n_vector(); i++) _vecctor_value[i]=VectorValue<PetscScalar>(0.0, 0.0, 0.0);
-  }
+  FVM_Semiconductor_CellData(DataStorage * data_storage, const std::map<std::string, SimulationVariable> & variables)
+  :FVM_CellData(data_storage, variables)
+  {}
 
   /**
    * destructor
@@ -98,32 +82,25 @@ public:
   /**
    * @return the solution variable number
    */
-  virtual size_t n_scalar() const
-  {  return static_cast<unsigned int>(_mup_) +1 ; /* return last enum+1*/ }
-
-
-  /**
-   * @return the scalar aux variable number
-   */
-  virtual size_t n_aux_scalar() const
-  { return 0; }
+  static size_t n_scalar()
+  { return 0;  }
 
   /**
    * @return the complex variable number
    */
-  virtual size_t n_complex() const
+  static size_t n_complex()
   { return 0; }
 
   /**
    * @return the vector variable number
    */
-  virtual size_t n_vector() const
-  { return static_cast<unsigned int>(_Jp_) +1 ; }
+  static size_t n_vector()
+  { return static_cast<unsigned int>(VectorDataCount); }
 
   /**
    * @return the tensor variable number
    */
-  virtual size_t n_tensor() const
+  static size_t n_tensor()
   { return 0; }
 
   /**
@@ -134,71 +111,49 @@ public:
 
 
 public:
-  /**
-   * @return average electron mobility
-   */
-  virtual PetscScalar         mun()          const
-  { return _scalar_value[_mun_]; }
-
-  /**
-   * @return the writable reference to average electron mobility
-   */
-  virtual PetscScalar &       mun()
-  { return _scalar_value[_mun_]; }
-
-  /**
-   * @return average hole mobility
-   */
-  virtual PetscScalar         mup()          const
-  { return _scalar_value[_mup_]; }
-
-  /**
-   * @return the writable reference to average hole mobility
-   */
-  virtual PetscScalar &       mup()
-  { return _scalar_value[_mup_]; }
-
 
   /**
    * @return the electrical field
    */
   virtual VectorValue<PetscScalar> E()       const
-  { return _vecctor_value[_E_];}
+  { return _data_storage->vector(_E_, _offset);}
 
 
   /**
    * @return the writable reference to electrical field
    */
   virtual VectorValue<PetscScalar> & E()
-  { return _vecctor_value[_E_];}
+  { return _data_storage->vector(_E_, _offset);}
 
 
   /**
    * @return the electron current
    */
   virtual VectorValue<PetscScalar> Jn()       const
-  { return _vecctor_value[_Jn_];}
+  { return _data_storage->vector(_Jn_, _offset);}
 
 
   /**
    * @return the writable reference to electron current
    */
   virtual VectorValue<PetscScalar> & Jn()
-  { return _vecctor_value[_Jn_];}
+  { return _data_storage->vector(_Jn_, _offset);}
 
 
   /**
    * @return the hole current
    */
   virtual VectorValue<PetscScalar> Jp()       const
-  { return _vecctor_value[_Jp_];}
+  { return _data_storage->vector(_Jp_, _offset);}
 
 
   /**
    * @return the writable reference to hole current
    */
   virtual VectorValue<PetscScalar> & Jp()
-  { return _vecctor_value[_Jp_];}
+  { return _data_storage->vector(_Jp_, _offset);}
+
+
 
 };
 

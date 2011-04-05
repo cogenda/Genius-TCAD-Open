@@ -31,9 +31,9 @@ PROFILE   Ion=Acceptor  Type=analytic   N.PEAK=2E18  Y.MIN=0.12  \
 PROFILE   Ion=Donor     Type=analytic   N.PEAK=7E19  Y.MIN=0.0   \
           Y.MAX=0.0  Y.CHAR=0.06   X.MIN=0 X.MAX=0.50
 
-MOLE Region=SiGe1  X.MOLE=0.0 X.MOLE.END=0.2 X.MOLE.GRAD=Y.Linear
+MOLE Region=SiGe1  X.MOLE=0.1 X.MOLE.END=0.2 X.MOLE.GRAD=Y.Linear
 MOLE Region=SiGe2  X.MOLE=0.2
-MOLE Region=SiGe3  X.MOLE=0.2 X.MOLE.END=0.0 X.MOLE.GRAD=Y.Linear
+MOLE Region=SiGe3  X.MOLE=0.2 X.MOLE.END=0.1 X.MOLE.GRAD=Y.Linear
 
 
 

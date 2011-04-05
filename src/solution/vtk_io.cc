@@ -20,7 +20,6 @@
 /********************************************************************************/
 
 
-
 // C++ includes
 #include <fstream>
 #include <sstream>
@@ -28,13 +27,19 @@
 // Local includes
 #include "vtk_io.h"
 #include "elem.h"
-#include "mesh.h"
+#include "mesh_base.h"
 #include "boundary_info.h"
+#include "material_define.h"
 #include "parallel.h"
 #include "mesh_communication.h"
 #include "simulation_system.h"
+#include "semiconductor_region.h"
 #include "boundary_condition_collector.h"
 #include "field_source.h"
+#include "ngspice_interface.h"
+#include "spice_ckt.h"
+#include "material.h"
+#include "solver_specify.h"
 
 #ifdef HAVE_VTK
 
@@ -58,10 +63,9 @@ using PhysicalUnit::V;
 using PhysicalUnit::A;
 using PhysicalUnit::K;
 
-#ifdef HAVE_VTK
-#include "vtkObjectFactory.h"
 
-class XMLUnstructuredGridWriter : public vtkXMLUnstructuredGridWriter
+#ifdef HAVE_VTK
+class VTKIO::XMLUnstructuredGridWriter : public vtkXMLUnstructuredGridWriter
 {
 protected:
   XMLUnstructuredGridWriter() :vtkXMLUnstructuredGridWriter()
@@ -75,7 +79,10 @@ protected:
     return vtkXMLUnstructuredGridWriter::WriteHeader();
   }
 public:
-  static XMLUnstructuredGridWriter* New();
+  static XMLUnstructuredGridWriter* New()
+  {
+    return new XMLUnstructuredGridWriter;
+  }
 
   void setExtraHeader(const std::string &header)
   {
@@ -84,326 +91,362 @@ public:
 private:
   std::string _header;
 };
-
-vtkStandardNewMacro(XMLUnstructuredGridWriter)
-
 #endif
 
 // private functions
 #ifdef HAVE_VTK
 
-void VTKIO::nodes_to_vtk(const MeshBase& mesh, vtkUnstructuredGrid* &grid)
+void VTKIO::nodes_to_vtk(const MeshBase& mesh, vtkUnstructuredGrid* grid)
 {
-  // only do it at root node
-  if(Genius::processor_id() != 0) return;
+  unsigned int n_nodes = mesh.n_nodes();
+  // collect node location, must run in parallel
+  std::vector<Real> pts;
+  mesh.pack_nodes(pts);
 
-  vtkPoints* points = vtkPoints::New();
-  // FIXME change to local iterators when I've figured out how to write in parallel
-  //  MeshBase::const_node_iterator nd = mesh.local_nodes_begin();
-  //  MeshBase::const_node_iterator nd_end = mesh.local_nodes_end();
-  MeshBase::const_node_iterator nd = mesh.active_nodes_begin();
-  MeshBase::const_node_iterator nd_end = mesh.active_nodes_end();
-  // write out nodal data
-  for ( ; nd!=nd_end; ++nd )
+  if(Genius::processor_id() == 0)
   {
-    float tuple[3]; //, dsp[3];
-    const Node * node = (*nd);
+    vtkPoints* points = vtkPoints::New();
 
+    // write out nodal data
+    for ( unsigned int n=0; n<n_nodes; ++n )
     {
-      tuple[0] =  (*node)(0)/um; //scale to um
-      tuple[1] =  (*node)(1)/um; //scale to um
-      tuple[2] =  (*node)(2)/um; //scale to um
+      float tuple[3];
+      {
+        tuple[0] =  pts[3*n+0]/um; //scale to um
+        tuple[1] =  pts[3*n+1]/um; //scale to um
+        tuple[2] =  pts[3*n+2]/um; //scale to um
+      }
+      points->InsertPoint(n, tuple);
     }
 
-    points->InsertPoint(node->id(),tuple);
+    grid->SetPoints(points);
 
+    //clean up
+    points->Delete();
   }
-
-  grid->SetPoints(points);
-
-  //clean up
-  points->Delete();
 
 }
 
 
-void VTKIO::cells_to_vtk(const MeshBase& mesh, vtkUnstructuredGrid* &grid)
+void VTKIO::cells_to_vtk(const MeshBase& mesh, vtkUnstructuredGrid* grid)
 {
 
-  // only do it at root node
-  if(Genius::processor_id() != 0) return;
-
-  //  MeshBase::const_element_iterator       it  = mesh.active_local_elements_begin();
-  //  const MeshBase::const_element_iterator end = mesh.active_local_elements_end();
-  MeshBase::const_element_iterator       it  = mesh.active_elements_begin();
-  const MeshBase::const_element_iterator end = mesh.active_elements_end();
-  for ( ; it != end; ++it)
+  // must run in parallel
+  std::vector<int> vtk_cell_conns;
+  std::vector<unsigned int> vtk_cell_ids;
   {
-    const Elem *elem  = (*it);
-    vtkIdType celltype = VTK_EMPTY_CELL; // initialize to something to avoid compiler warning
-
-    switch(elem->type())
+    MeshBase::const_element_iterator       it  = mesh.active_this_pid_elements_begin();
+    const MeshBase::const_element_iterator end = mesh.active_this_pid_elements_end();
+    for ( ; it != end; ++it)
     {
-    case EDGE2:
-    case EDGE2_FVM:
-      celltype = VTK_LINE;
-      break;
-    case EDGE3:
-      celltype = VTK_QUADRATIC_EDGE;
-      break;// 1
-    case TRI3:
-    case TRI3_FVM:
-      celltype = VTK_TRIANGLE;
-      break;// 3
-    case TRI6:
-      celltype = VTK_QUADRATIC_TRIANGLE;
-      break;// 4
-    case QUAD4:
-    case QUAD4_FVM:
-      celltype = VTK_QUAD;
-      break;// 5
-    case QUAD8:
-      celltype = VTK_QUADRATIC_QUAD;
-      break;// 6
-    case TET4:
-    case TET4_FVM:
-      celltype = VTK_TETRA;
-      break;// 8
-    case TET10:
-      celltype = VTK_QUADRATIC_TETRA;
-      break;// 9
-    case HEX8:
-    case HEX8_FVM:
-      celltype = VTK_HEXAHEDRON;
-      break;// 10
-    case HEX20:
-      celltype = VTK_QUADRATIC_HEXAHEDRON;
-      break;// 12
-    case PRISM6:
-    case PRISM6_FVM:
-      celltype = VTK_WEDGE;
-      break;// 13
-    case PRISM15:
-      celltype = VTK_HIGHER_ORDER_WEDGE;
-      break;// 14
-    case PRISM18:
-      break;// 15
-    case PYRAMID5:
-    case PYRAMID5_FVM:
-      celltype = VTK_PYRAMID;
-      break;// 16
-#if VTK_MAJOR_VERSION > 5 || (VTK_MAJOR_VERSION == 5 && VTK_MINOR_VERSION > 0)
-    case QUAD9:
-      celltype = VTK_BIQUADRATIC_QUAD;
-      break;
-#else
-    case QUAD9:
-#endif
-    case EDGE4:
-    case HEX27:
-    case NODEELEM:
-    case INVALID_ELEM:
-    default:
+      const Elem *elem  = (*it);
+      vtkIdType celltype = VTK_EMPTY_CELL; // initialize to something to avoid compiler warning
+
+      switch(elem->type())
       {
-        std::cerr<<"element type "<<elem->type()<<" not implemented"<<std::endl;
-        genius_error();
+          case EDGE2:
+          case EDGE2_FVM:
+          celltype = VTK_LINE;
+          break;
+          case EDGE3:
+          celltype = VTK_QUADRATIC_EDGE;
+          break;// 1
+          case TRI3:
+          case TRI3_FVM:
+          celltype = VTK_TRIANGLE;
+          break;// 3
+          case TRI6:
+          celltype = VTK_QUADRATIC_TRIANGLE;
+          break;// 4
+          case QUAD4:
+          case QUAD4_FVM:
+          celltype = VTK_QUAD;
+          break;// 5
+          case QUAD8:
+          celltype = VTK_QUADRATIC_QUAD;
+          break;// 6
+          case TET4:
+          case TET4_FVM:
+          celltype = VTK_TETRA;
+          break;// 8
+          case TET10:
+          celltype = VTK_QUADRATIC_TETRA;
+          break;// 9
+          case HEX8:
+          case HEX8_FVM:
+          celltype = VTK_HEXAHEDRON;
+          break;// 10
+          case HEX20:
+          celltype = VTK_QUADRATIC_HEXAHEDRON;
+          break;// 12
+          case PRISM6:
+          case PRISM6_FVM:
+          celltype = VTK_WEDGE;
+          break;// 13
+          case PRISM15:
+          celltype = VTK_HIGHER_ORDER_WEDGE;
+          break;// 14
+          case PRISM18:
+          break;// 15
+          case PYRAMID5:
+          case PYRAMID5_FVM:
+          celltype = VTK_PYRAMID;
+          break;// 16
+#if VTK_MAJOR_VERSION > 5 || (VTK_MAJOR_VERSION == 5 && VTK_MINOR_VERSION > 0)
+          case QUAD9:
+          celltype = VTK_BIQUADRATIC_QUAD;
+          break;
+#else
+          case QUAD9:
+#endif
+          case EDGE4:
+          case HEX27:
+          case NODEELEM:
+          case INVALID_ELEM:
+          default:
+          {
+            std::cerr<<"element type "<<elem->type()<<" not implemented"<<std::endl;
+            genius_error();
+          }
       }
-    }
-
-    vtkIdList *pts = vtkIdList::New();
-    pts->SetNumberOfIds(elem->n_nodes());
-    // get the connectivity for this element
-    std::vector<unsigned int> conn;
-    elem->connectivity(0,VTK,conn);
-    for(unsigned int i=0;i<conn.size();++i)
-    {
-      pts->SetId(i,conn[i]);
-    }
-    grid->InsertNextCell(celltype,pts);
-
-    pts->Delete();
-  } // end loop over active elements
 
 
-  // also export boundary elems (DIM-1 elem)
+      // get the connectivity for this element
+      std::vector<unsigned int> conn;
+      elem->connectivity(0,VTK,conn);
+
+      vtk_cell_ids.push_back(elem->id());
+
+      vtk_cell_conns.push_back(celltype);
+      vtk_cell_conns.push_back(conn.size());
+      for(unsigned int i=0;i<conn.size();++i)
+        vtk_cell_conns.push_back(conn[i]);
+
+    } // end loop over active elements
+
+    Parallel::gather(0, vtk_cell_ids);
+    Parallel::gather(0, vtk_cell_conns);
+  }
+
+  std::vector<int> vtk_boundary_cell_conns;
+  std::vector<unsigned int> vtk_boundary_cell_ids(_el);
+  std::vector<unsigned short int> vtk_boundary_cell_sides(_sl);
   {
-    std::vector<unsigned int>       el;
-    std::vector<unsigned short int> sl;
-    std::vector<short int>          il;
-    mesh.boundary_info->build_side_list (el, sl, il);
-    for(unsigned int n=0; n<il.size(); ++n)
+    for(unsigned int n=0; n<_il.size(); ++n)
     {
-      const Elem * elem = mesh.elem(el[n]);
-      AutoPtr<Elem> boundary_elem =  elem->build_side(sl[n], false);
+      const Elem * elem = mesh.elem(_el[n]);
+      AutoPtr<Elem> boundary_elem =  elem->build_side(_sl[n]);
 
       vtkIdType celltype = VTK_EMPTY_CELL; // initialize to something to avoid compiler warning
 
       switch(boundary_elem->type())
       {
-      case EDGE2:
-      case EDGE2_FVM:
-        celltype = VTK_LINE;
-        break;
-      case EDGE3:
-        celltype = VTK_QUADRATIC_EDGE;
-        break;// 1
-      case TRI3:
-      case TRI3_FVM:
-        celltype = VTK_TRIANGLE;
-        break;// 3
-      case TRI6:
-        celltype = VTK_QUADRATIC_TRIANGLE;
-        break;// 4
-      case QUAD4:
-      case QUAD4_FVM:
-        celltype = VTK_QUAD;
-        break;// 5
-      case QUAD8:
-        celltype = VTK_QUADRATIC_QUAD;
-        break;// 6
-      default:
-        {
-          std::cerr<<"element type "<<elem->type()<<" not implemented"<<std::endl;
-          genius_error();
-        }
+          case EDGE2:
+          case EDGE2_FVM:
+          celltype = VTK_LINE;
+          break;
+          case EDGE3:
+          celltype = VTK_QUADRATIC_EDGE;
+          break;// 1
+          case TRI3:
+          case TRI3_FVM:
+          celltype = VTK_TRIANGLE;
+          break;// 3
+          case TRI6:
+          celltype = VTK_QUADRATIC_TRIANGLE;
+          break;// 4
+          case QUAD4:
+          case QUAD4_FVM:
+          celltype = VTK_QUAD;
+          break;// 5
+          case QUAD8:
+          celltype = VTK_QUADRATIC_QUAD;
+          break;// 6
+          default:
+          {
+            std::cerr<<"element type "<<elem->type()<<" not implemented"<<std::endl;
+            genius_error();
+          }
       }
 
-      vtkIdList *pts = vtkIdList::New();
-      pts->SetNumberOfIds(boundary_elem->n_nodes());
       // get the connectivity for this element
       std::vector<unsigned int> conn;
       boundary_elem->connectivity(0,VTK,conn);
-      for(unsigned int i=0;i<conn.size();++i)
-      {
-        pts->SetId(i,conn[i]);
-      }
-      grid->InsertNextCell(celltype, pts);
 
+      vtk_boundary_cell_conns.push_back(celltype);
+      vtk_boundary_cell_conns.push_back(conn.size());
+      for(unsigned int i=0;i<conn.size();++i)
+        vtk_boundary_cell_conns.push_back(conn[i]);
+    }
+
+    Parallel::gather(0, vtk_boundary_cell_conns);
+    Parallel::gather(0, vtk_boundary_cell_ids);
+    Parallel::gather(0, vtk_boundary_cell_sides);
+  }
+
+  if(Genius::processor_id() == 0)
+  {
+    grid->Allocate(vtk_cell_ids.size()+vtk_boundary_cell_ids.size());
+
+    // reorder cell by its id
+    std::map<unsigned int, std::pair<vtkIdType, vtkIdList *> > reorder_vtk_cells;
+    {
+      unsigned int cnt = 0;
+      for(unsigned int n=0; n<vtk_cell_ids.size(); ++n)
+      {
+        vtkIdType celltype = vtk_cell_conns[cnt++];
+        vtkIdList *pts = vtkIdList::New();
+        unsigned int n_nodes = vtk_cell_conns[cnt++];
+        pts->SetNumberOfIds(n_nodes);
+        for(unsigned int i=0;i<n_nodes;++i)
+          pts->SetId(i, vtk_cell_conns[cnt++]);
+        reorder_vtk_cells.insert( std::make_pair(vtk_cell_ids[n], std::make_pair(celltype, pts)));
+      }
+    }
+
+    // insert reordered cell to vtkUnstructuredGrid
+    std::map<unsigned int, std::pair<vtkIdType, vtkIdList *> >::const_iterator vtk_cells_it = reorder_vtk_cells.begin();
+    for(; vtk_cells_it != reorder_vtk_cells.end(); ++vtk_cells_it)
+    {
+      vtkIdType celltype = vtk_cells_it->second.first;
+      vtkIdList *pts = vtk_cells_it->second.second;
+      grid->InsertNextCell(celltype, pts);
       pts->Delete();
     }
+
+
+    typedef std::pair<unsigned int, unsigned short int> boundary_elem_key;
+    std::map< boundary_elem_key, std::pair<vtkIdType, vtkIdList *> > reorder_vtk_boundary_cells;
+    {
+      unsigned int cnt = 0;
+      for(unsigned int n=0; n<vtk_boundary_cell_ids.size(); ++n)
+      {
+        boundary_elem_key key = std::make_pair(vtk_boundary_cell_ids[n], vtk_boundary_cell_sides[n]);
+
+        vtkIdType celltype = vtk_boundary_cell_conns[cnt++];
+        vtkIdList *pts = vtkIdList::New();
+        unsigned int n_nodes = vtk_boundary_cell_conns[cnt++];
+        pts->SetNumberOfIds(n_nodes);
+        for(unsigned int i=0;i<n_nodes;++i)
+          pts->SetId(i, vtk_boundary_cell_conns[cnt++]);
+        reorder_vtk_boundary_cells.insert( std::make_pair(key, std::make_pair(celltype, pts)));
+      }
+    }
+
+    // insert reordered cell to vtkUnstructuredGrid
+    std::map< boundary_elem_key, std::pair<vtkIdType, vtkIdList *> >::const_iterator vtk_boundary_cells_it;
+    for(vtk_boundary_cells_it=reorder_vtk_boundary_cells.begin();
+        vtk_boundary_cells_it != reorder_vtk_boundary_cells.end(); ++vtk_boundary_cells_it)
+    {
+      vtkIdType celltype = vtk_boundary_cells_it->second.first;
+      vtkIdList *pts = vtk_boundary_cells_it->second.second;
+      grid->InsertNextCell(celltype, pts);
+      pts->Delete();
+    }
+
   }
+
 }
 
 
-void VTKIO::meshinfo_to_vtk(const MeshBase& mesh, vtkUnstructuredGrid* &grid)
+void VTKIO::meshinfo_to_vtk(const MeshBase& mesh, vtkUnstructuredGrid* grid)
 {
-
-  // only do it at root node
-  if(Genius::processor_id() != 0) return;
-
   //write cell based region and partition info to vtk
 
-  const unsigned int n_elems = mesh.n_active_elem() + mesh.boundary_info->n_boundary_conds();
-
-  vtkIntArray *region_info    = vtkIntArray::New();
-  vtkIntArray *boundary_info  = vtkIntArray::New();
-  vtkIntArray *material_info  = vtkIntArray::New();
-  vtkIntArray *partition_info = vtkIntArray::New();
-
-  region_info->SetName("region");
-  region_info->SetNumberOfValues(n_elems);
-
-  boundary_info->SetName("boundary");
-  boundary_info->SetNumberOfValues(n_elems);
-
-  material_info->SetName("material");
-  material_info->SetNumberOfValues(n_elems);
-
-  std::map<unsigned int, unsigned int> sub_id_to_material_id;
-  for( unsigned int n=0; n<mesh.n_subdomains(); n++)
+  // collect info of mesh elements
+  std::vector<int> elem_ids;
+  std::vector<int> elem_region;
+  std::vector<int> elem_boundary;
+  std::vector<int> elem_partition;
   {
-    const std::string &material = mesh.subdomain_material(n);
-    sub_id_to_material_id[n] = Material::get_id_by_material(material);
-  }
-
-  partition_info->SetName("partition");
-  partition_info->SetNumberOfValues(n_elems);
-
-  // write info for mesh elements
-  {
-    MeshBase::const_element_iterator       it  = mesh.active_elements_begin();
-    const MeshBase::const_element_iterator end = mesh.active_elements_end();
+    MeshBase::const_element_iterator       it  = mesh.active_this_pid_elements_begin();
+    const MeshBase::const_element_iterator end = mesh.active_this_pid_elements_end();
     for (int i=0; it != end; ++it, ++i)
     {
-      unsigned int sub_id = (*it)->subdomain_id();
-      region_info->InsertValue(i, sub_id);
-      boundary_info->InsertValue(i, 0);
-      material_info->InsertValue(i, sub_id_to_material_id[sub_id]);
-      partition_info->InsertValue(i, (*it)->processor_id());
+      elem_ids.push_back((*it)->id());
+      elem_region.push_back((*it)->subdomain_id());
+      elem_boundary.push_back(0);
+      elem_partition.push_back((*it)->processor_id());
     }
   }
+  Parallel::gather(0, elem_ids);
+  Parallel::gather(0, elem_region);
+  Parallel::gather(0, elem_boundary);
+  Parallel::gather(0, elem_partition);
 
-  // write info for boundary elements
+
+  // collect info of boundary elements
+  std::vector<unsigned int> boundary_elem_ids(_el);
+  std::vector<unsigned short int> boundary_elem_sides(_sl);
+  std::vector<int> boundary_elem_region;
+  std::vector<int> boundary_elem_boundary;
+  std::vector<int> boundary_elem_partition;
   {
-    std::vector<unsigned int>       el;
-    std::vector<unsigned short int> sl;
-    std::vector<short int>          il;
-    unsigned int id = mesh.n_active_elem();
-    mesh.boundary_info->build_side_list (el, sl, il);
-    for(unsigned int n=0; n<il.size(); ++n, ++id)
+    for(unsigned int n=0; n<_il.size(); ++n)
     {
-      const Elem * elem = mesh.elem(el[n]);
-      AutoPtr<Elem> boundary_elem =  elem->build_side(sl[n], false);
-
-      unsigned int sub_id = elem->subdomain_id();
-      region_info->InsertValue(id, sub_id);
-      boundary_info->InsertValue(id, il[n]);
-      material_info->InsertValue(id, sub_id_to_material_id[sub_id]);
-      partition_info->InsertValue(id, elem->processor_id());
+      const Elem * elem = mesh.elem(_el[n]);
+      boundary_elem_region.push_back(elem->subdomain_id());
+      boundary_elem_boundary.push_back(_il[n]);
+      boundary_elem_partition.push_back(elem->processor_id());
     }
   }
+  Parallel::gather(0, boundary_elem_ids);
+  Parallel::gather(0, boundary_elem_sides);
+  Parallel::gather(0, boundary_elem_region);
+  Parallel::gather(0, boundary_elem_boundary);
+  Parallel::gather(0, boundary_elem_partition);
 
-  grid->GetCellData()->AddArray(region_info);
-  grid->GetCellData()->AddArray(boundary_info);
-  grid->GetCellData()->AddArray(material_info);
-  grid->GetCellData()->AddArray(partition_info);
-
-  region_info->Delete();
-  boundary_info->Delete();
-  material_info->Delete();
-  partition_info->Delete();
-
-  //write node based boundary info to vtk, does this really necessary?
-#if 0
-  const unsigned int n_nodes = mesh.n_nodes();
-
-  MeshBase::const_node_iterator nd = mesh.active_nodes_begin();
-  MeshBase::const_node_iterator nd_end = mesh.active_nodes_end();
-
-  vtkFloatArray *boundary_info = vtkFloatArray::New();
-  boundary_info->SetName("boundary");
-  boundary_info->SetNumberOfValues(n_nodes);
-
-  vtkFloatArray *node_order = vtkFloatArray::New();
-  node_order->SetName("node order");
-  node_order->SetNumberOfValues(n_nodes);
-
-  vtkFloatArray *node_partition = vtkFloatArray::New();
-  node_partition->SetName("node partition");
-  node_partition->SetNumberOfValues(n_nodes);
-
-  for (int i=0 ; nd != nd_end; ++i, ++nd)
+  if(Genius::processor_id() == 0)
   {
-    if (mesh.boundary_info->boundary_id(*nd) != BoundaryInfo::invalid_id )
+    const unsigned int n_elems = elem_ids.size() + boundary_elem_ids.size();
+
+    vtkIntArray *region_info    = vtkIntArray::New();
+    vtkIntArray *boundary_info  = vtkIntArray::New();
+    vtkIntArray *partition_info  = vtkIntArray::New();
+
+    region_info->SetName("region");
+    region_info->SetNumberOfValues(n_elems);
+
+    boundary_info->SetName("boundary");
+    boundary_info->SetNumberOfValues(n_elems);
+
+    partition_info->SetName("partition");
+    partition_info->SetNumberOfValues(n_elems);
+
+    for (unsigned int n=0; n<elem_ids.size(); ++n)
     {
-      boundary_info->InsertValue((*nd)->id(), static_cast<float>(mesh.boundary_info->boundary_id(*nd)));
+      int id = elem_ids[n];
+      region_info->SetValue(id, elem_region[n]);
+      boundary_info->SetValue(id, elem_boundary[n]);
+      partition_info->SetValue(id, elem_partition[n]);
     }
-    else
-      boundary_info->InsertValue((*nd)->id(), 0.0);
 
-    node_order->InsertValue((*nd)->id(), static_cast<float>((*nd)->id()) );
+    std::vector<int> boundary_face_ids;
+    typedef std::pair<unsigned int, unsigned short int> boundary_elem_key;
+    std::map<boundary_elem_key, unsigned int> boundary_face_order;
+    for(unsigned int n=0; n<boundary_elem_ids.size(); ++n)
+    {
+      boundary_elem_key key = std::make_pair(boundary_elem_ids[n], boundary_elem_sides[n]);
+      boundary_face_order.insert(std::make_pair(key, n));
+    }
 
-    node_partition->InsertValue((*nd)->id(), static_cast<float>((*nd)->processor_id()) );
+    std::map<boundary_elem_key, unsigned int>::const_iterator boundary_face_it = boundary_face_order.begin();
+    for(int loc=elem_ids.size(); boundary_face_it != boundary_face_order.end(); ++boundary_face_it, ++loc)
+    {
+      int n = boundary_face_it->second;
+      region_info->SetValue(loc, boundary_elem_region[n]);
+      boundary_info->SetValue(loc, boundary_elem_boundary[n]);
+      partition_info->SetValue(loc, boundary_elem_partition[n]);
+    }
+
+    grid->GetCellData()->AddArray(region_info);
+    grid->GetCellData()->AddArray(boundary_info);
+    grid->GetCellData()->AddArray(partition_info);
+
+    region_info->Delete();
+    boundary_info->Delete();
+    partition_info->Delete();
   }
-
-  grid->GetPointData()->AddArray(boundary_info);
-  grid->GetPointData()->AddArray(node_order);
-  grid->GetPointData()->AddArray(node_partition);
-
-  boundary_info->Delete();
-  node_order->Delete();
-  node_partition->Delete();
-#endif
 
 }
 
@@ -436,12 +479,78 @@ std::string VTKIO::export_extra_info()
     for( unsigned int b=0; b<bcs->n_bcs(); b++)
     {
       const BoundaryCondition * bc = bcs->get_bc(b);
+      if( bc->boundary_type() == INTER_CONNECT ) continue;
+
       os << "    <boundary id=\"" << bcs->get_bd_id_by_bc_index(b) << "\" "
       << "name=\"" << bc->label() << "\" "
-      << "bc=\"" << BC_enum_to_string(bc->bc_type()) << "\" "
+      << "bc=\"" << bc->bc_type_name() << "\" "
       << "/>"  << std::endl;
     }
     os << "  </boundaries>" << std::endl;
+  }
+
+  // time info
+  {
+    if (SolverSpecify::Type==SolverSpecify::TRANSIENT)
+    {
+      os << "  <time value=\"" << SolverSpecify::clock/PhysicalUnit::s << "\" />"
+      << std::endl;
+    }
+  }
+
+  // contact info
+  {
+    os << "  <contacts>" << std::endl;
+
+    if (SolverSpecify::Type==SolverSpecify::DCSWEEP || SolverSpecify::Type==SolverSpecify::TRANSIENT )
+    {
+      if(SolverSpecify::Solver == SolverSpecify::DDML1MIXA ||
+          SolverSpecify::Solver == SolverSpecify::DDML2MIXA ||
+          SolverSpecify::Solver == SolverSpecify::EBML3MIXA
+        )
+      {
+        // in MixedA mode
+
+        const SPICE_CKT * spice_ckt = system.get_circuit();
+        const std::map<std::string, unsigned int> & elec_node_map = spice_ckt->get_electrode_info();
+
+        for(std::map<std::string, unsigned int>::const_iterator it = elec_node_map.begin();
+            it != elec_node_map.end(); it++)
+        {
+          const std::string &label = it->first;
+          const int &node = it->second;
+
+          if (spice_ckt->is_voltage_node(node))
+          {
+            os << "    <contact name=\"" << label << "\" "
+            << "voltage=\"" << spice_ckt->get_solution(node) << "\" "
+            << "/>" << std::endl;
+          }
+        }
+      }
+      else
+      {
+        const BoundaryConditionCollector * bcs = system.get_bcs();
+
+        for(unsigned int i=0; i<bcs->n_bcs(); i++)
+        {
+          const BoundaryCondition * bc = bcs->get_bc(i);
+          // skip bc which is not electrode
+          if( !bc->is_electrode() ) continue;
+          //
+          std::string bc_label = bc->label();
+          if(!bc->electrode_label().empty())
+            bc_label = bc->electrode_label();
+
+          os << "    <contact name=\"" << bc_label << "\" "
+          << "voltage=\"" << bc->ext_circuit()->Vapp()/PhysicalUnit::V << "\" "
+          << "potential=\"" << bc->ext_circuit()->potential()/PhysicalUnit::V << "\" "
+          << "current=\"" << bc->ext_circuit()->current()/PhysicalUnit::A << "\" "
+          << "/>" << std::endl;
+        }
+      }
+    }
+    os << "  </contacts>" << std::endl;
   }
 
   os << "</Genius>" << std::endl;
@@ -449,7 +558,7 @@ std::string VTKIO::export_extra_info()
 }
 
 
-void VTKIO::solution_to_vtk(const MeshBase& mesh, vtkUnstructuredGrid* &grid)
+void VTKIO::solution_to_vtk(const MeshBase& mesh, vtkUnstructuredGrid* grid)
 {
   const SimulationSystem & system = FieldOutput<SimulationSystem>::system();
 
@@ -470,28 +579,28 @@ void VTKIO::solution_to_vtk(const MeshBase& mesh, vtkUnstructuredGrid* &grid)
   bool ddm_ac_data           = false;
   bool optical_complex_field = false;
 
-  const std::vector<SolverSpecify::SolverType> & solve_histroy = system.solve_histroy();
+  const std::vector<SolverSpecify::SolverType> & solve_history = system.solve_history();
 
-  for(unsigned int n=0; n<solve_histroy.size(); ++n)
+  for(unsigned int n=0; n<solve_history.size(); ++n)
   {
-    switch  (solve_histroy[n])
+    switch  (solve_history[n])
     {
-    case SolverSpecify::EBML3      :
-    case SolverSpecify::EBML3MIX   :
-      ebm_solution_data = true;
-      break;
-    case SolverSpecify::EM_FEM_2D  :
-    case SolverSpecify::EM_FEM_3D  :
-      optical_complex_field = true;
-      optical_generation = true;
-      break;
-    case SolverSpecify::RAY_TRACE  :
-      optical_generation = true;
-      break;
-    case SolverSpecify::DDMAC      :
-      ddm_ac_data = true;
-      break;
-    default : break;
+        case SolverSpecify::EBML3      :
+        case SolverSpecify::EBML3MIX   :
+        ebm_solution_data = true;
+        break;
+        case SolverSpecify::EM_FEM_2D  :
+        case SolverSpecify::EM_FEM_3D  :
+        optical_complex_field = true;
+        optical_generation = true;
+        break;
+        case SolverSpecify::RAY_TRACE  :
+        optical_generation = true;
+        break;
+        case SolverSpecify::DDMAC      :
+        ddm_ac_data = true;
+        break;
+        default : break;
     }
   }
 
@@ -507,162 +616,210 @@ void VTKIO::solution_to_vtk(const MeshBase& mesh, vtkUnstructuredGrid* &grid)
     // scale back to normal unit
     double concentration_scale = pow(cm, -3);
 
+    std::set<unsigned int> recorder;
+    std::vector<unsigned int> order;
+
     // gather data from all the processor
-    std::map<unsigned int, float> Na, Nd, net_doping, net_charge, psi, Ec, Ev, qFn, qFp, n, p, T, Tn, Tp; //scalar value
-    std::map<unsigned int, float> mole_x, mole_y;
-    std::map<unsigned int, float> OptG, PatG;
+    std::vector<float> Na, Nd, net_doping, net_charge;
+    std::vector<float> psi, Ec, Ev, qFn, qFp;
+    std::vector<float> n, p, T, Tn, Tp; //scalar value
+    std::vector<float> mole_x, mole_y;
+    std::vector<float> OptG, PatG;
+    std::vector<float> R, Taun, Taup;
 
-    std::map<unsigned int, std::complex<float> >psi_ac, n_ac, p_ac, T_ac, Tn_ac, Tp_ac; //complex value
-    std::map<unsigned int, std::complex<float> > OptE_complex, OptH_complex;
+    std::vector<std::complex<float> >psi_ac, n_ac, p_ac, T_ac, Tn_ac, Tp_ac; //complex value
+    std::vector<std::complex<float> > OptE_complex, OptH_complex;
 
-    std::map<unsigned int, float> Jnx, Jny, Jnz; //vector value
-    std::map<unsigned int, float> Jpx, Jpy, Jpz;
+    std::vector<float> Jnx, Jny, Jnz; //vector value
+    std::vector<float> Jpx, Jpy, Jpz;
+    std::vector<float> Vnx, Vny, Vnz;
+    std::vector<float> Vpx, Vpy, Vpz;
+    std::vector<float> Ex,  Ey,  Ez;
 
     // search all the node belongs to current processor
-    MeshBase::const_node_iterator nd = mesh.pid_nodes_begin(Genius::processor_id());
-    MeshBase::const_node_iterator nd_end = mesh.pid_nodes_end(Genius::processor_id());
-    for (; nd != nd_end; ++nd)
+    for( unsigned int r=0; r<system.n_regions(); r++)
     {
-      if( (*nd)->processor_id() != Genius::processor_id() ) continue;
-
-      for( unsigned int r=0; r<system.n_regions(); r++)
+      SimulationRegion::const_processor_node_iterator on_processor_nodes_it = system.region(r)->on_processor_nodes_begin();
+      SimulationRegion::const_processor_node_iterator on_processor_nodes_it_end = system.region(r)->on_processor_nodes_end();
+      for(; on_processor_nodes_it!=on_processor_nodes_it_end; ++on_processor_nodes_it)
       {
+        const FVM_Node * fvm_node = *on_processor_nodes_it;
+        const FVM_NodeData * node_data = fvm_node->node_data();
         const SimulationRegion * region = system.region(r);
-        const FVM_Node * fvm_node = region->region_fvm_node(*nd);
-        if(fvm_node==NULL) continue;
-
-        const FVM_NodeData * node_data = region->region_node_data(*nd);
+        const unsigned int id = fvm_node->root_node()->id();
 
         // if the fvm_node lies on the interface of two material regions,
         // we shall use the node data in the more important region.
         // it just for visualization reason
         if( fvm_node->boundary_id() != BoundaryInfo::invalid_id )
         {
+          // test if we had already processed this node
+          if( recorder.find(id) != recorder.end() ) continue;
+          recorder.insert(id);
+
           unsigned int bc_index = system.get_bcs()->get_bc_index_by_bd_id(fvm_node->boundary_id());
           const BoundaryCondition * bc = system.get_bcs()->get_bc(bc_index);
           const FVM_Node * primary_fvm_node = (*bc->region_node_begin(fvm_node->root_node())).second.second;
-          genius_assert(primary_fvm_node->root_node()==(*nd));
-          node_data = primary_fvm_node->node_data();
+          fvm_node = primary_fvm_node;
+          node_data = fvm_node->node_data();
+          region = system.region(primary_fvm_node->subdomain_id());
         }
 
-
         assert ( node_data != NULL );
+        order.push_back(id);
+
         {
           if(semiconductor_material)
           {
-            Na        [(*nd)->id()]  = static_cast<float>(node_data->Total_Na()/concentration_scale);
-            Nd        [(*nd)->id()]  = static_cast<float>(node_data->Total_Nd()/concentration_scale);
-            net_doping[(*nd)->id()]  = static_cast<float>(node_data->Net_doping()/concentration_scale);
-            net_charge[(*nd)->id()]  = static_cast<float>(node_data->Net_charge()/concentration_scale);
-            n         [(*nd)->id()]  = static_cast<float>(node_data->n()/concentration_scale);
-            p         [(*nd)->id()]  = static_cast<float>(node_data->p()/concentration_scale);
-            mole_x    [(*nd)->id()]  = static_cast<float>(node_data->mole_x());
-            mole_y    [(*nd)->id()]  = static_cast<float>(node_data->mole_y());
+            Na.push_back(static_cast<float>(node_data->Total_Na()/concentration_scale));
+            Nd.push_back(static_cast<float>(node_data->Total_Nd()/concentration_scale));
+            net_doping.push_back(static_cast<float>(node_data->Net_doping()/concentration_scale));
+            net_charge.push_back(static_cast<float>(node_data->Net_charge()/concentration_scale));
+            n.push_back(static_cast<float>(node_data->n()/concentration_scale));
+            p.push_back(static_cast<float>(node_data->p()/concentration_scale));
+            mole_x.push_back(static_cast<float>(node_data->mole_x()));
+            mole_y.push_back(static_cast<float>(node_data->mole_y()));
+            R.push_back(static_cast<float>(node_data->Recomb()/(concentration_scale/s)));
+            /*
+            Jnx.push_back(static_cast<float>(node_data->Jn()(0)/(A/cm)));
+            Jny.push_back(static_cast<float>(node_data->Jn()(1)/(A/cm)));
+            Jnz.push_back(static_cast<float>(node_data->Jn()(2)/(A/cm)));
 
-            Jnx[(*nd)->id()]  = static_cast<float>(node_data->Jn()(0)/(A/cm));
-            Jny[(*nd)->id()]  = static_cast<float>(node_data->Jn()(1)/(A/cm));
-            Jnz[(*nd)->id()]  = static_cast<float>(node_data->Jn()(2)/(A/cm));
+            Jpx.push_back(static_cast<float>(node_data->Jp()(0)/(A/cm)));
+            Jpy.push_back(static_cast<float>(node_data->Jp()(1)/(A/cm)));
+            Jpz.push_back(static_cast<float>(node_data->Jp()(2)/(A/cm)));
 
-            Jpx[(*nd)->id()]  = static_cast<float>(node_data->Jp()(0)/(A/cm));
-            Jpy[(*nd)->id()]  = static_cast<float>(node_data->Jp()(1)/(A/cm));
-            Jpz[(*nd)->id()]  = static_cast<float>(node_data->Jp()(2)/(A/cm));
+            Ex.push_back(static_cast<float>(node_data->E()(0)/(V/cm)));
+            Ey.push_back(static_cast<float>(node_data->E()(1)/(V/cm)));
+            Ez.push_back(static_cast<float>(node_data->E()(2)/(V/cm)));
+            */
           }
 
-          psi[(*nd)->id()]  = static_cast<float>(node_data->psi()/V);
-          Ec[(*nd)->id()]   = static_cast<float>(node_data->Ec()/eV);
-          Ev[(*nd)->id()]   = static_cast<float>(node_data->Ev()/eV);
-          qFn[(*nd)->id()]  = static_cast<float>(node_data->qFn()/eV);
-          qFp[(*nd)->id()]  = static_cast<float>(node_data->qFp()/eV);
-          T  [(*nd)->id()]  = static_cast<float>(node_data->T()/K);
+          psi.push_back(static_cast<float>(node_data->psi()/V));
+          Ec.push_back(static_cast<float>(node_data->Ec()/eV));
+          Ev.push_back(static_cast<float>(node_data->Ev()/eV));
+          qFn.push_back(static_cast<float>(node_data->qFn()/eV));
+          qFp.push_back(static_cast<float>(node_data->qFp()/eV));
+          T.push_back(static_cast<float>(node_data->T()/K));
 
           if(ebm_solution_data)
           {
-            Tn [(*nd)->id()]  = static_cast<float>(node_data->Tn()/K);
-            Tp [(*nd)->id()]  = static_cast<float>(node_data->Tp()/K);
+            Tn.push_back(static_cast<float>(node_data->Tn()/K));
+            Tp.push_back(static_cast<float>(node_data->Tp()/K));
           }
 
           if(optical_generation)
-            OptG[(*nd)->id()] = static_cast<float>(node_data->OptG()/(concentration_scale/s));
+            OptG.push_back(static_cast<float>(node_data->OptG()/(concentration_scale/s)));
 
           if(particle_generation)
-            PatG[(*nd)->id()] = static_cast<float>(node_data->PatG()/(concentration_scale/s));
+            PatG.push_back(static_cast<float>(node_data->PatG()/(concentration_scale/s)));
 
           if(ddm_ac_data)
           {
-            psi_ac [(*nd)->id()]   = static_cast<std::complex<float> >(node_data->psi_ac()/V);
-            n_ac   [(*nd)->id()]   = static_cast<std::complex<float> >(node_data->n_ac()/concentration_scale);
-            p_ac   [(*nd)->id()]   = static_cast<std::complex<float> >(node_data->p_ac()/concentration_scale);
-            T_ac   [(*nd)->id()]   = static_cast<std::complex<float> >(node_data->T_ac()/K);
-            Tn_ac  [(*nd)->id()]   = static_cast<std::complex<float> >(node_data->Tn_ac()/K);
-            Tp_ac  [(*nd)->id()]   = static_cast<std::complex<float> >(node_data->Tp_ac()/K);
+            psi_ac.push_back(static_cast<std::complex<float> >(node_data->psi_ac()/V));
+            n_ac.push_back(static_cast<std::complex<float> >(node_data->n_ac()/concentration_scale));
+            p_ac.push_back(static_cast<std::complex<float> >(node_data->p_ac()/concentration_scale));
+            T_ac.push_back(static_cast<std::complex<float> >(node_data->T_ac()/K));
+            Tn_ac.push_back(static_cast<std::complex<float> >(node_data->Tn_ac()/K));
+            Tp_ac.push_back(static_cast<std::complex<float> >(node_data->Tp_ac()/K));
           }
 
           if(optical_complex_field)
           {
-            OptE_complex[(*nd)->id()] = static_cast<std::complex<float> >(node_data->OptE_complex()/(V/cm));
-            OptH_complex[(*nd)->id()] = static_cast<std::complex<float> >(node_data->OptH_complex()/(A/cm));
+            OptE_complex.push_back(static_cast<std::complex<float> >(node_data->OptE_complex()/(V/cm)));
+            OptH_complex.push_back(static_cast<std::complex<float> >(node_data->OptH_complex()/(A/cm)));
           }
+
+          /*
+          if( region->type() == SemiconductorRegion )
+          {
+            const SemiconductorSimulationRegion * semiconductor_region = dynamic_cast<const SemiconductorSimulationRegion *>(region);
+            semiconductor_region->material()->mapping(fvm_node->root_node(), node_data, SolverSpecify::clock);
+            Taun.push_back(static_cast<float>(semiconductor_region->material()->band->TAUN(node_data->T())/s));
+            Taup.push_back(static_cast<float>(semiconductor_region->material()->band->TAUP(node_data->T())/s));
+          }
+          else
+          {
+            Taun.push_back(static_cast<float>(0.0));
+            Taup.push_back(static_cast<float>(0.0));
+          }
+          */
         }
       }
     }
 
+    Parallel::gather(0, order);
+    if (Genius::processor_id() == 0)
+      genius_assert( order.size() == mesh.n_nodes() );
 
-    write_node_scaler_solution(psi, "psi", grid);
-    write_node_scaler_solution(Ec,  "Ec",  grid);
-    write_node_scaler_solution(Ev,  "Ev",  grid);
-    write_node_scaler_solution(qFn, "elec quasi Fermi level", grid);
-    write_node_scaler_solution(qFp, "hole quasi Fermi level", grid);
+    write_node_scaler_solution(order, psi, "psi", grid);
+    write_node_scaler_solution(order, Ec,  "Ec",  grid);
+    write_node_scaler_solution(order, Ev,  "Ev",  grid);
+    write_node_scaler_solution(order, qFn, "elec quasi Fermi level", grid);
+    write_node_scaler_solution(order, qFp, "hole quasi Fermi level", grid);
 
     if(semiconductor_material)
     {
-      write_node_scaler_solution(Na,  "Na", grid);
-      write_node_scaler_solution(Nd,  "Nd", grid);
-      write_node_scaler_solution(n,   "electron density", grid);
-      write_node_scaler_solution(p,   "hole density", grid);
-      write_node_scaler_solution(net_doping,  "net_doping", grid);
-      write_node_scaler_solution(net_charge,  "net_charge", grid);
-      write_node_scaler_solution(mole_x, "mole x", grid);
-      write_node_scaler_solution(mole_y, "mole y", grid);
-      //write_node_vector_solution(Jnx, Jny, Jnz, "Jn", grid);
-      //write_node_vector_solution(Jpx, Jpy, Jpz, "Jp", grid);
+      write_node_scaler_solution(order, Na,  "Na", grid);
+      write_node_scaler_solution(order, Nd,  "Nd", grid);
+      write_node_scaler_solution(order, n,   "electron density", grid);
+      write_node_scaler_solution(order, p,   "hole density", grid);
+      write_node_scaler_solution(order, net_doping,  "net_doping", grid);
+      write_node_scaler_solution(order, net_charge,  "net_charge", grid);
+      write_node_scaler_solution(order, mole_x, "mole x", grid);
+      write_node_scaler_solution(order, mole_y, "mole y", grid);
+      write_node_scaler_solution(order, R, "recombination", grid);
+      //write_node_vector_solution(order, Vnx, Vny, Vnz, "Vn_node", grid);
+      //write_node_vector_solution(order, Vpx, Vpy, Vpz, "Vp_node", grid);
+      //write_node_vector_solution(order, Jnx, Jny, Jnz, "Jn_node", grid);
+      //write_node_vector_solution(order, Jpx, Jpy, Jpz, "Jp_node", grid);
+      //write_node_vector_solution(order, Ex, Ey, Ez, "E_node", grid);
     }
 
-    write_node_scaler_solution(T,   "temperature", grid);
+    write_node_scaler_solution(order, T,   "temperature", grid);
 
     if(ebm_solution_data)
     {
-      write_node_scaler_solution(Tn,  "elec temperature", grid);
-      write_node_scaler_solution(Tp,  "hole temperature", grid);
+      write_node_scaler_solution(order, Tn,  "elec temperature", grid);
+      write_node_scaler_solution(order, Tp,  "hole temperature", grid);
     }
 
     if(ddm_ac_data)
     {
-      write_node_complex_solution(psi_ac, "psi AC", grid);
-      write_node_complex_solution(n_ac,   "electron AC", grid);
-      write_node_complex_solution(p_ac,   "hole AC", grid);
-      write_node_complex_solution(T_ac,   "temperature AC", grid);
-      write_node_complex_solution(Tn_ac,  "elec temperature AC", grid);
-      write_node_complex_solution(Tp_ac,  "hole temperature AC", grid);
+      write_node_complex_solution(order, psi_ac, "psi AC", grid);
+      write_node_complex_solution(order, n_ac,   "electron AC", grid);
+      write_node_complex_solution(order, p_ac,   "hole AC", grid);
+      write_node_complex_solution(order, T_ac,   "temperature AC", grid);
+      write_node_complex_solution(order, Tn_ac,  "elec temperature AC", grid);
+      write_node_complex_solution(order, Tp_ac,  "hole temperature AC", grid);
     }
 
     if(optical_complex_field)
     {
-      write_node_complex_solution(OptE_complex, "Optical E", grid);
-      write_node_complex_solution(OptH_complex, "Optical H", grid);
+      write_node_complex_solution(order, OptE_complex, "Optical E", grid);
+      write_node_complex_solution(order, OptH_complex, "Optical H", grid);
     }
 
     if(optical_generation)
-      write_node_scaler_solution(OptG,   "Optical Generation", grid);
+      write_node_scaler_solution(order, OptG,   "Optical Generation", grid);
 
     if(particle_generation)
-      write_node_scaler_solution(PatG,   "Radiation Generation", grid);
+      write_node_scaler_solution(order, PatG,   "Radiation Generation", grid);
+
+    //write_node_scaler_solution(order, Taun,   "Taun", grid);
+    //write_node_scaler_solution(order, Taup,   "Taup", grid);
   }
 
   // write cell based data
   {
-    std::map<unsigned int, float> Ex,  Ey,  Ez;
-    std::map<unsigned int, float> Jnx,  Jny,  Jnz;
-    std::map<unsigned int, float> Jpx,  Jpy,  Jpz;
+    std::map<unsigned int, unsigned int> id_order;
+    std::vector<unsigned int> order;
+
+    //std::vector<float> mos_channel_flag;
+
+    std::vector<float> Ex,  Ey,  Ez;
+    std::vector<float> Jnx,  Jny,  Jnz;
+    std::vector<float> Jpx,  Jpy,  Jpz;
 
     for( unsigned int r=0; r<system.n_regions(); r++)
     {
@@ -670,72 +827,95 @@ void VTKIO::solution_to_vtk(const MeshBase& mesh, vtkUnstructuredGrid* &grid)
       for(unsigned int n=0; n<region->n_cell(); ++n)
       {
         const Elem * elem = region->get_region_elem(n);
+        if( elem->processor_id() != Genius::processor_id() ) continue;
+
+        id_order[elem->id()] = order.size();
+        order.push_back(elem->id());
+        /*
+        if( region->type()==SemiconductorRegion)
+        {
+          const SemiconductorSimulationRegion * semiconductor_region = dynamic_cast<const SemiconductorSimulationRegion *>(region);
+          mos_channel_flag.push_back(semiconductor_region->is_elem_in_mos_channel(elem));
+        }
+        else
+          mos_channel_flag.push_back(0.0);
+        */
         const FVM_CellData * elem_data = region->get_region_elem_data(n);
 
-        Ex[elem->id()]  = static_cast<float>(elem_data->E()(0)/(V/cm));
-        Ey[elem->id()]  = static_cast<float>(elem_data->E()(1)/(V/cm));
-        Ez[elem->id()]  = static_cast<float>(elem_data->E()(2)/(V/cm));
+        Ex.push_back(static_cast<float>(elem_data->E()(0)/(V/cm)));
+        Ey.push_back(static_cast<float>(elem_data->E()(1)/(V/cm)));
+        Ez.push_back(static_cast<float>(elem_data->E()(2)/(V/cm)));
 
-        Jnx[elem->id()]  = static_cast<float>(elem_data->Jn()(0)/(A/cm));
-        Jny[elem->id()]  = static_cast<float>(elem_data->Jn()(1)/(A/cm));
-        Jnz[elem->id()]  = static_cast<float>(elem_data->Jn()(2)/(A/cm));
+        Jnx.push_back(static_cast<float>(elem_data->Jn()(0)/(A/cm)));
+        Jny.push_back(static_cast<float>(elem_data->Jn()(1)/(A/cm)));
+        Jnz.push_back(static_cast<float>(elem_data->Jn()(2)/(A/cm)));
 
-        Jpx[elem->id()]  = static_cast<float>(elem_data->Jp()(0)/(A/cm));
-        Jpy[elem->id()]  = static_cast<float>(elem_data->Jp()(1)/(A/cm));
-        Jpz[elem->id()]  = static_cast<float>(elem_data->Jp()(2)/(A/cm));
+        Jpx.push_back(static_cast<float>(elem_data->Jp()(0)/(A/cm)));
+        Jpy.push_back(static_cast<float>(elem_data->Jp()(1)/(A/cm)));
+        Jpz.push_back(static_cast<float>(elem_data->Jp()(2)/(A/cm)));
       }
     }
 
     // write solution for boundary elements, just keep the same as mesh elems
     {
-      std::vector<unsigned int>       el;
-      std::vector<unsigned short int> sl;
-      std::vector<short int>          il;
       unsigned int id = mesh.n_active_elem();
-      mesh.boundary_info->build_side_list (el, sl, il);
-      for(unsigned int n=0; n<il.size(); ++n, ++id)
+      for(unsigned int n=0; n<_il.size(); ++n, ++id)
       {
-        const Elem * elem = mesh.elem(el[n]);
+        const Elem * elem = mesh.elem(_el[n]);
+        if( elem->processor_id() != Genius::processor_id() ) continue;
 
-        Ex[id]  = Ex[elem->id()];
-        Ey[id]  = Ey[elem->id()];
-        Ez[id]  = Ez[elem->id()];
+        order.push_back(id);
+        genius_assert(id_order.find(elem->id()) != id_order.end());
+        unsigned int elem_id_order = id_order[elem->id()];
 
-        Jnx[id]  = Jnx[elem->id()];
-        Jny[id]  = Jny[elem->id()];
-        Jnz[id]  = Jnz[elem->id()];
+        //mos_channel_flag.push_back(0.5);
 
-        Jpx[id]  = Jpx[elem->id()];
-        Jpy[id]  = Jpy[elem->id()];
-        Jpz[id]  = Jpz[elem->id()];
+        Ex.push_back(Ex[elem_id_order]);
+        Ey.push_back(Ey[elem_id_order]);
+        Ez.push_back(Ez[elem_id_order]);
+
+        Jnx.push_back(Jnx[elem_id_order]);
+        Jny.push_back(Jny[elem_id_order]);
+        Jnz.push_back(Jnz[elem_id_order]);
+
+        Jpx.push_back(Jpx[elem_id_order]);
+        Jpy.push_back(Jpy[elem_id_order]);
+        Jpz.push_back(Jpz[elem_id_order]);
       }
     }
 
-    write_cell_vector_solution(Ex,  Ey,  Ez,  "electrical field", grid);
-    write_cell_vector_solution(Jnx, Jny, Jnz, "electron current", grid);
-    write_cell_vector_solution(Jpx, Jpy, Jpz, "hole current", grid);
+    Parallel::gather(0, order);
+    //write_cell_scaler_solution(order, mos_channel_flag,  "mos channel", grid);
+    write_cell_vector_solution(order, Ex,  Ey,  Ez,  "electrical field", grid);
+    write_cell_vector_solution(order, Jnx, Jny, Jnz, "electron current", grid);
+    write_cell_vector_solution(order, Jpx, Jpy, Jpz, "hole current", grid);
   }
 }
 
 
-void VTKIO::write_node_scaler_solution(std::map<unsigned int, float> & sol, const std::string & sol_name, vtkUnstructuredGrid*& grid)
+void VTKIO::write_node_scaler_solution(const std::vector<unsigned int> & order, std::vector<float> &sol,
+                                       const std::string & sol_name, vtkUnstructuredGrid* grid)
 {
   // this should run on parallel for all the processor
   Parallel::gather(0, sol);
 
   if (Genius::processor_id() == 0)
   {
+    genius_assert(order.size() == sol.size());
     //create vtk data array
     vtkFloatArray *vtk_sol_array = vtkFloatArray::New();
     vtk_sol_array->SetName(sol_name.c_str());
-    vtk_sol_array->SetNumberOfValues(sol.size());
+    vtk_sol_array->SetNumberOfValues(order.size());
+
+    std::vector<float> sol_re_order(order.size());
+    for(unsigned int n=0; n<order.size(); ++n)
+      sol_re_order[order[n]] = sol[n];
 
     // save data into vtk data array
-    std::map<unsigned int, float>::iterator it=sol.begin();
-    for( ; it!=sol.end(); ++it)
+    for(unsigned int n=0; n<order.size(); ++n)
     {
       // set scalar value to vtkFloatArray
-      vtk_sol_array->InsertValue(it->first, it->second);
+      vtk_sol_array->InsertValue(n, sol_re_order[n]);
     }
 
     grid->GetPointData()->AddArray(vtk_sol_array);
@@ -748,30 +928,40 @@ void VTKIO::write_node_scaler_solution(std::map<unsigned int, float> & sol, cons
 }
 
 
-void VTKIO::write_node_complex_solution(std::map<unsigned int, std::complex<float> > & sol, const std::string & sol_name, vtkUnstructuredGrid*& grid)
+void VTKIO::write_node_complex_solution(const std::vector<unsigned int> & order, std::vector<std::complex<float> > & sol,
+                                        const std::string & sol_name, vtkUnstructuredGrid* grid)
 {
   // this should run on parallel for all the processor
   Parallel::gather(0, sol);
 
   if ( Genius::processor_id() == 0)
   {
+    genius_assert(order.size() == sol.size());
+
     //create vtk data array
     vtkFloatArray *vtk_sol_array_magnitude = vtkFloatArray::New();
     vtkFloatArray *vtk_sol_array_angle     = vtkFloatArray::New();
 
     vtk_sol_array_magnitude->SetName((sol_name+" abs").c_str());
-    vtk_sol_array_magnitude->SetNumberOfValues(sol.size());
+    vtk_sol_array_magnitude->SetNumberOfValues(order.size());
 
     vtk_sol_array_angle->SetName((sol_name+" angle").c_str());
-    vtk_sol_array_angle->SetNumberOfValues(sol.size());
+    vtk_sol_array_angle->SetNumberOfValues(order.size());
+
+    std::vector<float> sol_re_order_abs(order.size());
+    for(unsigned int n=0; n<order.size(); ++n)
+      sol_re_order_abs[order[n]] = std::abs(sol[n]);
+
+    std::vector<float> sol_re_order_arg(order.size());
+    for(unsigned int n=0; n<order.size(); ++n)
+      sol_re_order_arg[order[n]] = std::arg(sol[n]);
 
     // save data into vtk data array
-    std::map<unsigned int, std::complex<float> >::iterator it=sol.begin();
-    for( ; it!=sol.end(); ++it)
+    for(unsigned int n=0; n<order.size(); ++n)
     {
       // set scalar value to vtkFloatArray
-      vtk_sol_array_magnitude->InsertValue(it->first, std::abs(it->second));
-      vtk_sol_array_angle->InsertValue(it->first, std::arg(it->second));
+      vtk_sol_array_magnitude->InsertValue(n, sol_re_order_abs[n]);
+      vtk_sol_array_angle->InsertValue(n, sol_re_order_arg[n]);
     }
 
     grid->GetPointData()->AddArray(vtk_sol_array_magnitude);
@@ -787,10 +977,11 @@ void VTKIO::write_node_complex_solution(std::map<unsigned int, std::complex<floa
 }
 
 
-void VTKIO::write_node_vector_solution(std::map<unsigned int, float > & sol_x,
-                                       std::map<unsigned int, float > & sol_y,
-                                       std::map<unsigned int, float > & sol_z,
-                                       const std::string & sol_name, vtkUnstructuredGrid*& grid)
+void VTKIO::write_node_vector_solution(const std::vector<unsigned int> & order,
+                                       std::vector<float > & sol_x,
+                                       std::vector<float > & sol_y,
+                                       std::vector<float > & sol_z,
+                                       const std::string & sol_name, vtkUnstructuredGrid* grid)
 {
   // this should run on parallel for all the processor
   Parallel::gather(0, sol_x);
@@ -803,14 +994,24 @@ void VTKIO::write_node_vector_solution(std::map<unsigned int, float > & sol_x,
     vtkFloatArray *vtk_sol_array = vtkFloatArray::New();
 
     vtk_sol_array->SetNumberOfComponents(3);
-    vtk_sol_array->SetNumberOfTuples(sol_x.size());
+    vtk_sol_array->SetNumberOfTuples(order.size());
     vtk_sol_array->SetName(sol_name.c_str());
 
-    // save data into vtk data array
-    for( unsigned int i=0; i<sol_x.size(); i++)
+    std::vector<float> sol_re_order_x(order.size());
+    std::vector<float> sol_re_order_y(order.size());
+    std::vector<float> sol_re_order_z(order.size());
+    for(unsigned int n=0; n<order.size(); ++n)
     {
-      float sol[3]={sol_x[i], sol_y[i], sol_z[i]};
-      vtk_sol_array->InsertTuple(i, &sol[0] );
+      sol_re_order_x[order[n]] = sol_x[n];
+      sol_re_order_y[order[n]] = sol_y[n];
+      sol_re_order_z[order[n]] = sol_z[n];
+    }
+
+    // save data into vtk data array
+    for(unsigned int n=0; n<order.size(); ++n)
+    {
+      float sol[3]={sol_re_order_x[n], sol_re_order_y[n], sol_re_order_z[n]};
+      vtk_sol_array->InsertTuple(n, &sol[0] );
     }
 
     grid->GetPointData()->AddArray(vtk_sol_array);
@@ -824,7 +1025,8 @@ void VTKIO::write_node_vector_solution(std::map<unsigned int, float > & sol_x,
 
 
 
-void VTKIO::write_cell_scaler_solution(std::map<unsigned int, float> & sol, const std::string & sol_name, vtkUnstructuredGrid*& grid)
+void VTKIO::write_cell_scaler_solution(const std::vector<unsigned int> & order, std::vector<float> &sol,
+                                       const std::string & sol_name, vtkUnstructuredGrid* grid)
 {
   // this should run on parallel for all the processor
   Parallel::gather(0, sol);
@@ -834,14 +1036,17 @@ void VTKIO::write_cell_scaler_solution(std::map<unsigned int, float> & sol, cons
     //create vtk data array
     vtkFloatArray *vtk_sol_array = vtkFloatArray::New();
     vtk_sol_array->SetName(sol_name.c_str());
-    vtk_sol_array->SetNumberOfValues(sol.size());
+    vtk_sol_array->SetNumberOfValues(order.size());
+
+    std::vector<float> sol_re_order(order.size());
+    for(unsigned int n=0; n<order.size(); ++n)
+      sol_re_order[order[n]] = sol[n];
 
     // save data into vtk data array
-    std::map<unsigned int, float>::iterator it=sol.begin();
-    for( ; it!=sol.end(); ++it)
+    for(unsigned int n=0; n<order.size(); ++n)
     {
       // set scalar value to vtkFloatArray
-      vtk_sol_array->InsertValue(it->first, it->second);
+      vtk_sol_array->InsertValue(n, sol_re_order[n]);
     }
 
     grid->GetCellData()->AddArray(vtk_sol_array);
@@ -854,10 +1059,11 @@ void VTKIO::write_cell_scaler_solution(std::map<unsigned int, float> & sol, cons
 }
 
 
-void VTKIO::write_cell_vector_solution(std::map<unsigned int, float > & sol_x,
-                                       std::map<unsigned int, float > & sol_y,
-                                       std::map<unsigned int, float > & sol_z,
-                                       const std::string & sol_name, vtkUnstructuredGrid*& grid)
+void VTKIO::write_cell_vector_solution(const std::vector<unsigned int> & order,
+                                       std::vector<float > & sol_x,
+                                       std::vector<float > & sol_y,
+                                       std::vector<float > & sol_z,
+                                       const std::string & sol_name, vtkUnstructuredGrid* grid)
 {
   // this should run on parallel for all the processor
   Parallel::gather(0, sol_x);
@@ -870,14 +1076,24 @@ void VTKIO::write_cell_vector_solution(std::map<unsigned int, float > & sol_x,
     vtkFloatArray *vtk_sol_array = vtkFloatArray::New();
 
     vtk_sol_array->SetNumberOfComponents(3);
-    vtk_sol_array->SetNumberOfTuples(sol_x.size());
+    vtk_sol_array->SetNumberOfTuples(order.size());
     vtk_sol_array->SetName(sol_name.c_str());
 
-    // save data into vtk data array
-    for( unsigned int i=0; i<sol_x.size(); i++)
+    std::vector<float> sol_re_order_x(order.size());
+    std::vector<float> sol_re_order_y(order.size());
+    std::vector<float> sol_re_order_z(order.size());
+    for(unsigned int n=0; n<order.size(); ++n)
     {
-      float sol[3]={sol_x[i], sol_y[i], sol_z[i]};
-      vtk_sol_array->InsertTuple(i, &sol[0] );
+      sol_re_order_x[order[n]] = sol_x[n];
+      sol_re_order_y[order[n]] = sol_y[n];
+      sol_re_order_z[order[n]] = sol_z[n];
+    }
+
+    // save data into vtk data array
+    for( unsigned int n=0; n<order.size(); n++)
+    {
+      float sol[3]={sol_re_order_x[n], sol_re_order_y[n], sol_re_order_z[n]};
+      vtk_sol_array->InsertTuple(n, &sol[0] );
     }
 
     grid->GetCellData()->AddArray(vtk_sol_array);
@@ -897,169 +1113,187 @@ void VTKIO::write_cell_vector_solution(std::map<unsigned int, float > & sol_x,
 // private functions
 void VTKIO::nodes_to_vtk(const MeshBase& mesh, std::ofstream & out)
 {
-  // only do it at root node
-  if(Genius::processor_id() != 0) return;
+  unsigned int n_nodes = mesh.n_nodes();
+  // collect node location, must run in parallel
+  std::vector<Real> pts;
+  mesh.pack_nodes(pts);
 
-  out << "# vtk DataFile Version 3.0"      <<'\n';
-  out << "Date Generated by Genius TCAD"   <<'\n';
-  out << "ASCII"                           <<'\n';
-  out << "DATASET UNSTRUCTURED_GRID"       <<'\n';
-  out << "POINTS " << mesh.n_nodes()       << " float" << '\n';
-
-  // write out nodal data
-  MeshBase::const_node_iterator nd = mesh.active_nodes_begin();
-  MeshBase::const_node_iterator nd_end = mesh.active_nodes_end();
-  for (;nd!=nd_end;++nd)
+  if(Genius::processor_id() == 0)
   {
-    const Node * node = (*nd);
-    out << (*node)(0)/um << " " << (*node)(1)/um << " " << (*node)(2)/um << '\n';
+    out << "# vtk DataFile Version 3.0"      <<'\n';
+    out << "Date Generated by Genius TCAD"   <<'\n';
+    out << "ASCII"                           <<'\n';
+    out << "DATASET UNSTRUCTURED_GRID"       <<'\n';
+    out << "POINTS " << mesh.n_nodes()       << " float" << '\n';
+
+    // write out nodal data
+    for ( unsigned int n=0; n<n_nodes; ++n )
+    {
+      out << pts[3*n+0]/um << " " << pts[3*n+1]/um << " " << pts[3*n+2]/um << '\n';
+    }
+    out << std::endl;
   }
 
-  out << std::endl;
 }
 
 
 void VTKIO::cells_to_vtk(const MeshBase& mesh,  std::ofstream & out)
 {
-
-  // only do it at root node
-  if(Genius::processor_id() != 0) return;
-
   int cell_size = mesh.n_active_elem();
 
-  MeshBase::const_element_iterator       it  = mesh.active_elements_begin();
-  const MeshBase::const_element_iterator end = mesh.active_elements_end();
-  for ( ; it != end; ++it)
+  int cell_nodes = 0;
+  std::map<unsigned int, unsigned int> elem_type;
+  MeshBase::const_element_iterator       elem_it  = mesh.active_this_pid_elements_begin();
+  const MeshBase::const_element_iterator elem_it_end = mesh.active_this_pid_elements_end();
+  for (; elem_it != elem_it_end; ++elem_it)
   {
-    const Elem *elem  = (*it);
-    cell_size   += elem->n_nodes();
+    const Elem * elem = *elem_it;
+    cell_nodes += elem->n_nodes();
+    elem_type.insert( std::make_pair( elem->id(), static_cast<unsigned int>(elem->type())) );
   }
+  Parallel::sum(cell_nodes);
+  Parallel::gather(0, elem_type);
 
-  out<<"CELLS "<<mesh.n_active_elem()<<" "<<cell_size<<'\n';
+  std::vector<int> conn;
+  mesh.pack_elems(conn);
 
 
-  for (it = mesh.active_elements_begin(); it != end; ++it)
+  // only do it at root node
+  if(Genius::processor_id() == 0)
   {
-    const Elem *elem  = (*it);
-    out << elem->n_nodes();
-    for(unsigned int i=0;i<elem->n_nodes();++i)
+    out<<"CELLS "<<mesh.n_active_elem()<<" "<<cell_size+cell_nodes<<'\n';
+
+    unsigned int cnt = 0;
+    while (cnt < conn.size())
     {
-      out << " " << elem->node(i);
+      // Unpack the element header
+      const ElemType elem_type    = static_cast<ElemType>(conn[cnt]);
+      AutoPtr<Elem> elem = Elem::build(elem_type);
+#ifdef ENABLE_AMR
+      cnt += 10;
+#else
+      cnt += 4;
+#endif
+      out << elem->n_nodes();
+      for(unsigned int i=0;i<elem->n_nodes();++i)
+        out << " " << conn[cnt++];
+
+      out << std::endl;
+
+      cnt += elem->n_sides();
     }
     out << std::endl;
-  }
-  out << std::endl;
 
-  out << "CELL_TYPES " << mesh.n_active_elem() << '\n';
+    out << "CELL_TYPES " << mesh.n_active_elem() << '\n';
 
-
-  for (it = mesh.active_elements_begin(); it != end; ++it)
-  {
-    unsigned int celltype;
-    Elem *elem  = (*it);
-    switch(elem->type())
+    std::map<unsigned int, unsigned int>::const_iterator it = elem_type.begin();
+    for (; it != elem_type.end(); ++it)
     {
-    case EDGE2:
-    case EDGE2_FVM:
-      celltype = 3;  //VTK_LINE;
-      break;
-    case EDGE3:
-      celltype = 21; //VTK_QUADRATIC_EDGE;
-      break;// 1
-    case TRI3:
-    case TRI3_FVM:
-      celltype = 5;  //VTK_TRIANGLE;
-      break;// 3
-    case TRI6:
-      celltype = 22; //VTK_QUADRATIC_TRIANGLE;
-      break;// 4
-    case QUAD4:
-    case QUAD4_FVM:
-      celltype = 9;  //VTK_QUAD;
-      break;// 5
-    case QUAD8:
-      celltype = 23; //VTK_QUADRATIC_QUAD;
-      break;// 6
-    case TET4:
-    case TET4_FVM:
-      celltype = 10; //VTK_TETRA;
-      break;// 8
-    case TET10:
-      celltype = 24; //VTK_QUADRATIC_TETRA;
-      break;// 9
-    case HEX8:
-    case HEX8_FVM:
-      celltype = 12; //VTK_HEXAHEDRON;
-      break;// 10
-    case HEX20:
-      celltype = 25; //VTK_QUADRATIC_HEXAHEDRON;
-      break;// 12
-    case PRISM6:
-    case PRISM6_FVM:
-      celltype = 13; //VTK_WEDGE;
-      break;// 13
-    case PYRAMID5:
-    case PYRAMID5_FVM:
-      celltype = 14; //VTK_PYRAMID;
-      break;// 16
-    default:
+      unsigned int celltype;
+      const ElemType type    = static_cast<ElemType>(it->second);
+      switch(type)
       {
-        std::cerr<<"element type "<<elem->type()<<" not implemented"<<std::endl;
-        genius_error();
+          case EDGE2:
+          case EDGE2_FVM:
+          celltype = 3;  //VTK_LINE;
+          break;
+          case EDGE3:
+          celltype = 21; //VTK_QUADRATIC_EDGE;
+          break;// 1
+          case TRI3:
+          case TRI3_FVM:
+          celltype = 5;  //VTK_TRIANGLE;
+          break;// 3
+          case TRI6:
+          celltype = 22; //VTK_QUADRATIC_TRIANGLE;
+          break;// 4
+          case QUAD4:
+          case QUAD4_FVM:
+          celltype = 9;  //VTK_QUAD;
+          break;// 5
+          case QUAD8:
+          celltype = 23; //VTK_QUADRATIC_QUAD;
+          break;// 6
+          case TET4:
+          case TET4_FVM:
+          celltype = 10; //VTK_TETRA;
+          break;// 8
+          case TET10:
+          celltype = 24; //VTK_QUADRATIC_TETRA;
+          break;// 9
+          case HEX8:
+          case HEX8_FVM:
+          celltype = 12; //VTK_HEXAHEDRON;
+          break;// 10
+          case HEX20:
+          celltype = 25; //VTK_QUADRATIC_HEXAHEDRON;
+          break;// 12
+          case PRISM6:
+          case PRISM6_FVM:
+          celltype = 13; //VTK_WEDGE;
+          break;// 13
+          case PYRAMID5:
+          case PYRAMID5_FVM:
+          celltype = 14; //VTK_PYRAMID;
+          break;// 16
+          default:
+          {
+            std::cerr<<"element type "<<type<<" not implemented"<<std::endl;
+            genius_error();
+          }
       }
+
+      out << celltype << std::endl;
     }
 
-    out << celltype << std::endl;
+    out << std::endl;
   }
-
-  out << std::endl;
 }
 
 
 void VTKIO::meshinfo_cell_to_vtk(const MeshBase& mesh, std::ofstream & out)
 {
 
+  std::map<unsigned int, unsigned int> cell_processor_id;
+  std::map<unsigned int, unsigned int> cell_subdomain_id;
+
+  MeshBase::const_element_iterator       elem_it  = mesh.active_this_pid_elements_begin();
+  const MeshBase::const_element_iterator elem_it_end = mesh.active_this_pid_elements_end();
+  for (; elem_it != elem_it_end; ++elem_it)
+  {
+    const Elem * elem = *elem_it;
+    cell_processor_id.insert( std::make_pair(elem->id(), elem->processor_id()) );
+    cell_subdomain_id.insert( std::make_pair(elem->id(), elem->subdomain_id()) );
+  }
+
+  Parallel::gather(0, cell_processor_id);
+  Parallel::gather(0, cell_subdomain_id);
+
   // only do it at root node
-  if(Genius::processor_id() != 0) return;
-
-  //write cell based region and partition info to vtk
-
-  // region information
-  out << "SCALARS region float 1"  <<'\n';
-  out << "LOOKUP_TABLE default"    <<'\n';
-  MeshBase::const_element_iterator       it  = mesh.active_elements_begin();
-  const MeshBase::const_element_iterator end = mesh.active_elements_end();
-  for ( ; it != end; ++it)
+  if(Genius::processor_id() == 0)
   {
-    out << static_cast<float>((*it)->subdomain_id())<<'\n';
-  }
-  out<<std::endl;
+    //write cell based region and partition info to vtk
 
-  // material information
-  std::map<unsigned int, unsigned int> sub_id_to_material_id;
-  for( unsigned int n=0; n<mesh.n_subdomains(); n++)
-  {
-    const std::string &material = mesh.subdomain_material(n);
-    sub_id_to_material_id[n] = Material::get_id_by_material(material);
-  }
+    // region information
+    out << "SCALARS region float 1"  <<'\n';
+    out << "LOOKUP_TABLE default"    <<'\n';
+    {
+      std::map<unsigned int, unsigned int>::const_iterator it = cell_subdomain_id.begin();
+      for ( ; it != cell_subdomain_id.end(); ++it)
+        out << static_cast<float>(it->second)<<'\n';
+    }
+    out<<std::endl;
 
-  out << "SCALARS material float 1"  <<'\n';
-  out << "LOOKUP_TABLE default"    <<'\n';
-  for (it = mesh.active_elements_begin(); it != end; ++it)
-  {
-    out << static_cast<float>(sub_id_to_material_id[(*it)->subdomain_id()])<<'\n';
+    // partition information
+    out<<"SCALARS partition float 1"  <<'\n';
+    out<<"LOOKUP_TABLE default"       <<'\n';
+    {
+      std::map<unsigned int, unsigned int>::const_iterator it = cell_processor_id.begin();
+      for ( ; it != cell_processor_id.end(); ++it)
+        out << static_cast<float>(it->second)<<'\n';
+    }
+    out<<std::endl;
   }
-  out<<std::endl;
-
-
-  // partition information
-  out<<"SCALARS partition float 1"  <<'\n';
-  out<<"LOOKUP_TABLE default"       <<'\n';
-  for (it = mesh.active_elements_begin(); it != end; ++it)
-  {
-    out<<static_cast<float>((*it)->processor_id())<<'\n';
-  }
-  out<<std::endl;
 
 }
 
@@ -1068,43 +1302,44 @@ void VTKIO::meshinfo_cell_to_vtk(const MeshBase& mesh, std::ofstream & out)
 
 void VTKIO::meshinfo_node_to_vtk(const MeshBase& mesh, std::ofstream & out)
 {
+  std::set<unsigned int> node_id;
+  std::map<unsigned int, unsigned int> node_processor_id;
+
+  MeshBase::const_node_iterator nd = mesh.this_pid_nodes_begin();
+  MeshBase::const_node_iterator nd_end = mesh.this_pid_nodes_end();
+  for (; nd != nd_end; ++nd)
+  {
+    const Node * node = *nd;
+    node_id.insert(node->id());
+    node_processor_id.insert( std::make_pair(node->id(), node->processor_id()) );
+  }
+
+  Parallel::gather(0, node_id);
+  Parallel::gather(0, node_processor_id);
+
+
   // only do it at root node
-  if(Genius::processor_id() != 0) return;
-
-  out<<"SCALARS node_order float 1" <<'\n';
-  out<<"LOOKUP_TABLE default"       <<'\n';
-  MeshBase::const_node_iterator nd = mesh.active_nodes_begin();
-  MeshBase::const_node_iterator nd_end = mesh.active_nodes_end();
-  for (; nd != nd_end; nd++)
+  if(Genius::processor_id() == 0)
   {
-    out<<static_cast<float>((*nd)->id())<<'\n' ;
-  }
-  out<<std::endl;
-
-
-  out<<"SCALARS node_partition float 1" <<'\n';
-  out<<"LOOKUP_TABLE default"       <<'\n';
-  nd = mesh.active_nodes_begin();
-  for (; nd != nd_end; nd++)
-  {
-    out<<static_cast<float>((*nd)->processor_id())<<'\n' ;
-  }
-  out<<std::endl;
-
-
-  out<<"SCALARS boundary float 1"  <<'\n';
-  out<<"LOOKUP_TABLE default"      <<'\n';
-  nd = mesh.active_nodes_begin();
-  for(;nd!=nd_end;++nd)
-  {
-    if (mesh.boundary_info->boundary_id(*nd) != BoundaryInfo::invalid_id )
+    out<<"SCALARS node_order float 1" <<'\n';
+    out<<"LOOKUP_TABLE default"       <<'\n';
     {
-      out<<static_cast<float>(mesh.boundary_info->boundary_id(*nd))<<'\n';
+      std::set<unsigned int>::const_iterator it =  node_id.begin();
+      for (; it !=  node_id.end(); ++it)
+        out<<static_cast<float>(*it)<<'\n' ;
     }
-    else
-      out<<0.0<<'\n';
+    out<<std::endl;
+
+
+    out<<"SCALARS node_partition float 1" <<'\n';
+    out<<"LOOKUP_TABLE default"       <<'\n';
+    {
+      std::map<unsigned int, unsigned int>::const_iterator it = node_processor_id.begin();
+      for (; it != node_processor_id.end(); ++it)
+        out<<static_cast<float>(it->second)<<'\n' ;
+    }
+    out<<std::endl;
   }
-  out<<std::endl;
 }
 
 
@@ -1129,28 +1364,28 @@ void VTKIO::solution_to_vtk(const MeshBase& mesh, std::ofstream & out)
   bool ddm_ac_data           = false;
   bool optical_complex_field = false;
 
-  const std::vector<SolverSpecify::SolverType> & solve_histroy = system.solve_histroy();
+  const std::vector<SolverSpecify::SolverType> & solve_history = system.solve_history();
 
-  for(unsigned int n=0; n<solve_histroy.size(); ++n)
+  for(unsigned int n=0; n<solve_history.size(); ++n)
   {
-    switch  (solve_histroy[n])
+    switch  (solve_history[n])
     {
-    case SolverSpecify::EBML3      :
-    case SolverSpecify::EBML3MIX   :
-      ebm_solution_data = true;
-      break;
-    case SolverSpecify::EM_FEM_2D  :
-    case SolverSpecify::EM_FEM_3D  :
-      optical_complex_field = true;
-      optical_generation = true;
-      break;
-    case SolverSpecify::RAY_TRACE  :
-      optical_generation = true;
-      break;
-    case SolverSpecify::DDMAC      :
-      ddm_ac_data = true;
-      break;
-    default : break;
+        case SolverSpecify::EBML3      :
+        case SolverSpecify::EBML3MIX   :
+        ebm_solution_data = true;
+        break;
+        case SolverSpecify::EM_FEM_2D  :
+        case SolverSpecify::EM_FEM_3D  :
+        optical_complex_field = true;
+        optical_generation = true;
+        break;
+        case SolverSpecify::RAY_TRACE  :
+        optical_generation = true;
+        break;
+        case SolverSpecify::DDMAC      :
+        ddm_ac_data = true;
+        break;
+        default : break;
     }
   }
 
@@ -1168,10 +1403,11 @@ void VTKIO::solution_to_vtk(const MeshBase& mesh, std::ofstream & out)
 
     meshinfo_cell_to_vtk(mesh, out);
 
-    // solution data
-    std::map<unsigned int, float> Ex,  Ey,  Ez;
-    std::map<unsigned int, float> Jnx,  Jny,  Jnz;
-    std::map<unsigned int, float> Jpx,  Jpy,  Jpz;
+    std::vector<unsigned int> order;
+
+    std::vector<float> Ex,  Ey,  Ez;
+    std::vector<float> Jnx,  Jny,  Jnz;
+    std::vector<float> Jpx,  Jpy,  Jpz;
 
     for( unsigned int r=0; r<system.n_regions(); r++)
     {
@@ -1179,25 +1415,29 @@ void VTKIO::solution_to_vtk(const MeshBase& mesh, std::ofstream & out)
       for(unsigned int n=0; n<region->n_cell(); ++n)
       {
         const Elem * elem = region->get_region_elem(n);
+        if( elem->processor_id() != Genius::processor_id() ) continue;
+
+        order.push_back(elem->id());
+
         const FVM_CellData * elem_data = region->get_region_elem_data(n);
 
-        Ex[elem->id()]  = static_cast<float>(elem_data->E()(0)/(V/cm));
-        Ey[elem->id()]  = static_cast<float>(elem_data->E()(1)/(V/cm));
-        Ez[elem->id()]  = static_cast<float>(elem_data->E()(2)/(V/cm));
+        Ex.push_back(static_cast<float>(elem_data->E()(0)/(V/cm)));
+        Ey.push_back(static_cast<float>(elem_data->E()(1)/(V/cm)));
+        Ez.push_back(static_cast<float>(elem_data->E()(2)/(V/cm)));
 
-        Jnx[elem->id()]  = static_cast<float>(elem_data->Jn()(0)/(A/cm));
-        Jny[elem->id()]  = static_cast<float>(elem_data->Jn()(1)/(A/cm));
-        Jnz[elem->id()]  = static_cast<float>(elem_data->Jn()(2)/(A/cm));
+        Jnx.push_back(static_cast<float>(elem_data->Jn()(0)/(A/cm)));
+        Jny.push_back(static_cast<float>(elem_data->Jn()(1)/(A/cm)));
+        Jnz.push_back(static_cast<float>(elem_data->Jn()(2)/(A/cm)));
 
-        Jpx[elem->id()]  = static_cast<float>(elem_data->Jp()(0)/(A/cm));
-        Jpy[elem->id()]  = static_cast<float>(elem_data->Jp()(1)/(A/cm));
-        Jpz[elem->id()]  = static_cast<float>(elem_data->Jp()(2)/(A/cm));
+        Jpx.push_back(static_cast<float>(elem_data->Jp()(0)/(A/cm)));
+        Jpy.push_back(static_cast<float>(elem_data->Jp()(1)/(A/cm)));
+        Jpz.push_back(static_cast<float>(elem_data->Jp()(2)/(A/cm)));
       }
     }
-
-    write_cell_vector_solution(Ex,  Ey,  Ez,  "electrical_field", out);
-    write_cell_vector_solution(Jnx, Jny, Jnz, "electron_current", out);
-    write_cell_vector_solution(Jpx, Jpy, Jpz, "hole_current", out);
+    Parallel::gather(0, order);
+    write_cell_vector_solution(order, Ex,  Ey,  Ez,  "electrical_field", out);
+    write_cell_vector_solution(order, Jnx, Jny, Jnz, "electron_current", out);
+    write_cell_vector_solution(order, Jpx, Jpy, Jpz, "hole_current", out);
   }
 
 
@@ -1212,31 +1452,36 @@ void VTKIO::solution_to_vtk(const MeshBase& mesh, std::ofstream & out)
     // scale back to normal unit
     double concentration_scale = pow(cm, -3);
 
+    std::vector<unsigned int> order;
+
     // gather data from all the processor
-    std::map<unsigned int, float> Na, Nd, net_doping, net_charge, psi, Ec, Ev, qFn, qFp, n, p, T, Tn, Tp; //scalar value
-    std::map<unsigned int, float> mole_x, mole_y;
-    std::map<unsigned int, float> OptG, PatG;
+    std::vector<float> Na, Nd, net_doping, net_charge, psi, Ec, Ev, qFn, qFp, n, p, T, Tn, Tp; //scalar value
+    std::vector<float> mole_x, mole_y;
+    std::vector<float> OptG, PatG;
+    std::vector<float> R;
 
-    std::map<unsigned int, std::complex<float> >psi_ac, n_ac, p_ac, T_ac, Tn_ac, Tp_ac; //complex value
-    std::map<unsigned int, std::complex<float> > OptE_complex, OptH_complex;
+    std::vector<std::complex<float> >psi_ac, n_ac, p_ac, T_ac, Tn_ac, Tp_ac; //complex value
+    std::vector<std::complex<float> > OptE_complex, OptH_complex;
 
-    std::map<unsigned int, float> Jnx, Jny, Jnz; //vector value
-    std::map<unsigned int, float> Jpx, Jpy, Jpz;
+    std::vector<float> Jnx, Jny, Jnz; //vector value
+    std::vector<float> Jpx, Jpy, Jpz;
+    std::vector<float> Vnx, Vny, Vnz;
+    std::vector<float> Vpx, Vpy, Vpz;
+    std::vector<float> Ex,  Ey,  Ez;
 
     // search all the node belongs to current processor
-    MeshBase::const_node_iterator nd = mesh.pid_nodes_begin(Genius::processor_id());
-    MeshBase::const_node_iterator nd_end = mesh.pid_nodes_end(Genius::processor_id());
-    for (; nd != nd_end; ++nd)
+    for( unsigned int r=0; r<system.n_regions(); r++)
     {
-      if( (*nd)->processor_id() != Genius::processor_id() ) continue;
-
-      for( unsigned int r=0; r<system.n_regions(); r++)
+      const SimulationRegion * region = system.region(r);
+      SimulationRegion::const_processor_node_iterator on_processor_nodes_it = region->on_processor_nodes_begin();
+      SimulationRegion::const_processor_node_iterator on_processor_nodes_it_end = region->on_processor_nodes_end();
+      for(; on_processor_nodes_it!=on_processor_nodes_it_end; ++on_processor_nodes_it)
       {
-        const SimulationRegion * region = system.region(r);
-        const FVM_Node * fvm_node = region->region_fvm_node(*nd);
-        if(fvm_node==NULL) continue;
+        const FVM_Node * fvm_node = *on_processor_nodes_it;
+        const FVM_NodeData * node_data = fvm_node->node_data();
+        const unsigned int id = fvm_node->root_node()->id();
 
-        const FVM_NodeData * node_data = region->region_node_data(*nd);
+        order.push_back(id);
 
         // if the fvm_node lies on the interface of two material regions,
         // we shall use the node data in the more important region.
@@ -1246,7 +1491,6 @@ void VTKIO::solution_to_vtk(const MeshBase& mesh, std::ofstream & out)
           unsigned int bc_index = system.get_bcs()->get_bc_index_by_bd_id(fvm_node->boundary_id());
           const BoundaryCondition * bc = system.get_bcs()->get_bc(bc_index);
           const FVM_Node * primary_fvm_node = (*bc->region_node_begin(fvm_node->root_node())).second.second;
-          genius_assert(primary_fvm_node->root_node()==(*nd));
           node_data = primary_fvm_node->node_data();
         }
 
@@ -1254,135 +1498,150 @@ void VTKIO::solution_to_vtk(const MeshBase& mesh, std::ofstream & out)
         {
           if(semiconductor_material)
           {
-            Na        [(*nd)->id()]  = static_cast<float>(node_data->Total_Na()/concentration_scale);
-            Nd        [(*nd)->id()]  = static_cast<float>(node_data->Total_Nd()/concentration_scale);
-            net_doping[(*nd)->id()]  = static_cast<float>(node_data->Net_doping()/concentration_scale);
-            net_charge[(*nd)->id()]  = static_cast<float>(node_data->Net_charge()/concentration_scale);
-            n         [(*nd)->id()]  = static_cast<float>(node_data->n()/concentration_scale);
-            p         [(*nd)->id()]  = static_cast<float>(node_data->p()/concentration_scale);
-            mole_x    [(*nd)->id()]  = static_cast<float>(node_data->mole_x());
-            mole_y    [(*nd)->id()]  = static_cast<float>(node_data->mole_y());
+            Na.push_back(static_cast<float>(node_data->Total_Na()/concentration_scale));
+            Nd.push_back(static_cast<float>(node_data->Total_Nd()/concentration_scale));
+            net_doping.push_back(static_cast<float>(node_data->Net_doping()/concentration_scale));
+            net_charge.push_back(static_cast<float>(node_data->Net_charge()/concentration_scale));
+            n.push_back(static_cast<float>(node_data->n()/concentration_scale));
+            p.push_back(static_cast<float>(node_data->p()/concentration_scale));
+            mole_x.push_back(static_cast<float>(node_data->mole_x()));
+            mole_y.push_back(static_cast<float>(node_data->mole_y()));
+            R.push_back(static_cast<float>(node_data->Recomb()/(concentration_scale/s)));
 
-            Jnx[(*nd)->id()]  = static_cast<float>(node_data->Jn()(0)/(A/cm));
-            Jny[(*nd)->id()]  = static_cast<float>(node_data->Jn()(1)/(A/cm));
-            Jnz[(*nd)->id()]  = static_cast<float>(node_data->Jn()(2)/(A/cm));
+            Jnx.push_back(static_cast<float>(node_data->Jn()(0)/(A/cm)));
+            Jny.push_back(static_cast<float>(node_data->Jn()(1)/(A/cm)));
+            Jnz.push_back(static_cast<float>(node_data->Jn()(2)/(A/cm)));
 
-            Jpx[(*nd)->id()]  = static_cast<float>(node_data->Jp()(0)/(A/cm));
-            Jpy[(*nd)->id()]  = static_cast<float>(node_data->Jp()(1)/(A/cm));
-            Jpz[(*nd)->id()]  = static_cast<float>(node_data->Jp()(2)/(A/cm));
+            Jpx.push_back(static_cast<float>(node_data->Jp()(0)/(A/cm)));
+            Jpy.push_back(static_cast<float>(node_data->Jp()(1)/(A/cm)));
+            Jpz.push_back(static_cast<float>(node_data->Jp()(2)/(A/cm)));
+
+            Ex.push_back(static_cast<float>(node_data->E()(0)/(V/cm)));
+            Ey.push_back(static_cast<float>(node_data->E()(1)/(V/cm)));
+            Ez.push_back(static_cast<float>(node_data->E()(2)/(V/cm)));
           }
 
-          psi[(*nd)->id()]  = static_cast<float>(node_data->psi()/V);
-          Ec[(*nd)->id()]   = static_cast<float>(node_data->Ec()/eV);
-          Ev[(*nd)->id()]   = static_cast<float>(node_data->Ev()/eV);
-          qFn[(*nd)->id()]  = static_cast<float>(node_data->qFn()/eV);
-          qFp[(*nd)->id()]  = static_cast<float>(node_data->qFp()/eV);
-          T  [(*nd)->id()]  = static_cast<float>(node_data->T()/K);
+          psi.push_back(static_cast<float>(node_data->psi()/V));
+          Ec.push_back(static_cast<float>(node_data->Ec()/eV));
+          Ev.push_back(static_cast<float>(node_data->Ev()/eV));
+          qFn.push_back(static_cast<float>(node_data->qFn()/eV));
+          qFp.push_back(static_cast<float>(node_data->qFp()/eV));
+          T.push_back(static_cast<float>(node_data->T()/K));
 
           if(ebm_solution_data)
           {
-            Tn [(*nd)->id()]  = static_cast<float>(node_data->Tn()/K);
-            Tp [(*nd)->id()]  = static_cast<float>(node_data->Tp()/K);
+            Tn.push_back(static_cast<float>(node_data->Tn()/K));
+            Tp.push_back(static_cast<float>(node_data->Tp()/K));
           }
 
           if(optical_generation)
-            OptG[(*nd)->id()] = static_cast<float>(node_data->OptG()/(concentration_scale/s));
+            OptG.push_back(static_cast<float>(node_data->OptG()/(concentration_scale/s)));
 
           if(particle_generation)
-            PatG[(*nd)->id()] = static_cast<float>(node_data->PatG()/(concentration_scale/s));
+            PatG.push_back(static_cast<float>(node_data->PatG()/(concentration_scale/s)));
 
           if(ddm_ac_data)
           {
-            psi_ac [(*nd)->id()]   = static_cast<std::complex<float> >(node_data->psi_ac()/V);
-            n_ac   [(*nd)->id()]   = static_cast<std::complex<float> >(node_data->n_ac()/concentration_scale);
-            p_ac   [(*nd)->id()]   = static_cast<std::complex<float> >(node_data->p_ac()/concentration_scale);
-            T_ac   [(*nd)->id()]   = static_cast<std::complex<float> >(node_data->T_ac()/K);
-            Tn_ac  [(*nd)->id()]   = static_cast<std::complex<float> >(node_data->Tn_ac()/K);
-            Tp_ac  [(*nd)->id()]   = static_cast<std::complex<float> >(node_data->Tp_ac()/K);
+            psi_ac.push_back(static_cast<std::complex<float> >(node_data->psi_ac()/V));
+            n_ac.push_back(static_cast<std::complex<float> >(node_data->n_ac()/concentration_scale));
+            p_ac.push_back(static_cast<std::complex<float> >(node_data->p_ac()/concentration_scale));
+            T_ac.push_back(static_cast<std::complex<float> >(node_data->T_ac()/K));
+            Tn_ac.push_back(static_cast<std::complex<float> >(node_data->Tn_ac()/K));
+            Tp_ac.push_back(static_cast<std::complex<float> >(node_data->Tp_ac()/K));
           }
 
           if(optical_complex_field)
           {
-            OptE_complex[(*nd)->id()] = static_cast<std::complex<float> >(node_data->OptE_complex()/(V/cm));
-            OptH_complex[(*nd)->id()] = static_cast<std::complex<float> >(node_data->OptH_complex()/(A/cm));
+            OptE_complex.push_back(static_cast<std::complex<float> >(node_data->OptE_complex()/(V/cm)));
+            OptH_complex.push_back(static_cast<std::complex<float> >(node_data->OptH_complex()/(A/cm)));
           }
+
         }
       }
     }
 
-    write_node_scaler_solution(psi, "psi", out);
-    write_node_scaler_solution(Ec,  "Ec",  out);
-    write_node_scaler_solution(Ev,  "Ev",  out);
-    write_node_scaler_solution(qFn, "elec_quasi_Fermi_level", out);
-    write_node_scaler_solution(qFp, "hole_quasi_Fermi_level", out);
+    Parallel::gather(0, order);
+
+    write_node_scaler_solution(order, psi, "psi", out);
+    write_node_scaler_solution(order, Ec,  "Ec",  out);
+    write_node_scaler_solution(order, Ev,  "Ev",  out);
+    write_node_scaler_solution(order, qFn, "elec_quasi_Fermi_level", out);
+    write_node_scaler_solution(order, qFp, "hole_quasi_Fermi_level", out);
 
     if(semiconductor_material)
     {
-      write_node_scaler_solution(Na,  "Na", out);
-      write_node_scaler_solution(Nd,  "Nd", out);
-      write_node_scaler_solution(n,   "electron_density", out);
-      write_node_scaler_solution(p,   "hole_density", out);
-      write_node_scaler_solution(net_doping,  "net_doping", out);
-      write_node_scaler_solution(net_charge,  "net_charge", out);
-      write_node_scaler_solution(mole_x, "mole_x", out);
-      write_node_scaler_solution(mole_y, "mole_y", out);
-      //write_node_vector_solution(Jnx, Jny, Jnz, "Jn", out);
-      //write_node_vector_solution(Jpx, Jpy, Jpz, "Jp", out);
+      write_node_scaler_solution(order, Na,  "Na", out);
+      write_node_scaler_solution(order, Nd,  "Nd", out);
+      write_node_scaler_solution(order, n,   "electron_density", out);
+      write_node_scaler_solution(order, p,   "hole_density", out);
+      write_node_scaler_solution(order, net_doping,  "net_doping", out);
+      write_node_scaler_solution(order, net_charge,  "net_charge", out);
+      write_node_scaler_solution(order, mole_x, "mole_x", out);
+      write_node_scaler_solution(order, mole_y, "mole_y", out);
+      write_node_scaler_solution(order, R, "recombination", out);
+      //write_node_vector_solution(order, Jnx, Jny, Jnz, "Jn", out);
+      //write_node_vector_solution(order, Jpx, Jpy, Jpz, "Jp", out);
     }
 
-    write_node_scaler_solution(T,   "temperature", out);
+    write_node_scaler_solution(order, T,   "temperature", out);
 
     if(ebm_solution_data)
     {
-      write_node_scaler_solution(Tn,  "elec_temperature", out);
-      write_node_scaler_solution(Tp,  "hole_temperature", out);
+      write_node_scaler_solution(order, Tn,  "elec_temperature", out);
+      write_node_scaler_solution(order, Tp,  "hole_temperature", out);
     }
 
     if(ddm_ac_data)
     {
-      write_node_complex_solution(psi_ac, "psi_AC", out);
-      write_node_complex_solution(n_ac,   "electron_AC", out);
-      write_node_complex_solution(p_ac,   "hole_AC", out);
-      write_node_complex_solution(T_ac,   "temperature_AC", out);
-      write_node_complex_solution(Tn_ac,  "elec_temperature_AC", out);
-      write_node_complex_solution(Tp_ac,  "hole_temperature_AC", out);
+      write_node_complex_solution(order, psi_ac, "psi_AC", out);
+      write_node_complex_solution(order, n_ac,   "electron_AC", out);
+      write_node_complex_solution(order, p_ac,   "hole_AC", out);
+      write_node_complex_solution(order, T_ac,   "temperature_AC", out);
+      write_node_complex_solution(order, Tn_ac,  "elec_temperature_AC", out);
+      write_node_complex_solution(order, Tp_ac,  "hole_temperature_AC", out);
     }
 
     if(optical_complex_field)
     {
-      write_node_complex_solution(OptE_complex, "Optical_E", out);
-      write_node_complex_solution(OptH_complex, "Optical_H", out);
+      write_node_complex_solution(order, OptE_complex, "Optical_E", out);
+      write_node_complex_solution(order, OptH_complex, "Optical_H", out);
     }
 
     if(optical_generation)
-      write_node_scaler_solution(OptG,   "Optical_Generation", out);
+      write_node_scaler_solution(order, OptG,   "Optical_Generation", out);
 
     if(particle_generation)
-      write_node_scaler_solution(PatG,   "Radiation_Generation", out);
+      write_node_scaler_solution(order, PatG,   "Radiation_Generation", out);
   }
 
 }
 
-void VTKIO::write_node_scaler_solution(std::map<unsigned int, float> & sol, const std::string & sol_name, std::ofstream & out)
+void VTKIO::write_node_scaler_solution(const std::vector<unsigned int> & order, std::vector<float> & sol,
+                                       const std::string & sol_name, std::ofstream & out)
 {
   // this should run on parallel for all the processor
   Parallel::gather(0, sol);
+
 
   if ( Genius::processor_id() == 0)
   {
     out << "SCALARS "<<sol_name<<" float 1" << std::endl;
     out << "LOOKUP_TABLE default" << std::endl;
-    std::map<unsigned int, float>::iterator it=sol.begin();
-    for( ; it!=sol.end(); ++it)
+
+    std::vector<float> re_order(order.size());
+    for(unsigned int n=0; n<order.size(); ++n)
+      re_order[order[n]] = sol[n];
+    for(unsigned int n=0; n<re_order.size(); ++n)
     {
-      out << it->second << std::endl;
+      out << re_order[n] << std::endl;
     }
     out<<std::endl;
   }
 }
 
 
-void VTKIO::write_node_complex_solution(std::map<unsigned int, std::complex<float> > & sol, const std::string & sol_name, std::ofstream & out)
+void VTKIO::write_node_complex_solution(const std::vector<unsigned int> & order, std::vector<std::complex<float> > & sol,
+                                        const std::string & sol_name, std::ofstream & out)
 {
   // this should run on parallel for all the processor
   Parallel::gather(0, sol);
@@ -1392,10 +1651,12 @@ void VTKIO::write_node_complex_solution(std::map<unsigned int, std::complex<floa
     // out put magnitude
     out << "SCALARS "<<sol_name<<"_abs float 1" << std::endl;
     out << "LOOKUP_TABLE default"   << std::endl;
-    std::map<unsigned int, std::complex<float> >::iterator it=sol.begin();
-    for( ; it!=sol.end(); ++it)
+    std::vector<float> re_order_abs(order.size());
+    for(unsigned int n=0; n<order.size(); ++n)
+      re_order_abs[order[n]] = std::abs(sol[n]);
+    for(unsigned int n=0; n<re_order_abs.size(); ++n)
     {
-      out << std::abs(it->second) << std::endl;
+      out << re_order_abs[n] << std::endl;
     }
     out<<std::endl;
 
@@ -1403,9 +1664,12 @@ void VTKIO::write_node_complex_solution(std::map<unsigned int, std::complex<floa
     // out put phase angle
     out << "SCALARS "<<sol_name<<"_angle float 1" << std::endl;
     out << "LOOKUP_TABLE default"   << std::endl;
-    for(it=sol.begin(); it!=sol.end(); ++it)
+    std::vector<float> re_order_arg(order.size());
+    for(unsigned int n=0; n<order.size(); ++n)
+      re_order_arg[order[n]] = std::arg(sol[n]);
+    for(unsigned int n=0; n<re_order_arg.size(); ++n)
     {
-      out << std::arg(it->second) << std::endl;
+      out << re_order_arg[n] << std::endl;
     }
     out<<std::endl;
   }
@@ -1413,9 +1677,10 @@ void VTKIO::write_node_complex_solution(std::map<unsigned int, std::complex<floa
 }
 
 
-void VTKIO::write_node_vector_solution(std::map<unsigned int, float > & sol_x,
-                                       std::map<unsigned int, float > & sol_y,
-                                       std::map<unsigned int, float > & sol_z,
+void VTKIO::write_node_vector_solution(const std::vector<unsigned int> & order,
+                                       std::vector<float > & sol_x,
+                                       std::vector<float > & sol_y,
+                                       std::vector<float > & sol_z,
                                        const std::string & sol_name, std::ofstream & out)
 {
   // this should run on parallel for all the processor
@@ -1426,16 +1691,28 @@ void VTKIO::write_node_vector_solution(std::map<unsigned int, float > & sol_x,
   if ( Genius::processor_id() == 0)
   {
     out << "VECTORS "<<sol_name<<" float" << std::endl;
+
+    std::vector<float> re_order_x(order.size());
+    std::vector<float> re_order_y(order.size());
+    std::vector<float> re_order_z(order.size());
+    for(unsigned int n=0; n<order.size(); ++n)
+    {
+      re_order_x[order[n]] = sol_x[n];
+      re_order_y[order[n]] = sol_y[n];
+      re_order_z[order[n]] = sol_z[n];
+    }
+
     for( unsigned int i=0; i<sol_x.size(); i++)
     {
-      out << sol_x[i] <<" "<< sol_y[i] <<" "<< sol_z[i] <<std::endl;
+      out << re_order_x[i] <<" "<< re_order_y[i] <<" "<< re_order_z[i] <<std::endl;
     }
     out<<std::endl;
   }
 }
 
 
-void VTKIO::write_cell_scaler_solution(std::map<unsigned int, float> & sol, const std::string & sol_name, std::ofstream & out)
+void VTKIO::write_cell_scaler_solution(const std::vector<unsigned int> & order, std::vector<float> & sol,
+                                       const std::string & sol_name, std::ofstream & out)
 {
   // this should run on parallel for all the processor
   Parallel::gather(0, sol);
@@ -1444,18 +1721,21 @@ void VTKIO::write_cell_scaler_solution(std::map<unsigned int, float> & sol, cons
   {
     out << "SCALARS "<<sol_name<<" float 1" << std::endl;
     out << "LOOKUP_TABLE default" << std::endl;
-    std::map<unsigned int, float>::iterator it=sol.begin();
-    for( ; it!=sol.end(); ++it)
+    std::vector<float> re_order(order.size());
+    for(unsigned int n=0; n<order.size(); ++n)
+      re_order[order[n]] = sol[n];
+    for(unsigned int n=0; n<re_order.size(); ++n)
     {
-      out << it->second << std::endl;
+      out << re_order[n] << std::endl;
     }
     out<<std::endl;
   }
 }
 
-void VTKIO::write_cell_vector_solution(std::map<unsigned int, float > & sol_x,
-                                       std::map<unsigned int, float > & sol_y,
-                                       std::map<unsigned int, float > & sol_z,
+void VTKIO::write_cell_vector_solution(const std::vector<unsigned int> & order,
+                                       std::vector<float > & sol_x,
+                                       std::vector<float > & sol_y,
+                                       std::vector<float > & sol_z,
                                        const std::string & sol_name, std::ofstream & out)
 {
   // this should run on parallel for all the processor
@@ -1466,9 +1746,19 @@ void VTKIO::write_cell_vector_solution(std::map<unsigned int, float > & sol_x,
   if ( Genius::processor_id() == 0)
   {
     out << "VECTORS "<<sol_name<<" float" << std::endl;
+
+    std::vector<float> re_order_x(order.size());
+    std::vector<float> re_order_y(order.size());
+    std::vector<float> re_order_z(order.size());
+    for(unsigned int n=0; n<order.size(); ++n)
+    {
+      re_order_x[order[n]] = sol_x[n];
+      re_order_y[order[n]] = sol_y[n];
+      re_order_z[order[n]] = sol_z[n];
+    }
     for( unsigned int i=0; i<sol_x.size(); i++)
     {
-      out << sol_x[i] <<" "<< sol_y[i] <<" "<< sol_z[i] <<std::endl;
+      out << re_order_x[i] <<" "<< re_order_y[i] <<" "<< re_order_z[i] <<std::endl;
     }
     out<<std::endl;
   }
@@ -1511,6 +1801,7 @@ void VTKIO::write (const std::string& name)
 {
 
   const MeshBase& mesh = FieldOutput<SimulationSystem>::system().mesh();
+  mesh.boundary_info->build_on_processor_side_list (_el, _sl, _il);
 
   // vtk file extension have a ".vtu" format?
   if(name.rfind(".vtu") < name.size())
@@ -1524,6 +1815,7 @@ void VTKIO::write (const std::string& name)
     meshinfo_to_vtk(mesh, _vtk_grid);
     solution_to_vtk(mesh, _vtk_grid);
 
+
     // only processor 0 write VTK file
     if(Genius::processor_id() == 0)
     {
@@ -1534,12 +1826,18 @@ void VTKIO::write (const std::string& name)
       writer->SetFileName(name.c_str());
       writer->Write();
       writer->Delete();
+
     }
     //clean up
     _vtk_grid->Delete();
 #endif
 
   }
+
+#if defined(HAVE_FENV_H) && defined(DEBUG)
+  // it seems vtk may generate FE_INVALID flag. clear it here
+  feclearexcept(FE_INVALID);
+#endif
 
   // vtk file extension have a ".vtk" format?
   if(name.rfind(".vtk") < name.size())
@@ -1572,7 +1870,7 @@ void VTKIO::read (const std::string& name)
 #ifdef HAVE_VTK
 
   SimulationSystem & system = FieldInput<SimulationSystem>::system();
-  Mesh & mesh = system.mesh();
+  MeshBase & mesh = system.mesh();
 
   // clear the system
   system.clear();
@@ -1611,27 +1909,27 @@ void VTKIO::read (const std::string& name)
       Elem* elem = NULL;  // Initialize to avoid compiler warning
       switch(cell->GetCellType())
       {
-      case VTK_TRIANGLE:
-        elem = Elem::build(TRI3).release();
-        break;
-      case VTK_QUAD:
-        elem = Elem::build(QUAD4).release();
-        break;
-      case VTK_TETRA:
-        elem = Elem::build(TET4).release();
-        break;
-      case VTK_WEDGE:
-        elem = Elem::build(PRISM6).release();
-        break;
-      case VTK_HEXAHEDRON:
-        elem = Elem::build(HEX8).release();
-        break;
-      case VTK_PYRAMID:
-        elem = Elem::build(PYRAMID5).release();
-        break;
-      default:
-        std::cerr << "element type not implemented in vtkinterface " << cell->GetCellType() << std::endl;
-        genius_error();
+          case VTK_TRIANGLE:
+          elem = Elem::build(TRI3).release();
+          break;
+          case VTK_QUAD:
+          elem = Elem::build(QUAD4).release();
+          break;
+          case VTK_TETRA:
+          elem = Elem::build(TET4).release();
+          break;
+          case VTK_WEDGE:
+          elem = Elem::build(PRISM6).release();
+          break;
+          case VTK_HEXAHEDRON:
+          elem = Elem::build(HEX8).release();
+          break;
+          case VTK_PYRAMID:
+          elem = Elem::build(PYRAMID5).release();
+          break;
+          default:
+          std::cerr << "element type not implemented in vtkinterface " << cell->GetCellType() << std::endl;
+          genius_error();
       }
 
       // get the straightforward numbering from the VTK cells
@@ -1658,19 +1956,19 @@ void VTKIO::read (const std::string& name)
       vtkCell* cell = _vtk_grid->GetCell(0);
       switch(cell->GetCellType())
       {
-      case VTK_TRIANGLE:
-      case VTK_QUAD:
-        mesh.magic_num() = 237;
-        break;
-      case VTK_TETRA:
-      case VTK_WEDGE:
-      case VTK_HEXAHEDRON:
-      case VTK_PYRAMID:
-        mesh.magic_num() = 72371;
-        break;
-      default:
-        std::cerr << "element type not implemented in vtkinterface " << cell->GetCellType() << std::endl;
-        genius_error();
+          case VTK_TRIANGLE:
+          case VTK_QUAD:
+          mesh.magic_num() = 237;
+          break;
+          case VTK_TETRA:
+          case VTK_WEDGE:
+          case VTK_HEXAHEDRON:
+          case VTK_PYRAMID:
+          mesh.magic_num() = 72371;
+          break;
+          default:
+          std::cerr << "element type not implemented in vtkinterface " << cell->GetCellType() << std::endl;
+          genius_error();
       }
     }
 
@@ -1718,8 +2016,8 @@ void VTKIO::read (const std::string& name)
       std::map<const std::string, int> bd_map;
       typedef std::map<const std::string, int>::iterator Bd_It;
 
-      const Mesh::element_iterator el_end = mesh.elements_end();
-      for (Mesh::element_iterator el = mesh.elements_begin(); el != el_end; ++el)
+      const MeshBase::element_iterator el_end = mesh.elements_end();
+      for (MeshBase::element_iterator el = mesh.elements_begin(); el != el_end; ++el)
       {
         const Elem* elem = *el;
         for (unsigned int ms=0; ms<elem->n_neighbors(); ms++)

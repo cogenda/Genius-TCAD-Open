@@ -30,29 +30,29 @@ private:
   PetscScalar PERMITTI;  // The relative dielectric permittivity of Nitride.
   PetscScalar PERMEABI;  // The relative megnetic permeability of Nitride.
   PetscScalar AFFINITY;  // The electron affinity for the material.
-  PetscScalar BANDGAP;   // The banggap for the material.
   PetscScalar DENSITY;   // Specific mass density for the material.
+
   void   Basic_Init()
   {
     PERMITTI = 7.500000E+00;
     PERMEABI = 1.0;
     AFFINITY = 2.5*eV;
-    BANDGAP  = 4.7*eV;
     DENSITY  = 3.440000E-03*kg*std::pow(cm,-3);
 
 #ifdef __CALIBRATE__
-    parameter_map.insert(para_item("PERMITTI",    PARA("PERMITTI",    "The relative dielectric permittivity", "-", 1.0, &PERMITTI)) );
-    parameter_map.insert(para_item("PERMEABI",  PARA("PERMEABI",  "The relative megnetic permeability ", "-", 1.0, &PERMEABI)) );
+    parameter_map.insert(para_item("PERMITTI", PARA("PERMITTI", "The relative dielectric permittivity", "-", 1.0, &PERMITTI)) );
+    parameter_map.insert(para_item("PERMEABI", PARA("PERMEABI", "The relative megnetic permeability ", "-", 1.0, &PERMEABI)) );
     parameter_map.insert(para_item("AFFINITY", PARA("AFFINITY", "The electron affinity for the material", "eV", eV, &AFFINITY)) );
-    parameter_map.insert(para_item("DENSITY", PARA("DENSITY", "Specific mass density for the material", "kg*cm^-3", kg*std::pow(cm,-3), &DENSITY)) );
+    parameter_map.insert(para_item("DENSITY",  PARA("DENSITY", "Specific mass density for the material", "kg*cm^-3", kg*std::pow(cm,-3), &DENSITY)) );
 #endif
+
   }
 public:
   PetscScalar Density       (const PetscScalar &Tl) const { return DENSITY;  }
   PetscScalar Permittivity  ()                      const { return PERMITTI; }
   PetscScalar Permeability  ()                      const { return PERMEABI; }
   PetscScalar Affinity      (const PetscScalar &Tl) const { return AFFINITY; }
-  PetscScalar Eg            (const PetscScalar &Tl) const { return BANDGAP;  }
+
 
   void atom_fraction(std::vector<std::string> &atoms, std::vector<double> & fraction) const
   {
@@ -68,8 +68,7 @@ public:
     Basic_Init();
   }
   ~GSS_Nitride_BasicParameter()
-  {
-  }
+  {}
 }
 ;
 

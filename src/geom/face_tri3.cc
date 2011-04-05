@@ -125,6 +125,21 @@ void Tri3::nodes_on_edge (const unsigned int e,
 }
 
 
+void Tri3::nodes_on_edge (const unsigned int e,
+                           std::pair<unsigned int, unsigned int> & nodes ) const
+{
+  nodes.first = side_nodes_map[e][0];
+  nodes.second = side_nodes_map[e][1];
+}
+
+
+Real Tri3::edge_length(const unsigned int e) const
+{
+  return (point(side_nodes_map[e][0]) - point(side_nodes_map[e][1])).size();
+}
+
+
+
 AutoPtr<Elem> Tri3::build_side (const unsigned int i,
                                 bool proxy) const
 {
@@ -146,21 +161,21 @@ AutoPtr<Elem> Tri3::build_side (const unsigned int i,
       {
         edge->set_node(0) = this->get_node(0);
         edge->set_node(1) = this->get_node(1);
-
+        edge->subdomain_id() = this->subdomain_id();
         AutoPtr<Elem> ap(edge);  return ap;
       }
     case 1:
       {
         edge->set_node(0) = this->get_node(1);
         edge->set_node(1) = this->get_node(2);
-
+        edge->subdomain_id() = this->subdomain_id();
         AutoPtr<Elem> ap(edge);  return ap;
       }
     case 2:
       {
         edge->set_node(0) = this->get_node(2);
         edge->set_node(1) = this->get_node(0);
-
+        edge->subdomain_id() = this->subdomain_id();
         AutoPtr<Elem> ap(edge);  return ap;
       }
     default:
@@ -264,6 +279,24 @@ void Tri3::connectivity(const unsigned int sf,
 }
 
 
+void Tri3::side_order( const IOPackage iop, std::vector<unsigned int>& order) const
+{
+  order.resize(3);
+  switch (iop)
+  {
+    case ISE:
+    {
+      order[0] = 0;
+      order[1] = 1;
+      order[2] = 2;
+      return;
+    }
+    default:
+      genius_error();
+  }
+}
+
+
 Real Tri3::volume () const
 {
   // 3-node triangles have the following formula for computing the area
@@ -348,18 +381,20 @@ void Tri3::ray_hit(const Point &p , const Point &d , IntersectionResult &result,
         else
           result.state=On_Face;
 
-        if(edge_intersections.hit_points[0].point_location == on_edge)
+        Hit_Point & hit_point = edge_intersections.hit_points[0];
+        if(hit_point.point_location == on_edge)
         {
           //for 2D mesh, on edge equals to on side
-          if(dim==2) edge_intersections.hit_points[0].point_location = on_side;
-          edge_intersections.hit_points[0].mark = s;
-          result.hit_points.push_back(edge_intersections.hit_points[0]);
+          if(dim==2) hit_point.point_location = on_side;
+          hit_point.mark = s;
+          if(!result.is_point_overlap_exist(hit_point))
+            result.hit_points.push_back(hit_point);
         }
-        else if(edge_intersections.hit_points[0].point_location == on_vertex)
+        else if(hit_point.point_location == on_vertex)
         {
-          edge_intersections.hit_points[0].mark = this->side_nodes_map[s][edge_intersections.hit_points[0].mark];
-          if(!result.is_mark_exist(on_vertex, edge_intersections.hit_points[0].mark))
-            result.hit_points.push_back(edge_intersections.hit_points[0]);
+          hit_point.mark = this->side_nodes_map[s][hit_point.mark];
+          if(!result.is_mark_exist(on_vertex, hit_point.mark) && !result.is_point_overlap_exist(hit_point))
+            result.hit_points.push_back(hit_point);
         }
       }
 
@@ -480,6 +515,46 @@ void Tri3::ray_hit(const Point &p , const Point &d , IntersectionResult &result,
 
 }
 
+
+Point Tri3::nearest_point(const Point &p, Real * dist) const
+{
+  // Just use p0 for the point.
+  const Point plane_point = this->point(0);
+  const Point e0 = this->point(1) - this->point(0);
+  const Point e1 = this->point(2) - this->point(0);
+  const Point plane_normal = e0.cross(e1).unit();
+
+  // Create a vector from the surface to point p;
+  const Point w = p - plane_point;
+
+  // The closest point in the plane to point p
+  // is in the negative normal direction
+  // a distance w (dot) p.
+  const Point cp = p - plane_normal*(w*plane_normal);
+
+  if(this->contains_point(cp))
+  {
+    if(dist) *dist = (cp-p).size();
+    return cp;
+  }
+
+  Point np;
+  Real distance = 1e30;
+  for(unsigned int s=0; s<n_sides(); ++s)
+  {
+    Real d;
+    AutoPtr<Elem> side = Tri3::build_side(s, false);
+    Point n = side->nearest_point(p, &d);
+    if( d < distance )
+    {
+      np = n;
+      distance = d;
+    }
+  }
+
+  if(dist) *dist = distance;
+  return np;
+}
 
 
 Point Tri3::outside_unit_normal(unsigned short int side_id) const

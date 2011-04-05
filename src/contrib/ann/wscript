@@ -1,0 +1,9 @@
+def build(bld):
+  bld.objects( source    = bld.path.ant_glob('*.cpp'),
+                includes  = '. ../../..',
+                features  = 'cxx',
+                use       = 'opt',
+                target    = 'ann_objs',
+             )
+  bld.contrib_objs.append('ann_objs')
+

@@ -30,6 +30,8 @@
 #include "point.h"
 #include "key.h"   // for parameter calibrating from user input file
 #include "adolc.h" // for automatic differentiation
+#include "variable_define.h"
+
 using namespace adtl;
 
 //predefine
@@ -74,6 +76,11 @@ struct PMI_Environment
   const PetscScalar  *     p_clock;
 
   /**
+   * const pointer to region variables
+   */
+  const std::map<std::string, SimulationVariable>  ** pp_variables;
+
+  /**
    *  the basic length unit
    */
   double   m;
@@ -102,8 +109,9 @@ struct PMI_Environment
    * constructor
    */
   PMI_Environment(const Point** point, const FVM_NodeData **node_data, const PetscScalar *time,
+                  const std::map<std::string, SimulationVariable> ** variables,
                   double _m_, double _s_, double _V_, double _C_, double _K_)
-      :pp_point(point), pp_node_data(node_data), p_clock(time), m(_m_), s(_s_), V(_V_), C(_C_), K(_K_)
+  : pp_point(point), pp_node_data(node_data), p_clock(time), pp_variables(variables), m(_m_), s(_s_), V(_V_), C(_C_), K(_K_)
   {}
 };
 
@@ -166,8 +174,30 @@ struct  PARA
  */
 struct RefractionItem
 {
+  /**
+   * empty constructor
+   */
+  RefractionItem() {}
+
+  /**
+   * constructor
+   */
+  RefractionItem(PetscScalar lambda, PetscScalar re, PetscScalar im)
+  :wavelength(lambda), RefractionIndexRe(re), RefractionIndexIm(im) {}
+
+  /**
+   * wave length
+   */
   PetscScalar  wavelength;
+
+  /**
+   * real part of refraction index
+   */
   PetscScalar  RefractionIndexRe;
+
+  /**
+   * image part of refraction index
+   */
   PetscScalar  RefractionIndexIm;
 };
 
@@ -188,6 +218,12 @@ protected:
   PetscScalar kb,e,me,eps0,mu0,h,hbar;     // hpysical constant
 
 protected:
+
+  /**
+   * const pointer to region variables
+   */
+  const std::map<std::string, SimulationVariable>  ** pp_variables;
+
   /**
    * the location of current point, use "pointer to pointer" method
    * here pp_point point to p_point in the material class which point to
@@ -233,20 +269,35 @@ public:
   PetscScalar ReadTime () const;
 
   /**
-   * aux function to return user defined scalar value
+   * check iff given variable eixst
    */
-  PetscScalar ReadUserScalarValue (std::string &name) const;
+  bool HasVariable(const std::string &, DataType t=SCALAR) const;
+
+  /**
+   * @return index of given variable
+   */
+  unsigned int VariableIndex(const std::string &) const;
+
+  /**
+   * aux function return scalar value of given variable.
+   */
+  PetscScalar ReadRealVariable (const unsigned int) const;
+
+  /**
+   * aux function return scalar value of given variable.
+   */
+  PetscScalar ReadRealVariable (const std::string &) const;
 
   /**
    * initialize node_data and node-specific PMI data
    */
-  virtual void init_node() {};
+  virtual void init_node() {}
 
   /**
    * initialize node_data and node-specific PMI data for boundary node
    * @param bc_label  node with which label should be initialized
    */
-  virtual void init_bc_node(const std::string & ) {};
+  virtual void init_bc_node(const std::string & ) {}
 
   /**
    * set numeric parameter value by its name.
@@ -263,7 +314,12 @@ public:
   /**
    * set numeric and string parameters value by its name.
    */
-  virtual int calibrate(const std::vector<Parser::Parameter> & pmi_parameters);
+  virtual int calibrate(std::vector<Parser::Parameter> & pmi_parameters);
+
+  /**
+   * post calibrate process, default do nothing
+   */
+  virtual void post_calibrate_process() {}
 
   /**
    * an interface for main code to access the parameter information in the material database
@@ -318,6 +374,7 @@ public:
    */
   virtual ~PMIS_Server(){}
 
+
   /**
    * aux function return first mole function of current node.
    */
@@ -366,7 +423,7 @@ public:
   /**
    * destructor
    */
-  virtual ~PMIS_BasicParameter() {};
+  virtual ~PMIS_BasicParameter() {}
 
   /**
    * @return the mass density [g cm^-3] of material
@@ -411,7 +468,7 @@ public:
   /**
    * destructor
    */
-  virtual ~PMIS_BandStructure() {};
+  virtual ~PMIS_BandStructure() {}
 
   /**
    * @return band gap of semiconductor
@@ -512,6 +569,34 @@ public:
    * to lattice temperature by Automatic Differentiation
    */
   virtual AutoDScalar nie            (const AutoDScalar &p, const AutoDScalar &n, const AutoDScalar &Tl) =0;
+
+  /**
+   * @return the ion type by given species, the return value is defined as P-type < 0 and N-type >0
+   * each semiconductor material can derive this function
+   */
+  virtual int IonType( const std::string & )                                                   { return 0; }
+
+  /**
+   * @return concentration of Na with incomplete ionization
+   */
+  virtual PetscScalar Na_II          (const PetscScalar &p, const PetscScalar &Tl, bool fermi) { return ReadDopingNa (); }
+
+  /**
+   * @return concentration of Na with incomplete ionization
+   */
+  virtual AutoDScalar Na_II          (const AutoDScalar &p, const AutoDScalar &Tl, bool fermi) { return ReadDopingNa (); }
+
+
+  /**
+   * @return concentration of Nd with incomplete ionization
+   */
+  virtual PetscScalar Nd_II          (const PetscScalar &n, const PetscScalar &Tl, bool fermi) { return ReadDopingNd (); }
+
+  /**
+   * @return concentration of Nd with incomplete ionization
+   */
+  virtual AutoDScalar Nd_II          (const AutoDScalar &n, const AutoDScalar &Tl, bool fermi) { return ReadDopingNd (); }
+
 
   /**
    * @return electron lift time in SHR Recombination
@@ -711,6 +796,47 @@ public:
 
 
   /**
+   * Hot Carrier Injection: probability that an electron will not be scattered in the semiconductor before reaching the interface
+   * @param dis distance from the point to the interface.
+   */
+  virtual PetscScalar HCI_Probability_Semiconductor_n(const PetscScalar &dis) { return 0.0; }
+
+  /**
+   * Hot Carrier Injection: probability that a hole will not be scattered in the semiconductor before reaching the interface
+   * @param dis distance from the point to the interface.
+   */
+  virtual PetscScalar HCI_Probability_Semiconductor_p(const PetscScalar &dis) { return 0.0; }
+
+  /**
+   * Hot Carrier Injection: Fiegna integral over electron energy distribution
+   * @param phin semiconductor-insulator potential barrier to electron
+   * @param Eeff electric field in the direction of electron current flow
+   */
+  virtual PetscScalar HCI_Integral_Fiegna_n(const PetscScalar &phin, const PetscScalar &Eeff) { return 0.0; }
+
+  /**
+   * Hot Carrier Injection: Fiegna integral over hole energy distribution
+   * @param phip semiconductor-insulator potential barrier to hole
+   * @param Eeff electric field in the direction of hole current flow
+   */
+  virtual PetscScalar HCI_Integral_Fiegna_p(const PetscScalar &phip, const PetscScalar &Eeff) { return 0.0; }
+
+  /**
+   * Hot Carrier Injection: Classical integral over electron energy distribution
+   * @param phin semiconductor-insulator potential barrier to electron
+   * @param Eeff electric field in the direction of electron current flow
+   */
+  virtual PetscScalar HCI_Integral_Classical_n(const PetscScalar &phin, const PetscScalar &Eeff) { return 0.0; }
+
+  /**
+   * Hot Carrier Injection: Classical integral over hole energy distribution
+   * @param phip semiconductor-insulator potential barrier to hole
+   * @param Eeff electric field in the direction of hole current flow
+   */
+  virtual PetscScalar HCI_Integral_Classical_p(const PetscScalar &phip, const PetscScalar &Eeff) { return 0.0; }
+
+
+  /**
    * @return band to band tunneling rate
    */
   virtual PetscScalar BB_Tunneling(const PetscScalar &Tl, const PetscScalar &E) =0;
@@ -740,7 +866,7 @@ public:
   /**
    * destructor
    */
-  virtual ~PMIS_Mobility() {};
+  virtual ~PMIS_Mobility() {}
 
   /**
    * A factor used in determining the effective electric field at interfaces
@@ -819,7 +945,7 @@ public:
   /**
    * destructor
    */
-  virtual ~PMIS_Avalanche() {};
+  virtual ~PMIS_Avalanche() {}
 
   /**
    * @return the electron generation rate for DDM simulation
@@ -913,7 +1039,7 @@ public:
   /**
    * destructor
    */
-  virtual ~PMIS_Trap() {};
+  virtual ~PMIS_Trap() {}
 
   /**
    * returns the electric charge density due to trapped charge at this node
@@ -999,7 +1125,7 @@ public:
   /**
    * destructor
    */
-  virtual ~PMIS_Thermal() {};
+  virtual ~PMIS_Thermal() {}
 
   /**
    * @return the heat capacity [J/(K*cm^3)] of the material
@@ -1031,22 +1157,39 @@ public:
  */
 class PMIS_Optical : public PMIS_Server
 {
+protected:
+
+  std::string _refraction_data_file;
+
+  std::vector<RefractionItem> _wave_table;
+
+  /**
+   * when refraction_data_file is not empty, read from it
+   */
+  virtual void post_calibrate_process();
+
 public:
 
   /**
    * constructor
    */
-  PMIS_Optical(const PMIS_Environment &env):PMIS_Server(env) { }
+  PMIS_Optical(const PMIS_Environment &env):PMIS_Server(env)
+  {
+#ifdef __CALIBRATE__
+    parameter_map.insert(para_item("refraction", PARA("refraction", "The refraction data file", &_refraction_data_file)) );
+#endif
+  }
 
   /**
    * destructor
    */
   virtual ~PMIS_Optical() {}
 
+
   /**
    * @return the complex refraction index of material
    */
-  virtual std::complex<PetscScalar> RefractionIndex(PetscScalar lamda, PetscScalar Eg=0, PetscScalar Tl=1) const=0;
+  virtual std::complex<PetscScalar> RefractionIndex(PetscScalar lamda, PetscScalar Tl, PetscScalar Eg=0) const=0;
 };
 
 
@@ -1072,7 +1215,7 @@ public:
   /**
    * destructor
    */
-  virtual ~PMII_Server(){};
+  virtual ~PMII_Server() {}
 };
 
 
@@ -1092,7 +1235,7 @@ public:
   /**
    * destructor
    */
-  virtual ~PMII_BasicParameter() {};
+  virtual ~PMII_BasicParameter() {}
 
   /**
    * @return the mass density [g cm^-3] of material
@@ -1115,14 +1258,63 @@ public:
   virtual PetscScalar Affinity      (const PetscScalar &Tl) const=0;
 
   /**
-   * @return band gap of insulator
-   */
-  virtual PetscScalar Eg             (const PetscScalar &Tl) const=0;
-
-  /**
    * get the atom fraction of this material.
    */
   virtual void atom_fraction(std::vector<std::string> &atoms, std::vector<double> & fraction) const = 0;
+};
+
+
+
+/**
+ * PMII_BandStructure. The PMII interface for band structure of
+ * insulator material. User should implement each pure virtual functions.
+ */
+class PMII_BandStructure : public PMII_Server
+{
+  public:
+
+  /**
+   * constructor
+   */
+  PMII_BandStructure(const PMII_Environment &env):PMII_Server(env) { }
+
+  /**
+   * destructor
+   */
+  virtual ~PMII_BandStructure() {}
+
+  /**
+   * @return band gap of semiconductor
+   */
+  virtual PetscScalar Eg             (const PetscScalar &Tl) const = 0;
+
+  /**
+   * Hot Carrier Injection: effective semiconductor-insulator interface barrier to electron
+   */
+  virtual PetscScalar HCI_Barrier_n(const PetscScalar &affinity_semi, const PetscScalar & Eg_semi,
+                                    const PetscScalar &t_ins, const PetscScalar &E_ins) const = 0;
+
+  /**
+   * Hot Carrier Injection: effective semiconductor-insulator interface barrier to hole
+   */
+  virtual PetscScalar HCI_Barrier_p(const PetscScalar &affinity_semi, const PetscScalar & Eg_semi,
+                                    const PetscScalar &t_ins, const PetscScalar &E_ins) const = 0;
+
+  /**
+   * Hot Carrier Injection: probability that an electron will not be scattered in the insulator
+   */
+  virtual PetscScalar HCI_Probability_Insulator_n(const PetscScalar &t_ins, const PetscScalar &E_ins) const = 0;
+
+  /**
+   * Hot Carrier Injection: probability that a hole will not be scattered in the insulator
+   */
+  virtual PetscScalar HCI_Probability_Insulator_p(const PetscScalar &t_ins, const PetscScalar &E_ins) const = 0;
+
+  /**
+   * Fowler-Nordheim tunneling
+   */
+  virtual PetscScalar J_FN_Tunneling(const PetscScalar &E_ins) const = 0;
+
 };
 
 
@@ -1141,7 +1333,7 @@ public:
   /**
    * destructor
    */
-  virtual ~PMII_Thermal() {};
+  virtual ~PMII_Thermal() {}
 
   /**
    * @return the heat capacity [J/(K*cm^3)] of the material
@@ -1162,11 +1354,27 @@ public:
  */
 class PMII_Optical : public PMII_Server
 {
+protected:
+
+  std::string _refraction_data_file;
+
+  std::vector<RefractionItem> _wave_table;
+
+  /**
+   * when refraction_data_file is not empty, read from it
+   */
+  virtual void post_calibrate_process();
+
 public:
   /**
    * constructor
    */
-  PMII_Optical(const PMII_Environment &env):PMII_Server(env) { }
+  PMII_Optical(const PMII_Environment &env):PMII_Server(env)
+  {
+#ifdef __CALIBRATE__
+    parameter_map.insert(para_item("refraction", PARA("refraction", "The refraction data file", &_refraction_data_file)) );
+#endif
+  }
 
   /**
    * destructor
@@ -1176,7 +1384,7 @@ public:
   /**
    * @return the complex refraction index of material
    */
-  virtual std::complex<PetscScalar> RefractionIndex(PetscScalar lamda, PetscScalar Eg=0, PetscScalar Tl=1) const=0;
+  virtual std::complex<PetscScalar> RefractionIndex(PetscScalar lamda, PetscScalar Tl, PetscScalar Eg=0) const=0;
 };
 
 
@@ -1203,7 +1411,7 @@ public:
   /**
    * destructor
    */
-  virtual ~PMIC_Server(){};
+  virtual ~PMIC_Server(){}
 };
 
 
@@ -1222,7 +1430,7 @@ public:
   /**
    * destructor
    */
-  virtual ~PMIC_BasicParameter() {};
+  virtual ~PMIC_BasicParameter() {}
 
   /**
    * @return the mass density [g cm^-3] of material
@@ -1272,7 +1480,7 @@ public:
   /**
    * destructor
    */
-  virtual ~PMIC_Thermal() {};
+  virtual ~PMIC_Thermal() {}
 
   /**
    * @return the heat capacity [J/(K*cm^3)] of the material
@@ -1293,11 +1501,27 @@ public:
  */
 class PMIC_Optical : public PMIC_Server
 {
+protected:
+
+  std::string _refraction_data_file;
+
+  std::vector<RefractionItem> _wave_table;
+
+  /**
+   * when refraction_data_file is not empty, read from it
+   */
+  virtual void post_calibrate_process();
+
 public:
   /**
    * constructor
    */
-  PMIC_Optical(const PMIC_Environment &env):PMIC_Server(env) { }
+  PMIC_Optical(const PMIC_Environment &env):PMIC_Server(env)
+  {
+#ifdef __CALIBRATE__
+    parameter_map.insert(para_item("refraction", PARA("refraction", "The refraction data file", &_refraction_data_file)) );
+#endif
+  }
 
   /**
    * destructor
@@ -1307,7 +1531,7 @@ public:
   /**
    * @return the complex refraction index of material
    */
-  virtual std::complex<PetscScalar> RefractionIndex(PetscScalar lamda, PetscScalar Eg=0, PetscScalar Tl=1) const=0;
+  virtual std::complex<PetscScalar> RefractionIndex(PetscScalar lamda, PetscScalar Tl, PetscScalar Eg=0) const=0;
 };
 
 
@@ -1337,7 +1561,7 @@ public:
   /**
    * destructor
    */
-  virtual ~PMIV_Server(){};
+  virtual ~PMIV_Server(){}
 };
 
 
@@ -1356,7 +1580,7 @@ public:
   /**
    * destructor
    */
-  virtual ~PMIV_BasicParameter() {};
+  virtual ~PMIV_BasicParameter() {}
 
   /**
    * @return the mass density [g cm^-3] of material
@@ -1401,7 +1625,7 @@ public:
   /**
    * destructor
    */
-  virtual ~PMIV_Thermal() {};
+  virtual ~PMIV_Thermal() {}
 
   /**
    * @return the heat capacity [J/(K*cm^3)] of the material
@@ -1423,11 +1647,22 @@ public:
  */
 class PMIV_Optical : public PMIV_Server
 {
+protected:
+
+  std::string _refraction_data_file;
+
+  std::vector<RefractionItem> _wave_table;
+
 public:
   /**
    * constructor
    */
-  PMIV_Optical(const PMIC_Environment &env):PMIV_Server(env) { }
+  PMIV_Optical(const PMIC_Environment &env):PMIV_Server(env)
+  {
+#ifdef __CALIBRATE__
+    parameter_map.insert(para_item("refraction", PARA("refraction", "The refraction data file", &_refraction_data_file)) );
+#endif
+  }
 
   /**
    * destructor
@@ -1437,7 +1672,7 @@ public:
   /**
    * @return the complex refraction index of material
    */
-  virtual std::complex<PetscScalar> RefractionIndex(PetscScalar lamda, PetscScalar Eg=0, PetscScalar Tl=1) const=0;
+  virtual std::complex<PetscScalar> RefractionIndex(PetscScalar lamda, PetscScalar Tl, PetscScalar Eg=0) const=0;
 };
 
 
@@ -1464,7 +1699,7 @@ public:
   /**
    * destructor
    */
-  virtual ~PMIP_Server(){};
+  virtual ~PMIP_Server(){}
 };
 
 
@@ -1483,7 +1718,7 @@ public:
   /**
    * destructor
    */
-  virtual ~PMIP_BasicParameter() {};
+  virtual ~PMIP_BasicParameter() {}
 
   /**
    * @return the mass density [g cm^-3] of material
@@ -1528,7 +1763,7 @@ public:
   /**
    * destructor
    */
-  virtual ~PMIP_Thermal() {};
+  virtual ~PMIP_Thermal() {}
 
   /**
    * @return the heat capacity [J/(K*cm^3)] of the material

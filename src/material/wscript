@@ -1,0 +1,55 @@
+def build(bld):
+
+  materials = [('Ag',       'Ag'),
+               ('Air',      'Air'),
+               ('Al',       'Al'),
+               ('AlGaAs',   'AlGaAs'),
+               ('AlGaN',    'AlGaN'),
+               ('AlN',      'AlN'),
+               ('Au',       'Au'),
+               ('Cu',       'Cu'),
+               ('Elec',     'Elec'),
+               ('GaAs',     'GaAs'),
+               ('GaN',      'GaN'),
+               ('Ge',       'Ge'),
+               ('HfO2',     'HfO2'),
+               ('HgCdTe',   'HgCdTe'),
+               ('InAs',     'InAs'),
+               ('InGaAs',   'InGaAs'),
+               ('InAlAs',   'InAlAs'),
+               ('InN',      'InN'),
+               ('InP',      'InP'),
+               ('InSb',     'InSb'),
+               ('ITO',      'ITO'),
+               ('Nitride',  'Nitride'),
+               ('NPolySi',  'NPolySi'),
+               ('PML',      'PML'),
+               ('PolySi',   'PolySi'),
+               ('PPolySi',  'PPolySi'),
+               ('3C-SiC',   'SiC3C'),
+               ('4H-SiC',   'SiC4H'),
+               ('SiGe',     'SiGe'),
+               ('SiO2',     'SiO2'),
+               ('S-SiO2',   'SiO2S'),
+               ('Si',       'Si'),
+               ('TiSi2',    'TiSi2'),
+               ('Vacuum',   'Vacuum'),]
+
+  bld.objects( source = 'adolc_init.cc PMI.cc',
+               includes = bld.genius_includes,
+               features = 'cxx',
+               use       = 'opt PETSC CGNS VTK',
+               target = 'material_common',
+             )
+
+  for dir,name in materials:
+    fout = bld.path.find_or_declare(bld.env.cxxshlib_PATTERN  % ('lib%s' % name))
+
+    bld.shlib( source = bld.path.ant_glob('%s/*.cc' % dir),
+               includes  = bld.genius_includes,
+               features  = 'cxx',
+               use       = 'opt material_common PETSC CGNS VTK',
+               target    = fout,
+               install_path = '${PREFIX}/lib',
+             )
+

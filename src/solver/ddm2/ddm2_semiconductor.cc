@@ -43,47 +43,42 @@ using PhysicalUnit::cm;
 
 void SemiconductorSimulationRegion::DDM2_Fill_Value(Vec x, Vec L)
 {
-  PetscInt n_local_dofs;
-  VecGetLocalSize(x, &n_local_dofs);
-
   std::vector<int> ix;
   std::vector<PetscScalar> y;
   std::vector<PetscScalar> s;
 
-  ix.reserve(n_local_dofs);
-  y.reserve(n_local_dofs);
-  s.reserve(n_local_dofs);
+  ix.reserve(4*this->n_node());
+  y.reserve(4*this->n_node());
+  s.reserve(4*this->n_node());
 
-  const_node_iterator it = nodes_begin();
-  const_node_iterator it_end = nodes_end();
-  for(; it!=it_end; ++it)
+  const_processor_node_iterator node_it = on_processor_nodes_begin();
+  const_processor_node_iterator node_it_end = on_processor_nodes_end();
+  for(; node_it!=node_it_end; ++node_it)
   {
+    const FVM_Node * fvm_node = *node_it;
+    const FVM_NodeData * node_data = fvm_node->node_data();
 
-    const FVM_Node * node = (*it).second;
-    //if this node NOT belongs to this processor, continue
-    if( node->root_node()->processor_id() != Genius::processor_id() ) continue;
-
-    const FVM_NodeData * node_data = node->node_data();
+    mt->mapping(fvm_node->root_node(), node_data, 0.0);
 
     // the first variable, psi
-    ix.push_back(node->global_offset()+0);
+    ix.push_back(fvm_node->global_offset()+0);
     y.push_back(node_data->psi());
-    s.push_back(1.0/node->volume());
+    s.push_back(1.0/(node_data->eps()*fvm_node->volume()));
 
     // the second variable, n
-    ix.push_back(node->global_offset()+1);
+    ix.push_back(fvm_node->global_offset()+1);
     y.push_back(node_data->n());
-    s.push_back(1.0/node->volume());
+    s.push_back(1.0/fvm_node->volume());
 
     // the third variable, p
-    ix.push_back(node->global_offset()+2);
+    ix.push_back(fvm_node->global_offset()+2);
     y.push_back(node_data->p());
-    s.push_back(1.0/node->volume());
+    s.push_back(1.0/fvm_node->volume());
 
     // the forth variable, lattice temperature
-    ix.push_back(node->global_offset()+3);
+    ix.push_back(fvm_node->global_offset()+3);
     y.push_back(node_data->T());
-    s.push_back(1.0/node->volume());
+    s.push_back(1.0/fvm_node->volume());
   }
 
   if( ix.size() )
@@ -113,8 +108,12 @@ void SemiconductorSimulationRegion::DDM2_Function(PetscScalar * x, Vec f, Insert
   std::vector<int>          iy;
   std::vector<PetscScalar>  y;
 
-  iy.reserve(4*n_node());
-  y.reserve(4*n_node());
+  // slightly overkill -- the HEX8 element has 12 edges, each edge has 2 node
+  iy.reserve(4*(24*this->n_cell()+this->n_node()));
+  y.reserve(4*(24*this->n_cell()+this->n_node()));
+
+
+  bool  highfield_mob   = highfield_mobility() && SolverSpecify::Type!=SolverSpecify::EQUILIBRIUM;
 
   // first, search all the element in this region and process "cell" related terms
   // note, they are all local element, thus must be processed
@@ -123,15 +122,20 @@ void SemiconductorSimulationRegion::DDM2_Function(PetscScalar * x, Vec f, Insert
   const_element_iterator it_end = elements_end();
   for(unsigned int nelem=0 ; it!=it_end; ++it, ++nelem)
   {
-    FVM_CellData * elem_data = this->get_region_elem_Data(nelem);
+    const Elem * elem = *it;
 
-    bool insulator_interface_elem = get_advanced_model()->ESurface && is_elem_on_insulator_interface(*it);
+    FVM_CellData * elem_data = this->get_region_elem_data(nelem);
+
+    bool insulator_interface_elem = is_elem_on_insulator_interface(elem);
+    bool mos_channel_elem = is_elem_in_mos_channel(elem);
+    bool truncation =  SolverSpecify::VoronoiTruncation == SolverSpecify::VoronoiTruncationAlways ||
+        (SolverSpecify::VoronoiTruncation == SolverSpecify::VoronoiTruncationBoundary && (elem->on_boundary() || elem->on_interface())) ;
     // build the gradient of psi and fermi potential in this cell.
     // which are the vector of electric field and current density.
 
-    std::vector<PetscScalar> psi_vertex;
-    std::vector<PetscScalar> phin_vertex;
-    std::vector<PetscScalar> phip_vertex;
+    VectorValue<PetscScalar> E;
+    VectorValue<PetscScalar> Jnv;
+    VectorValue<PetscScalar> Jpv;
 
     std::vector<PetscScalar> Jn_edge; //store all the edge Jn
     std::vector<PetscScalar> Jp_edge; //store all the edge Jp
@@ -145,12 +149,17 @@ void SemiconductorSimulationRegion::DDM2_Function(PetscScalar * x, Vec f, Insert
     PetscScalar Etp=0;
 
     // evaluate E field parallel and vertical to current flow
-    if( ( get_advanced_model()->HighFieldMobility || get_advanced_model()->ImpactIonization) &&
-        SolverSpecify::Type!=SolverSpecify::EQUILIBRIUM)
+    if(highfield_mob)
     {
-      for(unsigned int nd=0; nd<(*it)->n_nodes(); ++nd)
+      // build the gradient of psi and fermi potential in this cell.
+      // which are the vector of electric field and current density.
+      std::vector<PetscScalar> psi_vertex(elem->n_nodes());
+      std::vector<PetscScalar> phin_vertex(elem->n_nodes());
+      std::vector<PetscScalar> phip_vertex(elem->n_nodes());
+
+      for(unsigned int nd=0; nd<elem->n_nodes(); ++nd)
       {
-        const FVM_Node * fvm_node = (*it)->get_fvm_node(nd);
+        const FVM_Node * fvm_node = elem->get_fvm_node(nd);
         const FVM_NodeData * fvm_node_data = fvm_node->node_data();
 
         PetscScalar V;  // electrostatic potential
@@ -174,27 +183,27 @@ void SemiconductorSimulationRegion::DDM2_Function(PetscScalar * x, Vec f, Insert
           p  =  fvm_node_data->p() + 1.0*std::pow(cm, -3);
         }
 
-        psi_vertex.push_back  ( V );
+        psi_vertex[nd] = V;
         //fermi potential
-        phin_vertex.push_back ( V - Vt*log(fabs(n)/fvm_node_data->ni()) );
-        phip_vertex.push_back ( V + Vt*log(fabs(p)/fvm_node_data->ni()) );
+        phin_vertex[nd] = V - Vt*log(n/fvm_node_data->ni());
+        phip_vertex[nd] = V + Vt*log(p/fvm_node_data->ni());
       }
 
       // compute the gradient
-      VectorValue<PetscScalar> E   = - (*it)->gradient(psi_vertex);  // E = - grad(psi)
-      VectorValue<PetscScalar> Jnv = - (*it)->gradient(phin_vertex); // we only need the direction of Jnv, here Jnv = - gradient of Fn
-      VectorValue<PetscScalar> Jpv = - (*it)->gradient(phip_vertex); // Jpv = - gradient of Fp
-      // prevent zero vector
-      Jnv.add_scaled(VectorValue<PetscScalar>(0, 1e-20, 0), 1.0);
-      Jpv.add_scaled(VectorValue<PetscScalar>(0, 1e-20, 0), 1.0);
+      E   = - elem->gradient(psi_vertex);  // E = - grad(psi)
+      Jnv = - elem->gradient(phin_vertex); // we only need the direction of Jnv, here Jnv = - gradient of Fn
+      Jpv = - elem->gradient(phip_vertex); // Jpv = - gradient of Fp
+    }
 
+    if(highfield_mob)
+    {
       // for elem on insulator interface, we will do special treatment to electrical field
-      if(insulator_interface_elem)
+      if(get_advanced_model()->ESurface && insulator_interface_elem)
       {
         // get all the sides on insulator interface
         std::vector<unsigned int> sides;
         std::vector<SimulationRegion *> regions;
-        elem_on_insulator_interface(*it, sides, regions);
+        elem_on_insulator_interface(elem, sides, regions);
 
         VectorValue<PetscScalar> E_insul(0,0,0);
         unsigned int side_insul;
@@ -202,7 +211,7 @@ void SemiconductorSimulationRegion::DDM2_Function(PetscScalar * x, Vec f, Insert
         // find the neighbor element which has max E field
         for(unsigned int ne=0; ne<sides.size(); ++ne)
         {
-          const Elem * elem_neighbor = (*it)->neighbor(sides[ne]);
+          const Elem * elem_neighbor = elem->neighbor(sides[ne]);
           std::vector<PetscScalar> psi_vertex_neighbor;
           for(unsigned int nd=0; nd<elem_neighbor->n_nodes(); ++nd)
           {
@@ -210,7 +219,7 @@ void SemiconductorSimulationRegion::DDM2_Function(PetscScalar * x, Vec f, Insert
             psi_vertex_neighbor.push_back(x[fvm_node_neighbor->local_offset()+0]);
           }
           VectorValue<PetscScalar> E_neighbor = - elem_neighbor->gradient(psi_vertex_neighbor);
-          if(E_neighbor.size()>E_insul.size())
+          if(E_neighbor.size()>=E_insul.size())
           {
             E_insul = E_neighbor;
             side_insul = sides[ne];
@@ -218,7 +227,7 @@ void SemiconductorSimulationRegion::DDM2_Function(PetscScalar * x, Vec f, Insert
           }
         }
         // interface normal, point to semiconductor side
-        Point norm = - (*it)->outside_unit_normal(side_insul);
+        Point norm = - elem->outside_unit_normal(side_insul);
         // effective electric fields in vertical
         PetscScalar ZETAN = mt->mob->ZETAN();
         PetscScalar ETAN  = mt->mob->ETAN();
@@ -246,45 +255,65 @@ void SemiconductorSimulationRegion::DDM2_Function(PetscScalar * x, Vec f, Insert
           // E field parallel to current flow
           Epn = Jnv.size();
           Epp = Jpv.size();
+
+          if(mos_channel_elem)
+          {
+            // E field vertical to current flow
+            Etn = (E.cross(Jnv.unit(true))).size();
+            Etp = (E.cross(Jpv.unit(true))).size();
+          }
         }
 
         if(get_advanced_model()->Mob_Force == ModelSpecify::EJ)
         {
           // E field parallel to current flow
-          Epn = std::max(E.dot(Jnv.unit()), 0.0);
-          Epp = std::max(E.dot(Jpv.unit()), 0.0);
-        }
+          Epn = std::max(E.dot(Jnv.unit(true)), 0.0);
+          Epp = std::max(E.dot(Jpv.unit(true)), 0.0);
 
-        // E field vertical to current flow
-        Etn = (E.cross(Jnv.unit())).size();
-        Etp = (E.cross(Jpv.unit())).size();
+          if(mos_channel_elem)
+          {
+            // E field vertical to current flow
+            Etn = (E.cross(Jnv.unit(true))).size();
+            Etp = (E.cross(Jpv.unit(true))).size();
+          }
+        }
       }
     }
 
     // process \nabla psi and S-G current along the cell's edge
     // search for all the edges this cell own
-    for(unsigned int ne=0; ne<(*it)->n_edges(); ++ne )
+    for(unsigned int ne=0; ne<elem->n_edges(); ++ne )
     {
-      AutoPtr<Elem> edge = (*it)->build_edge (ne);
-      genius_assert(edge->type()==EDGE2);
+      std::pair<unsigned int, unsigned int> edge_nodes;
+      elem->nodes_on_edge(ne, edge_nodes);
 
-      std::vector<unsigned int > edge_nodes;
-      (*it)->nodes_on_edge(ne, edge_nodes);
+      // the length of this edge
+      const double length = elem->edge_length(ne);
 
-      VectorValue<double> dir = (edge->point(1) - edge->point(0)).unit(); // unit direction of the edge
-      double length = edge->volume();                           // the length of this edge
-      double partial_area = (*it)->partial_area_with_edge(ne);  // partial area associated with this edge
-      double partial_volume = (*it)->partial_volume_with_edge(ne); // partial volume associated with this edge
+      // partial area associated with this edge
+      double partial_area = elem->partial_area_with_edge(ne);
+      double partial_volume = elem->partial_volume_with_edge(ne);
 
+      double truncated_partial_area =  partial_area;
+      double truncated_partial_volume =  partial_volume;
+      if(truncation)
+      {
+        truncated_partial_area =  elem->partial_area_with_edge_truncated(ne);
+        truncated_partial_volume =  elem->partial_volume_with_edge_truncated(ne);
+      }
 
-      FVM_Node * fvm_n1 = (*it)->get_fvm_node(edge_nodes[0]);   genius_assert(fvm_n1);  // fvm_node of node1
-      FVM_Node * fvm_n2 = (*it)->get_fvm_node(edge_nodes[1]);   genius_assert(fvm_n2);  // fvm_node of node2
+      // fvm_node of node1
+      const FVM_Node * fvm_n1 = elem->get_fvm_node(edge_nodes.first);
+      // fvm_node of node2
+      const FVM_Node * fvm_n2 = elem->get_fvm_node(edge_nodes.second);
 
-      FVM_NodeData * n1_data = fvm_n1->node_data();  genius_assert(n1_data);            // fvm_node_data of node1
-      FVM_NodeData * n2_data = fvm_n2->node_data();  genius_assert(n2_data);            // fvm_node_data of node2
+      // fvm_node_data of node1
+      const FVM_NodeData * n1_data =  fvm_n1->node_data();
+      // fvm_node_data of node2
+      const FVM_NodeData * n2_data =  fvm_n2->node_data();
 
-      unsigned int n1_local_offset = fvm_n1->local_offset();
-      unsigned int n2_local_offset = fvm_n2->local_offset();
+      const unsigned int n1_local_offset = fvm_n1->local_offset();
+      const unsigned int n2_local_offset = fvm_n2->local_offset();
 
       // build governing equation of DDML2
       {
@@ -303,8 +332,8 @@ void SemiconductorSimulationRegion::DDM2_Function(PetscScalar * x, Vec f, Insert
         // takes care of the change effective DOS.
         // Ec/Ev should not be used except when its difference between two nodes.
         // The same comment applies to Ec2/Ev2.
-        PetscScalar Ec1 =  -(e*V1 + n1_data->affinity() + mt->band->EgNarrowToEc(p1, n1, T1) + kb*T1*log(n1_data->Nc()));
-        PetscScalar Ev1 =  -(e*V1 + n1_data->affinity() - mt->band->EgNarrowToEv(p1, n1, T1) - kb*T1*log(n1_data->Nv()) + mt->band->Eg(T1));
+        PetscScalar Ec1 =  -(e*V1 + n1_data->affinity() + kb*T1*log(mt->band->nie(p1, n1, T1)));
+        PetscScalar Ev1 =  -(e*V1 + n1_data->affinity() - kb*T1*log(mt->band->nie(p1, n1, T1)));
         if(get_advanced_model()->Fermi)
         {
           Ec1 = Ec1 - kb*T1*log(gamma_f(fabs(n1)/n1_data->Nc()));
@@ -324,8 +353,9 @@ void SemiconductorSimulationRegion::DDM2_Function(PetscScalar * x, Vec f, Insert
         PetscScalar p2   =  x[n2_local_offset+2];                   // hole density
         PetscScalar T2   =  x[n2_local_offset+3];                   // lattice temperature
 
-        PetscScalar Ec2 =  -(e*V2 + n2_data->affinity() + mt->band->EgNarrowToEc(p2, n2, T2) + kb*T2*log(n2_data->Nc()));
-        PetscScalar Ev2 =  -(e*V2 + n2_data->affinity() - mt->band->EgNarrowToEv(p2, n2, T2) - kb*T2*log(n2_data->Nv()) + mt->band->Eg(T2));
+
+        PetscScalar Ec2 =  -(e*V2 + n2_data->affinity() + kb*T2*log(mt->band->nie(p2, n2, T2)));
+        PetscScalar Ev2 =  -(e*V2 + n2_data->affinity() - kb*T2*log(mt->band->nie(p2, n2, T2)));
         if(get_advanced_model()->Fermi)
         {
           Ec2 = Ec2 - kb*T2*log(gamma_f(fabs(n2)/n2_data->Nc()));
@@ -341,17 +371,23 @@ void SemiconductorSimulationRegion::DDM2_Function(PetscScalar * x, Vec f, Insert
         PetscScalar mun2;   // electron mobility
         PetscScalar mup2;   // hole mobility
 
-        if(get_advanced_model()->HighFieldMobility && SolverSpecify::Type!=SolverSpecify::EQUILIBRIUM)
+        if(highfield_mob)
         {
           if (get_advanced_model()->Mob_Force == ModelSpecify::ESimple && !insulator_interface_elem )
           {
+            Point dir = (*fvm_n1->root_node() - *fvm_n2->root_node()).unit();
+            PetscScalar Ep = fabs((V2-V1)/length);
+            PetscScalar Et = 0;
+            if(mos_channel_elem)
+              Et = (E - dir*(E*dir)).size();
+
             mt->mapping(fvm_n1->root_node(), n1_data, SolverSpecify::clock);
-            mun1 = mt->mob->ElecMob(p1, n1, T1, std::max(fabs(Ec2-Ec1)/e/length, 0.0), Etn, T1);
-            mup1 = mt->mob->HoleMob(p1, n1, T1, std::max(fabs(Ev1-Ev2)/e/length, 0.0), Etp, T1);
+            mun1 = mt->mob->ElecMob(p1, n1, T1, Ep, Et, T1);
+            mup1 = mt->mob->HoleMob(p1, n1, T1, Ep, Et, T1);
 
             mt->mapping(fvm_n2->root_node(), n2_data, SolverSpecify::clock);
-            mun2 = mt->mob->ElecMob(p2, n2, T2, std::max(fabs(Ec2-Ec1)/e/length, 0.0), Etn, T2);
-            mup2 = mt->mob->HoleMob(p2, n2, T2, std::max(fabs(Ev1-Ev2)/e/length, 0.0), Etp, T2);
+            mun2 = mt->mob->ElecMob(p2, n2, T2, Ep, Et, T2);
+            mup2 = mt->mob->HoleMob(p2, n2, T2, Ep, Et, T2);
           }
           else // ModelSpecify::EJ || ModelSpecify::EQF
           {
@@ -400,15 +436,15 @@ void SemiconductorSimulationRegion::DDM2_Function(PetscScalar * x, Vec f, Insert
 
           // continuity equation of electron
           iy.push_back( fvm_n1->global_offset()+1 );
-          y.push_back ( Jn*partial_area );
+          y.push_back ( Jn*truncated_partial_area );
 
           // continuity equation of hole
           iy.push_back( fvm_n1->global_offset()+2 );
-          y.push_back ( - Jp*partial_area );
+          y.push_back ( - Jp*truncated_partial_area );
 
           // heat transport equation
           iy.push_back( fvm_n1->global_offset()+3 );
-          y.push_back ( kap*(T2 - T1)/length*partial_area + H*partial_area);
+          y.push_back ( kap*(T2 - T1)/length*partial_area + H*truncated_partial_area);
 
         }
 
@@ -421,20 +457,19 @@ void SemiconductorSimulationRegion::DDM2_Function(PetscScalar * x, Vec f, Insert
 
           // continuity equation of electron
           iy.push_back( fvm_n2->global_offset()+1 );
-          y.push_back ( - Jn*partial_area );
+          y.push_back ( - Jn*truncated_partial_area );
 
           // continuity equation of hole
           iy.push_back( fvm_n2->global_offset()+2 );
-          y.push_back ( Jp*partial_area );
+          y.push_back ( Jp*truncated_partial_area );
 
           // heat transport equation
           iy.push_back( fvm_n2->global_offset()+3 );
-          y.push_back ( kap*(T1 - T2)/length*partial_area + H*partial_area);
+          y.push_back ( kap*(T1 - T2)/length*partial_area + H*truncated_partial_area);
         }
 
         if (get_advanced_model()->BandBandTunneling && SolverSpecify::Type!=SolverSpecify::EQUILIBRIUM)
         {
-          VectorValue<PetscScalar> E   = - (*it)->gradient(psi_vertex);  // E = - grad(psi)
           PetscScalar GBTBT1 = mt->band->BB_Tunneling(T1, E.size());
           PetscScalar GBTBT2 = mt->band->BB_Tunneling(T2, E.size());
 
@@ -442,50 +477,43 @@ void SemiconductorSimulationRegion::DDM2_Function(PetscScalar * x, Vec f, Insert
           {
             // continuity equation
             iy.push_back( fvm_n1->global_offset() + 1);
-            y.push_back ( 0.5*GBTBT1*partial_volume );
+            y.push_back ( 0.5*GBTBT1*truncated_partial_volume );
 
-            iy.push_back( fvm_n1->global_offset() + 1);
-            y.push_back ( 0.5*GBTBT1*partial_volume );
+            iy.push_back( fvm_n1->global_offset() + 2);
+            y.push_back ( 0.5*GBTBT1*truncated_partial_volume );
           }
 
           if( fvm_n2->root_node()->processor_id()==Genius::processor_id() )
           {
             // continuity equation
             iy.push_back( fvm_n2->global_offset() + 1);
-            y.push_back ( 0.5*GBTBT2*partial_volume );
+            y.push_back ( 0.5*GBTBT2*truncated_partial_volume );
 
-            iy.push_back( fvm_n2->global_offset() + 1);
-            y.push_back ( 0.5*GBTBT2*partial_volume );
+            iy.push_back( fvm_n2->global_offset() + 2);
+            y.push_back ( 0.5*GBTBT2*truncated_partial_volume );
           }
         }
 
         if (get_advanced_model()->ImpactIonization && SolverSpecify::Type!=SolverSpecify::EQUILIBRIUM)
         {
           // consider impact-ionization
-
           PetscScalar IIn,IIp,GIIn,GIIp;
           PetscScalar T,Eg;
 
           T  = std::min(T1,T2);
           Eg = 0.5* ( Eg1 + Eg2 );
 
-          VectorValue<PetscScalar> E   = - (*it)->gradient(psi_vertex);  // E = - grad(psi)
-          VectorValue<PetscScalar> Jnv = - (*it)->gradient(phin_vertex); // we only need the direction of Jnv, here Jnv = - gradient of Fn
-          VectorValue<PetscScalar> Jpv = - (*it)->gradient(phip_vertex); // Jpv = - gradient of Fpa
-          Jnv.add_scaled(VectorValue<PetscScalar>(0, 1e-20, 0), 1.0);
-          Jpv.add_scaled(VectorValue<PetscScalar>(0, 1e-20, 0), 1.0);
-
-          VectorValue<PetscScalar> ev = ((*it)->point(edge_nodes[1]) - (*it)->point(edge_nodes[0]));
-          PetscScalar riin1 = 0.5 + 0.5* (ev.unit()).dot(Jnv.unit());
+          VectorValue<PetscScalar> ev = (elem->point(edge_nodes.second) - elem->point(edge_nodes.first));
+          PetscScalar riin1 = 0.5 + 0.5* (ev.unit()).dot(Jnv.unit(true));
           PetscScalar riin2 = 1.0 - riin1;
-          PetscScalar riip2 = 0.5 + 0.5* (ev.unit()).dot(Jpv.unit());
+          PetscScalar riip2 = 0.5 + 0.5* (ev.unit()).dot(Jpv.unit(true));
           PetscScalar riip1 = 1.0 - riip2;
 
           switch (get_advanced_model()->II_Force)
           {
           case ModelSpecify::IIForce_EdotJ:
-            Epn = std::max(E.dot(Jnv.unit()), 0.0);
-            Epp = std::max(E.dot(Jpv.unit()), 0.0);
+            Epn = std::max(E.dot(Jnv.unit(true)), 0.0);
+            Epp = std::max(E.dot(Jpv.unit(true)), 0.0);
             IIn = mt->gen->ElecGenRate(T,Epn,Eg);
             IIp = mt->gen->HoleGenRate(T,Epp,Eg);
             break;
@@ -514,20 +542,20 @@ void SemiconductorSimulationRegion::DDM2_Function(PetscScalar * x, Vec f, Insert
           {
             // continuity equation
             iy.push_back( fvm_n1->global_offset() + 1);
-            y.push_back ( (riin1*GIIn+riip1*GIIp)*partial_volume );
+            y.push_back ( (riin1*GIIn+riip1*GIIp)*truncated_partial_volume );
 
             iy.push_back( fvm_n1->global_offset() + 2);
-            y.push_back ( (riin1*GIIn+riip1*GIIp)*partial_volume );
+            y.push_back ( (riin1*GIIn+riip1*GIIp)*truncated_partial_volume );
           }
 
           if( fvm_n2->root_node()->processor_id()==Genius::processor_id() )
           {
             // continuity equation
             iy.push_back( fvm_n2->global_offset() + 1);
-            y.push_back ( (riin2*GIIn+riip2*GIIp)*partial_volume );
+            y.push_back ( (riin2*GIIn+riip2*GIIp)*truncated_partial_volume );
 
             iy.push_back( fvm_n2->global_offset() + 2);
-            y.push_back ( (riin2*GIIn+riip2*GIIp)*partial_volume );
+            y.push_back ( (riin2*GIIn+riip2*GIIp)*truncated_partial_volume );
           }
         }
 
@@ -536,32 +564,32 @@ void SemiconductorSimulationRegion::DDM2_Function(PetscScalar * x, Vec f, Insert
     }
 
     // the average cell electron/hole current density vector
-    elem_data->Jn() = -(*it)->reconstruct_vector(Jn_edge);
-    elem_data->Jp() =  (*it)->reconstruct_vector(Jp_edge);
+    elem_data->Jn() = -elem->reconstruct_vector(Jn_edge);
+    elem_data->Jp() =  elem->reconstruct_vector(Jp_edge);
 
   }
 
-#ifdef HAVE_FENV_H
+#if defined(HAVE_FENV_H) && defined(DEBUG)
   genius_assert( !fetestexcept(FE_INVALID) );
 #endif
 
   // process node related terms
   // including \rho of poisson's equation and recombination term of continuation equation
-  const_node_iterator node_it = nodes_begin();
-  const_node_iterator node_it_end = nodes_end();
+  const_processor_node_iterator node_it = on_processor_nodes_begin();
+  const_processor_node_iterator node_it_end = on_processor_nodes_end();
   for(; node_it!=node_it_end; ++node_it)
   {
-
-    const FVM_Node * fvm_node = (*node_it).second;
-    //if this node NOT belongs to this processor, continue
-    if( fvm_node->root_node()->processor_id() != Genius::processor_id() ) continue;
-
+    const FVM_Node * fvm_node = *node_it;
     const FVM_NodeData * node_data = fvm_node->node_data();
 
-    //PetscScalar V   =  x[fvm_node->local_offset()+0];                       // electrostatic potential
-    PetscScalar n   =  x[fvm_node->local_offset()+1];                         // electron density
-    PetscScalar p   =  x[fvm_node->local_offset()+2];                         // hole density
-    PetscScalar T   =  x[fvm_node->local_offset()+3];                         // lattice temperature
+    const unsigned int local_offset  = fvm_node->local_offset();
+    const unsigned int global_offset = fvm_node->global_offset();
+
+
+    //PetscScalar V   =  x[local_offset+0];                       // electrostatic potential
+    PetscScalar n   =  x[local_offset+1];                         // electron density
+    PetscScalar p   =  x[local_offset+2];                         // hole density
+    PetscScalar T   =  x[local_offset+3];                         // lattice temperature
 
     mt->mapping(fvm_node->root_node(), node_data, SolverSpecify::clock);      // map this node and its data to material database
     PetscScalar R   = mt->band->Recomb(p, n, T)*fvm_node->volume();         // the recombination term
@@ -572,14 +600,14 @@ void SemiconductorSimulationRegion::DDM2_Function(PetscScalar * x, Vec f, Insert
     PetscScalar Field_G = node_data->Field_G()*fvm_node->volume();
     PetscScalar OptQ = node_data->OptQ()*fvm_node->volume();
 
-    iy.push_back(fvm_node->global_offset()+0);                                // save index in the buffer
-    iy.push_back(fvm_node->global_offset()+1);
-    iy.push_back(fvm_node->global_offset()+2);
-    iy.push_back(fvm_node->global_offset()+3);
+    iy.push_back(global_offset+0);                                // save index in the buffer
+    iy.push_back(global_offset+1);
+    iy.push_back(global_offset+2);
+    iy.push_back(global_offset+3);
 
     y.push_back( rho );                                                       // save value in the buffer
-    y.push_back( Field_G - R );
-    y.push_back( Field_G - R);
+    y.push_back( Field_G - R  + node_data->EIn());
+    y.push_back( Field_G - R  + node_data->HIn());
     y.push_back( HR + OptQ );
 
     if (get_advanced_model()->Trap)
@@ -633,7 +661,7 @@ void SemiconductorSimulationRegion::DDM2_Function(PetscScalar * x, Vec f, Insert
   // the last operator is ADD_VALUES
   add_value_flag = ADD_VALUES;
 
-#ifdef HAVE_FENV_H
+#if defined(HAVE_FENV_H) && defined(DEBUG)
   genius_assert( !fetestexcept(FE_INVALID) );
 #endif
 }
@@ -657,6 +685,7 @@ void SemiconductorSimulationRegion::DDM2_Jacobian(PetscScalar * x, Mat *jac, Ins
     MatAssemblyEnd(*jac, MAT_FLUSH_ASSEMBLY);
   }
 
+  bool  highfield_mob   = highfield_mobility() && SolverSpecify::Type!=SolverSpecify::EQUILIBRIUM;
 
   // search all the element in this region.
   // note, they are all local element, thus must be processed
@@ -665,19 +694,24 @@ void SemiconductorSimulationRegion::DDM2_Jacobian(PetscScalar * x, Mat *jac, Ins
   const_element_iterator it_end = elements_end();
   for(; it!=it_end; ++it)
   {
-    bool insulator_interface_elem = get_advanced_model()->ESurface && is_elem_on_insulator_interface(*it);
+    const Elem * elem = *it;
+    bool insulator_interface_elem = is_elem_on_insulator_interface(elem);
+    bool mos_channel_elem = is_elem_in_mos_channel(elem);
+    bool truncation =  SolverSpecify::VoronoiTruncation == SolverSpecify::VoronoiTruncationAlways ||
+        (SolverSpecify::VoronoiTruncation == SolverSpecify::VoronoiTruncationBoundary && (elem->on_boundary() || elem->on_interface())) ;
 
     //the indepedent variable number, 4*n_nodes
-    adtl::AutoDScalar::numdir = 4*(*it)->n_nodes();
+    adtl::AutoDScalar::numdir = 4*elem->n_nodes();
 
     //synchronize with material database
     mt->set_ad_num(adtl::AutoDScalar::numdir);
 
     // indicate the column position of the variables in the matrix
     std::vector<PetscInt> cell_col;
-    for(unsigned int nd=0; nd<(*it)->n_nodes(); ++nd)
+    cell_col.reserve(4*elem->n_nodes());
+    for(unsigned int nd=0; nd<elem->n_nodes(); ++nd)
     {
-      const FVM_Node * fvm_node = (*it)->get_fvm_node(nd);
+      const FVM_Node * fvm_node = elem->get_fvm_node(nd);
       cell_col.push_back( fvm_node->global_offset()+0 );
       cell_col.push_back( fvm_node->global_offset()+1 );
       cell_col.push_back( fvm_node->global_offset()+2 );
@@ -685,12 +719,9 @@ void SemiconductorSimulationRegion::DDM2_Jacobian(PetscScalar * x, Mat *jac, Ins
     }
 
     // first, we build the gradient of psi and fermi potential in this cell.
-    // which are the vector of electric field and current density.
-    // here use type AutoDScalar, we should make sure the order of independent variable keeps the
-    // same all the time
-    std::vector<AutoDScalar> psi_vertex;
-    std::vector<AutoDScalar> phin_vertex;
-    std::vector<AutoDScalar> phip_vertex;
+    VectorValue<AutoDScalar> E;
+    VectorValue<AutoDScalar> Jnv;
+    VectorValue<AutoDScalar> Jpv;
 
     // E field parallel to current flow
     AutoDScalar Epn=0;
@@ -701,11 +732,18 @@ void SemiconductorSimulationRegion::DDM2_Jacobian(PetscScalar * x, Mat *jac, Ins
     AutoDScalar Etp=0;
 
     // evaluate E field parallel and vertical to current flow
-    if(get_advanced_model()->HighFieldMobility && SolverSpecify::Type!=SolverSpecify::EQUILIBRIUM)
+    if(highfield_mob)
     {
-      for(unsigned int nd=0; nd<(*it)->n_nodes(); ++nd)
+      // which are the vector of electric field and current density.
+      // here use type AutoDScalar, we should make sure the order of independent variable keeps the
+      // same all the time
+      std::vector<AutoDScalar> psi_vertex;
+      std::vector<AutoDScalar> phin_vertex;
+      std::vector<AutoDScalar> phip_vertex;
+
+      for(unsigned int nd=0; nd<elem->n_nodes(); ++nd)
       {
-        const FVM_Node * fvm_node = (*it)->get_fvm_node(nd);
+        const FVM_Node * fvm_node = elem->get_fvm_node(nd);
         const FVM_NodeData * fvm_node_data = fvm_node->node_data();
 
         AutoDScalar V;               // electrostatic potential
@@ -718,8 +756,10 @@ void SemiconductorSimulationRegion::DDM2_Jacobian(PetscScalar * x, Mat *jac, Ins
           // use current iteration value for potential, n and p still use previous solution value
           // this is the best method balanced stable and accurate.
           V  =  x[fvm_node->local_offset()+0];   V.setADValue(4*nd+0, 1.0);
-          n  =  fabs(x[fvm_node->local_offset()+1]) + fvm_node_data->ni()*1e-2;
-          p  =  fabs(x[fvm_node->local_offset()+2]) + fvm_node_data->ni()*1e-2;
+          n  =  x[fvm_node->local_offset()+1];   n.setADValue(4*nd+1, 1.0);
+          p  =  x[fvm_node->local_offset()+2];   p.setADValue(4*nd+2, 1.0);
+          n  +=  fvm_node_data->ni()*1e-2;
+          p  +=  fvm_node_data->ni()*1e-2;
         }
         else
         {
@@ -731,25 +771,25 @@ void SemiconductorSimulationRegion::DDM2_Jacobian(PetscScalar * x, Mat *jac, Ins
 
         psi_vertex.push_back  ( V );
         //fermi potential
-        phin_vertex.push_back ( V - Vt*log(fabs(n)/fvm_node_data->ni()) );
-        phip_vertex.push_back ( V + Vt*log(fabs(p)/fvm_node_data->ni()) );
+        phin_vertex.push_back ( V - Vt*log(n/fvm_node_data->ni()) );
+        phip_vertex.push_back ( V + Vt*log(p/fvm_node_data->ni()) );
       }
 
       // compute the gradient
-      VectorValue<AutoDScalar> E   = - (*it)->gradient(psi_vertex);  // E = - grad(psi)
-      VectorValue<AutoDScalar> Jnv = - (*it)->gradient(phin_vertex); // we only need the direction of Jnv, here Jnv = - gradient of Fn
-      VectorValue<AutoDScalar> Jpv = - (*it)->gradient(phip_vertex); // the same as Jnv
-      // prevent zero vector and convert to unit vector
-      Jnv.add_scaled(VectorValue<PetscScalar>(0, 1e-20, 0), 1.0);
-      Jpv.add_scaled(VectorValue<PetscScalar>(0, 1e-20, 0), 1.0);
+      E   = - elem->gradient(psi_vertex);  // E = - grad(psi)
+      Jnv = - elem->gradient(phin_vertex); // we only need the direction of Jnv, here Jnv = - gradient of Fn
+      Jpv = - elem->gradient(phip_vertex); // the same as Jnv
+    }
 
+    if(highfield_mob)
+    {
       // for elem on insulator interface, we will do special treatment to electrical field
-      if(insulator_interface_elem)
+      if(get_advanced_model()->ESurface && insulator_interface_elem)
       {
         // get all the sides on insulator interface
         std::vector<unsigned int> sides;
         std::vector<SimulationRegion *> regions;
-        elem_on_insulator_interface(*it, sides, regions);
+        elem_on_insulator_interface(elem, sides, regions);
 
         VectorValue<AutoDScalar> E_insul(0.0,0.0,0.0);
         const Elem * elem_insul;
@@ -759,18 +799,18 @@ void SemiconductorSimulationRegion::DDM2_Jacobian(PetscScalar * x, Mat *jac, Ins
         // find the neighbor element which has max E field
         for(unsigned int ne=0; ne<sides.size(); ++ne)
         {
-          const Elem * elem_neighbor = (*it)->neighbor(sides[ne]);
+          const Elem * elem_neighbor = elem->neighbor(sides[ne]);
 
           std::vector<AutoDScalar> psi_vertex_neighbor;
           for(unsigned int nd=0; nd<elem_neighbor->n_nodes(); ++nd)
           {
             const FVM_Node * fvm_node_neighbor = elem_neighbor->get_fvm_node(nd);
             AutoDScalar V_neighbor = x[fvm_node_neighbor->local_offset()+0];
-            V_neighbor.setADValue(4*(*it)->n_nodes()+nd, 1.0);
+            V_neighbor.setADValue(4*elem->n_nodes()+nd, 1.0);
             psi_vertex_neighbor.push_back(V_neighbor);
           }
           VectorValue<AutoDScalar> E_neighbor = - elem_neighbor->gradient(psi_vertex_neighbor);
-          if(E_neighbor.size()>E_insul.size())
+          if(E_neighbor.size()>=E_insul.size())
           {
             E_insul = E_neighbor;
             elem_insul = elem_neighbor;
@@ -781,6 +821,7 @@ void SemiconductorSimulationRegion::DDM2_Jacobian(PetscScalar * x, Mat *jac, Ins
 
         // we need more AD variable
         adtl::AutoDScalar::numdir += 1*elem_insul->n_nodes();
+        mt->set_ad_num(adtl::AutoDScalar::numdir);
         for(unsigned int nd=0; nd<elem_insul->n_nodes(); ++nd)
         {
           const FVM_Node * fvm_node = elem_insul->get_fvm_node(nd);
@@ -788,7 +829,7 @@ void SemiconductorSimulationRegion::DDM2_Jacobian(PetscScalar * x, Mat *jac, Ins
         }
 
         // interface normal, point to semiconductor side
-        Point _norm = - (*it)->outside_unit_normal(side_insul);
+        Point _norm = - elem->outside_unit_normal(side_insul);
         // stupid code... we can not dot point with VectorValue<AutoDScalar> yet.
         VectorValue<AutoDScalar> norm(_norm(0), _norm(1), _norm(2));
 
@@ -819,55 +860,70 @@ void SemiconductorSimulationRegion::DDM2_Jacobian(PetscScalar * x, Mat *jac, Ins
           // E field parallel to current flow
           Epn = Jnv.size();
           Epp = Jpv.size();
+
+          if(mos_channel_elem)
+          {
+            // E field vertical to current flow
+            Etn = (E.cross(Jnv.unit(true))).size();
+            Etp = (E.cross(Jpv.unit(true))).size();
+          }
         }
 
         if(get_advanced_model()->Mob_Force == ModelSpecify::EJ)
         {
           // E field parallel to current flow
-          Epn = adtl::fmax(E.dot(Jnv.unit()), 0.0);
-          Epp = adtl::fmax(E.dot(Jpv.unit()), 0.0);
-        }
+          Epn = adtl::fmax(E.dot(Jnv.unit(true)), 0.0);
+          Epp = adtl::fmax(E.dot(Jpv.unit(true)), 0.0);
 
-        // E field vertical to current flow
-        Etn = (E.cross(Jnv.unit())).size();
-        Etp = (E.cross(Jpv.unit())).size();
+          if(mos_channel_elem)
+          {
+            // E field vertical to current flow
+            Etn = (E.cross(Jnv.unit(true))).size();
+            Etp = (E.cross(Jpv.unit(true))).size();
+          }
+        }
       }
     }
 
     // process conservation terms: laplace operator of poisson's equation and div operator of continuation equation
     // search for all the Edge this cell own
-    for(unsigned int ne=0; ne<(*it)->n_edges(); ++ne )
+    for(unsigned int ne=0; ne<elem->n_edges(); ++ne )
     {
-      AutoPtr<Elem> edge = (*it)->build_edge (ne);
-      genius_assert(edge->type()==EDGE2);
-
-      std::vector<unsigned int > edge_nodes;
-      (*it)->nodes_on_edge(ne, edge_nodes);
+      std::pair<unsigned int, unsigned int> edge_nodes;
+      elem->nodes_on_edge(ne, edge_nodes);
 
       // the length of this edge
-      double length = edge->volume();
+      const double length = elem->edge_length(ne);
 
       // partial area associated with this edge
-      double partial_area = (*it)->partial_area_with_edge(ne);
-      double partial_volume = (*it)->partial_volume_with_edge(ne); // partial volume associated with this edge
+      double partial_area = elem->partial_area_with_edge(ne);
+      double partial_volume = elem->partial_volume_with_edge(ne);
+
+      double truncated_partial_area =  partial_area;
+      double truncated_partial_volume =  partial_volume;
+      if(truncation)
+      {
+        truncated_partial_area =  elem->partial_area_with_edge_truncated(ne);
+        truncated_partial_volume =  elem->partial_volume_with_edge_truncated(ne);
+      }
 
       // fvm_node of node1
-      const FVM_Node * fvm_n1 = (*it)->get_fvm_node(edge_nodes[0]);   genius_assert(fvm_n1);
+      const FVM_Node * fvm_n1 = elem->get_fvm_node(edge_nodes.first);
       // fvm_node of node2
-      const FVM_Node * fvm_n2 = (*it)->get_fvm_node(edge_nodes[1]);   genius_assert(fvm_n2);
+      const FVM_Node * fvm_n2 = elem->get_fvm_node(edge_nodes.second);
 
       // fvm_node_data of node1
-      const FVM_NodeData * n1_data =  fvm_n1->node_data() ;   genius_assert(n1_data);
+      const FVM_NodeData * n1_data =  fvm_n1->node_data();
       // fvm_node_data of node2
-      const FVM_NodeData * n2_data =  fvm_n2->node_data() ;   genius_assert(n2_data);
+      const FVM_NodeData * n2_data =  fvm_n2->node_data();
 
-      unsigned int n1_local_offset = fvm_n1->local_offset();
-      unsigned int n2_local_offset = fvm_n2->local_offset();
+      const unsigned int n1_local_offset = fvm_n1->local_offset();
+      const unsigned int n2_local_offset = fvm_n2->local_offset();
 
       // the row position of variables in the matrix
-      std::vector<PetscInt> row;
-      for(unsigned int i=0; i<4; ++i) row.push_back( fvm_n1->global_offset()+i );
-      for(unsigned int i=0; i<4; ++i) row.push_back( fvm_n2->global_offset()+i );
+      PetscInt row[8];
+      for(unsigned int i=0; i<4; ++i) row[i]   = fvm_n1->global_offset()+i;
+      for(unsigned int i=0; i<4; ++i) row[i+4] = fvm_n2->global_offset()+i;
 
 
       // here we use AD again. Can we hand write it for more efficient?
@@ -876,13 +932,13 @@ void SemiconductorSimulationRegion::DDM2_Jacobian(PetscScalar * x, Mat *jac, Ins
         //for node 1 of the edge
         mt->mapping(fvm_n1->root_node(), n1_data, SolverSpecify::clock);
 
-        AutoDScalar V1   =  x[n1_local_offset+0];       V1.setADValue(4*edge_nodes[0]+0, 1.0);           // electrostatic potential
-        AutoDScalar n1   =  x[n1_local_offset+1];       n1.setADValue(4*edge_nodes[0]+1, 1.0);           // electron density
-        AutoDScalar p1   =  x[n1_local_offset+2];       p1.setADValue(4*edge_nodes[0]+2, 1.0);           // hole density
-        AutoDScalar T1   =  x[n1_local_offset+3];       T1.setADValue(4*edge_nodes[0]+3, 1.0);           // lattice temperature
+        AutoDScalar V1   =  x[n1_local_offset+0];       V1.setADValue(4*edge_nodes.first+0, 1.0);           // electrostatic potential
+        AutoDScalar n1   =  x[n1_local_offset+1];       n1.setADValue(4*edge_nodes.first+1, 1.0);           // electron density
+        AutoDScalar p1   =  x[n1_local_offset+2];       p1.setADValue(4*edge_nodes.first+2, 1.0);           // hole density
+        AutoDScalar T1   =  x[n1_local_offset+3];       T1.setADValue(4*edge_nodes.first+3, 1.0);           // lattice temperature
 
-        AutoDScalar Ec1 =  -(e*V1 + n1_data->affinity() + mt->band->EgNarrowToEc(p1, n1, T1) + kb*T1*log(n1_data->Nc()));//conduct band energy level
-        AutoDScalar Ev1 =  -(e*V1 + n1_data->affinity() - mt->band->EgNarrowToEv(p1, n1, T1) - kb*T1*log(n1_data->Nv()) + mt->band->Eg(T1));//valence band energy level
+        AutoDScalar Ec1 =  -(e*V1 + n1_data->affinity() + kb*T1*log(mt->band->nie(p1, n1, T1)));//conduct band energy level
+        AutoDScalar Ev1 =  -(e*V1 + n1_data->affinity() - kb*T1*log(mt->band->nie(p1, n1, T1)));//valence band energy level
         if(get_advanced_model()->Fermi)
         {
           Ec1 = Ec1 - kb*T1*log(gamma_f(fabs(n1)/n1_data->Nc()));
@@ -896,13 +952,13 @@ void SemiconductorSimulationRegion::DDM2_Jacobian(PetscScalar * x, Mat *jac, Ins
         //for node 2 of the edge
         mt->mapping(fvm_n2->root_node(), n2_data, SolverSpecify::clock);
 
-        AutoDScalar V2   =  x[n2_local_offset+0];       V2.setADValue(4*edge_nodes[1]+0, 1.0);             // electrostatic potential
-        AutoDScalar n2   =  x[n2_local_offset+1];       n2.setADValue(4*edge_nodes[1]+1, 1.0);             // electron density
-        AutoDScalar p2   =  x[n2_local_offset+2];       p2.setADValue(4*edge_nodes[1]+2, 1.0);             // hole density
-        AutoDScalar T2   =  x[n2_local_offset+3];       T2.setADValue(4*edge_nodes[1]+3, 1.0);             // hole density
+        AutoDScalar V2   =  x[n2_local_offset+0];       V2.setADValue(4*edge_nodes.second+0, 1.0);             // electrostatic potential
+        AutoDScalar n2   =  x[n2_local_offset+1];       n2.setADValue(4*edge_nodes.second+1, 1.0);             // electron density
+        AutoDScalar p2   =  x[n2_local_offset+2];       p2.setADValue(4*edge_nodes.second+2, 1.0);             // hole density
+        AutoDScalar T2   =  x[n2_local_offset+3];       T2.setADValue(4*edge_nodes.second+3, 1.0);             // hole density
 
-        AutoDScalar Ec2 =  -(e*V2 + n2_data->affinity() + mt->band->EgNarrowToEc(p2, n2, T2) + kb*T2*log(n2_data->Nc()));//conduct band energy level
-        AutoDScalar Ev2 =  -(e*V2 + n2_data->affinity() - mt->band->EgNarrowToEv(p2, n2, T2) - kb*T2*log(n2_data->Nv()) + mt->band->Eg(T2));//valence band energy level
+        AutoDScalar Ec2 =  -(e*V2 + n2_data->affinity() + kb*T2*log(mt->band->nie(p2, n2, T2)));//conduct band energy level
+        AutoDScalar Ev2 =  -(e*V2 + n2_data->affinity() - kb*T2*log(mt->band->nie(p2, n2, T2)));//valence band energy level
         if(get_advanced_model()->Fermi)
         {
           Ec2 = Ec2 - kb*T2*log(gamma_f(fabs(n2)/n2_data->Nc()));
@@ -918,18 +974,24 @@ void SemiconductorSimulationRegion::DDM2_Jacobian(PetscScalar * x, Mat *jac, Ins
         AutoDScalar mun2;   // electron mobility  for node 2 of the edge
         AutoDScalar mup2;   // hole mobility for node 2 of the edge
 
-        if( ( get_advanced_model()->HighFieldMobility || get_advanced_model()->ImpactIonization) &&
-            SolverSpecify::Type!=SolverSpecify::EQUILIBRIUM)
+        if(highfield_mob)
         {
           if ( get_advanced_model()->Mob_Force == ModelSpecify::ESimple && !insulator_interface_elem )
           {
+            Point _dir = (*fvm_n1->root_node() - *fvm_n2->root_node()).unit();
+            VectorValue<AutoDScalar> dir(_dir(0), _dir(1), _dir(2));
+            AutoDScalar Ep = fabs((V2-V1)/length);
+            AutoDScalar Et = 0;//
+            if(mos_channel_elem)
+              Et = (E - (E*dir)*dir).size();
+
             mt->mapping(fvm_n1->root_node(), n1_data, SolverSpecify::clock);
-            mun1 = mt->mob->ElecMob(p1, n1, T1, adtl::fmax(fabs(Ec2-Ec1)/e/length, 0), Etn, T1);
-            mup1 = mt->mob->HoleMob(p1, n1, T1, adtl::fmax(fabs(Ev1-Ev2)/e/length, 0), Etp, T1);
+            mun1 = mt->mob->ElecMob(p1, n1, T1, Ep, Et, T1);
+            mup1 = mt->mob->HoleMob(p1, n1, T1, Ep, Et, T1);
 
             mt->mapping(fvm_n2->root_node(), n2_data, SolverSpecify::clock);
-            mun2 = mt->mob->ElecMob(p2, n2, T2, adtl::fmax(fabs(Ec2-Ec1)/e/length, 0), Etn, T2);
-            mup2 = mt->mob->HoleMob(p2, n2, T2, adtl::fmax(fabs(Ev1-Ev2)/e/length, 0), Etp, T2);
+            mun2 = mt->mob->ElecMob(p2, n2, T1, Ep, Et, T2);
+            mup2 = mt->mob->HoleMob(p2, n2, T1, Ep, Et, T2);
           }
           else // ModelSpecify::EJ || ModelSpecify::EQF
           {
@@ -967,21 +1029,20 @@ void SemiconductorSimulationRegion::DDM2_Jacobian(PetscScalar * x, Mat *jac, Ins
         // joule heating
         AutoDScalar H = 0.5*(V1-V2)*(Jn + Jp);
 
-#ifdef HAVE_FENV_H
+#if defined(HAVE_FENV_H) && defined(DEBUG)
         genius_assert( !fetestexcept(FE_INVALID) );
 #endif
 
         // ignore thoese ghost nodes (ghost nodes is local but with different processor_id())
         if( fvm_n1->root_node()->processor_id()==Genius::processor_id() )
         {
-
           AutoDScalar ff1 = ( eps*(V2 - V1)/length*partial_area );
 
-          AutoDScalar ff2 = ( Jn*partial_area );
+          AutoDScalar ff2 = ( Jn*truncated_partial_area );
 
-          AutoDScalar ff3 = ( - Jp*partial_area );
+          AutoDScalar ff3 = ( - Jp*truncated_partial_area );
 
-          AutoDScalar ff4 = ( kap*(T2 - T1)/length*partial_area + H*partial_area);
+          AutoDScalar ff4 = ( kap*(T2 - T1)/length*partial_area + H*truncated_partial_area);
 
           // general coding always has some overkill... bypass it.
           MatSetValues(*jac, 1, &row[0], cell_col.size(), &cell_col[0], ff1.getADValue(), ADD_VALUES);
@@ -992,14 +1053,13 @@ void SemiconductorSimulationRegion::DDM2_Jacobian(PetscScalar * x, Mat *jac, Ins
 
         if( fvm_n2->root_node()->processor_id()==Genius::processor_id() )
         {
-
           AutoDScalar ff1 = ( eps*(V1 - V2)/length*partial_area );
 
-          AutoDScalar ff2 = ( - Jn*partial_area );
+          AutoDScalar ff2 = ( - Jn*truncated_partial_area );
 
-          AutoDScalar ff3 = ( Jp*partial_area );
+          AutoDScalar ff3 = ( Jp*truncated_partial_area );
 
-          AutoDScalar ff4 = ( kap*(T1 - T2)/length*partial_area + H*partial_area);
+          AutoDScalar ff4 = ( kap*(T1 - T2)/length*partial_area + H*truncated_partial_area);
 
           MatSetValues(*jac, 1, &row[4], cell_col.size(), &cell_col[0], ff1.getADValue(), ADD_VALUES);
           MatSetValues(*jac, 1, &row[5], cell_col.size(), &cell_col[0], ff2.getADValue(), ADD_VALUES);
@@ -1009,14 +1069,13 @@ void SemiconductorSimulationRegion::DDM2_Jacobian(PetscScalar * x, Mat *jac, Ins
 
         if (get_advanced_model()->BandBandTunneling && SolverSpecify::Type!=SolverSpecify::EQUILIBRIUM)
         {
-          VectorValue<AutoDScalar> E   = - (*it)->gradient(psi_vertex);  // E = - grad(psi)
           AutoDScalar GBTBT1 = mt->band->BB_Tunneling(T1, E.size());
           AutoDScalar GBTBT2 = mt->band->BB_Tunneling(T2, E.size());
 
           if( fvm_n1->root_node()->processor_id()==Genius::processor_id() )
           {
             // continuity equation
-            AutoDScalar continuity = 0.5*GBTBT1*partial_volume;
+            AutoDScalar continuity = 0.5*GBTBT1*truncated_partial_volume;
             MatSetValues(*jac, 1, &row[1], cell_col.size(), &cell_col[0], continuity.getADValue(), ADD_VALUES);
             MatSetValues(*jac, 1, &row[2], cell_col.size(), &cell_col[0], continuity.getADValue(), ADD_VALUES);
           }
@@ -1024,7 +1083,7 @@ void SemiconductorSimulationRegion::DDM2_Jacobian(PetscScalar * x, Mat *jac, Ins
           if( fvm_n2->root_node()->processor_id()==Genius::processor_id() )
           {
             // continuity equation
-            AutoDScalar continuity = 0.5*GBTBT2*partial_volume;
+            AutoDScalar continuity = 0.5*GBTBT2*truncated_partial_volume;
             MatSetValues(*jac, 1, &row[5], cell_col.size(), &cell_col[0], continuity.getADValue(), ADD_VALUES);
             MatSetValues(*jac, 1, &row[6], cell_col.size(), &cell_col[0], continuity.getADValue(), ADD_VALUES);
           }
@@ -1033,7 +1092,6 @@ void SemiconductorSimulationRegion::DDM2_Jacobian(PetscScalar * x, Mat *jac, Ins
         if (get_advanced_model()->ImpactIonization && SolverSpecify::Type!=SolverSpecify::EQUILIBRIUM)
         {
           // consider impact-ionization
-
           AutoDScalar IIn,IIp,GIIn,GIIp;
           AutoDScalar T,Eg;
 
@@ -1041,25 +1099,19 @@ void SemiconductorSimulationRegion::DDM2_Jacobian(PetscScalar * x, Mat *jac, Ins
           T  = std::min(T1,T2);
           Eg = 0.5* ( Eg1 + Eg2 );
 
-          VectorValue<AutoDScalar> E   = - (*it)->gradient(psi_vertex);  // E = - grad(psi)
-          VectorValue<AutoDScalar> Jnv = - (*it)->gradient(phin_vertex); // we only need the direction of Jnv, here Jnv = - gradient of Fn
-          VectorValue<AutoDScalar> Jpv = - (*it)->gradient(phip_vertex); // Jpv = - gradient of Fpa
-          Jnv.add_scaled(VectorValue<AutoDScalar>(0, 1e-20, 0), 1.0);
-          Jpv.add_scaled(VectorValue<AutoDScalar>(0, 1e-20, 0), 1.0);
-
-          VectorValue<PetscScalar> ev0 = ((*it)->point(edge_nodes[1]) - (*it)->point(edge_nodes[0]));
+          VectorValue<PetscScalar> ev0 = (elem->point(edge_nodes.second) - elem->point(edge_nodes.first));
           VectorValue<AutoDScalar> ev;
           ev(0)=ev0(0); ev(1)=ev0(1); ev(2)=ev0(2);
-          AutoDScalar riin1 = 0.5 + 0.5* (ev.unit()).dot(Jnv.unit());
+          AutoDScalar riin1 = 0.5 + 0.5* (ev.unit()).dot(Jnv.unit(true));
           AutoDScalar riin2 = 1.0 - riin1;
-          AutoDScalar riip2 = 0.5 + 0.5* (ev.unit()).dot(Jpv.unit());
+          AutoDScalar riip2 = 0.5 + 0.5* (ev.unit()).dot(Jpv.unit(true));
           AutoDScalar riip1 = 1.0 - riip2;
 
           switch (get_advanced_model()->II_Force)
           {
           case ModelSpecify::IIForce_EdotJ:
-            Epn = adtl::fmax(E.dot(Jnv.unit()), 0.0);
-            Epp = adtl::fmax(E.dot(Jpv.unit()), 0.0);
+            Epn = adtl::fmax(E.dot(Jnv.unit(true)), 0.0);
+            Epp = adtl::fmax(E.dot(Jpv.unit(true)), 0.0);
             IIn = mt->gen->ElecGenRate(T,Epn,Eg);
             IIp = mt->gen->HoleGenRate(T,Epp,Eg);
             break;
@@ -1087,8 +1139,8 @@ void SemiconductorSimulationRegion::DDM2_Jacobian(PetscScalar * x, Mat *jac, Ins
           if( fvm_n1->root_node()->processor_id()==Genius::processor_id() )
           {
             // continuity equation
-            AutoDScalar electron_continuity = (riin1*GIIn+riip1*GIIp)*partial_volume ;
-            AutoDScalar hole_continuity     = (riin1*GIIn+riip1*GIIp)*partial_volume ;
+            AutoDScalar electron_continuity = (riin1*GIIn+riip1*GIIp)*truncated_partial_volume ;
+            AutoDScalar hole_continuity     = (riin1*GIIn+riip1*GIIp)*truncated_partial_volume ;
             MatSetValues(*jac, 1, &row[1], cell_col.size(), &cell_col[0], electron_continuity.getADValue(), ADD_VALUES);
             MatSetValues(*jac, 1, &row[2], cell_col.size(), &cell_col[0], hole_continuity.getADValue(), ADD_VALUES);
           }
@@ -1096,8 +1148,8 @@ void SemiconductorSimulationRegion::DDM2_Jacobian(PetscScalar * x, Mat *jac, Ins
           if( fvm_n2->root_node()->processor_id()==Genius::processor_id() )
           {
             // continuity equation
-            AutoDScalar electron_continuity = (riin2*GIIn+riip2*GIIp)*partial_volume ;
-            AutoDScalar hole_continuity     = (riin2*GIIn+riip2*GIIp)*partial_volume ;
+            AutoDScalar electron_continuity = (riin2*GIIn+riip2*GIIp)*truncated_partial_volume ;
+            AutoDScalar hole_continuity     = (riin2*GIIn+riip2*GIIp)*truncated_partial_volume ;
             MatSetValues(*jac, 1, &row[5], cell_col.size(), &cell_col[0], electron_continuity.getADValue(), ADD_VALUES);
             MatSetValues(*jac, 1, &row[6], cell_col.size(), &cell_col[0], hole_continuity.getADValue(), ADD_VALUES);
           }
@@ -1108,7 +1160,7 @@ void SemiconductorSimulationRegion::DDM2_Jacobian(PetscScalar * x, Mat *jac, Ins
 
   }// end of scan all the cell
 
-#ifdef HAVE_FENV_H
+#if defined(HAVE_FENV_H) && defined(DEBUG)
   genius_assert( !fetestexcept(FE_INVALID) );
 #endif
 
@@ -1121,15 +1173,11 @@ void SemiconductorSimulationRegion::DDM2_Jacobian(PetscScalar * x, Mat *jac, Ins
   //synchronize with material database
   mt->set_ad_num(adtl::AutoDScalar::numdir);
 
-  const_node_iterator node_it = nodes_begin();
-  const_node_iterator node_it_end = nodes_end();
+  const_processor_node_iterator node_it = on_processor_nodes_begin();
+  const_processor_node_iterator node_it_end = on_processor_nodes_end();
   for(; node_it!=node_it_end; ++node_it)
   {
-
-    const FVM_Node * fvm_node = (*node_it).second;
-    //if this node NOT belongs to this processor, continue
-    if( fvm_node->root_node()->processor_id() != Genius::processor_id() ) continue;
-
+    const FVM_Node * fvm_node = *node_it;
     const FVM_NodeData * node_data = fvm_node->node_data();
 
     PetscInt index[4] = {fvm_node->global_offset()+0, fvm_node->global_offset()+1,
@@ -1180,7 +1228,7 @@ void SemiconductorSimulationRegion::DDM2_Jacobian(PetscScalar * x, Mat *jac, Ins
   // the last operator is ADD_VALUES
   add_value_flag = ADD_VALUES;
 
-#ifdef HAVE_FENV_H
+#if defined(HAVE_FENV_H) && defined(DEBUG)
   genius_assert( !fetestexcept(FE_INVALID) );
 #endif
 
@@ -1202,18 +1250,17 @@ void SemiconductorSimulationRegion::DDM2_Time_Dependent_Function(PetscScalar * x
   // set local buf here
   std::vector<int>          iy;
   std::vector<PetscScalar>  y;
+  iy.reserve(4*this->n_node());
+  y.reserve(4*this->n_node());
 
   // process node related terms
-  const_node_iterator node_it = nodes_begin();
-  const_node_iterator node_it_end = nodes_end();
+  const_processor_node_iterator node_it = on_processor_nodes_begin();
+  const_processor_node_iterator node_it_end = on_processor_nodes_end();
   for(; node_it!=node_it_end; ++node_it)
   {
-
-    const FVM_Node * fvm_node = (*node_it).second;
-    //if this node NOT belongs to this processor, continue
-    if( fvm_node->root_node()->processor_id() != Genius::processor_id() ) continue;
-
+    const FVM_Node * fvm_node = *node_it;
     const FVM_NodeData * node_data = fvm_node->node_data();
+
     mt->mapping(fvm_node->root_node(), node_data, SolverSpecify::clock);
 
     //PetscScalar V   =  x[fvm_node->local_offset()+0];                         // electrostatic potential
@@ -1263,7 +1310,7 @@ void SemiconductorSimulationRegion::DDM2_Time_Dependent_Function(PetscScalar * x
   add_value_flag = ADD_VALUES;
 
 
-#ifdef HAVE_FENV_H
+#if defined(HAVE_FENV_H) && defined(DEBUG)
   genius_assert( !fetestexcept(FE_INVALID) );
 #endif
 
@@ -1289,16 +1336,13 @@ void SemiconductorSimulationRegion::DDM2_Time_Dependent_Jacobian(PetscScalar * x
   //synchronize with material database
   mt->set_ad_num(adtl::AutoDScalar::numdir);
 
-  const_node_iterator node_it = nodes_begin();
-  const_node_iterator node_it_end = nodes_end();
+  const_processor_node_iterator node_it = on_processor_nodes_begin();
+  const_processor_node_iterator node_it_end = on_processor_nodes_end();
   for(; node_it!=node_it_end; ++node_it)
   {
-
-    const FVM_Node * fvm_node = (*node_it).second;
-    //if this node NOT belongs to this processor, continue
-    if( fvm_node->root_node()->processor_id() != Genius::processor_id() ) continue;
-
+    const FVM_Node * fvm_node = *node_it;
     const FVM_NodeData * node_data = fvm_node->node_data();
+
     mt->mapping(fvm_node->root_node(), node_data, SolverSpecify::clock);
 
     PetscInt index[4] = {fvm_node->global_offset()+0, fvm_node->global_offset()+1, fvm_node->global_offset()+2, fvm_node->global_offset()+3};
@@ -1344,7 +1388,7 @@ void SemiconductorSimulationRegion::DDM2_Time_Dependent_Jacobian(PetscScalar * x
   // the last operator is ADD_VALUES
   add_value_flag = ADD_VALUES;
 
-#ifdef HAVE_FENV_H
+#if defined(HAVE_FENV_H) && defined(DEBUG)
   genius_assert( !fetestexcept(FE_INVALID) );
 #endif
 }
@@ -1354,22 +1398,18 @@ void SemiconductorSimulationRegion::DDM2_Time_Dependent_Jacobian(PetscScalar * x
 void SemiconductorSimulationRegion::DDM2_Update_Solution(PetscScalar *lxx)
 {
 
-  node_iterator it = nodes_begin();
-  node_iterator it_end = nodes_end();
-
-  for(; it!=it_end; ++it)
+  local_node_iterator node_it = on_local_nodes_begin();
+  local_node_iterator node_it_end = on_local_nodes_end();
+  for(; node_it!=node_it_end; ++node_it)
   {
-    FVM_Node * fvm_node = (*it).second;
-
-    // NOTE: here, solution for all the local node should be updated!
-    if( !fvm_node->root_node()->on_local() ) continue;
+    FVM_Node * fvm_node = *node_it;
 
     PetscScalar V          = lxx[fvm_node->local_offset()+0];
     PetscScalar n          = lxx[fvm_node->local_offset()+1];
     PetscScalar p          = lxx[fvm_node->local_offset()+2];
     PetscScalar T          = lxx[fvm_node->local_offset()+3];
 
-    FVM_NodeData * node_data = fvm_node->node_data();  genius_assert(node_data!=NULL);
+    FVM_NodeData * node_data = fvm_node->node_data();
 
 
     //update psi
@@ -1391,11 +1431,27 @@ void SemiconductorSimulationRegion::DDM2_Update_Solution(PetscScalar *lxx)
     // update buffered parameters dependent on temperature
     mt->mapping(fvm_node->root_node(), node_data, SolverSpecify::clock);
     node_data->Eg() = mt->band->Eg(T) - mt->band->EgNarrow(p, n, T);
-    node_data->Ec() = -(e*V + node_data->affinity());
+    node_data->Ec() = -(e*V + node_data->affinity() + mt->band->EgNarrowToEc(p, n, T));
     node_data->Ev() = -(e*V + node_data->affinity() - mt->band->EgNarrowToEv(p, n, T) + mt->band->Eg(T));
+
+    if(get_advanced_model()->Fermi)
+    {
+      node_data->qFn() = -(e*V + node_data->affinity()) + inv_fermi_half(fabs(n/node_data->Nc()))*kb*T;
+      node_data->qFp() = -(e*V + node_data->affinity() + mt->band->Eg(T)) - inv_fermi_half(fabs(p/node_data->Nv()))*kb*T;
+    }
+    else
+    {
+      node_data->qFn() = -(e*V + node_data->affinity()) + log(fabs(n/node_data->Nc()))*kb*T;
+      node_data->qFp() = -(e*V + node_data->affinity() + mt->band->Eg(T)) - log(fabs(p/node_data->Nv()))*kb*T;
+    }
 
     node_data->Nc() = mt->band->Nc(T);
     node_data->Nv() = mt->band->Nv(T);
+
+    node_data->Recomb() = mt->band->Recomb(p, n, T);
+    node_data->Recomb_Dir() = mt->band->R_Direct(p, n, T);
+    node_data->Recomb_SRH() = mt->band->R_SHR(p, n, T);
+    node_data->Recomb_Auger() = mt->band->R_Auger(p, n, T);
 
     if (get_advanced_model()->Trap)
     {
@@ -1413,7 +1469,7 @@ void SemiconductorSimulationRegion::DDM2_Update_Solution(PetscScalar *lxx)
   for(unsigned int n=0; n<n_cell(); ++n)
   {
     const Elem * elem = this->get_region_elem(n);
-    FVM_CellData * elem_data = this->get_region_elem_Data(n);
+    FVM_CellData * elem_data = this->get_region_elem_data(n);
 
     std::vector<PetscScalar> psi_vertex;
 

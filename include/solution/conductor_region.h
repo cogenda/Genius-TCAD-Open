@@ -27,8 +27,6 @@
 #include <vector>
 #include <string>
 #include "fvm_node_info.h"
-#include "fvm_node_data_conductor.h"
-#include "fvm_cell_data_conductor.h"
 #include "material.h"
 #include "simulation_region.h"
 
@@ -37,17 +35,27 @@ class Elem;
 /**
  * the data and support function for conductor material
  */
-class ConductorSimulationRegion :  public SimulationRegion
+class ElectrodeSimulationRegion :  public SimulationRegion
 {
 public:
 
-  ConductorSimulationRegion(const std::string &name, const std::string &material, SimulationSystem & system);
+  ElectrodeSimulationRegion(const std::string &name, const std::string &material, const PetscScalar T);
 
-  virtual ~ConductorSimulationRegion()
+  virtual ~ElectrodeSimulationRegion()
   { delete mt; }
 
+  /**
+   * @return the region property
+   */
   virtual SimulationRegionType type() const
-  { return ConductorRegion; }
+  { return ElectrodeRegion; }
+
+  /**
+   * @return the region property in string
+   */
+  virtual std::string type_name() const
+  { return "ElectrodeRegion";}
+
 
   /**
    * insert local mesh element into the region, only copy the pointer
@@ -59,17 +67,7 @@ public:
    * @note only node belongs to current processor and ghost node
    * own FVM_NodeData
    */
-  virtual void insert_fvm_node(FVM_Node * fn)
-  {
-
-    // node (or ghost node) belongs to this processor
-    // we should build FVM_NodeData structure for it
-
-    if  ( fn->root_node()->on_local() )
-      fn->hold_node_data( new FVM_Conductor_NodeData );
-
-    _region_node[fn->root_node()->id()] = fn;
-  }
+  virtual void insert_fvm_node(FVM_Node * fn);
 
   /**
    * init node data for this region
@@ -90,14 +88,14 @@ public:
   /**
    * @return the base class of material database
    */
-  virtual Material::MaterialBase * get_material_base()
+  virtual Material::MaterialBase * get_material_base() const
   { return (Material::MaterialBase *)mt; }
 
   /**
    * @return the optical refraction index of the region
    */
   virtual Complex get_optical_refraction(double lamda)
-  { return material()->optical->RefractionIndex(lamda); }
+  { return material()->optical->RefractionIndex(lamda, T_external()); }
 
   /**
    * @return relative permittivity of material
@@ -112,6 +110,12 @@ public:
   { return mt->basic->Density(T); }
 
   /**
+   * @return affinity of material
+   */
+  virtual double get_affinity(PetscScalar T) const
+  { return mt->basic->Affinity(T); }
+
+  /**
    * get atom fraction of region material
    */
   virtual void atom_fraction(std::vector<std::string> &atoms, std::vector<double> & fraction) const
@@ -120,6 +124,11 @@ public:
     fraction.clear();
     mt->basic->atom_fraction(atoms, fraction);
   }
+
+  /**
+   * set the variables for this region
+   */
+  virtual void set_region_variables();
 
 private:
   /**
@@ -223,12 +232,12 @@ public:
   /**
    * build function and its jacobian for L1 HALL DDM
    */
-  virtual void HALL_Function(PetscScalar * x, Vec f, InsertMode &add_value_flag);
+  virtual void HALL_Function(const VectorValue<double> & B, PetscScalar * x, Vec f, InsertMode &add_value_flag);
 
   /**
    * build function and its jacobian for L1 HALL DDM
    */
-  virtual void HALL_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_value_flag);
+  virtual void HALL_Jacobian(const VectorValue<double> & B, PetscScalar * x, Mat *jac, InsertMode &add_value_flag);
 
   /**
    * process function and its jacobian at hanging node for L1 HALL DDM (experimental)
@@ -372,6 +381,11 @@ public:
   virtual void DDMAC_Fill_Matrix_Vector(Mat A,  Vec b, const Mat J, const double omega, InsertMode &add_value_flag) const;
 
   /**
+   * filling AC transformation matrix (as preconditioner) entry by Jacobian matrix
+   */
+  virtual void DDMAC_Fill_Transformation_Matrix(Mat T, const Mat J, const double omega, InsertMode &add_value_flag) const;
+
+  /**
    * fill matrix of DDMAC equation for fvm_node
    */
   virtual void DDMAC_Fill_Nodal_Matrix_Vector(const FVM_Node *fvm_node, Mat A, Vec b, const Mat J, const double omega, InsertMode & add_value_flag,
@@ -385,9 +399,47 @@ public:
                                               const SimulationRegion * adjacent_region=NULL, const FVM_Node * adjacent_fvm_node=NULL) const;
 
   /**
+   * filling AC matrix entry by force variable of FVM_Node1 equals to FVM_Node2
+   */
+  virtual void DDMAC_Force_equal(const FVM_Node *fvm_node, Mat A, InsertMode & add_value_flag,
+                                 const SimulationRegion * adjacent_region=NULL,
+                                 const FVM_Node * adjacent_fvm_node=NULL) const;
+
+  /**
+   * filling AC matrix entry by force given variable of FVM_Node1 equals to FVM_Node2
+   */
+  virtual void DDMAC_Force_equal(const FVM_Node *fvm_node, const SolutionVariable var,
+                                 Mat A, InsertMode & add_value_flag,
+                                 const SimulationRegion * adjacent_region=NULL,
+                                 const FVM_Node * adjacent_fvm_node=NULL) const;
+
+  /**
    * update solution value of DDMAC equation
    */
   virtual void DDMAC_Update_Solution(PetscScalar *lxx);
+
+
+
+  //////////////////////////////////////////////////////////////////////////////////
+  //-----------------  functions for Linear Poissin solver   ---------------------//
+  //////////////////////////////////////////////////////////////////////////////////
+
+  /**
+   * function for build matrix of linear poisson's equation.
+   */
+  virtual void LinearPoissin_Matrix(Mat A, InsertMode &add_value_flag);
+
+
+  /**
+   * function for build RHS vector of linear poisson's equation.
+   */
+  virtual void LinearPoissin_RHS(Vec b, InsertMode &add_value_flag);
+
+
+  /**
+   * function for update solution value of linear poisson's equation.
+   */
+  virtual void LinearPoissin_Update_Solution(const PetscScalar * x);
 
 };
 

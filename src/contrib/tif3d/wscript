@@ -1,0 +1,9 @@
+def build(bld):
+  bld.objects( source    = bld.path.ant_glob('*.cc'),
+                includes  = '. ../../..',
+                features  = 'cxx',
+                use       = 'opt',
+                target    = 'tif3d_objs',
+             )
+  bld.contrib_objs.append('tif3d_objs')
+

@@ -26,6 +26,8 @@
 
 #ifndef CYGWIN
 
+#include <dlfcn.h>
+
 DllHook::DllHook(SolverBase & solver, const std::string & name, void * fun_data)
 :Hook(solver, name), dll_handle(0), hook(0)
 {
@@ -52,6 +54,14 @@ DllHook::DllHook(SolverBase & solver, const std::string & name, void * fun_data)
   hook = (*get_hook)(_solver, _name, fun_data);
   genius_assert(hook);
 
+}
+
+
+
+DllHook::~DllHook()
+{
+  if(hook) delete hook;
+  if ( dll_handle ) dlclose( dll_handle );
 }
 
 #endif

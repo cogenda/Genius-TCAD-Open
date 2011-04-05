@@ -2,17 +2,17 @@
 
 // The libMesh Finite Element Library.
 // Copyright (C) 2002-2007  Benjamin S. Kirk, John W. Peterson
-  
+
 // This library is free software; you can redistribute it and/or
 // modify it under the terms of the GNU Lesser General Public
 // License as published by the Free Software Foundation; either
 // version 2.1 of the License, or (at your option) any later version.
-  
+
 // This library is distributed in the hope that it will be useful,
 // but WITHOUT ANY WARRANTY; without even the implied warranty of
 // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
 // Lesser General Public License for more details.
-  
+
 // You should have received a copy of the GNU Lesser General Public
 // License along with this library; if not, write to the Free Software
 // Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
@@ -60,9 +60,8 @@ void DenseMatrix<T>::left_multiply_transpose(const DenseMatrix<T>& A)
   //Check to see if we are doing (A^T)*A
   if (this == &A)
     {
-      //here();
       DenseMatrix<T> B(*this);
-      
+
       // Simple but inefficient way
       // return this->left_multiply_transpose(B);
 
@@ -89,17 +88,17 @@ void DenseMatrix<T>::left_multiply_transpose(const DenseMatrix<T>& A)
   else
     {
       DenseMatrix<T> B(*this);
-  
+
       this->resize (A.n(), B.n());
-      
+
       assert (A.m() == B.m());
       assert (this->m() == A.n());
       assert (this->n() == B.n());
-      
+
       const unsigned int m_s = A.n();
-      const unsigned int p_s = A.m(); 
+      const unsigned int p_s = A.m();
       const unsigned int n_s = this->n();
-  
+
       // Do it this way because there is a
       // decent chance (at least for constraint matrices)
       // that A.transpose(i,k) = 0.
@@ -131,7 +130,7 @@ void DenseMatrix<T>::right_multiply (const DenseMatrixBase<T>& M3)
 
   // Resize *this so that the result can fit
   this->resize (M2.m(), M3.n());
-  
+
   this->multiply(*this, M2, M3);
 }
 
@@ -144,9 +143,8 @@ void DenseMatrix<T>::right_multiply_transpose (const DenseMatrix<T>& B)
   //Check to see if we are doing B*(B^T)
   if (this == &B)
     {
-      //here();
       DenseMatrix<T> A(*this);
-      
+
       // Simple but inefficient way
       // return this->right_multiply_transpose(A);
 
@@ -173,15 +171,15 @@ void DenseMatrix<T>::right_multiply_transpose (const DenseMatrix<T>& B)
   else
     {
       DenseMatrix<T> A(*this);
-  
+
       this->resize (A.m(), B.m());
-      
+
       assert (A.n() == B.n());
       assert (this->m() == A.m());
       assert (this->n() == B.m());
-      
+
       const unsigned int m_s = A.m();
-      const unsigned int p_s = A.n(); 
+      const unsigned int p_s = A.n();
       const unsigned int n_s = this->n();
 
       // Do it this way because there is a
@@ -230,7 +228,7 @@ void DenseMatrix<T>::lu_solve (DenseVector<T>& b,
   this->_lu_back_substitute (b, x, partial_pivot);
 }
 
-  
+
 
 template<typename T>
 void DenseMatrix<T>::_lu_back_substitute (DenseVector<T>& b,
@@ -242,7 +240,7 @@ void DenseMatrix<T>::_lu_back_substitute (DenseVector<T>& b,
 
   assert (this->m() == n);
   assert (this->m() == b.size());
-  
+
   x.resize (n);
 
   // A convenient reference to *this
@@ -258,7 +256,7 @@ void DenseMatrix<T>::_lu_back_substitute (DenseVector<T>& b,
 
       // Get the entry b(i) and store it
       const T bi = b(i);
-      
+
       for (unsigned int j=(i+1); j<n; j++)
 	b(j) -= bi*A(j,i)*diag_inv;
     }
@@ -276,7 +274,7 @@ void DenseMatrix<T>::_lu_back_substitute (DenseVector<T>& b,
 	const T diag = A(ib,ib);
 
 	const T diag_inv = 1./diag;
-	
+
 	for (unsigned int j=(ib+1); j<n; j++)
 	  {
 	    b(ib) -= A(ib,j)*x(j);
@@ -293,7 +291,7 @@ void DenseMatrix<T>::_lu_decompose (const bool partial_pivot)
   // If this function was called, there better not be any
   // previous decomposition of the matrix.
   genius_assert(this->_decomposition_type == NONE);
-  
+
   // Get the matrix size and make sure it is square
   const unsigned int
     m = this->m();
@@ -302,11 +300,11 @@ void DenseMatrix<T>::_lu_decompose (const bool partial_pivot)
 
   // A convenient reference to *this
   DenseMatrix<T>& A = *this;
-  
+
   // Straight, vanilla LU factorization without pivoting
   if (!partial_pivot)
     {
-      
+
       // For each row in the matrix
       for (unsigned int i=0; i<m; i++)
 	{
@@ -314,27 +312,27 @@ void DenseMatrix<T>::_lu_decompose (const bool partial_pivot)
 	  const T diag = A(i,i);
 
 	  const T diag_inv = 1./diag;
-	  
+
 	  // For each row in the submatrix
 	  for (unsigned int j=i+1; j<m; j++)
 	    {
 	      // Get the scale factor for this row
 	      const T fact = A(j,i)*diag_inv;
-	      
+
 	      // For each column in the subrow scale it
 	      // by the factor
 	      for (unsigned int k=i+1; k<m; k++)
-		A(j,k) -= fact*A(i,k);	      
+		A(j,k) -= fact*A(i,k);
 	    }
 	}
     }
-  
+
   // Do partial pivoting.
   else
     {
       genius_error();
     }
-  
+
   // Set the flag for LU decomposition
   this->_decomposition_type = LU;
 }
@@ -356,10 +354,10 @@ T DenseMatrix<T>::det ()
 		<< std::endl;
       genius_error();
     }
-  
+
   // A variable to keep track of the running product of diagonal terms.
   T determinant = 1.;
-  
+
   // Loop over diagonal terms, computing the product.  In practice,
   // be careful because this value could easily become too large to
   // fit in a double or float.  To be safe, one should keep track of
@@ -396,7 +394,7 @@ void DenseMatrix<T>::cholesky_solve (DenseVector<T2>& b,
 	// Already factored, just need to call back_substitute.
 	break;
       }
-      
+
     default:
       {
 	std::cerr << "Error! This matrix already has a "
@@ -421,7 +419,7 @@ void DenseMatrix<T>::_cholesky_decompose ()
   // If we called this function, there better not be any
   // previous decomposition of the matrix.
   genius_assert(this->_decomposition_type == NONE);
-  
+
   // Shorthand notation for number of rows and columns.
   const unsigned int
     m = this->m(),
@@ -432,7 +430,7 @@ void DenseMatrix<T>::_cholesky_decompose ()
 
   // A convenient reference to *this
   DenseMatrix<T>& A = *this;
-  
+
   for (unsigned int i=0; i<m; ++i)
     {
       for (unsigned int j=i; j<n; ++j)
@@ -448,7 +446,7 @@ void DenseMatrix<T>::_cholesky_decompose ()
 	    A(j,i) = A(i,j) / A(i,i);
 	}
     }
-  
+
   // Set the flag for CHOLESKY decomposition
   this->_decomposition_type = CHOLESKY;
 }
@@ -470,19 +468,19 @@ void DenseMatrix<T>::_cholesky_back_substitute (DenseVector<T2>& b,
 
   // A convenient reference to *this
   const DenseMatrix<T>& A = *this;
-   
+
   // Now compute the solution to Ax =b using the factorization.
   x.resize(m);
-  
+
   // Solve for Ly=b
   for (unsigned int i=0; i<n; ++i)
     {
       for (unsigned int k=0; k<i; ++k)
 	b(i) -= A(i,k)*x(k);
-      
+
       x(i) = b(i) / A(i,i);
     }
-  
+
   // Solve for L^T x = y
   for (unsigned int i=0; i<n; ++i)
     {
@@ -490,7 +488,7 @@ void DenseMatrix<T>::_cholesky_back_substitute (DenseVector<T2>& b,
 
       for (unsigned int k=(ib+1); k<n; ++k)
 	x(ib) -= A(k,ib) * x(k);
-      
+
       x(ib) /= A(ib,ib);
     }
 }
@@ -523,10 +521,10 @@ void DenseMatrix<T>::_cholesky_back_substitute (DenseVector<T2>& b,
 //   // temporarily until we can overwrite A.
 //   DenseMatrix<T> inv;
 //   inv.resize(this->m(), this->n());
-  
+
 //   // Resize the passed in matrix to hold the inverse
 //   inv.resize(this->m(), this->n());
-  
+
 //   for (unsigned int j=0; j<this->n(); ++j)
 //     {
 //       e.zero();

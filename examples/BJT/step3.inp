@@ -31,14 +31,14 @@ IMPORT   CGNSFile=bias.cgns
 ATTACH   Electrode=Collector    VApp=VCC
 ATTACH   Electrode=Emitter      VApp=GND
 # use current source as BASE signal
-ATTACH   Electrode=Base     Type=Current IApp=Ib   IApp=Is
+ATTACH   Electrode=Base     IApp=Ib   IApp=Is
 
 METHOD   Type = DDML1  NS=LineSearch LS=LU Damping=Potential
 # compute STEADYSTATE to get a initial value
 SOLVE    Type = STEADYSTATE
 
 # do transient simulation
-METHOD   Type = DDML1  NS=Basic LS=GMRES
+METHOD   Type = DDML1  NS=Basic LS=BCGS PC=ILU
 SOLVE    Type = TRANSIENT  TStart=0 TStep=1e-8  TStop=2e-6  out.prefix=tran.ib
 
 END

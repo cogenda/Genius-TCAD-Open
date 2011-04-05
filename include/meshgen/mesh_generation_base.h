@@ -1,5 +1,5 @@
 /********************************************************************************/
-/*     888888    888888888   88     888  88888   888      888    88888888       */ 
+/*     888888    888888888   88     888  88888   888      888    88888888       */
 /*   8       8   8           8 8     8     8      8        8    8               */
 /*  8            8           8  8    8     8      8        8    8               */
 /*  8            888888888   8   8   8     8      8        8     8888888        */
@@ -12,7 +12,7 @@
 /*                                                                              */
 /*  Copyright (C) 2007-2008                                                     */
 /*  Cogenda Pte Ltd                                                             */
-/*                                                                              */ 
+/*                                                                              */
 /*  Please contact Cogenda Pte Ltd for license information                      */
 /*                                                                              */
 /*  Author: Gong Ding   gdiso@ustc.edu                                          */
@@ -44,27 +44,27 @@ public:
    * destructor, do nothing
    */
   virtual ~MeshGeneratorBase() {}
-  /** 
+  /**
    * the virtual do_mesh method
    */
   virtual int do_mesh()=0;
 
   /**
-   * refine existing mesh 
+   * refine existing mesh
    */
   virtual int do_refine(MeshRefinement & )=0;
-    
+
   /**
-   * @return megh generator magic munber
+   * @return mesh generator magic number
    */
   virtual unsigned int magic_num()=0;
-  
+
 protected:
  /**
   * Reference to the mesh.
   */
   MeshBase & _mesh;
-  
+
 };
 
 

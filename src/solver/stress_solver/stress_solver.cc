@@ -23,7 +23,7 @@
 
 
 #include "elem.h"
-#include "mesh.h"
+#include "mesh_base.h"
 #include "stress_solver/stress_solver.h"
 #include "solver_specify.h"
 #include "fe_type.h"
@@ -81,7 +81,7 @@ int StressSolver::solve()
 
   build_rhs(b);
 
-  //KSPSolve(ksp,b,x);
+  KSPSolve(ksp,b,x);
 
   STOP_LOG("StressSolver_Linear()", "StressSolver");
 
@@ -91,7 +91,7 @@ int StressSolver::solve()
 int StressSolver::destroy_solver()
 {
 
-  // clear nonlinear contex
+  // clear linear contex
   clear_linear_data();
 
   return 0;

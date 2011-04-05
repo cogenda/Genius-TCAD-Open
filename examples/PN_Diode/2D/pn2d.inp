@@ -63,7 +63,7 @@ SOLVE
 
 # solver diode forward IV
 MODEL     Region=Silicon Mobility.Force=EQF
-METHOD    Type=DDML1 NS=Basic LS=BCGS PC=ILU MaxIt=20
+METHOD    Type=DDML1 NS=Basic LS=MUMPS MaxIt=20
 SOLVE     TYpe=EQ
 EXPORT   CGNSFILE=pn2d.cgns
 
@@ -76,5 +76,5 @@ SOLVE     TYpe=DC Vscan=Anode Vstart=0 Vstep=0.1 Vstop=1.0 out.prefix=diode2d_iv
 #SOLVE     Type=tran Tstart=0.0 Tstep=0.1e-6 Tstop=3e-6 
 
 # export result
-EXPORT   VTKFILE=pn2d.vtk 
+EXPORT   VTKFILE=pn2d.vtk  ascii=true
 #EXPORT   bcinfo=bc.inc

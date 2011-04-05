@@ -38,7 +38,7 @@ void SemiconductorSimulationRegion::DDM1_Function_Hanging_Node(PetscScalar *x, V
   PetscScalar Vt  = kb*T/e;
 
   // process 2D hanging node
-  if(this->is_2d_hanging_node())
+  if(this->has_2d_hanging_node())
   {
     // buffer for record src and dst rows
     std::vector<PetscInt>    src_row;
@@ -147,7 +147,7 @@ void SemiconductorSimulationRegion::DDM1_Function_Hanging_Node(PetscScalar *x, V
 
 
   // process 3D hanging node
-  if( this->is_3d_hanging_node() )
+  if( this->has_3d_hanging_node() )
   {
     // process hanging node lies on side center
     {
@@ -368,7 +368,7 @@ void SemiconductorSimulationRegion::DDM1_Jacobian_Hanging_Node(PetscScalar *x, M
   PetscScalar Vt  = kb*T/e;
 
   // process 2D hanging node
-  if(this->is_2d_hanging_node())
+  if(this->has_2d_hanging_node())
   {
 
     // buffer for add matrix row to row
@@ -489,7 +489,7 @@ void SemiconductorSimulationRegion::DDM1_Jacobian_Hanging_Node(PetscScalar *x, M
     PetscUtils::MatAddRowToRow(*jac, src_row, dst_row, alpha_buffer);
 
     // clear row_index
-    MatZeroRows(*jac, row_index.size(), row_index.empty() ? NULL : &row_index[0], 0.0);
+    PetscUtils::MatZeroRows(*jac, row_index.size(), row_index.empty() ? NULL : &row_index[0], 0.0);
 
 
     // insert buffered AD values to Mat
@@ -503,7 +503,7 @@ void SemiconductorSimulationRegion::DDM1_Jacobian_Hanging_Node(PetscScalar *x, M
   }
 
   // process 3D hanging node
-  if( this->is_3d_hanging_node() )
+  if( this->has_3d_hanging_node() )
   {
     // process hanging node lies on side center
     {
@@ -633,7 +633,7 @@ void SemiconductorSimulationRegion::DDM1_Jacobian_Hanging_Node(PetscScalar *x, M
       PetscUtils::MatAddRowToRow(*jac, src_row, dst_row, alpha_buffer);
 
       // clear row_index
-      MatZeroRows(*jac, row_index.size(), row_index.empty() ? NULL : &row_index[0], 0.0);
+      PetscUtils::MatZeroRows(*jac, row_index.size(), row_index.empty() ? NULL : &row_index[0], 0.0);
 
 
       // insert buffered AD values to Mat
@@ -748,7 +748,7 @@ void SemiconductorSimulationRegion::DDM1_Jacobian_Hanging_Node(PetscScalar *x, M
       PetscUtils::MatAddRowToRow(*jac, src_row, dst_row, alpha_buffer);
 
       // clear row_index
-      MatZeroRows(*jac, row_index.size(), row_index.empty() ? NULL : &row_index[0], 0.0);
+      PetscUtils::MatZeroRows(*jac, row_index.size(), row_index.empty() ? NULL : &row_index[0], 0.0);
 
 
       // insert buffered AD values to Mat

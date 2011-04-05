@@ -157,7 +157,7 @@ void CVHook::post_solve()
                 }
                 break;
               }
-            case ConductorRegion:
+            case ElectrodeRegion:
               {
                 break;
               }

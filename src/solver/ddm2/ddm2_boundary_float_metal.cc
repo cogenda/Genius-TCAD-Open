@@ -26,7 +26,7 @@
 #include "semiconductor_region.h"
 #include "conductor_region.h"
 #include "insulator_region.h"
-#include "boundary_condition.h"
+#include "boundary_condition_charge.h"
 #include "petsc_utils.h"
 #include "parallel.h"
 
@@ -157,7 +157,7 @@ void ChargedContactBC::DDM2_Function(PetscScalar * x, Vec f, InsertMode &add_val
           break;
         }
         // FloatMetal-Insulator interface at Conductor side
-      case ConductorRegion:
+      case ElectrodeRegion:
         {
           // Conductor region should be the second region
           genius_assert(i==1);
@@ -266,7 +266,7 @@ void ChargedContactBC::DDM2_Jacobian_Reserve(Mat *jac, InsertMode &add_value_fla
           break;
         }
         // FloatMetal-Insulator interface at Conductor side
-      case ConductorRegion:
+      case ElectrodeRegion:
         {
           // Conductor region should be the second region
           genius_assert(i==1);
@@ -380,7 +380,7 @@ void ChargedContactBC::DDM2_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_
             break;
           }
           // FloatMetal-Insulator interface at Conductor side
-        case ConductorRegion:
+        case ElectrodeRegion:
           {
 
             src_row.push_back(fvm_nodes[0]->global_offset()+1);
@@ -400,7 +400,7 @@ void ChargedContactBC::DDM2_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_
     PetscUtils::MatAddRowToRow(*jac, src_row, dst_row);
 
     // clear rows
-    MatZeroRows(*jac, rm_row.size(), rm_row.empty() ? NULL : &rm_row[0], 0.0);
+    PetscUtils::MatZeroRows(*jac, rm_row.size(), rm_row.empty() ? NULL : &rm_row[0], 0.0);
 
   }
 
@@ -496,7 +496,7 @@ void ChargedContactBC::DDM2_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_
 
         }
         // Electrode-Insulator interface at Conductor side
-      case ConductorRegion:
+      case ElectrodeRegion:
         {
 
           //the indepedent variable number, we need 2 here.

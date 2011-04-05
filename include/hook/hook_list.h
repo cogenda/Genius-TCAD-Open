@@ -42,7 +42,7 @@ public:
   /**
    * destructor, free all the hooks
    */
-  virtual ~HookList()
+  ~HookList()
   {
     this->clear();
   }
@@ -56,7 +56,7 @@ public:
   /**
    *   This is executed before the initialization of the solver
    */
-  virtual void on_init()
+  void on_init()
   {
     std::deque<Hook *>::iterator it;
     for (it=_hook_list.begin(); it!=_hook_list.end(); ++it)
@@ -64,9 +64,9 @@ public:
   }
 
   /**
-   *   This is executed previously to each solution step. 
+   *   This is executed previously to each solution step.
    */
-  virtual void pre_solve()
+  void pre_solve()
   {
     std::deque<Hook *>::iterator it;
     for (it=_hook_list.begin(); it!=_hook_list.end(); ++it)
@@ -76,18 +76,30 @@ public:
   /**
    *  This is executed after each solution step.
    */
-  virtual void post_solve()
+  void post_solve()
   {
     std::deque<Hook *>::iterator it;
     for (it=_hook_list.begin(); it!=_hook_list.end(); ++it)
       (*it)->post_solve();
   }
 
+
+  /**
+   *  This is executed before each (nonlinear) iteration
+   *  i.e. for analysis the condition number of jacobian matrix
+   */
+  void pre_iteration()
+  {
+    std::deque<Hook *>::iterator it;
+    for (it=_hook_list.begin(); it!=_hook_list.end(); ++it)
+      (*it)->pre_iteration();
+  }
+
   /**
    *  This is executed after each (nonlinear) iteration
    *  i.e. for collecting convergence information or implementing various damping strategy
    */
-  virtual void post_iteration()
+  void post_iteration()
   {
     std::deque<Hook *>::iterator it;
     for (it=_hook_list.begin(); it!=_hook_list.end(); ++it)
@@ -95,9 +107,20 @@ public:
   }
 
   /**
+   *  This is executed after each (nonlinear) iteration
+   *  i.e. for collecting convergence information or implementing various damping strategy
+   */
+  void post_iteration(void * f, void * x, void * y, void * w, bool & change_y, bool &change_w)
+  {
+    std::deque<Hook *>::iterator it;
+    for (it=_hook_list.begin(); it!=_hook_list.end(); ++it)
+      (*it)->post_iteration(f, x, y, w, change_y, change_w);
+  }
+
+  /**
    * This is executed after the finalization of the solver
    */
-  virtual void on_close()
+  void on_close()
   {
     std::deque<Hook *>::iterator it;
     for (it=_hook_list.begin(); it!=_hook_list.end(); ++it)

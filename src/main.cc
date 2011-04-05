@@ -20,12 +20,14 @@
 /********************************************************************************/
 
 
-#include <stdlib.h>
+#include <cstdlib>
 #include <iostream>
 #include <fstream>
 #include <sstream>
 #include <iomanip>
 
+#include "genius_common.h"
+#include "genius_env.h"
 #include "material_define.h"
 #include "file_include.h"
 #include "sync_file.h"
@@ -33,8 +35,8 @@
 #include "parser.h"
 #include "control.h"
 #include "parallel.h"
-#include "genius_env.h"
-#include "genius_common.h"
+
+
 
 #ifdef CYGWIN
   #include <io.h>      // for windows _access function
@@ -43,7 +45,13 @@
 #endif
 
 static void show_logo();
-static PetscErrorCode genius_error_handler(int line, const char *func, const char *file, const char *dir,PetscErrorCode n,int p, const char *mess,void *ctx);
+
+#ifdef PETSC_VERSION_DEV
+static PetscErrorCode genius_error_handler(MPI_Comm comm, int line, const char *func, const char *file, const char *dir,PetscErrorCode n, PetscErrorType p, const char *mess,void *ctx);
+#else
+static PetscErrorCode genius_error_handler(int line, const char *func, const char *file, const char *dir,PetscErrorCode n, int p, const char *mess,void *ctx);
+#endif
+
 
 // --------------------------------------------------------
 // The entrance of GENIUS
@@ -89,7 +97,7 @@ int main(int argc, char ** args)
   Genius::set_genius_dir(getenv("GENIUS_DIR"));
 
   // get the name of user input file by PETSC routine
-  PetscTruth     flg;
+  PetscBool     flg;
   char input_file[1024];
   PetscOptionsGetString(PETSC_NULL, "-i", input_file, 1023, &flg);
   // no input file? exit...
@@ -101,16 +109,30 @@ int main(int argc, char ** args)
   }
   Genius::set_input_file(input_file);
 
-  // test if input file can be open for read
-#ifdef CYGWIN
-  if ( _access( Genius::input_file(),  04 ) == -1 )
-#else
-  if (  access( Genius::input_file(),  R_OK ) == -1 )
-#endif
+  // prepare log system
+  std::ofstream logfs;
+  if (Genius::processor_id() == 0)
   {
-    PetscPrintf(PETSC_COMM_WORLD,"ERROR: I can't read input file '%s', access failed.\n", Genius::input_file() );
-    PetscFinalize();
-    exit(0);
+    genius_log.addStream("console", std::cerr.rdbuf());
+    std::stringstream log_file;
+    log_file << Genius::input_file() << ".log";
+    logfs.open(log_file.str().c_str());
+    genius_log.addStream("file", logfs.rdbuf());
+  }
+
+  // test if input file can be opened on processor 0 for read
+  if ( Genius::processor_id() == 0 )
+  {
+#ifdef CYGWIN
+    if ( _access( Genius::input_file(),  04 ) == -1 )
+#else
+    if ( access( Genius::input_file(),  R_OK ) == -1 )
+#endif
+    {
+      PetscPrintf(PETSC_COMM_WORLD,"ERROR: I can't read input file '%s', access failed.\n", Genius::input_file() );
+      PetscFinalize();
+      exit(0);
+    }
   }
 
   // preprocess include statement of input file
@@ -171,18 +193,6 @@ int main(int argc, char ** args)
   // after that, remove local copy of input file
   remove(localfile.c_str());
 
-  // prepare log system
-  if (Genius::processor_id() == 0)
-    genius_log.addStream("console", std::cerr.rdbuf());
-
-  std::ofstream logfs;
-  {
-    std::stringstream log_file;
-    log_file << Genius::input_file() << ".log." << Genius::processor_id();
-    logfs.open(log_file.str().c_str());
-  }
-  genius_log.addStream("file", logfs.rdbuf());
-
   // set material define
   std::string material_file = Genius::genius_dir() +  "/lib/material.def";
   Material::init_material_define(material_file);
@@ -216,9 +226,11 @@ int main(int argc, char ** args)
 
   //finish log system
   if (Genius::processor_id() == 0)
+  {
     genius_log.removeStream("console");
-  genius_log.removeStream("file");
-  logfs.close();
+    genius_log.removeStream("file");
+    logfs.close();
+  }
 
   Genius::clean_processors();
   return 0;
@@ -243,11 +255,11 @@ void show_logo()
   PetscPrintf(PETSC_COMM_WORLD,"*  Parallel Three-Dimensional General Purpose Semiconductor Simulator   *\n");
   PetscPrintf(PETSC_COMM_WORLD,"*                                                                       *\n");
   if(sizeof(PetscScalar)==sizeof(double))
-    PetscPrintf(PETSC_COMM_WORLD,"*        Commercial Version %-8s with double precision.             *\n", PACKAGE_VERSION);
+    PetscPrintf(PETSC_COMM_WORLD,"*        Commercial Version %-8s with double precision.          *\n", PACKAGE_VERSION);
   else if(sizeof(PetscScalar)==sizeof(long double))
-    PetscPrintf(PETSC_COMM_WORLD,"*        Commercial Version %-8s with long double precision.        *\n", PACKAGE_VERSION);
+    PetscPrintf(PETSC_COMM_WORLD,"*        Commercial Version %-8s with long double precision.     *\n", PACKAGE_VERSION);
   PetscPrintf(PETSC_COMM_WORLD,"*                                                                       *\n");
-  PetscPrintf(PETSC_COMM_WORLD,"*      Copyright (C) 2007-2009 by Cogenda Pte Ltd.                      *\n");
+  PetscPrintf(PETSC_COMM_WORLD,"*      Copyright (C) 2007-2010 by Cogenda Pte Ltd.                      *\n");
   PetscPrintf(PETSC_COMM_WORLD,"*                http://www.cogenda.com                                 *\n");
   PetscPrintf(PETSC_COMM_WORLD,"*************************************************************************\n");
 #else
@@ -263,11 +275,11 @@ void show_logo()
   PetscPrintf(PETSC_COMM_WORLD,"*  Parallel Three-Dimensional General Purpose Semiconductor Simulator   *\n");
   PetscPrintf(PETSC_COMM_WORLD,"*                                                                       *\n");
   if(sizeof(PetscScalar)==sizeof(double))
-    PetscPrintf(PETSC_COMM_WORLD,"*        Open Source Version %-8s with double precision.            *\n", PACKAGE_VERSION);
+    PetscPrintf(PETSC_COMM_WORLD,"*        Open Source Version %-8s with double precision.         *\n", PACKAGE_VERSION);
   else if(sizeof(PetscScalar)==sizeof(long double))
-    PetscPrintf(PETSC_COMM_WORLD,"*        Open Source Version %-8s with long double precision.       *\n", PACKAGE_VERSION);
+    PetscPrintf(PETSC_COMM_WORLD,"*        Open Source Version %-8s with long double precision.    *\n", PACKAGE_VERSION);
   PetscPrintf(PETSC_COMM_WORLD,"*                                                                       *\n");
-  PetscPrintf(PETSC_COMM_WORLD,"*      Copyright (C) 2007-2009 by Cogenda Pte Ltd.                      *\n");
+  PetscPrintf(PETSC_COMM_WORLD,"*      Copyright (C) 2007-2010 by Cogenda Pte Ltd.                      *\n");
   PetscPrintf(PETSC_COMM_WORLD,"*                http://www.cogenda.com                                 *\n");
   PetscPrintf(PETSC_COMM_WORLD,"*************************************************************************\n");
 #endif
@@ -277,7 +289,11 @@ void show_logo()
 }
 
 
-PetscErrorCode genius_error_handler(int line, const char *func, const char *file, const char *dir,PetscErrorCode n,int p, const char *mess,void */*ctx*/)
+#ifdef PETSC_VERSION_DEV
+PetscErrorCode genius_error_handler(MPI_Comm comm, int line, const char *func, const char *file, const char *dir,PetscErrorCode n, PetscErrorType p, const char *mess,void *ctx)
+#else
+PetscErrorCode genius_error_handler(int line, const char *func, const char *file, const char *dir,PetscErrorCode n, int p, const char *mess,void *ctx)
+#endif
 {
 
   MESSAGE << "--------------------- Error Message ------------------------------------" << std::endl;

@@ -1,0 +1,64 @@
+#==============================================================================
+# Genius example: 3D PN Diode simulation
+# we will generate simulation structure for the diode.
+# Then compute the forward IV curve of 3D diode
+#==============================================================================
+
+GLOBAL    T=300 DopingScale=1e18
+
+#------------------------------------------------------------------------------
+# Create an initial simulation mesh
+# Only S_Tet4 mesh supports conformal refinement
+MESH      Type = S_Tet4
+
+# start with a coarse mesh
+X.MESH    WIDTH=1.0   N.SPACES=5
+X.MESH    WIDTH=1.0   N.SPACES=10
+X.MESH    WIDTH=1.0   N.SPACES=5
+
+Y.MESH    DEPTH=0.5  N.SPACES=5
+Y.MESH    DEPTH=1.0  N.SPACES=10
+Y.MESH    DEPTH=1.5  N.SPACES=5
+
+Z.MESH    WIDTH=1.0  N.SPACES=8
+
+#------------------------------------------------------------------------------
+# Specify region and boundary faces
+REGION    Label=Silicon  Material=Si
+FACE      Label=Anode   Location=TOP   x.min=0 x.max=1.0 z.min=0.0 z.max=1.0
+FACE      Label=Cathode Location=BOTTOM
+
+
+#------------------------------------------------------------------------------
+DOPING Type=Analytic
+PROFILE   Type=Uniform    Ion=Donor     N.PEAK=1E15  X.MIN=0.0 X.MAX=3.0  \
+          Y.min=0.0 Y.max=3.0        Z.MIN=0.0 Z.MAX=3.0
+
+PROFILE   Type=Analytic   Ion=Acceptor  N.PEAK=1E19  X.MIN=0.0 X.MAX=1.0  \
+          Z.MIN=0.0 Z.MAX=1.0 \
+	  Y.min=0.0 Y.max=0.0 X.CHAR=0.2  Z.CHAR=0.2 Y.JUNCTION=0.5
+
+#------------------------------------------------------------------------------
+# boundary condition
+BOUNDARY ID=Anode   Type=Ohmic Res=1e3
+BOUNDARY ID=Cathode Type=Ohmic
+
+# refine the mesh where doping gradient is large
+REFINE.C  Variable=Doping error.fraction=0.7 Measure=signedlog
+
+# get initial condition by poison solver
+METHOD    Type=Poisson NS=Basic
+SOLVE
+
+# refine the mesh where E-field is large
+REFINE.C  Variable=Potential error.fraction=0.4
+
+# compute diode forward IV
+MODEL     Region=Silicon Mobility.Force=EQF
+METHOD    Type=DDML1 NS=Basic LS=BCGS PC=ILU Damping=Potential Potential.update=5
+SOLVE     Type=EQ
+SOLVE     Type=DCSWEEP Vscan=Anode Vstart=0.0 Vstep=0.05 Vstop=1.0 out.prefix=diode_iv
+
+# export result
+EXPORT   VTKFILE=pn.vtu cgnsfile=pn.cgns
+

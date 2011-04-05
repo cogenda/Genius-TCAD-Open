@@ -22,6 +22,10 @@
 #include "genius_env.h"
 #include "genius_common.h"
 
+#ifdef HAVE_SLEPC
+  #include "slepcsys.h"
+#endif
+
 // ------------------------------------------------------------
 // Genius::GeniusPrivateData data initialization
 int  Genius::GeniusPrivateData::_n_processors = 1;
@@ -32,7 +36,12 @@ std::string Genius::GeniusPrivateData::_genius_dir;
 bool Genius::init_processors(int *argc, char *** args)
 {
   // GENIUS is built on top of PETSC, we should init PETSC first
+#ifdef HAVE_SLEPC
+  // if we have slepc, call  SlepcInitialize instead of PetscInitialize
+  SlepcInitialize(argc,args,PETSC_NULL,PETSC_NULL);
+#else
   PetscInitialize(argc, args, PETSC_NULL, PETSC_NULL);
+#endif
 
   // the actual process number
   MPI_Comm_rank (PETSC_COMM_WORLD, &Genius::GeniusPrivateData::_processor_id);
@@ -44,6 +53,10 @@ bool Genius::init_processors(int *argc, char *** args)
 bool Genius::clean_processors()
 {
   // end PETSC
+#ifdef  HAVE_SLEPC
+  SlepcFinalize();
+#else
   PetscFinalize();
+#endif
   return true;
 }

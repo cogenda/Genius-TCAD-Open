@@ -2,17 +2,17 @@
 
 // The libMesh Finite Element Library.
 // Copyright (C) 2002-2007  Benjamin S. Kirk, John W. Peterson
-  
+
 // This library is free software; you can redistribute it and/or
 // modify it under the terms of the GNU Lesser General Public
 // License as published by the Free Software Foundation; either
 // version 2.1 of the License, or (at your option) any later version.
-  
+
 // This library is distributed in the hope that it will be useful,
 // but WITHOUT ANY WARRANTY; without even the implied warranty of
 // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
 // Lesser General Public License for more details.
-  
+
 // You should have received a copy of the GNU Lesser General Public
 // License along with this library; if not, write to the Free Software
 // Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
@@ -30,7 +30,7 @@
 //#include "dof_map.h"
 //#include "equation_systems.h"
 //#include "explicit_system.h"
-#include "mesh.h"
+#include "mesh_base.h"
 //#include "numeric_vector.h"
 //#include "gmv_io.h"
 //#include "tecplot_io.h"
@@ -45,7 +45,7 @@ ErrorVectorReal ErrorVector::minimum() const
 
   const unsigned int n = this->size();
   ErrorVectorReal min = std::numeric_limits<ErrorVectorReal>::max();
-  
+
   for (unsigned int i=0; i<n; i++)
     {
       // Only positive (or zero) values in the error vector
@@ -57,7 +57,7 @@ ErrorVectorReal ErrorVector::minimum() const
 
   // ErrorVectors are for positive values
   assert (min >= 0.);
-  
+
   return min;
 }
 
@@ -66,12 +66,12 @@ ErrorVectorReal ErrorVector::minimum() const
 Real ErrorVector::mean() const
 {
   START_LOG ("mean()", "ErrorVector");
-  
+
   const unsigned int n = this->size();
 
   Real mean  = 0;
   unsigned int nnz = 0;
-  
+
   for (unsigned int i=0; i<n; i++)
     if (this->is_active_elem(i))
       {
@@ -79,22 +79,22 @@ Real ErrorVector::mean() const
 
 	nnz++;
       }
-  
+
   STOP_LOG ("mean()", "ErrorVector");
-  
+
   return mean;
 }
 
 
 
 
-Real ErrorVector::median() 
+Real ErrorVector::median()
 {
   const unsigned int n   = this->size();
-  
+
   if (n == 0)
     return 0.;
-  
+
 
   // Build a StatisticsVector<ErrorVectorReal> containing
   // only our active entries and take its mean
@@ -105,7 +105,7 @@ Real ErrorVector::median()
   for (unsigned int i=0; i<n; i++)
     if(this->is_active_elem(i))
       sv.push_back((*this)[i]);
-  
+
   return sv.median();
 }
 
@@ -125,12 +125,12 @@ Real ErrorVector::median() const
 Real ErrorVector::variance(const Real mean) const
 {
   const unsigned int n   = this->size();
-  
+
   START_LOG ("variance()", "ErrorVector");
-  
+
   Real variance = 0;
   unsigned int nnz = 0;
-  
+
   for (unsigned int i=0; i<n; i++)
     if (this->is_active_elem(i))
       {
@@ -139,9 +139,9 @@ Real ErrorVector::variance(const Real mean) const
 
 	nnz++;
       }
-  
+
   STOP_LOG ("variance()", "ErrorVector");
-  
+
   return variance;
 }
 
@@ -151,12 +151,12 @@ Real ErrorVector::variance(const Real mean) const
 std::vector<unsigned int> ErrorVector::cut_below(Real cut) const
 {
   START_LOG ("cut_below()", "ErrorVector");
-  
+
   const unsigned int n = this->size();
-  
+
   std::vector<unsigned int> cut_indices;
-  cut_indices.reserve(n/2);  // Arbitrary 
-  
+  cut_indices.reserve(n/2);  // Arbitrary
+
   for (unsigned int i=0; i<n; i++)
     if (this->is_active_elem(i))
       {
@@ -165,9 +165,9 @@ std::vector<unsigned int> ErrorVector::cut_below(Real cut) const
 	    cut_indices.push_back(i);
 	  }
       }
-  
+
   STOP_LOG ("cut_below()", "ErrorVector");
-  
+
   return cut_indices;
 }
 
@@ -179,10 +179,10 @@ std::vector<unsigned int> ErrorVector::cut_above(Real cut) const
   START_LOG ("cut_above()", "ErrorVector");
 
   const unsigned int n   = this->size();
-  
+
   std::vector<unsigned int> cut_indices;
-  cut_indices.reserve(n/2);  // Arbitrary 
-  
+  cut_indices.reserve(n/2);  // Arbitrary
+
   for (unsigned int i=0; i<n; i++)
     if (this->is_active_elem(i))
       {
@@ -191,9 +191,9 @@ std::vector<unsigned int> ErrorVector::cut_above(Real cut) const
 	    cut_indices.push_back(i);
 	  }
       }
-  
+
   STOP_LOG ("cut_above()", "ErrorVector");
-  
+
   return cut_indices;
 }
 
@@ -271,6 +271,6 @@ void ErrorVector::plot_error(const std::string&, const Mesh&) const
       std::cerr << "Could not recognize filename: " << filename
                 << std::endl;
     }
-*/    
+*/
 }
 

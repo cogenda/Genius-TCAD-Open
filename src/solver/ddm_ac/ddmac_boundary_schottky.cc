@@ -27,7 +27,7 @@
 #include "semiconductor_region.h"
 #include "conductor_region.h"
 #include "insulator_region.h"
-#include "boundary_condition.h"
+#include "boundary_condition_schottky.h"
 #include "parallel.h"
 #include "petsc_utils.h"
 
@@ -278,7 +278,7 @@ void SchottkyContactBC::DDMAC_Fill_Matrix_Vector( Mat A, Vec b, const Mat J, con
           break;
         }
         // conductor region which has an interface with Schottky Contact boundary to semiconductor region
-      case ConductorRegion:
+      case ElectrodeRegion:
         // insulator region. if a corner where semiconductor region, insulator region and  conductor region meet.
         // the boundary for the corner point may be Schottky .
       case InsulatorRegion:

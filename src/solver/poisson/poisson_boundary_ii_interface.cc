@@ -25,11 +25,46 @@
 #include "semiconductor_region.h"
 #include "conductor_region.h"
 #include "insulator_region.h"
-#include "boundary_condition.h"
+#include "boundary_condition_ii.h"
 #include "petsc_utils.h"
 
 using PhysicalUnit::kb;
 using PhysicalUnit::e;
+
+
+/*---------------------------------------------------------------------
+ * set scaling constant
+ */
+void InsulatorInsulatorInterfaceBC::Poissin_Fill_Value(Vec , Vec L)
+{
+  // search for all the node with this boundary type
+  BoundaryCondition::const_node_iterator node_it = nodes_begin();
+  BoundaryCondition::const_node_iterator end_it = nodes_end();
+  for(; node_it!=end_it; ++node_it )
+  {
+    // skip node not belongs to this processor
+    if( (*node_it)->processor_id()!=Genius::processor_id() ) continue;
+
+    // search all the fvm_node which has *node_it as root node, these fvm_nodes have the same location in geometry,
+    // but belong to different regions in logic.
+    BoundaryCondition::region_node_iterator  rnode_it     = region_node_begin(*node_it);
+    BoundaryCondition::region_node_iterator  end_rnode_it = region_node_end(*node_it);
+    for(unsigned int i=0 ; rnode_it!=end_rnode_it; ++i, ++rnode_it  )
+    {
+      // the first insulator region
+      if(i==0)
+      {
+        // do nothing.
+      }
+      // other insulator regions
+      else
+      {
+        const FVM_Node * fvm_node = ( *rnode_it ).second.second;
+        VecSetValue(L, fvm_node->global_offset(), 1.0, INSERT_VALUES);
+      }
+    }
+  }
+}
 
 
 ///////////////////////////////////////////////////////////////////////
@@ -38,15 +73,70 @@ using PhysicalUnit::e;
 
 
 /*---------------------------------------------------------------------
+ * do pre-process to function for poisson solver
+ */
+void InsulatorInsulatorInterfaceBC::Poissin_Function_Preprocess(Vec f, std::vector<PetscInt> &src_row,
+    std::vector<PetscInt> &dst_row, std::vector<PetscInt> &clear_row)
+{
+
+  // search for all the node with this boundary type
+  BoundaryCondition::const_node_iterator node_it = nodes_begin();
+  BoundaryCondition::const_node_iterator end_it = nodes_end();
+  for(; node_it!=end_it; ++node_it )
+  {
+    // skip node not belongs to this processor
+    if( (*node_it)->processor_id()!=Genius::processor_id() ) continue;
+
+    // buffer for saving regions and fvm_nodes this *node_it involves
+    std::vector<const SimulationRegion *> regions;
+    std::vector<const FVM_Node *> fvm_nodes;
+
+    // search all the fvm_node which has *node_it as root node, these fvm_nodes have the same location in geometry,
+    // but belong to different regions in logic.
+    BoundaryCondition::region_node_iterator  rnode_it     = region_node_begin(*node_it);
+    BoundaryCondition::region_node_iterator  end_rnode_it = region_node_end(*node_it);
+    for(unsigned int i=0 ; rnode_it!=end_rnode_it; ++i, ++rnode_it  )
+    {
+      const SimulationRegion * region = (*rnode_it).second.first;
+      const FVM_Node * fvm_node = (*rnode_it).second.second;
+      if(!fvm_node->is_valid()) continue;
+
+      regions.push_back( region );
+      fvm_nodes.push_back( fvm_node );
+
+      // the first insulator region
+      if(i==0) continue;
+
+      // other insulator region
+      else
+      {
+        // record the source row and dst row
+        src_row.push_back(fvm_nodes[i]->global_offset());
+        dst_row.push_back(fvm_nodes[0]->global_offset());
+        clear_row.push_back(fvm_nodes[i]->global_offset());
+      }
+    }
+  }
+
+}
+
+
+
+/*---------------------------------------------------------------------
  * build function and its jacobian for poisson solver
  */
 void InsulatorInsulatorInterfaceBC::Poissin_Function(PetscScalar * x, Vec f, InsertMode &add_value_flag)
 {
+  // note, we will use ADD_VALUES to set values of vec f
+  // if the previous operator is not ADD_VALUES, we should assembly the vec
+  if( (add_value_flag != ADD_VALUES) && (add_value_flag != NOT_SET_VALUES) )
+  {
+    VecAssemblyBegin(f);
+    VecAssemblyEnd(f);
+  }
 
-  // buffer for Vec location
-  std::vector<PetscInt> src_row;
-  std::vector<PetscInt> dst_row;
-
+  // buffer for Vec index
+  std::vector<PetscInt> iy;
   // buffer for Vec value
   std::vector<PetscScalar> y_new;
 
@@ -87,17 +177,7 @@ void InsulatorInsulatorInterfaceBC::Poissin_Function(PetscScalar * x, Vec f, Ins
       // other insulator regions
       else
       {
-        // record the source row and dst row
-        src_row.push_back(fvm_nodes[i]->global_offset());
-
-        // find the position ff will be add to
-        // ff will be added to fvm_nodes[0]
-
-        const FVM_Node * ghost_fvm_node = fvm_nodes[0];
-        dst_row.push_back(ghost_fvm_node->global_offset());
-
-        // the ghost node should have the same processor_id with me
-        genius_assert(fvm_nodes[i]->root_node()->processor_id() == ghost_fvm_node->root_node()->processor_id() );
+        iy.push_back(fvm_nodes[i]->global_offset());
 
         // the governing equation of this fvm node --
 
@@ -113,22 +193,15 @@ void InsulatorInsulatorInterfaceBC::Poissin_Function(PetscScalar * x, Vec f, Ins
 
         y_new.push_back(ff);
 
-        genius_assert(src_row.size()==y_new.size());
-
       }
-
     }
-
   }
 
-  // add src row to dst row, it will assemble vec automatically
-  PetscUtils::VecAddRowToRow(f, src_row, dst_row);
+  // set new value to src row
+  if( iy.size() )
+    VecSetValues(f, iy.size(), &(iy[0]), &(y_new[0]), ADD_VALUES);
 
-  // insert new value to src row
-  if( src_row.size() )
-    VecSetValues(f, src_row.size(), &(src_row[0]), &(y_new[0]), INSERT_VALUES);
-
-  add_value_flag = INSERT_VALUES;
+  add_value_flag = ADD_VALUES;
 }
 
 
@@ -207,23 +280,12 @@ void InsulatorInsulatorInterfaceBC::Poissin_Jacobian_Reserve(Mat *jac, InsertMod
 
 
 
-
-
-
 /*---------------------------------------------------------------------
- * build function and its jacobian for poisson solver
+ * do pre-process to jacobian matrix for poisson solver
  */
-void InsulatorInsulatorInterfaceBC::Poissin_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_value_flag)
+void InsulatorInsulatorInterfaceBC::Poissin_Jacobian_Preprocess(Mat *jac, std::vector<PetscInt> &src_row,
+    std::vector<PetscInt> &dst_row, std::vector<PetscInt> &clear_row)
 {
-
-  // here we do several things:
-  // add some row to other, clear some row, insert some value to row
-  // I wonder if there are some more efficient way to do these.
-
-
-  // buffer for mat rows which should be added to other row
-  std::vector<PetscInt> src_row;
-  std::vector<PetscInt> dst_row;
 
   // search for all the node with this boundary type
   BoundaryCondition::const_node_iterator node_it = nodes_begin();
@@ -258,20 +320,36 @@ void InsulatorInsulatorInterfaceBC::Poissin_Jacobian(PetscScalar * x, Mat *jac, 
       {
         // record the source row and dst row
         src_row.push_back(fvm_nodes[i]->global_offset());
-
-        const FVM_Node * ghost_fvm_node = fvm_nodes[0];
-        dst_row.push_back(ghost_fvm_node->global_offset());
+        dst_row.push_back(fvm_nodes[0]->global_offset());
+        clear_row.push_back(fvm_nodes[i]->global_offset());
       }
     }
   }
 
-  //ok, we add source rows to destination rows
-  PetscUtils::MatAddRowToRow(*jac, src_row, dst_row);
+}
 
-  // clear source rows
-  MatZeroRows(*jac, src_row.size(), src_row.empty() ? NULL : &src_row[0], 0.0);
 
-  // after that, set values to source rows
+
+
+/*---------------------------------------------------------------------
+ * build function and its jacobian for poisson solver
+ */
+void InsulatorInsulatorInterfaceBC::Poissin_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_value_flag)
+{
+
+  // since we will use ADD_VALUES operat, check the matrix state.
+  if( (add_value_flag != ADD_VALUES) && (add_value_flag != NOT_SET_VALUES) )
+  {
+    MatAssemblyBegin(*jac, MAT_FLUSH_ASSEMBLY);
+    MatAssemblyEnd(*jac, MAT_FLUSH_ASSEMBLY);
+  }
+
+
+  //the indepedent variable number, we need 2 here.
+  adtl::AutoDScalar::numdir=2;
+
+  BoundaryCondition::const_node_iterator node_it = nodes_begin();
+  BoundaryCondition::const_node_iterator end_it = nodes_end();
   for(node_it = nodes_begin(); node_it!=end_it; ++node_it )
   {
     // skip node not belongs to this processor
@@ -300,10 +378,6 @@ void InsulatorInsulatorInterfaceBC::Poissin_Jacobian(PetscScalar * x, Mat *jac, 
       // other insulator region
       else
       {
-
-        //the indepedent variable number, we need 2 here.
-        adtl::AutoDScalar::numdir=2;
-
         // psi of this node
         AutoDScalar  V = x[fvm_nodes[i]->local_offset()];    V.setADValue(0,1.0);
 

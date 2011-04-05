@@ -1,0 +1,27 @@
+def build(bld):
+  hooks = '''shell_hook rawfile_hook gnuplot_hook data_hook cv_hook
+             probe_hook vtk_hook cgns_hook monitor_hook eigenvalue_hook
+             threshold_hook'''.split()
+
+  common_src = ['dlhook.cc']
+  if bld.env.PLATFORM == 'Windows':
+    for h in hooks: common_src.append('%s.cc' % h)
+
+  bld.objects( source = common_src,
+               includes = bld.genius_includes,
+               features = 'cxx',
+               use      = 'opt SLEPC PETSC CGNS VTK',
+               target = 'hook_common',
+             )
+
+  if not bld.env.PLATFORM == 'Windows': # windows platform does not support hook dll
+    for h in hooks:
+      fout = bld.path.find_or_declare(bld.env.cxxshlib_PATTERN % h)
+
+      bld.shlib( source = bld.path.ant_glob('%s.cc' % h),
+                 includes  = bld.genius_includes,
+                 features  = 'cxx',
+                 use       = 'opt hook_common PETSC CGNS VTK',
+                 target    = fout,
+               )
+

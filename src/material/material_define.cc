@@ -133,6 +133,7 @@ namespace Material
     material_type_string_to_enum["SingleCompoundSemiconductor" ] = SingleCompoundSemiconductor;
     material_type_string_to_enum["ComplexCompoundSemiconductor"] = ComplexCompoundSemiconductor;
     material_type_string_to_enum["Conductor"                   ] = Conductor;
+    material_type_string_to_enum["Resistance"                  ] = Resistance;
     material_type_string_to_enum["Insulator"                   ] = Insulator;
     material_type_string_to_enum["Vacuum"                      ] = Vacuum;
     material_type_string_to_enum["PML"                         ] = PML;
@@ -262,6 +263,16 @@ namespace Material
   }
 
 
+  bool IsResistance(const std::string & mat_name)
+  {
+    genius_assert(material_name_to_material_type.size());
+
+    if ( material_name_to_material_type[mat_name] == Resistance )
+      return true;
+
+    return false;
+  }
+
 
   bool IsVacuum(const std::string & mat_name)
   {
@@ -298,7 +309,7 @@ namespace Material
 
   int material_weight(const std::string & mat_name)
   {
-    if( IsSemiconductor(mat_name) ) return 6;
+    if( IsSemiconductor(mat_name) ) return 4;
     return 1;
   }
 

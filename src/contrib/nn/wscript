@@ -1,0 +1,9 @@
+def build(bld):
+  bld.objects( source    = bld.path.ant_glob('*.cc'),
+                includes  = '. ../triangle',
+                features  = 'cxx',
+                use       = 'opt',
+                target    = 'nn_objs',
+             )
+  bld.contrib_objs.append('nn_objs')
+

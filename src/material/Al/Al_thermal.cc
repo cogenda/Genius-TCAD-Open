@@ -19,7 +19,7 @@
 /*                                                                           */
 /*****************************************************************************/
 //
-// Material Type: Al
+// Material Type: Aluminum
 
 
 #include "PMI.h"
@@ -64,15 +64,15 @@ private:
 	 parameter_map.insert(para_item("C.TH.CON",    PARA("C.TH.CON",    "Third parameter for the thermal conductivity model of the material", "cm/J*s/K",cm/J*s/K , &C_TH_CON)) );
 	 parameter_map.insert(para_item("E.TH.CON",    PARA("E.TH.CON",    "Fifth parameter for the thermal conductivity model of the material", "-", 1.0, &E_TH_CON)) );
 	 parameter_map.insert(para_item("D.TH.CON",    PARA("D.TH.CON",    "Fourth parameter for the thermal conductivity model of the material", "cm/J*s*std::pow(K,1-E.TH.CON)", cm/J*s*std::pow(K,1-E_TH_CON), &D_TH_CON)) );
-#endif        	
+#endif
   }
 public:
-  PetscScalar HeatCapacity  (const PetscScalar &Tl) const 
+  PetscScalar HeatCapacity  (const PetscScalar &Tl) const
   {
     return A_SP_HEA + B_SP_HEA*Tl + C_SP_HEA*Tl*Tl + D_SP_HEA/Tl/Tl
            + F_SP_HEA*Tl*Tl*Tl + G_SP_HEA*Tl*Tl*Tl*Tl;
   }
-  PetscScalar HeatConduction(const PetscScalar &Tl) const 
+  PetscScalar HeatConduction(const PetscScalar &Tl) const
   {
     return 1.0/(A_TH_CON + B_TH_CON*Tl + C_TH_CON*Tl*Tl + D_TH_CON*std::pow(Tl,E_TH_CON));
   }

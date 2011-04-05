@@ -33,7 +33,7 @@
  * The point solver is a most simple solver which node solution only related with
  * the node itself.
  */
-class PointSolver : public  SolverBase
+class PointSolver :  public  SolverBase
 {
 
 public:

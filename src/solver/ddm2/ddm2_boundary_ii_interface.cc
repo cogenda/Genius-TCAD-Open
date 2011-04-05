@@ -25,7 +25,7 @@
 #include "semiconductor_region.h"
 #include "conductor_region.h"
 #include "insulator_region.h"
-#include "boundary_condition.h"
+#include "boundary_condition_ii.h"
 #include "petsc_utils.h"
 
 using PhysicalUnit::kb;
@@ -38,15 +38,69 @@ using PhysicalUnit::e;
 
 
 /*---------------------------------------------------------------------
+ * do pre-process to function for DDML2 solver
+ */
+void InsulatorInsulatorInterfaceBC::DDM2_Function_Preprocess(Vec f, std::vector<PetscInt> &src_row,
+    std::vector<PetscInt> &dst_row, std::vector<PetscInt> &clear_row)
+{
+  // search for all the node with this boundary type
+  BoundaryCondition::const_node_iterator node_it = nodes_begin();
+  BoundaryCondition::const_node_iterator end_it = nodes_end();
+
+  for(; node_it!=end_it; ++node_it )
+  {
+
+    // skip node not belongs to this processor
+    if( (*node_it)->processor_id()!=Genius::processor_id() ) continue;
+
+    const FVM_Node * first_node;
+
+    // search all the fvm_node which has *node_it as root node, these fvm_nodes have the same location in geometry,
+    // but belong to different regions in logic.
+    BoundaryCondition::region_node_iterator  rnode_it     = region_node_begin(*node_it);
+    BoundaryCondition::region_node_iterator  end_rnode_it = region_node_end(*node_it);
+    for(unsigned int i=0 ; rnode_it!=end_rnode_it; ++i, ++rnode_it  )
+    {
+      const FVM_Node * fvm_node = (*rnode_it).second.second;
+
+      // the first insulator region
+      if(i==0)
+      {
+        first_node = fvm_node;
+      }
+      // other insulator region
+      else
+      {
+        // record the source row and dst row
+        src_row.push_back(fvm_node->global_offset());
+        dst_row.push_back(first_node->global_offset());
+        clear_row.push_back(fvm_node->global_offset());
+
+        src_row.push_back(fvm_node->global_offset()+1);
+        dst_row.push_back(first_node->global_offset()+1);
+        clear_row.push_back(fvm_node->global_offset()+1);
+      }
+    }
+  }
+}
+
+
+
+/*---------------------------------------------------------------------
  * build function and its jacobian for DDML2 solver
  */
 void InsulatorInsulatorInterfaceBC::DDM2_Function(PetscScalar * x, Vec f, InsertMode &add_value_flag)
 {
+  // note, we will use ADD_VALUES to set values of vec f
+  // if the previous operator is not ADD_VALUES, we should assembly the vec
+  if( (add_value_flag != ADD_VALUES) && (add_value_flag != NOT_SET_VALUES) )
+  {
+    VecAssemblyBegin(f);
+    VecAssemblyEnd(f);
+  }
 
-  // buffer for Vec location
-  std::vector<PetscInt> src_row;
-  std::vector<PetscInt> dst_row;
-
+  // buffer for Vec index
+  std::vector<PetscInt> iy;
   // buffer for Vec value
   std::vector<PetscScalar> y_new;
 
@@ -87,23 +141,8 @@ void InsulatorInsulatorInterfaceBC::DDM2_Function(PetscScalar * x, Vec f, Insert
       // other insulator regions
       else
       {
-        // record the source row and dst row
-        src_row.push_back(fvm_nodes[i]->global_offset()+0);
-        src_row.push_back(fvm_nodes[i]->global_offset()+1);
-
-        // find the position ff will be add to
-        // ff will be added to fvm_nodes[0]
-
-        const FVM_Node * ghost_fvm_node = fvm_nodes[0];
-        dst_row.push_back(ghost_fvm_node->global_offset()+0);
-        dst_row.push_back(ghost_fvm_node->global_offset()+1);
-
-
-        // the ghost node should have the same processor_id with me
-        genius_assert(fvm_nodes[i]->root_node()->processor_id() == ghost_fvm_node->root_node()->processor_id() );
 
         // the governing equation of this fvm node --
-
 
         PetscScalar V = x[fvm_nodes[i]->local_offset()+0]; // psi of this node
         PetscScalar T = x[fvm_nodes[i]->local_offset()+1]; // T of this node
@@ -115,29 +154,26 @@ void InsulatorInsulatorInterfaceBC::DDM2_Function(PetscScalar * x, Vec f, Insert
         // the psi of this node is equal to corresponding psi of node in the first insulator region
         // since psi should be continuous for the interface
         PetscScalar ff1 = V - V_in;
+        iy.push_back(fvm_nodes[i]->global_offset()+0);
         y_new.push_back(ff1);
 
         // the T of this node is equal to corresponding T of node in the first insulator region
         // by assuming no heat resistance between 2 region
         PetscScalar ff2 = T - T_in;
+        iy.push_back(fvm_nodes[i]->global_offset()+1);
         y_new.push_back(ff2);
 
-        genius_assert(src_row.size()==y_new.size());
+        genius_assert(iy.size()==y_new.size());
 
       }
-
     }
-
   }
 
-  // add src row to dst row, it will assemble vec automatically
-  PetscUtils::VecAddRowToRow(f, src_row, dst_row);
+  // set new value to row
+  if( iy.size() )
+    VecSetValues(f, iy.size(), &(iy[0]), &(y_new[0]), ADD_VALUES);
 
-  // insert new value to src row
-  if( src_row.size() )
-    VecSetValues(f, src_row.size(), &(src_row[0]), &(y_new[0]), INSERT_VALUES);
-
-  add_value_flag = INSERT_VALUES;
+  add_value_flag = ADD_VALUES;
 }
 
 
@@ -221,7 +257,52 @@ void InsulatorInsulatorInterfaceBC::DDM2_Jacobian_Reserve(Mat *jac, InsertMode &
 
 
 
+/*---------------------------------------------------------------------
+ * do pre-process to jacobian matrix for DDML2 solver
+ */
+void InsulatorInsulatorInterfaceBC::DDM2_Jacobian_Preprocess(Mat *jac, std::vector<PetscInt> &src_row,
+    std::vector<PetscInt> &dst_row, std::vector<PetscInt> &clear_row)
+{
+ // search for all the node with this boundary type
+  BoundaryCondition::const_node_iterator node_it = nodes_begin();
+  BoundaryCondition::const_node_iterator end_it = nodes_end();
 
+  for(; node_it!=end_it; ++node_it )
+  {
+
+    // skip node not belongs to this processor
+    if( (*node_it)->processor_id()!=Genius::processor_id() ) continue;
+
+    const FVM_Node * first_node;
+
+    // search all the fvm_node which has *node_it as root node, these fvm_nodes have the same location in geometry,
+    // but belong to different regions in logic.
+    BoundaryCondition::region_node_iterator  rnode_it     = region_node_begin(*node_it);
+    BoundaryCondition::region_node_iterator  end_rnode_it = region_node_end(*node_it);
+    for(unsigned int i=0 ; rnode_it!=end_rnode_it; ++i, ++rnode_it  )
+    {
+      const FVM_Node * fvm_node = (*rnode_it).second.second;
+
+      // the first insulator region
+      if(i==0)
+      {
+        first_node = fvm_node;
+      }
+      // other insulator region
+      else
+      {
+        // record the source row and dst row
+        src_row.push_back(fvm_node->global_offset());
+        dst_row.push_back(first_node->global_offset());
+        clear_row.push_back(fvm_node->global_offset());
+
+        src_row.push_back(fvm_node->global_offset()+1);
+        dst_row.push_back(first_node->global_offset()+1);
+        clear_row.push_back(fvm_node->global_offset()+1);
+      }
+    }
+  }
+}
 
 
 /*---------------------------------------------------------------------
@@ -230,67 +311,12 @@ void InsulatorInsulatorInterfaceBC::DDM2_Jacobian_Reserve(Mat *jac, InsertMode &
 void InsulatorInsulatorInterfaceBC::DDM2_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_value_flag)
 {
 
-  // here we do several things:
-  // add some row to other, clear some row, insert some value to row
-  // I wonder if there are some more efficient way to do these.
-
+  // since we will use ADD_VALUES operat, check the matrix state.
+  if( (add_value_flag != ADD_VALUES) && (add_value_flag != NOT_SET_VALUES) )
   {
-    // buffer for mat rows which should be added to other row
-    std::vector<PetscInt> src_row;
-    std::vector<PetscInt> dst_row;
-
-    // search for all the node with this boundary type
-    BoundaryCondition::const_node_iterator node_it = nodes_begin();
-    BoundaryCondition::const_node_iterator end_it = nodes_end();
-    for(; node_it!=end_it; ++node_it )
-    {
-
-      // skip node not belongs to this processor
-      if( (*node_it)->processor_id()!=Genius::processor_id() ) continue;
-
-
-      // buffer for saving regions and fvm_nodes this *node_it involves
-      std::vector<const SimulationRegion *> regions;
-      std::vector<const FVM_Node *> fvm_nodes;
-
-      // search all the fvm_node which has *node_it as root node, these fvm_nodes have the same location in geometry,
-      // but belong to different regions in logic.
-      BoundaryCondition::region_node_iterator  rnode_it     = region_node_begin(*node_it);
-      BoundaryCondition::region_node_iterator  end_rnode_it = region_node_end(*node_it);
-      for(unsigned int i=0 ; rnode_it!=end_rnode_it; ++i, ++rnode_it  )
-      {
-        const SimulationRegion * region = (*rnode_it).second.first;
-        const FVM_Node * fvm_node = (*rnode_it).second.second;
-        if(!fvm_node->is_valid()) continue;
-
-        regions.push_back( region );
-        fvm_nodes.push_back( fvm_node );
-
-        // the first insulator region
-        if(i==0) continue;
-
-        // other insulator region
-        else
-        {
-          // record the source row and dst row
-
-          src_row.push_back(fvm_nodes[i]->global_offset()+0);
-          src_row.push_back(fvm_nodes[i]->global_offset()+1);
-
-          dst_row.push_back(fvm_nodes[0]->global_offset()+0);
-          dst_row.push_back(fvm_nodes[0]->global_offset()+1);
-        }
-      }
-    }
-
-    //ok, we add source rows to destination rows
-    PetscUtils::MatAddRowToRow(*jac, src_row, dst_row);
-
-    // clear source rows
-    MatZeroRows(*jac, src_row.size(), src_row.empty() ? NULL : &src_row[0], 0.0);
-
+    MatAssemblyBegin(*jac, MAT_FLUSH_ASSEMBLY);
+    MatAssemblyEnd(*jac, MAT_FLUSH_ASSEMBLY);
   }
-
 
 
   // after that, set values to source rows
@@ -335,7 +361,7 @@ void InsulatorInsulatorInterfaceBC::DDM2_Jacobian(PetscScalar * x, Mat *jac, Ins
         // psi for ghost node
         AutoDScalar  V_in = x[fvm_nodes[0]->local_offset()]; V_in.setADValue(1,1.0);
 
-        // the psi of this node is equal to corresponding psi of insulator node int the other region
+        // the psi of this node is equal to corresponding psi of insulator node in the other region
         AutoDScalar  ff1 = V - V_in;
 
         // set Jacobian of governing equation ff
@@ -346,12 +372,12 @@ void InsulatorInsulatorInterfaceBC::DDM2_Jacobian(PetscScalar * x, Mat *jac, Ins
         // T of this node
         AutoDScalar  T = x[fvm_nodes[i]->local_offset()+1]; T.setADValue(0,1.0);
 
-        // T for corresponding conductor region
-        AutoDScalar  T_elec = x[fvm_nodes[0]->local_offset()+1]; T_elec.setADValue(1,1.0);
+        // T for corresponding  region
+        AutoDScalar  T_in = x[fvm_nodes[0]->local_offset()+1]; T_in.setADValue(1,1.0);
 
-        // the T of this node is equal to corresponding T of conductor node
+        // the T of this node is equal to corresponding T of other insulator node
         // we assuming T is continuous for the interface
-        AutoDScalar ff2 = T - T_elec;
+        AutoDScalar ff2 = T - T_in;
 
         // set Jacobian of governing equation ff2
         MatSetValue(*jac, fvm_nodes[i]->global_offset()+1, fvm_nodes[i]->global_offset()+1, ff2.getADValue(0), ADD_VALUES);

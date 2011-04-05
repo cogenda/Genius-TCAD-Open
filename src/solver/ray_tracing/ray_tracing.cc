@@ -23,7 +23,7 @@
 #include <iomanip>
 
 #include "sphere.h"
-#include "mesh.h"
+#include "mesh_base.h"
 #include "boundary_info.h"
 #include "mesh_tools.h"
 #include "ray_tracing/light_thread.h"
@@ -54,8 +54,12 @@ int RayTraceSolver::create_solver()
   MESSAGE<< '\n' << "Ray tracing Solver init... ";
   RECORD();
 
+  // broadcast mesh since we need serial mesh here
+  MeshBase & mesh = _system.mesh();
+  mesh.broadcast();
+
   // do necessary precomputation for fast ray tracing
-  surface_elem_tree = new ObjectTree(_system.mesh());
+  surface_elem_tree = new ObjectTree(mesh);
   build_elems_node_map();
   build_elems_edge_map();
   build_boundary_elems_map();
@@ -85,7 +89,7 @@ int RayTraceSolver::solve()
     _energy_deposit_in_elem.clear();
     _energy_deposit_in_elem.resize(_system.mesh().n_elem(), 0.0);
 
-    MESSAGE<< "  process light of " /*<< std::setiosflags(std::ios::fixed)*/ << lamda/um << " um";
+    MESSAGE<< "  process light of " /*<< std::setiosflags(std::ios::fixed)*/  << lamda/um << " um";
     RECORD();
 
     //process all the rays
@@ -100,7 +104,6 @@ int RayTraceSolver::solve()
                                              power,
                                              power
                                             );
-
       // call function ray_tracing to process a single ray
       ray_tracing(light);
 
@@ -146,6 +149,13 @@ int RayTraceSolver::destroy_solver()
 
   }
 
+  // change to distributed mesh
+  if( Genius::processor_id() != 0 )
+  {
+    MeshBase & mesh = _system.mesh();
+    mesh.delete_remote_elements();
+  }
+
   MESSAGE<< "Ray tracing Solver finished.\n" <<std::endl;
   RECORD();
 
@@ -162,7 +172,7 @@ void RayTraceSolver::parse_spectrum_file(const std::string & filename)
   if(Genius::processor_id() == 0)
   {
     std::ifstream in(filename.c_str());
-    genius_assert(in.good());
+    assert(in.good());
 
     std::string line;
     while(!in.eof())
@@ -221,8 +231,14 @@ void RayTraceSolver::parse_spectrum_file(const std::string & filename)
     }
   }
 
+  if(n_sources<2)
+  {
+    MESSAGE<< "ERROR: Spectrum file "<< filename << "should contain at least two spectrums.\n" <<std::endl;
+    RECORD();
+    genius_error();
+  }
+
   //post process
-  genius_assert(n_sources>=2);
 
 
   double total_power = 0.0;
@@ -335,6 +351,7 @@ void RayTraceSolver::build_boundary_elems_map()
     if(bc->reflection())
       _full_reflect_surface.insert(std::make_pair(boundary_elem, sl[n]));
   }
+
 }
 
 
@@ -393,26 +410,26 @@ const Elem * RayTraceSolver::ray_hit(const Point &p, const Point &dir, const Ele
     result.hit_points.clear();
     switch(hit_point.point_location)
     {
-    case  on_face  :
-    case  on_side  : genius_error(); break; //impossible!
-    case  on_edge  :
-      {
-        unsigned int edge_index = hit_point.mark;
-        AutoPtr<Elem> edge = elem->build_edge(edge_index);
-        const std::vector<const Elem *> & elems = _elems_shared_this_edge.find(edge.get())->second;
-        const Elem * next_elem = this->ray_hit(p, dir, elems, result);
-        genius_assert(next_elem!=elem);
-        return next_elem;
-      }
-    case on_vertex :
-      {
-        unsigned int vertex_index = hit_point.mark;
-        const Node * node = elem->get_node(vertex_index);
-        const std::vector<const Elem *> & elems = _elems_shared_this_node[node->id()];
-        const Elem * next_elem = this->ray_hit(p, dir, elems, result);
-        genius_assert(next_elem!=elem);
-        return next_elem;
-      }
+        case  on_face  :
+        case  on_side  : genius_error(); break; //impossible!
+        case  on_edge  :
+        {
+          unsigned int edge_index = hit_point.mark;
+          AutoPtr<Elem> edge = elem->build_edge(edge_index);
+          const std::vector<const Elem *> & elems = _elems_shared_this_edge.find(edge.get())->second;
+          const Elem * next_elem = this->ray_hit(p, dir, elems, result);
+          assert(next_elem!=elem);
+          return next_elem;
+        }
+        case on_vertex :
+        {
+          unsigned int vertex_index = hit_point.mark;
+          const Node * node = elem->get_node(vertex_index);
+          const std::vector<const Elem *> & elems = _elems_shared_this_node[node->id()];
+          const Elem * next_elem = this->ray_hit(p, dir, elems, result);
+          assert(next_elem!=elem);
+          return next_elem;
+        }
     }
   }
 
@@ -570,86 +587,27 @@ void RayTraceSolver::ray_tracing(LightThread *ray)
       else
         current_ray->hit_elem = elem;
 
-      genius_assert(elem->on_boundary());
+      assert(elem->on_boundary());
       // get the intersection result
       elem->ray_hit(current_ray->start_point(), current_ray->dir(), current_ray->result, _dim);
 
       // the first intersection point
-      genius_assert(current_ray->result.hit_points.size());
+      assert(current_ray->result.hit_points.size());
       Hit_Point & hit_point = current_ray->result.hit_points[0];
 
       switch(hit_point.point_location)
       {
-      case on_face   :  //the ray-mesh intersection point is on elem face
-      case on_side   :  //2d case
-        {
-          // if reflect surface
-          if(is_full_reflect_surface(elem, hit_point.mark))
-          {  delete current_ray; continue; }
-
-          Point p = hit_point.p;
-          Point norm = elem->outside_unit_normal(hit_point.mark);
-          double n1 = get_refractive_index_re(elem->subdomain_id(hit_point.mark));
-          double n2 = get_refractive_index_re(elem->subdomain_id());
-          //generate reflect/refract rays
-          std::pair<LightThread *, LightThread *> ray_pair = current_ray->interface_light_gen_linear_polarized(p, norm, n1, n2);
-
-          // for refract ray
-          LightThread *refract_ray = ray_pair.second;
-          if(refract_ray)
+          case on_face   :  //the ray-mesh intersection point is on elem face
+          case on_side   :  //2d case
           {
-            refract_ray->hit_elem = this->ray_hit(refract_ray->start_point(), refract_ray->dir(), elem, refract_ray->result);
-            ray_stack.push(refract_ray);
-          }
-
-          // for reflect ray
-          LightThread *reflect_ray = ray_pair.first;
-          // some stupid skill: shift the reflect ray to prevent it hit this elem again
-          reflect_ray->start_point() = reflect_ray->start_point() + 1e-8*reflect_ray->dir();
-          // the refract ray hit the mesh again?
-          const Elem *surface_elem = surface_elem_tree->hit(reflect_ray);
-          if(surface_elem && surface_elem!=elem)
-          {
-            reflect_ray->hit_elem = this->ray_hit(reflect_ray->start_point(), reflect_ray->dir(), surface_elem, reflect_ray->result);
-            if(reflect_ray->hit_elem)
-              ray_stack.push(reflect_ray);
-            else
-              delete reflect_ray;
-          }
-          else
-            delete reflect_ray;
-        }
-        break;
-
-      case on_edge   : //the ray-mesh intersection point is on elem edge, we must split the ray
-        {
-          genius_assert(_dim==3); //only valid for 3d mesh
-
-          Point p = hit_point.p;
-          unsigned int edge_index = hit_point.mark;
-          AutoPtr<Elem> edge = elem->build_edge(edge_index);
-          genius_assert(_boundary_edge_to_elem_side_map.find(edge.get())!=_boundary_edge_to_elem_side_map.end());
-          const std::vector<std::pair<const Elem*, unsigned int> > & elems = _boundary_edge_to_elem_side_map.find(edge.get())->second;
-
-          //split current_ray, each edge on boundary shoud be shared by 2 elem
-          unsigned int effective_faces = 2;
-          current_ray->power() = current_ray->power()/effective_faces;
-
-          for(unsigned int n=0; n<elems.size(); ++n)
-          {
-            const Elem * boundary_elem = elems[n].first;
-            unsigned int side = elems[n].second;
-
             // if reflect surface
-            if(is_full_reflect_surface(boundary_elem, side))
-            { continue; }
+            if(is_full_reflect_surface(elem, hit_point.mark))
+            {  delete current_ray; continue; }
 
-            Point norm = boundary_elem->outside_unit_normal(side);
-            //the surface norm should has a angle >90 degree to ray dir
-            if(norm.dot(current_ray->dir()) > -1e-10) continue;
-
-            double n1 = get_refractive_index_re(boundary_elem->subdomain_id(side));
-            double n2 = get_refractive_index_re(boundary_elem->subdomain_id());
+            Point p = hit_point.p;
+            Point norm = elem->outside_unit_normal(hit_point.mark);
+            double n1 = get_refractive_index_re(elem->subdomain_id(hit_point.mark));
+            double n2 = get_refractive_index_re(elem->subdomain_id());
             //generate reflect/refract rays
             std::pair<LightThread *, LightThread *> ray_pair = current_ray->interface_light_gen_linear_polarized(p, norm, n1, n2);
 
@@ -657,146 +615,224 @@ void RayTraceSolver::ray_tracing(LightThread *ray)
             LightThread *refract_ray = ray_pair.second;
             if(refract_ray)
             {
-              refract_ray->hit_elem = this->ray_hit(refract_ray->start_point(), refract_ray->dir(), boundary_elem, refract_ray->result);
-              if(refract_ray->hit_elem)
-                ray_stack.push(refract_ray);
-              else
-                delete refract_ray;
+              refract_ray->hit_elem = this->ray_hit(refract_ray->start_point(), refract_ray->dir(), elem, refract_ray->result);
+              ray_stack.push(refract_ray);
             }
 
             // for reflect ray
             LightThread *reflect_ray = ray_pair.first;
-            // some stupid skill: shift the reflect ray to prevent it hit this elem again
-            reflect_ray->start_point() = reflect_ray->start_point() + 1e-8*reflect_ray->dir();
-            // the refract ray hit the mesh again?
-            const Elem *surface_elem = surface_elem_tree->hit(reflect_ray);
-            if(surface_elem && surface_elem!=elem)
+            if(reflect_ray)
             {
-              reflect_ray->hit_elem = this->ray_hit(reflect_ray->start_point(), reflect_ray->dir(), surface_elem, reflect_ray->result);
-              if(reflect_ray->hit_elem)
-                ray_stack.push(reflect_ray);
+              // some stupid skill: shift the reflect ray to prevent it hit this elem again
+              reflect_ray->start_point() = reflect_ray->start_point() + 1e-8*reflect_ray->dir();
+              // the refract ray hit the mesh again?
+              const Elem *surface_elem = surface_elem_tree->hit(reflect_ray);
+              if(surface_elem && surface_elem!=elem)
+              {
+                reflect_ray->hit_elem = this->ray_hit(reflect_ray->start_point(), reflect_ray->dir(), surface_elem, reflect_ray->result);
+                if(reflect_ray->hit_elem)
+                  ray_stack.push(reflect_ray);
+                else
+                  delete reflect_ray;
+              }
               else
                 delete reflect_ray;
             }
-            else
-              delete reflect_ray;
           }
           break;
-        }
-      case on_vertex :  //the ray-mesh intersection point is on elem vertex, we must split the ray
-        {
-          Point p = hit_point.p;
-          unsigned int vertex_index = hit_point.mark;
-          const Node * current_node = elem->get_node(vertex_index);
-          genius_assert(_boundary_node_to_elem_side_map.find(current_node)!=_boundary_node_to_elem_side_map.end());
-          const std::vector<std::pair<const Elem*, unsigned int> > & elems = _boundary_node_to_elem_side_map.find(current_node)->second;
 
-          //split current_ray
-          /*
-          unsigned int effective_faces = 0;
-          for(unsigned int n=0; n<elems.size(); ++n)
+          case on_edge   : //the ray-mesh intersection point is on elem edge, we must split the ray
           {
-            Point norm = elems[n].first->outside_unit_normal(elems[n].second);
-            //the surface norm should has a angle >90 degree to ray dir
-            if(norm.dot(current_ray->dir()) > -1e-10) continue;
-            effective_faces++;
-          }
-          */
-          current_ray->power() = current_ray->power()/elems.size();
+            assert(_dim==3); //only valid for 3d mesh
 
-          for(unsigned int n=0; n<elems.size(); ++n)
+            Point p = hit_point.p;
+            unsigned int edge_index = hit_point.mark;
+            AutoPtr<Elem> edge = elem->build_edge(edge_index);
+            assert(_boundary_edge_to_elem_side_map.find(edge.get())!=_boundary_edge_to_elem_side_map.end());
+            const std::vector<std::pair<const Elem*, unsigned int> > & elems = _boundary_edge_to_elem_side_map.find(edge.get())->second;
+
+            //split current_ray, each edge on boundary shoud be shared by 2 elem
+            unsigned int effective_faces = 2;
+            current_ray->power() = current_ray->power()/effective_faces;
+
+            for(unsigned int n=0; n<elems.size(); ++n)
+            {
+              const Elem * boundary_elem = elems[n].first;
+              unsigned int side = elems[n].second;
+
+              // if reflect surface
+              if(is_full_reflect_surface(boundary_elem, side))
+              { continue; }
+
+              Point norm = boundary_elem->outside_unit_normal(side);
+              //the surface norm should has a angle >90 degree to ray dir
+              if(norm.dot(current_ray->dir()) > -1e-10) continue;
+
+              double n1 = get_refractive_index_re(boundary_elem->subdomain_id(side));
+              double n2 = get_refractive_index_re(boundary_elem->subdomain_id());
+              //generate reflect/refract rays
+              std::pair<LightThread *, LightThread *> ray_pair = current_ray->interface_light_gen_linear_polarized(p, norm, n1, n2);
+
+              // for refract ray
+              LightThread *refract_ray = ray_pair.second;
+              if(refract_ray)
+              {
+                refract_ray->hit_elem = this->ray_hit(refract_ray->start_point(), refract_ray->dir(), boundary_elem, refract_ray->result);
+                if(refract_ray->hit_elem)
+                  ray_stack.push(refract_ray);
+                else
+                  delete refract_ray;
+              }
+
+              // for reflect ray
+              LightThread *reflect_ray = ray_pair.first;
+              if(reflect_ray)
+              {
+                // some stupid skill: shift the reflect ray to prevent it hit this elem again
+                reflect_ray->start_point() = reflect_ray->start_point() + 1e-8*reflect_ray->dir();
+                // the refract ray hit the mesh again?
+                const Elem *surface_elem = surface_elem_tree->hit(reflect_ray);
+                if(surface_elem && surface_elem!=elem)
+                {
+                  reflect_ray->hit_elem = this->ray_hit(reflect_ray->start_point(), reflect_ray->dir(), surface_elem, reflect_ray->result);
+                  if(reflect_ray->hit_elem)
+                    ray_stack.push(reflect_ray);
+                  else
+                    delete reflect_ray;
+                }
+                else
+                  delete reflect_ray;
+              }
+            }
+            break;
+          }
+          case on_vertex :  //the ray-mesh intersection point is on elem vertex, we must split the ray
           {
-            const Elem * boundary_elem = elems[n].first;
-            unsigned int side = elems[n].second;
+            Point p = hit_point.p;
+            unsigned int vertex_index = hit_point.mark;
+            const Node * current_node = elem->get_node(vertex_index);
+            assert(_boundary_node_to_elem_side_map.find(current_node)!=_boundary_node_to_elem_side_map.end());
+            const std::vector<std::pair<const Elem*, unsigned int> > & elems = _boundary_node_to_elem_side_map.find(current_node)->second;
 
-            // if reflect surface
-            if(is_full_reflect_surface(boundary_elem, side))
-            { continue; }
-
-            Point norm = boundary_elem->outside_unit_normal(side);
-            //the surface norm should has a angle >90 degree to ray dir
-            if(norm.dot(current_ray->dir()) > -1e-10) continue;
-
-            double n1 = get_refractive_index_re(boundary_elem->subdomain_id(side));
-            double n2 = get_refractive_index_re(boundary_elem->subdomain_id());
-            //generate reflect/refract rays
-            std::pair<LightThread *, LightThread *> ray_pair = current_ray->interface_light_gen_linear_polarized(p, norm, n1, n2);
-
-            // for refract ray
-            LightThread *refract_ray = ray_pair.second;
-            if(refract_ray)
+            //split current_ray
+            /*
+            unsigned int effective_faces = 0;
+            for(unsigned int n=0; n<elems.size(); ++n)
             {
-              refract_ray->hit_elem = this->ray_hit(refract_ray->start_point(), refract_ray->dir(), boundary_elem, refract_ray->result);
-              if(refract_ray->hit_elem)
-                ray_stack.push(refract_ray);
-              else
-                delete refract_ray;
+              Point norm = elems[n].first->outside_unit_normal(elems[n].second);
+              //the surface norm should has a angle >90 degree to ray dir
+              if(norm.dot(current_ray->dir()) > -1e-10) continue;
+              effective_faces++;
             }
+            */
+            current_ray->power() = current_ray->power()/elems.size();
 
-            // for reflect ray
-            LightThread *reflect_ray = ray_pair.first;
-            // some stupid skill: shift the reflect ray to prevent it hit this elem again
-            reflect_ray->start_point() = reflect_ray->start_point() + 1e-8*reflect_ray->dir();
-            // the refract ray hit the mesh again?
-            const Elem *surface_elem = surface_elem_tree->hit(reflect_ray);
-            if(surface_elem && surface_elem!=elem)
+            for(unsigned int n=0; n<elems.size(); ++n)
             {
-              reflect_ray->hit_elem = this->ray_hit(reflect_ray->start_point(), reflect_ray->dir(), surface_elem, reflect_ray->result);
-              if(reflect_ray->hit_elem)
-                ray_stack.push(reflect_ray);
-              else
-                delete reflect_ray;
+              const Elem * boundary_elem = elems[n].first;
+              unsigned int side = elems[n].second;
+
+              // if reflect surface
+              if(is_full_reflect_surface(boundary_elem, side))
+              { continue; }
+
+              Point norm = boundary_elem->outside_unit_normal(side);
+              //the surface norm should has a angle >90 degree to ray dir
+              if(norm.dot(current_ray->dir()) > -1e-10) continue;
+
+              double n1 = get_refractive_index_re(boundary_elem->subdomain_id(side));
+              double n2 = get_refractive_index_re(boundary_elem->subdomain_id());
+              //generate reflect/refract rays
+              std::pair<LightThread *, LightThread *> ray_pair = current_ray->interface_light_gen_linear_polarized(p, norm, n1, n2);
+
+              // for refract ray
+              LightThread *refract_ray = ray_pair.second;
+              if(refract_ray)
+              {
+                refract_ray->hit_elem = this->ray_hit(refract_ray->start_point(), refract_ray->dir(), boundary_elem, refract_ray->result);
+                if(refract_ray->hit_elem)
+                  ray_stack.push(refract_ray);
+                else
+                  delete refract_ray;
+              }
+
+              // for reflect ray
+              LightThread *reflect_ray = ray_pair.first;
+              if(reflect_ray)
+              {
+                // some stupid skill: shift the reflect ray to prevent it hit this elem again
+                reflect_ray->start_point() = reflect_ray->start_point() + 1e-8*reflect_ray->dir();
+                // the refract ray hit the mesh again?
+                const Elem *surface_elem = surface_elem_tree->hit(reflect_ray);
+                if(surface_elem && surface_elem!=elem)
+                {
+                  reflect_ray->hit_elem = this->ray_hit(reflect_ray->start_point(), reflect_ray->dir(), surface_elem, reflect_ray->result);
+                  if(reflect_ray->hit_elem)
+                    ray_stack.push(reflect_ray);
+                  else
+                    delete reflect_ray;
+                }
+                else
+                  delete reflect_ray;
+              }
             }
-            else
-              delete reflect_ray;
+            break;
           }
-          break;
-        }
-        //we should never reach here
-      default: genius_error();
+          //we should never reach here
+          default: genius_error();
       }
 
       delete current_ray;
       continue;
     }
 
-    // calculate energy deposit
 
+
+    //assert(current_ray->result.hit_points.size()==2);
+    if( current_ray->result.hit_points.size() != 2 )
+    {
+      // FIXME, should not happen...
+      delete current_ray;
+      continue;
+    }
+
+    // calculate energy deposit
     const Elem * elem = current_ray->hit_elem;
-    genius_assert(current_ray->result.hit_points.size()==2);
+
     Hit_Point  end_point = current_ray->result.hit_points[1];
     double energy_deposit = current_ray->advance_to(end_point.p, get_refractive_index_im(elem->subdomain_id()));
 
     switch(current_ray->result.state)
     {
-      // all the energy deposited in this elem
-    case Intersect_Body :
-      _energy_deposit_in_elem[elem->id()] += energy_deposit;
-      break;
-      // two elem shares the energy deposite
-    case On_Face        :
-      {
-        _energy_deposit_in_elem[elem->id()] += 0.5*energy_deposit;
-        unsigned int side = current_ray->result.mark;
-        const Elem * neighbor = elem->neighbor(side);
-        if(neighbor)
-          _energy_deposit_in_elem[neighbor->id()] += 0.5*energy_deposit;
+        // all the energy deposited in this elem
+        case Intersect_Body :
+        _energy_deposit_in_elem[elem->id()] += energy_deposit;
         break;
-      }
-      // all the elems have this edge shares the deposited energy
-    case Overlap_Edge   :
-      {
-        unsigned int e = current_ray->result.mark;
-        AutoPtr<Elem> edge = elem->build_edge(e);
-        const std::vector<const Elem *> & elems = _elems_shared_this_edge.find(edge.get())->second;
-        genius_assert(elems.size());
-        for(unsigned int n=0; n<elems.size(); ++n)
-          _energy_deposit_in_elem[elems[n]->id()] += energy_deposit/elems.size();
-        break;
-      }
-      //we should never reach here
-    default: genius_error();
+        // two elem shares the energy deposite
+        case On_Face        :
+        {
+          _energy_deposit_in_elem[elem->id()] += 0.5*energy_deposit;
+          unsigned int side = current_ray->result.mark;
+          const Elem * neighbor = elem->neighbor(side);
+          if(neighbor)
+            _energy_deposit_in_elem[neighbor->id()] += 0.5*energy_deposit;
+          break;
+        }
+        // all the elems have this edge shares the deposited energy
+        case Overlap_Edge   :
+        {
+          unsigned int e = current_ray->result.mark;
+          AutoPtr<Elem> edge = elem->build_edge(e);
+          const std::vector<const Elem *> & elems = _elems_shared_this_edge.find(edge.get())->second;
+          assert(elems.size());
+          for(unsigned int n=0; n<elems.size(); ++n)
+            _energy_deposit_in_elem[elems[n]->id()] += energy_deposit/elems.size();
+          break;
+        }
+        //we should never reach here
+        default: genius_error();
     }
+
 
     if(current_ray->is_dead())
     { delete current_ray; continue; }
@@ -815,198 +851,216 @@ void RayTraceSolver::ray_tracing(LightThread *ray)
     }
 
     // find next ray elem intersection
+
     current_ray->result.hit_points.clear();
     switch(end_point.point_location)
     {
-    case  on_face   : //3d
-    case  on_side   : //2d
-      {
-        unsigned int side = end_point.mark;
-        const Elem * next_elem = elem->neighbor(side);
-        if(next_elem && next_elem->subdomain_id() == elem->subdomain_id())
+        case  on_face   : //3d
+        case  on_side   : //2d
         {
-          current_ray->hit_elem = next_elem;
-          next_elem->ray_hit(current_ray->start_point(), current_ray->dir(), current_ray->result, _dim);
-          ray_stack.push(current_ray);
-          continue;
-        }
-        else //we are on material interface
-        {
-          // if reflect surface
-          if(is_full_reflect_surface(elem, side))
-          {  delete current_ray; continue; }
-
-          Point p = end_point.p;
-          Point norm = - elem->outside_unit_normal(side);
-          double n1 = get_refractive_index_re(elem->subdomain_id());
-          double n2 = get_refractive_index_re(elem->subdomain_id(side));
-          //generate reflect/refract rays
-          std::pair<LightThread *, LightThread *> ray_pair = current_ray->interface_light_gen_linear_polarized(p, norm, n1, n2);
-
-          // for refract ray
-          LightThread *refract_ray = ray_pair.second;
-          if(refract_ray)
+          unsigned int side = end_point.mark;
+          const Elem * next_elem = elem->neighbor(side);
+          if(next_elem && next_elem->subdomain_id() == elem->subdomain_id())
           {
-            refract_ray->hit_elem = next_elem;
-            if(next_elem)
-              next_elem->ray_hit(refract_ray->start_point(), refract_ray->dir(), refract_ray->result, _dim);
-            else
-              refract_ray->start_point() = refract_ray->start_point() + 1e-8*refract_ray->dir();
-            ray_stack.push(refract_ray);
+            current_ray->hit_elem = next_elem;
+            next_elem->ray_hit(current_ray->start_point(), current_ray->dir(), current_ray->result, _dim);
+            ray_stack.push(current_ray);
           }
+          else //we are on material interface
+          {
+            // if reflect surface
+            if(is_full_reflect_surface(elem, side))
+            {  delete current_ray; continue; }
 
-          // for reflect ray
-          LightThread *reflect_ray = ray_pair.first;
-          reflect_ray->hit_elem = elem;
-          elem->ray_hit(reflect_ray->start_point(), reflect_ray->dir(), reflect_ray->result, _dim);
-          genius_assert(reflect_ray->result.state!=Missed);
-          ray_stack.push(reflect_ray);
+            Point p = end_point.p;
+            Point norm = - elem->outside_unit_normal(side);
+            double n1 = get_refractive_index_re(elem->subdomain_id());
+            double n2 = get_refractive_index_re(elem->subdomain_id(side));
+            //generate reflect/refract rays
+            std::pair<LightThread *, LightThread *> ray_pair = current_ray->interface_light_gen_linear_polarized(p, norm, n1, n2);
 
-          delete current_ray;
-          continue;
+            // for refract ray
+            LightThread *refract_ray = ray_pair.second;
+            if(refract_ray)
+            {
+              refract_ray->hit_elem = next_elem;
+              if(next_elem)
+                next_elem->ray_hit(refract_ray->start_point(), refract_ray->dir(), refract_ray->result, _dim);
+              else
+                refract_ray->start_point() = refract_ray->start_point() + 1e-8*refract_ray->dir();
+              ray_stack.push(refract_ray);
+            }
+
+            // for reflect ray
+            LightThread *reflect_ray = ray_pair.first;
+            if(reflect_ray)
+            {
+              reflect_ray->hit_elem = elem;
+              elem->ray_hit(reflect_ray->start_point(), reflect_ray->dir(), reflect_ray->result, _dim);
+              assert(reflect_ray->result.state!=Missed);
+              ray_stack.push(reflect_ray);
+            }
+            delete current_ray;
+          }
         }
-      }
-      break;
-    case  on_edge   :
-      {
-        unsigned int edge_index = end_point.mark;
-        AutoPtr<Elem> edge = elem->build_edge(edge_index);
-        std::vector<const Elem *> & elems = _elems_shared_this_edge.find(edge.get())->second;
-        // the edge is not on boundary
-        if(_boundary_edge_to_elem_side_map.find(edge.get())==_boundary_edge_to_elem_side_map.end())
+        break;
+        case  on_edge   :
         {
-          const Elem * next_elem = this->ray_hit(current_ray->start_point(), current_ray->dir(), elems, current_ray->result);
-          genius_assert(next_elem && next_elem!=elem);
-          current_ray->hit_elem = next_elem;
-          ray_stack.push(current_ray);
-          continue;
-        }
-        else // the edge is on boundary
-        {
-          Point p = end_point.p;
           unsigned int edge_index = end_point.mark;
           AutoPtr<Elem> edge = elem->build_edge(edge_index);
-          const std::vector<std::pair<const Elem*, unsigned int> > & elems = _boundary_edge_to_elem_side_map.find(edge.get())->second;
-
-          //split current_ray, each edge on boundary shoud be shared by 2 elem
-          unsigned int effective_faces = 2;
-          current_ray->power() = current_ray->power()/effective_faces;
-
-          for(unsigned int n=0; n<elems.size(); ++n)
+          // the edge is not on boundary
+          if(_boundary_edge_to_elem_side_map.find(edge.get())==_boundary_edge_to_elem_side_map.end())
           {
-            const Elem * boundary_elem = elems[n].first;
-            unsigned int side = elems[n].second;
+            const std::vector<const Elem *> & edge_elems = _elems_shared_this_edge.find(edge.get())->second;
+            const std::vector<const Elem *> & node1_elems = _elems_shared_this_node[edge->node(0)];
+            const std::vector<const Elem *> & node2_elems = _elems_shared_this_node[edge->node(1)];
+            std::set<const Elem *> elems_set;
+            elems_set.insert(edge_elems.begin(), edge_elems.end());
+            elems_set.insert(node1_elems.begin(), node1_elems.end());
+            elems_set.insert(node2_elems.begin(), node2_elems.end());
+            std::vector<const Elem *> elems;
+            elems.insert(elems.end(), elems_set.begin(), elems_set.end());
 
-            // if reflect surface
-           if(is_full_reflect_surface(elem, side)) continue;
-
-            Point norm = boundary_elem->outside_unit_normal(side);
-            //the surface norm should has a angle >90 degree to ray dir
-            if(norm.dot(current_ray->dir()) > -1e-10) continue;
-
-            double n1 = get_refractive_index_re(boundary_elem->subdomain_id(side));
-            double n2 = get_refractive_index_re(boundary_elem->subdomain_id());
-            //generate reflect/refract rays
-            std::pair<LightThread *, LightThread *> ray_pair = current_ray->interface_light_gen_linear_polarized(p, norm, n1, n2);
-
-            // for refract ray
-            LightThread *refract_ray = ray_pair.second;
-            if(refract_ray)
+            const Elem * next_elem = this->ray_hit(current_ray->start_point(), current_ray->dir(), elems, current_ray->result);
+            if(next_elem && next_elem!=elem)
             {
-              refract_ray->hit_elem = this->ray_hit(refract_ray->start_point(), refract_ray->dir(), boundary_elem, refract_ray->result);
-              if(refract_ray->hit_elem)
-                ray_stack.push(refract_ray);
+              current_ray->hit_elem = next_elem;
+              ray_stack.push(current_ray);
+              continue;
+            }
+          }
+          else // the edge is on boundary
+          {
+            Point p = end_point.p;
+            unsigned int edge_index = end_point.mark;
+            AutoPtr<Elem> edge = elem->build_edge(edge_index);
+            const std::vector<std::pair<const Elem*, unsigned int> > & elems = _boundary_edge_to_elem_side_map.find(edge.get())->second;
+
+            //split current_ray, each edge on boundary shoud be shared by 2 elem
+            unsigned int effective_faces = 2;
+            current_ray->power() = current_ray->power()/effective_faces;
+
+            for(unsigned int n=0; n<elems.size(); ++n)
+            {
+              const Elem * boundary_elem = elems[n].first;
+              unsigned int side = elems[n].second;
+
+              // if reflect surface
+              if(is_full_reflect_surface(elem, side)) continue;
+
+              Point norm = boundary_elem->outside_unit_normal(side);
+              //the surface norm should has a angle >90 degree to ray dir
+              if(norm.dot(current_ray->dir()) > -1e-10) continue;
+
+              double n1 = get_refractive_index_re(boundary_elem->subdomain_id(side));
+              double n2 = get_refractive_index_re(boundary_elem->subdomain_id());
+              //generate reflect/refract rays
+              std::pair<LightThread *, LightThread *> ray_pair = current_ray->interface_light_gen_linear_polarized(p, norm, n1, n2);
+
+              // for refract ray
+              LightThread *refract_ray = ray_pair.second;
+              if(refract_ray)
+              {
+                refract_ray->hit_elem = this->ray_hit(refract_ray->start_point(), refract_ray->dir(), boundary_elem, refract_ray->result);
+                if(refract_ray->hit_elem)
+                  ray_stack.push(refract_ray);
+                else
+                  delete refract_ray;
+              }
+
+              // for reflect ray
+              LightThread *reflect_ray = ray_pair.first;
+              if(reflect_ray)
+              {
+              reflect_ray->hit_elem = this->ray_hit(reflect_ray->start_point(), reflect_ray->dir(), elem, reflect_ray->result);
+              if(reflect_ray->hit_elem)
+                ray_stack.push(reflect_ray);
               else
-                delete refract_ray;
+                delete reflect_ray;
+              }
             }
 
-            // for reflect ray
-            LightThread *reflect_ray = ray_pair.first;
-            reflect_ray->hit_elem = this->ray_hit(reflect_ray->start_point(), reflect_ray->dir(), elem, reflect_ray->result);
-            if(reflect_ray->hit_elem)
-              ray_stack.push(reflect_ray);
-            else
-              delete reflect_ray;
+            delete current_ray;
           }
-
-          delete current_ray;
         }
-      }
-      break;
-    case  on_vertex :
-      {
-        unsigned int vertex_index = end_point.mark;
-        const Node * node = elem->get_node(vertex_index);
-        std::vector<const Elem *> & elems = _elems_shared_this_node[node->id()];
-        // the node is not on boundary
-        if( _boundary_node_to_elem_side_map.find(node)==_boundary_node_to_elem_side_map.end())
+        break;
+        case  on_vertex :
         {
-          const Elem * next_elem = this->ray_hit(current_ray->start_point(), current_ray->dir(), elems, current_ray->result);
-          genius_assert(next_elem && next_elem!=elem);
-          current_ray->hit_elem = next_elem;
-          ray_stack.push(current_ray);
-          continue;
-        }
-        else
-        {
-          Point p = end_point.p;
           unsigned int vertex_index = end_point.mark;
-          const Node * current_node = elem->get_node(vertex_index);
-          const std::vector<std::pair<const Elem*, unsigned int> > & elems = _boundary_node_to_elem_side_map.find(current_node)->second;
-
-          //split current_ray
-          unsigned int effective_faces = 0;
-          for(unsigned int n=0; n<elems.size(); ++n)
+          const Node * node = elem->get_node(vertex_index);
+          std::vector<const Elem *> & elems = _elems_shared_this_node[node->id()];
+          // the node is not on boundary
+          if( _boundary_node_to_elem_side_map.find(node)==_boundary_node_to_elem_side_map.end())
           {
-            Point norm = elems[n].first->outside_unit_normal(elems[n].second);
-            //the surface norm should has a angle >90 degree to ray dir
-            if(norm.dot(current_ray->dir()) > -1e-10) continue;
-            effective_faces++;
+            const Elem * next_elem = this->ray_hit(current_ray->start_point(), current_ray->dir(), elems, current_ray->result);
+            assert(next_elem && next_elem!=elem);
+            current_ray->hit_elem = next_elem;
+            ray_stack.push(current_ray);
+            continue;
           }
-          current_ray->power() = current_ray->power()/effective_faces;
-
-          for(unsigned int n=0; n<elems.size(); ++n)
+          else
           {
-            const Elem * boundary_elem = elems[n].first;
-            unsigned int side = elems[n].second;
+            Point p = end_point.p;
+            unsigned int vertex_index = end_point.mark;
+            const Node * current_node = elem->get_node(vertex_index);
+            const std::vector<std::pair<const Elem*, unsigned int> > & elems = _boundary_node_to_elem_side_map.find(current_node)->second;
 
-            // if reflect surface
-            if(is_full_reflect_surface(elem, side)) continue;
-
-            Point norm = boundary_elem->outside_unit_normal(side);
-            //the surface norm should has a angle >90 degree to ray dir
-            if(norm.dot(current_ray->dir()) > -1e-10) continue;
-
-            double n1 = get_refractive_index_re(boundary_elem->subdomain_id(side));
-            double n2 = get_refractive_index_re(boundary_elem->subdomain_id());
-            //generate reflect/refract rays
-            std::pair<LightThread *, LightThread *> ray_pair = current_ray->interface_light_gen_linear_polarized(p, norm, n1, n2);
-
-            // for refract ray
-            LightThread *refract_ray = ray_pair.second;
-            if(refract_ray)
+            //split current_ray
+            unsigned int effective_faces = 0;
+            for(unsigned int n=0; n<elems.size(); ++n)
             {
-              refract_ray->hit_elem = this->ray_hit(refract_ray->start_point(), refract_ray->dir(), boundary_elem, refract_ray->result);
-              if(refract_ray->hit_elem)
-                ray_stack.push(refract_ray);
-              else
-                delete refract_ray;
+              Point norm = elems[n].first->outside_unit_normal(elems[n].second);
+              //the surface norm should has a angle >90 degree to ray dir
+              if(norm.dot(current_ray->dir()) > -1e-10) continue;
+              effective_faces++;
             }
+            current_ray->power() = current_ray->power()/effective_faces;
 
-            // for reflect ray
-            LightThread *reflect_ray = ray_pair.first;
-            reflect_ray->hit_elem = this->ray_hit(reflect_ray->start_point(), reflect_ray->dir(), elem, reflect_ray->result);
-            if(reflect_ray->hit_elem)
-              ray_stack.push(reflect_ray);
-            else
-              delete reflect_ray;
+            for(unsigned int n=0; n<elems.size(); ++n)
+            {
+              const Elem * boundary_elem = elems[n].first;
+              unsigned int side = elems[n].second;
+
+              // if reflect surface
+              if(is_full_reflect_surface(elem, side)) continue;
+
+              Point norm = boundary_elem->outside_unit_normal(side);
+              //the surface norm should has a angle >90 degree to ray dir
+              if(norm.dot(current_ray->dir()) > -1e-10) continue;
+
+              double n1 = get_refractive_index_re(boundary_elem->subdomain_id(side));
+              double n2 = get_refractive_index_re(boundary_elem->subdomain_id());
+              //generate reflect/refract rays
+              std::pair<LightThread *, LightThread *> ray_pair = current_ray->interface_light_gen_linear_polarized(p, norm, n1, n2);
+
+              // for refract ray
+              LightThread *refract_ray = ray_pair.second;
+              if(refract_ray)
+              {
+                refract_ray->hit_elem = this->ray_hit(refract_ray->start_point(), refract_ray->dir(), boundary_elem, refract_ray->result);
+                if(refract_ray->hit_elem)
+                  ray_stack.push(refract_ray);
+                else
+                  delete refract_ray;
+              }
+
+              // for reflect ray
+              LightThread *reflect_ray = ray_pair.first;
+              if(reflect_ray)
+              {
+              reflect_ray->hit_elem = this->ray_hit(reflect_ray->start_point(), reflect_ray->dir(), elem, reflect_ray->result);
+              if(reflect_ray->hit_elem)
+                ray_stack.push(reflect_ray);
+              else
+                delete reflect_ray;
+              }
+            }
+            delete current_ray;
           }
-          delete current_ray;
         }
-      }
-      break;
-      //we should never reach here
-    default: genius_error();
+        break;
+        //we should never reach here
+        default: genius_error();
     }
 
   }
@@ -1048,7 +1102,7 @@ void RayTraceSolver::optical_generation(unsigned int n)
       double vol_ratio = elem->partial_volume(nd)/elem->volume();
 
       FVM_Node* fvm_node = elem_region->region_fvm_node(node);
-      genius_assert(fvm_node->node_data());
+      assert(fvm_node->node_data());
 
       fvm_node->node_data()->OptG() += gen*vol_ratio/fvm_node->volume();
       fvm_node->node_data()->OptQ() += heat*vol_ratio/fvm_node->volume();

@@ -31,11 +31,12 @@
 #include "perf_log.h"
 #include "elem.h"
 
-#if   defined(HAVE_HASH_MAP)
-# include <hash_map>
-#elif defined(HAVE_EXT_HASH_MAP)
-# include <ext/hash_map>
+#if defined(HAVE_TR1_UNORDERED_MAP)
+#include <tr1/unordered_map>
+#elif defined(HAVE_TR1_UNORDERED_MAP_WITH_STD_HEADER) || defined(HAVE_UNORDERED_MAP)
+#include <unordered_map>
 #endif
+
 
 
 // ------------------------------------------------------------
@@ -152,31 +153,21 @@ void UnstructuredMesh::find_neighbors()
   // with identical side keys and then check to see if they
   // are neighbors
   {
-    // data structures -- Use the hash_multimap if available
+    // data structures -- Use the unordered_multimap if available
     typedef unsigned int                    key_type;
     typedef std::pair<Elem*, unsigned char> val_type;
     typedef std::pair<key_type, val_type>   key_val_pair;
 
-#if   defined(HAVE_HASH_MAP)
-    typedef std::hash_multimap<key_type, val_type> map_type;
-#elif defined(HAVE_EXT_HASH_MAP)
-# if    (__GNUC__ == 3) && (__GNUC_MINOR__ == 0) // gcc 3.0
-    typedef std::hash_multimap<key_type, val_type> map_type;
-# elif (__GNUC__ >= 3)                          // gcc 3.1 & newer
-    typedef __gnu_cxx::hash_multimap<key_type, val_type> map_type;
-# else
-    // XLC and who knows what other compilers get here.
-    // Try the most standard thing we can:
-    typedef std::multimap<key_type, val_type>  map_type;
-# endif
+#if defined(HAVE_UNORDERED_MAP)
+    typedef std::unordered_multimap<key_type, val_type> map_type;
+#elif defined(HAVE_TR1_UNORDERED_MAP) || defined(HAVE_TR1_UNORDERED_MAP_WITH_STD_HEADER)
+    typedef std::tr1::unordered_multimap<key_type, val_type> map_type;
 #else
     typedef std::multimap<key_type, val_type>  map_type;
 #endif
 
     // A map from side keys to corresponding elements & side numbers
     map_type side_to_elem_map;
-
-
 
     for (element_iterator el = this->elements_begin(); el != el_end; ++el)
     {
@@ -262,12 +253,7 @@ void UnstructuredMesh::find_neighbors()
 
           // use the lower bound as a hint for
           // where to put it.
-#if defined(HAVE_HASH_MAP) || defined(HAVE_EXT_HASH_MAP)
-          side_to_elem_map.insert (kvp);
-#else
           side_to_elem_map.insert (bounds.first,kvp);
-#endif
-
         }
       }
     }
@@ -305,6 +291,7 @@ void UnstructuredMesh::find_neighbors()
 #endif // AMR
 
   STOP_LOG("find_neighbors()", "Mesh");
+
 }
 
 
@@ -777,16 +764,26 @@ bool UnstructuredMesh::all_fvm_elem ()
      */
     assert (fvm_elem->n_sides() == fem_elem->n_sides());
 
-
-    for (unsigned int s=0; s<fem_elem->n_sides(); s++)
+    /*
+     * update neighbor information
+     */
+    for(unsigned int n=0; n<fem_elem->n_neighbors(); ++n)
     {
-      // only search fem_elem itself in the boundary_info structure,
-      // send false to function boundary_id() avoid search the top parent of fem_elem in the boundary_info structure!
-      const short int boundary_id = this->boundary_info->boundary_id (fem_elem, s, false);
+      Elem * elem_neighbor = fem_elem->neighbor(n);
+      fvm_elem->set_neighbor(n, elem_neighbor);
+      if(elem_neighbor) // it may be NULL
+        elem_neighbor->set_neighbor(elem_neighbor->which_neighbor_am_i(fem_elem), fvm_elem);
+    }
 
-      if (boundary_id != BoundaryInfo::invalid_id)
+    if( this->boundary_info->is_boundary_elem(fem_elem) )
+    {
+      for (unsigned int s=0; s<fem_elem->n_sides(); s++)
       {
-        this->boundary_info->add_side ( fvm_elem, s, boundary_id );
+        // only search fem_elem itself in the boundary_info structure,
+        // send false to function boundary_id() avoid search the top parent of fem_elem in the boundary_info structure!
+        const short int boundary_id = this->boundary_info->boundary_id (fem_elem, s, false);
+        if (boundary_id != BoundaryInfo::invalid_id)
+          this->boundary_info->add_side ( fvm_elem, s, boundary_id );
       }
     }
 
@@ -804,9 +801,6 @@ bool UnstructuredMesh::all_fvm_elem ()
   }
 
   this->boundary_info->rebuild_ids();
-
-  // rebuild neighbor information
-  this->find_neighbors();
 
   return true;
 }

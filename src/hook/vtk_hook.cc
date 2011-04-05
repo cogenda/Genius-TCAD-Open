@@ -31,16 +31,32 @@
 /*----------------------------------------------------------------------
  * constructor, open the file for writing
  */
-VTKHook::VTKHook ( SolverBase & solver, const std::string & name, void * )
-    : Hook ( solver, name ), _vtk_prefix ( SolverSpecify::out_prefix ), _mixA ( false )
+VTKHook::VTKHook ( SolverBase & solver, const std::string & name, void * param)
+    : Hook ( solver, name ), _vtk_prefix ( SolverSpecify::out_prefix ),
+      _ddm ( false ), _mixA ( false ), _ddm_ac ( false )
 {
   this->count  =0;
   this->_t_step=0;
+  this->_f_step=0;
   this->_v_step=0;
   this->_i_step=0;
   this->_t_last=0;
+  this->_f_last=0;
   this->_v_last=0;
   this->_i_last=0;
+
+  const std::vector<Parser::Parameter> & parm_list = *((std::vector<Parser::Parameter> *)param);
+  for ( std::vector<Parser::Parameter>::const_iterator parm_it = parm_list.begin();
+        parm_it != parm_list.end(); parm_it++ )
+  {
+    if ( parm_it->name() == "tstep" && parm_it->type() == Parser::REAL )
+      _t_step=parm_it->get_real() * PhysicalUnit::s;
+    if ( parm_it->name() == "vstep" && parm_it->type() == Parser::REAL )
+      _v_step=parm_it->get_real() * PhysicalUnit::V;
+    if ( parm_it->name() == "istep" && parm_it->type() == Parser::REAL )
+      _i_step=parm_it->get_real() * PhysicalUnit::A;
+  }
+
   const SimulationSystem &system = get_solver().get_system();
 
   std::ostringstream vtk_filename;
@@ -48,12 +64,19 @@ VTKHook::VTKHook ( SolverBase & solver, const std::string & name, void * )
   system.export_vtk ( vtk_filename.str(), false );
 
   SolverSpecify::SolverType solver_type = this->get_solver().solver_type();
+
   // if we are called by mixA solver?
-  if ( solver_type == SolverSpecify::DDML1MIXA ||
-       solver_type == SolverSpecify::DDML2MIXA ||
-       solver_type == SolverSpecify::EBML3MIXA
-     )
-    _mixA = true;
+  switch ( solver_type )
+  {
+    case SolverSpecify::DDML1     :
+    case SolverSpecify::DDML2     :
+    case SolverSpecify::EBML3     :   _ddm = true; break;
+    case SolverSpecify::DDML1MIXA :
+    case SolverSpecify::DDML2MIXA :
+    case SolverSpecify::EBML3MIXA :   _mixA = true; break;
+    case SolverSpecify::DDMAC     :   _ddm_ac = true; break;
+    default : break;
+  }
 }
 
 
@@ -69,20 +92,7 @@ VTKHook::~VTKHook()
  */
 void VTKHook::on_init()
 {
-  std::vector<Parser::Parameter> parm_list = SolverSpecify::Hook_Parameters["vtk"];
-  for ( std::vector<Parser::Parameter>::iterator parm_it = parm_list.begin();
-        parm_it != parm_list.end(); parm_it++ )
-  {
-    if ( parm_it->name() == "tstep" && parm_it->type() == Parser::REAL )
-      _t_step=parm_it->get_real() * PhysicalUnit::s;
-    if ( parm_it->name() == "vstep" && parm_it->type() == Parser::REAL )
-      _v_step=parm_it->get_real() * PhysicalUnit::V;
-    if ( parm_it->name() == "istep" && parm_it->type() == Parser::REAL )
-      _i_step=parm_it->get_real() * PhysicalUnit::A;
-  }
-
   time_sequence.clear();
-
 }
 
 
@@ -107,14 +117,15 @@ void VTKHook::post_solve()
     double Vscan = 0;
 
     // DDM solver
-    if ( !_mixA )
+    if ( _ddm )
     {
       const BoundaryConditionCollector * bcs = _solver.get_system().get_bcs();
       const BoundaryCondition * bc = bcs->get_bc ( SolverSpecify::Electrode_VScan[0] );
       Vscan = bc->ext_circuit()->Vapp();
     }
+
     // MIXA solver
-    else
+    if ( _mixA )
     {
       SPICE_CKT * spice_ckt = _solver.get_system().get_circuit();
       Vscan = spice_ckt->get_voltage_from ( SolverSpecify::Electrode_VScan[0] );
@@ -136,7 +147,7 @@ void VTKHook::post_solve()
   if ( SolverSpecify::Type==SolverSpecify::DCSWEEP && SolverSpecify::Electrode_IScan.size() )
   {
     // DDM solver only
-    assert ( !_mixA );
+    assert ( _ddm );
 
     const BoundaryConditionCollector * bcs = _solver.get_system().get_bcs();
     const BoundaryCondition * bc = bcs->get_bc ( SolverSpecify::Electrode_IScan[0] );
@@ -169,6 +180,28 @@ void VTKHook::post_solve()
 
     }
   }
+
+
+  if ( SolverSpecify::Type==SolverSpecify::ACSWEEP )
+  {
+    const SimulationSystem &system = get_solver().get_system();
+
+    vtk_filename << _vtk_prefix << ( this->count++ ) << ".vtu";
+    system.export_vtk ( vtk_filename.str(), false );
+
+    time_sequence.push_back ( std::make_pair ( SolverSpecify::Freq*PhysicalUnit::us, vtk_filename.str() ) );
+    _f_last = SolverSpecify::Freq;
+  }
+
+  /*
+  if(SolverSpecify::Solver==SolverSpecify::HDM)
+  {
+    const SimulationSystem &system = get_solver().get_system();
+
+    vtk_filename << _vtk_prefix << ( this->count++ ) << ".vtu";
+    system.export_vtk ( vtk_filename.str(),false );
+  }
+  */
 
   ////----
   if ( !vtk_filename.str().empty() )

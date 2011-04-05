@@ -136,6 +136,20 @@ void Quad4::nodes_on_edge (const unsigned int e,
 }
 
 
+void Quad4::nodes_on_edge (const unsigned int e,
+                          std::pair<unsigned int, unsigned int> & nodes ) const
+{
+  nodes.first = side_nodes_map[e][0];
+  nodes.second = side_nodes_map[e][1];
+}
+
+
+Real Quad4::edge_length(const unsigned int e) const
+{
+  return (point(side_nodes_map[e][0]) - point(side_nodes_map[e][1])).size();
+}
+
+
 bool Quad4::has_affine_map() const
 {
   Point v = this->point(3) - this->point(0);
@@ -166,7 +180,7 @@ AutoPtr<Elem> Quad4::build_side (const unsigned int i,
 
         edge->set_node(0) = this->get_node(0);
         edge->set_node(1) = this->get_node(1);
-
+        edge->subdomain_id() = this->subdomain_id();
         AutoPtr<Elem> ap(edge);  return ap;
       }
     case 1:
@@ -175,7 +189,7 @@ AutoPtr<Elem> Quad4::build_side (const unsigned int i,
 
         edge->set_node(0) = this->get_node(1);
         edge->set_node(1) = this->get_node(2);
-
+        edge->subdomain_id() = this->subdomain_id();
         AutoPtr<Elem> ap(edge);  return ap;
       }
     case 2:
@@ -184,7 +198,7 @@ AutoPtr<Elem> Quad4::build_side (const unsigned int i,
 
         edge->set_node(0) = this->get_node(2);
         edge->set_node(1) = this->get_node(3);
-
+        edge->subdomain_id() = this->subdomain_id();
         AutoPtr<Elem> ap(edge);  return ap;
       }
     case 3:
@@ -193,7 +207,7 @@ AutoPtr<Elem> Quad4::build_side (const unsigned int i,
 
         edge->set_node(0) = this->get_node(3);
         edge->set_node(1) = this->get_node(0);
-
+        edge->subdomain_id() = this->subdomain_id();
         AutoPtr<Elem> ap(edge);  return ap;
       }
     default:
@@ -314,38 +328,25 @@ bool Quad4::in_circle() const
   //        o-----------o        o-----------o
   //        0           1        A           B
 
-  // Vector pointing from A to C
-  Point AC ( this->point(2) - this->point(0) );
+  Point circumcircle_center;
+  Real  radii;
+  {
+    Point v12 = this->point(0) - this->point(1);
+    Point v23 = this->point(1) - this->point(2);
+    Point v13 = this->point(0) - this->point(2);
 
-  // Vector pointing from A to B
-  Point AB ( this->point(1) - this->point(0) );
+    Real ccdet = v12.cross(v23).size_sq();
+    Real alpha = v23.size_sq() * v12.dot(v13) /2.0/ccdet;
+    Real beta  = - v13.size_sq() * v12.dot(v23) /2.0/ccdet;
+    Real gamma = v12.size_sq() * v13.dot(v23) /2.0/ccdet;
 
-  // Vector pointing from B to C
-  Point BC ( this->point(2) - this->point(1) );
+    circumcircle_center = alpha * this->point(0) +
+                          beta  * this->point(1) +
+                          gamma * this->point(2);
+    radii = (circumcircle_center - this->point(0)).size();
+  }
 
-  // Vector normal to plan ABC
-  Point n = AB.cross(AC);
-
-  // Vector in plan ABC and normal to AB
-  Point a = n.cross(AB);
-
-  // the angle between AB and AC
-  Real angle_a = AB.angle(AC);
-
-  // the angle between CA and CB
-  Real angle_c = (-AC).angle(-BC);
-
-  // the radius of circumcircle
-  Real R = BC.size() / (2*sin(angle_a));
-
-  // the circle centre of ABC
-  Point CC;
-  if(angle_c < M_PI/2) // for sharp angle, the circle centre is inside of triangle ABC
-    CC = this->point(0) + 0.5*AB + a.unit() * sqrt( std::abs(R*R - 0.25*AB.size()*AB.size()) );
-  else                 // oh, it is an obtuse angle, the circle centre is out of triangle ABC
-    CC = this->point(0) + 0.5*AB - a.unit() * sqrt( std::abs(R*R - 0.25*AB.size()*AB.size()) );
-
-  return ( std::abs((CC - this->point(3)).size() - R) < TOLERANCE ) ;
+  return ( std::abs((circumcircle_center - this->point(3)).size() - radii) < TOLERANCE ) ;
 
 }
 
@@ -385,6 +386,25 @@ void Quad4::connectivity(const unsigned int sf,
   }
 
   genius_error();
+}
+
+
+void Quad4::side_order( const IOPackage iop, std::vector<unsigned int>& order) const
+{
+  order.resize(4);
+  switch (iop)
+  {
+    case ISE:
+    {
+      order[0] = 0;
+      order[1] = 1;
+      order[2] = 2;
+      order[3] = 3;
+      return;
+    }
+    default:
+      genius_error();
+  }
 }
 
 
@@ -521,18 +541,20 @@ void Quad4::ray_hit(const Point &p , const Point &d , IntersectionResult &result
         else
           result.state=On_Face;
 
-        if(edge_intersections.hit_points[0].point_location == on_edge)
+        Hit_Point & hit_point = edge_intersections.hit_points[0];
+        if(hit_point.point_location == on_edge)
         {
           //for 2D mesh, on edge equals to on side
-          if(dim==2) edge_intersections.hit_points[0].point_location = on_side;
-          edge_intersections.hit_points[0].mark = s;
-          result.hit_points.push_back(edge_intersections.hit_points[0]);
+          if(dim==2) hit_point.point_location = on_side;
+          hit_point.mark = s;
+          if(!result.is_point_overlap_exist(hit_point))
+            result.hit_points.push_back(hit_point);
         }
-        else if(edge_intersections.hit_points[0].point_location == on_vertex)
+        else if(hit_point.point_location == on_vertex)
         {
-          edge_intersections.hit_points[0].mark = this->side_nodes_map[s][edge_intersections.hit_points[0].mark];
-          if(!result.is_mark_exist(on_vertex, edge_intersections.hit_points[0].mark))
-            result.hit_points.push_back(edge_intersections.hit_points[0]);
+          hit_point.mark = this->side_nodes_map[s][hit_point.mark];
+          if(!result.is_mark_exist(on_vertex, hit_point.mark) && !result.is_point_overlap_exist(hit_point))
+            result.hit_points.push_back(hit_point);
         }
       }
 
@@ -727,6 +749,46 @@ void Quad4::ray_hit(const Point &p , const Point &d , IntersectionResult &result
   return;
 }
 
+
+Point Quad4::nearest_point(const Point &p, Real * dist) const
+{
+  // Just use p0 for the point.
+  const Point plane_point = this->point(0);
+  const Point e0 = this->point(1) - this->point(0);
+  const Point e1 = this->point(2) - this->point(0);
+  const Point plane_normal = e0.cross(e1).unit();
+
+  // Create a vector from the surface to point p;
+  const Point w = p - plane_point;
+
+  // The closest point in the plane to point p
+  // is in the negative normal direction
+  // a distance w (dot) p.
+  const Point cp = p - plane_normal*(w*plane_normal);
+
+  if(this->contains_point(cp))
+  {
+    if(dist) *dist = (cp-p).size();
+    return cp;
+  }
+
+  Point np;
+  Real distance = 1e30;
+  for(unsigned int s=0; s<n_sides(); ++s)
+  {
+    Real d;
+    AutoPtr<Elem> side = Quad4::build_side(s, false);
+    Point n = side->nearest_point(p, &d);
+    if( d < distance )
+    {
+      np = n;
+      distance = d;
+    }
+  }
+
+  if(dist) *dist = distance;
+  return np;
+}
 
 
 Point Quad4::outside_unit_normal(unsigned short int side_id) const

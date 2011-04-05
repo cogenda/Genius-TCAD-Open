@@ -38,7 +38,7 @@ PROFILE   Type=Analytic   Ion=Acceptor  N.PEAK=1E19  X.MIN=0.0 X.MAX=1.0  \
 
 #------------------------------------------------------------------------------
 # boundary condition
-BOUNDARY ID=Anode     Type=Ohmic R=1000 ind=1e-3
+BOUNDARY ID=Anode     Type=Ohmic Res=1000 ind=1e-3
 BOUNDARY ID=Cathode   Type=Ohmic
 
 #------------------------------------------------------------------------------
@@ -48,12 +48,12 @@ SOLVE
 
 # drive diode into a suitable DC biased state
 MODEL     Region=Silicon H.MOB=false EB.LEVEL=NONE
-METHOD    Type=EBML3 NS=LineSearch LS=BCGS PC=ASM
+METHOD    Type=DDML1 NS=Basic LS=LU
 SOLVE     TYpe=EQ
 SOLVE     TYpe=DC VSCAN=Anode vstart=0.0 vstep=0.1 vstop=0.6 out=dc
 
 # do AC sweep
-METHOD    Type=DDMAC  LS=GMRES PC=LU
+METHOD    Type=DDMAC  LS=BCGS PC=LU
 SOLVE     Type=ACSWEEP acscan=Anode  F.Start=1e3 F.stop=2e9 out=ac vac=0.0026
 
 # export result

@@ -31,6 +31,10 @@
 #define YY_NEVER_INTERACTIVE 1
 #ifdef CYGWIN
   #define YY_NO_UNISTD_H 1
+extern "C"
+{
+extern int isatty (int );
+}
 #endif
 
 namespace TIF
@@ -44,6 +48,7 @@ namespace TIF
     node_array.clear();
     edge_array.clear();
     tri_array.clear();
+    quad_array.clear();
     region_array.clear();
     interface_array.clear();
     component_array.clear();

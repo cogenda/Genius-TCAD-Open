@@ -79,7 +79,7 @@ Real FE<0,LAGRANGE>::shape_deriv(const Elem*,
 
 
 
-/*
+
 template <>
 Real FE<0,LAGRANGE>::shape_second_deriv(const ElemType,
                     const Order,
@@ -105,4 +105,4 @@ Real FE<0,LAGRANGE>::shape_second_deriv(const Elem*,
   genius_error();
   return 0.;
 }
-*/
+

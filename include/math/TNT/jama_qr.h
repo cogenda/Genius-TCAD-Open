@@ -20,14 +20,14 @@ namespace JAMA
      QR decomposition is in the least squares solution of nonsquare systems
      of simultaneous linear equations.  This will fail if isFullRank()
      returns 0 (false).
-   
+
   <p>
   	The Q and R factors can be retrived via the getQ() and getR()
   	methods. Furthermore, a solve() method is provided to find the
-  	least squares solution of Ax=b using the QR factors.  
-   
+  	least squares solution of Ax=b using the QR factors.
+
      <p>
-  	(Adapted from JAMA, a Java Matrix Library, developed by jointly 
+  	(Adapted from JAMA, a Java Matrix Library, developed by jointly
   	by the Mathworks and NIST; see  http://math.nist.gov/javanumerics/jama).
   */
 
@@ -58,7 +58,7 @@ namespace JAMA
 
     /**
     	Create a QR factorization object for A.
-     
+
     	@param A rectangular (m>=n) matrix.
     */
     QR(const TNT::Array2D<Real> &A)		/* constructor */
@@ -73,7 +73,7 @@ namespace JAMA
       for (k = 0; k < n; k++)
       {
         // Compute 2-norm of k-th column without under/overflow.
-        Real nrm = 0;
+        Real nrm = 0.0;
         for (i = k; i < m; i++)
         {
           nrm = TNT::hypot(nrm,QR_[i][k]);
@@ -114,7 +114,7 @@ namespace JAMA
 
     /**
     	Flag to denote the matrix is of full rank.
-     
+
     	@return 1 if matrix is full rank, 0 otherwise.
     */
     int isFullRank() const

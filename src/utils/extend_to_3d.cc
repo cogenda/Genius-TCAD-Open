@@ -20,10 +20,11 @@
 /********************************************************************************/
 
 
-#include "mesh.h"
+#include "mesh_base.h"
 #include "simulation_system.h"
 #include "simulation_region.h"
 #include "extend_to_3d.h"
+#include "mesh_communication.h"
 #include "parallel.h"
 #include "mesh_tools.h"
 #include "boundary_info.h"
@@ -32,7 +33,7 @@ using PhysicalUnit::um;
 
 void ExtendTo3D::operator() ()
 {
-  Mesh & mesh = _system.mesh();
+  MeshBase & mesh = _system.mesh();
   if(mesh.mesh_dimension()==3) return;
 
   this->save_old_system();
@@ -50,51 +51,54 @@ void ExtendTo3D::operator() ()
 
 void ExtendTo3D::save_old_system()
 {
-  Mesh & mesh = _system.mesh();
-
   //save 2d mesh
-  magic_num    = mesh.magic_num();
-  n_nodes      = mesh.n_nodes();
-  n_elem       = mesh.n_elem();
-  n_subs       = mesh.n_subdomains();
-
-  // save point location
-  MeshBase::node_iterator       node_it     = mesh.nodes_begin();
-  const MeshBase::node_iterator node_it_end = mesh.nodes_end();
-  for (; node_it != node_it_end; ++node_it)
+  if(Genius::processor_id() == 0)
   {
-    assert (*node_it != NULL);
-    assert ((*node_it)->id() == mesh_points.size());
-    mesh_points.push_back(**node_it);
-  }
+    MeshBase & mesh = _system.mesh();
 
-  // save elem info
-  MeshBase::element_iterator elem_it = mesh.elements_begin();
-  const MeshBase::element_iterator elem_it_end = mesh.elements_end();
-  for (; elem_it != elem_it_end; ++elem_it)
-  {
-    assert (*elem_it);
-    const Elem* elem = *elem_it;
-    pack_element (mesh_conn, elem);
-  }
+    magic_num    = mesh.magic_num();
+    n_nodes      = mesh.n_nodes();
+    n_elem       = mesh.n_elem();
+    n_subs       = mesh.n_subdomains();
 
-  // save subdomain info
-  for(unsigned int n=0; n<mesh.n_subdomains(); n++)
-  {
-    subdomain_label.push_back(mesh.subdomain_label_by_id(n));
-    subdomain_material.push_back(mesh.subdomain_material(n));
-  }
-
-  // get all the boundary element
-  mesh.boundary_info->build_side_list(bd_elems, bd_sides, bd_ids);
-
-  std::set<short int> boundary_ids;
-  boundary_ids = mesh.boundary_info->get_boundary_ids();
-  for(std::set<short int>::iterator it=boundary_ids.begin(); it!=boundary_ids.end(); ++it)
+    // save point location
+    MeshBase::node_iterator       node_it     = mesh.nodes_begin();
+    const MeshBase::node_iterator node_it_end = mesh.nodes_end();
+    for (; node_it != node_it_end; ++node_it)
     {
-      std::string label = mesh.boundary_info->get_label_by_id(*it);
-      bd_map.insert(std::make_pair(label, *it));
+      assert (*node_it != NULL);
+      assert ((*node_it)->id() == mesh_points.size());
+      mesh_points.push_back(**node_it);
     }
+
+    // save elem info
+    MeshBase::element_iterator elem_it = mesh.elements_begin();
+    const MeshBase::element_iterator elem_it_end = mesh.elements_end();
+    for (; elem_it != elem_it_end; ++elem_it)
+    {
+      assert (*elem_it);
+      const Elem* elem = *elem_it;
+      pack_element (mesh_conn, elem);
+    }
+
+    // save subdomain info
+    for(unsigned int n=0; n<mesh.n_subdomains(); n++)
+    {
+      subdomain_label.push_back(mesh.subdomain_label_by_id(n));
+      subdomain_material.push_back(mesh.subdomain_material(n));
+    }
+
+    // get all the boundary element
+    mesh.boundary_info->build_side_list(bd_elems, bd_sides, bd_ids);
+
+    std::set<short int> boundary_ids;
+    boundary_ids = mesh.boundary_info->get_boundary_ids();
+    for(std::set<short int>::iterator it=boundary_ids.begin(); it!=boundary_ids.end(); ++it)
+      {
+        std::string label = mesh.boundary_info->get_label_by_id(*it);
+        bd_map.insert(std::make_pair(label, *it));
+      }
+  }
 
 
   // save solutions
@@ -110,13 +114,11 @@ void ExtendTo3D::save_old_system()
   for(unsigned int r=0; r<_system.n_regions(); r++)
   {
     const SimulationRegion * region = _system.region(r);
-    SimulationRegion::const_node_iterator it = region->nodes_begin();
-    SimulationRegion::const_node_iterator it_end = region->nodes_end();
+    SimulationRegion::const_processor_node_iterator it = region->on_processor_nodes_begin();
+    SimulationRegion::const_processor_node_iterator it_end = region->on_processor_nodes_end();
     for(; it!=it_end; ++it)
     {
-      const FVM_Node * node = (*it).second;
-      //if this node NOT belongs to this processor, continue
-      if( !node->on_processor() ) continue;
+      const FVM_Node * node = *it;
       const FVM_NodeData * node_data = node->node_data();
       variables["T"     ][r][node->root_node()->id()] = node_data->T();
       variables["Na"    ][r][node->root_node()->id()] = node_data->Total_Na();
@@ -164,11 +166,12 @@ void ExtendTo3D::sync_solution(const std::string &sol)
 
 void ExtendTo3D::set_new_system()
 {
-  Mesh & mesh = _system.mesh();
+  MeshBase & mesh = _system.mesh();
 
   std::map<const Node *, unsigned int> node_to_old_node_id;
 
   // set new mesh
+  if(Genius::processor_id() == 0)
   {
     mesh.magic_num() = magic_num + 2008;
 
@@ -201,42 +204,42 @@ void ExtendTo3D::set_new_system()
 
         switch(elem_type)
         {
-        case TRI3:
-        case TRI3_FVM:
-          {
-            elem = Elem::build(PRISM6, NULL).release();
-            elem->subdomain_id() = subdomain_ID;
-            unsigned int A = mesh_conn[cnt++];
-            unsigned int B = mesh_conn[cnt++];
-            unsigned int C = mesh_conn[cnt++];
-            elem->set_node(0) = mesh.node_ptr (A + z*n_nodes);
-            elem->set_node(1) = mesh.node_ptr (B + z*n_nodes);
-            elem->set_node(2) = mesh.node_ptr (C + z*n_nodes);
-            elem->set_node(3) = mesh.node_ptr (A + (z+1)*n_nodes);
-            elem->set_node(4) = mesh.node_ptr (B + (z+1)*n_nodes);
-            elem->set_node(5) = mesh.node_ptr (C + (z+1)*n_nodes);
-          }
-          break;
-        case QUAD4:
-        case QUAD4_FVM:
-          {
-            elem = Elem::build(HEX8, NULL).release();
-            elem->subdomain_id() = subdomain_ID;
-            unsigned int A = mesh_conn[cnt++];
-            unsigned int B = mesh_conn[cnt++];
-            unsigned int C = mesh_conn[cnt++];
-            unsigned int D = mesh_conn[cnt++];
-            elem->set_node(0) = mesh.node_ptr (A + z*n_nodes);
-            elem->set_node(1) = mesh.node_ptr (B + z*n_nodes);
-            elem->set_node(2) = mesh.node_ptr (C + z*n_nodes);
-            elem->set_node(3) = mesh.node_ptr (D + z*n_nodes);
-            elem->set_node(4) = mesh.node_ptr (A + (z+1)*n_nodes);
-            elem->set_node(5) = mesh.node_ptr (B + (z+1)*n_nodes);
-            elem->set_node(6) = mesh.node_ptr (C + (z+1)*n_nodes);
-            elem->set_node(7) = mesh.node_ptr (D + (z+1)*n_nodes);
-          }
-          break;
-        default: genius_error();
+            case TRI3:
+            case TRI3_FVM:
+            {
+              elem = Elem::build(PRISM6, NULL).release();
+              elem->subdomain_id() = subdomain_ID;
+              unsigned int A = mesh_conn[cnt++];
+              unsigned int B = mesh_conn[cnt++];
+              unsigned int C = mesh_conn[cnt++];
+              elem->set_node(0) = mesh.node_ptr (A + z*n_nodes);
+              elem->set_node(1) = mesh.node_ptr (B + z*n_nodes);
+              elem->set_node(2) = mesh.node_ptr (C + z*n_nodes);
+              elem->set_node(3) = mesh.node_ptr (A + (z+1)*n_nodes);
+              elem->set_node(4) = mesh.node_ptr (B + (z+1)*n_nodes);
+              elem->set_node(5) = mesh.node_ptr (C + (z+1)*n_nodes);
+            }
+            break;
+            case QUAD4:
+            case QUAD4_FVM:
+            {
+              elem = Elem::build(HEX8, NULL).release();
+              elem->subdomain_id() = subdomain_ID;
+              unsigned int A = mesh_conn[cnt++];
+              unsigned int B = mesh_conn[cnt++];
+              unsigned int C = mesh_conn[cnt++];
+              unsigned int D = mesh_conn[cnt++];
+              elem->set_node(0) = mesh.node_ptr (A + z*n_nodes);
+              elem->set_node(1) = mesh.node_ptr (B + z*n_nodes);
+              elem->set_node(2) = mesh.node_ptr (C + z*n_nodes);
+              elem->set_node(3) = mesh.node_ptr (D + z*n_nodes);
+              elem->set_node(4) = mesh.node_ptr (A + (z+1)*n_nodes);
+              elem->set_node(5) = mesh.node_ptr (B + (z+1)*n_nodes);
+              elem->set_node(6) = mesh.node_ptr (C + (z+1)*n_nodes);
+              elem->set_node(7) = mesh.node_ptr (D + (z+1)*n_nodes);
+            }
+            break;
+            default: genius_error();
         }
         mesh.add_elem(elem);
       }
@@ -298,17 +301,24 @@ void ExtendTo3D::set_new_system()
       mesh.boundary_info->set_label_to_id(it->second, it->first);
   }
 
+  // broadcast mesh to all the processor
+  MeshCommunication mesh_comm;
+  mesh_comm.broadcast(mesh);
+
   // build simulation system
   _system.build_simulation_system();
   _system.sync_print_info();
 
 
   // set renumbered node id to original node id map
+  if(Genius::processor_id() == 0)
   {
     std::map<const Node *, unsigned int>::iterator  it=node_to_old_node_id.begin();
     for(; it!=node_to_old_node_id.end(); ++it)
       _node_to_old_node_id_map[it->first->id()] = it->second;
   }
+
+  Parallel::broadcast(_node_to_old_node_id_map);
 
 }
 
@@ -321,19 +331,16 @@ void ExtendTo3D::set_new_regions()
   {
     SimulationRegion * region = _system.region(r);
 
-    SimulationRegion::const_node_iterator it = region->nodes_begin();
-    SimulationRegion::const_node_iterator it_end = region->nodes_end();
-    for(; it!=it_end; ++it)
+    SimulationRegion::local_node_iterator node_it = region->on_local_nodes_begin();
+    SimulationRegion::local_node_iterator node_it_end = region->on_local_nodes_end();
+    for(; node_it!=node_it_end; ++node_it)
     {
-      FVM_Node * node = (*it).second;
+      FVM_Node * fvm_node = (*node_it);
 
-      //if this node NOT on local, continue
-      if( !node->on_local() ) continue;
-
-      FVM_NodeData * node_data = node->node_data();
+      FVM_NodeData * node_data = fvm_node->node_data();
       genius_assert(node_data);
 
-      unsigned int old_node_id = _node_to_old_node_id_map[node->root_node()->id()];
+      unsigned int old_node_id = _node_to_old_node_id_map[fvm_node->root_node()->id()];
       node_data->T()        =  variables["T"     ][r][old_node_id];
       node_data->Na()       =  variables["Na"    ][r][old_node_id];
       node_data->Nd()       =  variables["Nd"    ][r][old_node_id];

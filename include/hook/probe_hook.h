@@ -68,14 +68,14 @@ private:
 
  SolverBase*     _p_solver;
 
+ /**
+  * probe point
+  */
+ Point _pp;
+
  const FVM_Node* _p_fvm_node;
 
  unsigned int    _min_loc;
-
- /**
-  * the input file name
-  */
- std::string     _input_file;
 
  /**
   * the output file name

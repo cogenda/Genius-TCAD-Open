@@ -104,6 +104,15 @@ namespace ElemIntersection
      */
     std::vector<Hit_Point> hit_points;
 
+    bool is_point_overlap_exist(const Hit_Point &HP) const
+    {
+      for(unsigned int n=0; n<hit_points.size(); ++n)
+      {
+        if( (hit_points[n].p - HP.p).size() < 1e-8  ) return true;
+      }
+      return false;
+    }
+
     bool is_mark_exist(PointLocation loc, unsigned int mark) const
     {
       for(unsigned int n=0; n<hit_points.size(); ++n)

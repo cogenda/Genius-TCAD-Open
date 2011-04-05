@@ -20,10 +20,10 @@
 /*****************************************************************************/
 //
 // Material Type: Silicon
-
+#include <algorithm>
 
 #include "PMI.h"
-
+#include "mathfunc.h"
 
 class GSS_Si_BandStructure_Schenk : public PMIS_BandStructure
 {
@@ -167,14 +167,15 @@ private:
 #endif
 
   }
-public:
-  int calibrate(const std::vector<Parser::Parameter> & pmi_parameters)
+
+  void Eg_PostCalibrateProcess()
   {
-    int rc = PMIS_BandStructure::calibrate(pmi_parameters);
     alphae = mh_eff / (me_eff+mh_eff);
     alphah = me_eff / (me_eff+mh_eff);
-    return rc;
   }
+
+public:
+
 
   //---------------------------------------------------------------------------
   // procedure of Bandgap
@@ -205,8 +206,8 @@ public:
     PetscScalar naS = ReadDopingNa() / n_scale;
     PetscScalar niS = ndS + naS;
 
-    PetscScalar neS = abs(n) / n_scale;
-    PetscScalar nhS = abs(p) / n_scale;
+    PetscScalar neS = std::abs(n) / n_scale;
+    PetscScalar nhS = std::abs(p) / n_scale;
 
     PetscScalar F = kb * Tl / Ryex;    // [adim]
 
@@ -228,8 +229,8 @@ public:
                        /( sqrt(F * nsigma2 / (2.0 * pi)) * (1.0 + he * log(1.0 + sqrt(nsigma2) / F) )
                           +je * Ui * pow(np2, 3.0/4.0) * (1.0 + ke * pow(np2, qe))
                         );
-#ifdef HAVE_FENV_H
-  genius_assert( !fetestexcept(FE_INVALID) );
+#if defined(HAVE_FENV_H) && defined(DEBUG)
+    genius_assert( !fetestexcept(FE_INVALID) );
 #endif
     return  - (De_xc + De_i)*Ryex;
   }
@@ -242,8 +243,8 @@ public:
     PetscScalar naS = ReadDopingNa() / n_scale;
     PetscScalar niS = ndS + naS;
 
-    PetscScalar neS = abs(n) / n_scale;
-    PetscScalar nhS = abs(p) / n_scale;
+    PetscScalar neS = std::abs(n) / n_scale;
+    PetscScalar nhS = std::abs(p) / n_scale;
 
     PetscScalar F = kb * Tl / Ryex;    // [adim]
 
@@ -405,6 +406,295 @@ public:
   }
 
   //end of Bandgap
+
+public:
+  //
+  int IonType( const std::string & ion_string )
+  {
+    // convert ion_string to lower case
+    std::string ion_string_lower_case(ion_string);
+    std::transform(ion_string_lower_case.begin(), ion_string_lower_case.end(), ion_string_lower_case.begin(), ::tolower);
+
+    // exactly match
+    if( species_map.find(ion_string) != species_map.end() )
+      return species_map.find(ion_string)->second.ion;
+
+    // partly match species
+    std::map<std::string, Species>::const_iterator it = species_map.begin();
+    for(; it != species_map.end(); ++it)
+      if(ion_string_lower_case.find(it->first)!=std::string::npos)
+        return it->second.ion;
+
+    return 0;
+  }
+
+
+  //[incomplete ionization]
+  PetscScalar Na_II(const PetscScalar &p, const PetscScalar &Tl, bool fermi)
+  {
+    PetscScalar Ni = ReadDopingNa() + ReadDopingNd();
+    PetscScalar Nv = this->Nv(Tl);
+
+    PetscScalar gamma = 1.0;
+    if( fermi ) gamma = gamma_f(p/Nv);
+
+    PetscScalar Na_eff = 0.0;
+
+    for(unsigned int i=0; i<p_ions.size(); ++i)
+    {
+      PetscScalar Na = ReadRealVariable(p_ions[i].first);
+      PetscScalar Na_crit = p_ions[i].second.N_crit;
+      PetscScalar E0      = p_ions[i].second.E0;
+      PetscScalar g       = p_ions[i].second.GB;
+      PetscScalar alpha   = p_ions[i].second.alpha;
+      PetscScalar gamma   = p_ions[i].second.gamma;
+      if( Na > 0.0  )
+      {
+        if(Na < Na_crit)
+        {
+          PetscScalar dEa = E0 - alpha*pow(Ni, 1.0/3.0);
+          PetscScalar p1 = gamma*Nv*exp(-dEa/(kb*Tl));
+          Na_eff += Na/( 1 + g*p/p1 );
+        }
+        else
+          Na_eff += Na;
+      }
+    }
+    return Na_eff;
+  }
+
+
+  AutoDScalar Na_II(const AutoDScalar &p, const AutoDScalar &Tl, bool fermi)
+  {
+    PetscScalar Ni = ReadDopingNa() + ReadDopingNd();
+    AutoDScalar Nv = this->Nv(Tl);
+
+    AutoDScalar gamma = 1.0;
+    if( fermi ) gamma = gamma_f(p/Nv);
+
+    AutoDScalar Na_eff = 0.0;
+
+    for(unsigned int i=0; i<p_ions.size(); ++i)
+    {
+      PetscScalar Na = ReadRealVariable(p_ions[i].first);
+      PetscScalar Na_crit = p_ions[i].second.N_crit;
+      PetscScalar E0      = p_ions[i].second.E0;
+      PetscScalar g       = p_ions[i].second.GB;
+      PetscScalar alpha   = p_ions[i].second.alpha;
+      PetscScalar gamma   = p_ions[i].second.gamma;
+      if( Na > 0.0  )
+      {
+        if(Na < Na_crit)
+        {
+          PetscScalar dEa = E0 - alpha*pow(Ni, 1.0/3.0);
+          AutoDScalar p1 = gamma*Nv*exp(-dEa/(kb*Tl));
+          Na_eff += Na/( 1 + g*p/p1 );
+        }
+        else
+          Na_eff += Na;
+      }
+    }
+
+    return Na_eff;
+  }
+
+  PetscScalar Nd_II(const PetscScalar &n, const PetscScalar &Tl, bool fermi)
+  {
+    PetscScalar Ni = ReadDopingNa() + ReadDopingNd();
+    PetscScalar Nc = this->Nc(Tl);
+
+    PetscScalar gamma = 1.0;
+    if( fermi ) gamma = gamma_f(n/Nc);
+
+    PetscScalar Nd_eff = 0.0;
+
+    for(unsigned int i=0; i<n_ions.size(); ++i)
+    {
+      PetscScalar Nd = ReadRealVariable(n_ions[i].first);
+      PetscScalar Nd_crit = n_ions[i].second.N_crit;
+      PetscScalar E0      = n_ions[i].second.E0;
+      PetscScalar g       = n_ions[i].second.GB;
+      PetscScalar alpha   = n_ions[i].second.alpha;
+      PetscScalar gamma   = n_ions[i].second.gamma;
+      if( Nd > 0.0  )
+      {
+        if(Nd < Nd_crit)
+        {
+          PetscScalar dEd = E0 - alpha*pow(Ni, 1.0/3.0);
+          PetscScalar n1 = gamma*Nc*exp(-dEd/(kb*Tl));
+          Nd_eff += Nd/( 1 + g*n/n1 );
+        }
+        else
+          Nd_eff += Nd;
+      }
+    }
+
+    return Nd_eff;
+  }
+
+  AutoDScalar Nd_II(const AutoDScalar &n, const AutoDScalar &Tl, bool fermi)
+  {
+    PetscScalar Ni = ReadDopingNa() + ReadDopingNd();
+    AutoDScalar Nc = this->Nc(Tl);
+
+    AutoDScalar gamma = 1.0;
+    if( fermi ) gamma = gamma_f(n/Nc);
+
+    AutoDScalar Nd_eff = 0.0;
+
+    for(unsigned int i=0; i<n_ions.size(); ++i)
+    {
+      PetscScalar Nd = ReadRealVariable(n_ions[i].first);
+      PetscScalar Nd_crit = n_ions[i].second.N_crit;
+      PetscScalar E0      = n_ions[i].second.E0;
+      PetscScalar g       = n_ions[i].second.GB;
+      PetscScalar alpha   = n_ions[i].second.alpha;
+      PetscScalar gamma   = n_ions[i].second.gamma;
+      if( Nd > 0.0  )
+      {
+        if(Nd < Nd_crit)
+        {
+          PetscScalar dEd = E0 - alpha*pow(Ni, 1.0/3.0);
+          AutoDScalar n1 = gamma*Nc*exp(-dEd/(kb*Tl));
+          Nd_eff += Nd/( 1 + g*n/n1 );
+        }
+        else
+          Nd_eff += Nd;
+      }
+    }
+
+    return Nd_eff;
+  }
+
+
+private:
+
+  struct Species
+  {
+    std::string name;
+    int ion;             // ion type, -1 for p type and +1 for n type
+    PetscScalar E0;      // The constant term used in the calculation of the band ionization energy
+    PetscScalar GB;      // The band degeneracy factor
+    PetscScalar alpha;   // The prefactor for the doping dependent term used in the calculation of the band ionization energy
+    PetscScalar beta;    // The prefactor the temperature dependent term used in the calculation of the band ionization energy.
+    PetscScalar gamma;   // The exponent of temperature used in the calculation of the band ionization energy.
+    PetscScalar N_crit;  // The impurity concentration form which the doping transition from incomplete ionization to complete ionization
+  };
+
+  // predefined and user specified species
+  std::map<std::string, Species> species_map;
+
+  // Init value
+  void IncompleteIonization_Init()
+  {
+    // p type
+    Species boron    = {"boron",    -1, 0.045*eV, 4.0, 3.037e-8, 200.0, 0.950, 1e22*std::pow(cm, -3)  };
+    Species aluminum = {"aluminum", -1, 0.067*eV, 4.0, 3.037e-8, 200.0, 0.950, 1e22*std::pow(cm, -3)  };
+    Species gallium  = {"gallium",  -1, 0.072*eV, 4.0, 3.037e-8, 200.0, 0.950, 1e22*std::pow(cm, -3)  };
+    Species indium   = {"indium",   -1, 0.160*eV, 4.0, 3.037e-8, 200.0, 0.950, 1e22*std::pow(cm, -3)  };
+    Species pdopant  = {"na",       -1, 0.045*eV, 4.0, 3.037e-8, 200.0, 0.950, 1e22*std::pow(cm, -3)  };
+
+    // n type
+    Species nitrogen   = {"nitrogen",   1, 0.045*eV, 2.0, 3.100e-8, 200.0, 1.000, 1e22*std::pow(cm, -3)  };
+    Species phosphorus = {"phosphorus", 1, 0.045*eV, 2.0, 3.100e-8, 200.0, 1.000, 1e22*std::pow(cm, -3)  };
+    Species arsenic    = {"arsenic",    1, 0.054*eV, 2.0, 3.100e-8, 200.0, 1.000, 1e22*std::pow(cm, -3)  };
+    Species antimony   = {"antimony",   1, 0.039*eV, 2.0, 3.100e-8, 200.0, 1.000, 1e22*std::pow(cm, -3)  };
+    Species ndopant    = {"nd",         1, 0.045*eV, 2.0, 3.100e-8, 200.0, 1.000, 1e22*std::pow(cm, -3)  };
+
+    species_map["boron"     ] = boron;
+    species_map["aluminum"  ] = aluminum;
+    species_map["gallium"   ] = gallium;
+    species_map["indium"    ] = indium;
+    species_map["na"        ] = pdopant;
+    species_map["nitrogen"  ] = nitrogen;
+    species_map["phosphorus"] = phosphorus;
+    species_map["arsenic"   ] = arsenic;
+    species_map["antimony"  ] = antimony;
+    species_map["nd"        ] = ndopant;
+
+    // fill n_ions and p_ions
+    std::map<std::string, Species>::const_iterator it = species_map.begin();
+    for( ; it != species_map.end(); ++it)
+    {
+      const std::string & ion_string = it->second.name;
+      if( HasVariable(ion_string) )
+      {
+        if(it->second.ion > 0)
+          n_ions.push_back( std::make_pair( VariableIndex(ion_string),  (it->second)) );
+        if(it->second.ion < 0)
+          p_ions.push_back( std::make_pair( VariableIndex(ion_string),  (it->second)) );
+      }
+    }
+  }
+
+  std::vector< std::pair<unsigned int, Species> > n_ions;
+  std::vector< std::pair<unsigned int, Species> > p_ions;
+
+  void IncompleteIonization_Setup(std::vector<Parser::Parameter> & pmi_parameters)
+  {
+    // check if any user defind species
+    std::string species_name;
+    for(std::vector<Parser::Parameter>::iterator it = pmi_parameters.begin(); it != pmi_parameters.end();)
+    {
+      if( it->type() == Parser::STRING && it->name() == "species" )
+      {
+        species_name = it->get_string();
+        it = pmi_parameters.erase(it);
+      }
+      else
+        ++it;
+    }
+
+    if( !species_name.empty() )
+    {
+      int ion=0 ;
+      PetscScalar E0=0.0;
+      PetscScalar GB=0;
+      PetscScalar alpha=0.0;
+      PetscScalar beta=0.0;
+      PetscScalar gamma=1.0;
+      PetscScalar N_crit=1e22;
+
+      for(std::vector<Parser::Parameter>::iterator it = pmi_parameters.begin(); it != pmi_parameters.end();)
+      {
+        if( it->type() == Parser::INTEGER && it->name() == "ion" )
+        { ion = it->get_int(); it = pmi_parameters.erase(it); }
+        else if( it->type() == Parser::REAL && it->name() == "eb0" )
+        { E0 = it->get_real(); it = pmi_parameters.erase(it); }
+        else if( it->type() == Parser::REAL && it->name() == "gb" )
+        { GB = it->get_real(); it = pmi_parameters.erase(it); }
+        else if( it->type() == Parser::REAL && it->name() == "alpha" )
+        { alpha = it->get_real(); it = pmi_parameters.erase(it); }
+        else if( it->type() == Parser::REAL && it->name() == "beta" )
+        { beta = it->get_real(); it = pmi_parameters.erase(it); }
+        else if( it->type() == Parser::REAL && it->name() == "gamma" )
+        { gamma = it->get_real(); it = pmi_parameters.erase(it); }
+        else if( it->type() == Parser::REAL && it->name() == "ncrit" )
+        { N_crit = it->get_real(); it = pmi_parameters.erase(it); }
+        else
+          ++it;
+      }
+
+      Species species = { species_name, ion, E0*eV, GB, alpha, beta, gamma, N_crit*std::pow(cm, -3) };
+      species_map[species_name] = species;
+    }
+
+    // update n_ions and p_ions
+    n_ions.clear();
+    p_ions.clear();
+    for( std::map<std::string, Species>::const_iterator it = species_map.begin(); it != species_map.end(); ++it)
+    {
+      const std::string & ion_string = it->second.name;
+      if( HasVariable(ion_string) )
+      {
+        if(it->second.ion > 0)
+          n_ions.push_back( std::make_pair( VariableIndex(ion_string),  (it->second)) );
+        if(it->second.ion < 0)
+          p_ions.push_back( std::make_pair( VariableIndex(ion_string),  (it->second)) );
+      }
+    }
+
+  }
 
 private:
   //[Lifetime]
@@ -866,6 +1156,104 @@ public:
   }
 
 private:
+  // [Hot Carrier Injection]
+  PetscScalar HCI_LAMHN; // hot-electron scattering mean-free-path
+  PetscScalar HCI_LAMHP; // hot-hole scattering mean-free-path
+
+  PetscScalar HCI_Fiegna_A; // Fiegna Constant
+  PetscScalar HCI_Fiegna_X; // Fiegna Constant
+
+  PetscScalar HCI_Classical_Lsem_n;   // scattering mean free path in the semiconductor
+  PetscScalar HCI_Classical_Lsemr_n;  // redirection mean free path
+  PetscScalar HCI_Classical_Lsem_p;   // scattering mean free path in the semiconductor
+  PetscScalar HCI_Classical_Lsemr_p;  // redirection mean free path
+
+  void HCI_Init()
+  {
+    HCI_LAMHN = 9.200000E-07*cm;
+    HCI_LAMHP = 1.000000E-07*cm;
+
+    HCI_Fiegna_A = 4.87E+02*m/s/pow(eV, 2.5);
+    HCI_Fiegna_X = 1.30E+08*pow(V/(cm*eV*eV), 1.5);
+
+    HCI_Classical_Lsem_n = 8.9E-07*cm;
+    HCI_Classical_Lsemr_n = 6.2E-06*cm;
+    HCI_Classical_Lsem_p = 1.0E-07*cm;
+    HCI_Classical_Lsemr_p = 6.2E-06*cm;
+  }
+
+  PetscScalar Erfc(PetscScalar x)
+  {
+    // Compute the complementary error function erfc(x).
+    // Erfc(x) = (2/sqrt(pi)) Integral(exp(-t^2))dt between x and infinity
+    //
+    //--- Nve 14-nov-1998 UU-SAP Utrecht
+
+    // The parameters of the Chebyshev fit
+    const PetscScalar  a1 = -1.26551223,   a2 = 1.00002368;
+    const PetscScalar  a3 =  0.37409196,   a4 = 0.09678418;
+    const PetscScalar  a5 = -0.18628806,   a6 = 0.27886807;
+    const PetscScalar  a7 = -1.13520398,   a8 = 1.48851587;
+    const PetscScalar  a9 = -0.82215223,   a10 = 0.17087277;
+
+    PetscScalar v = 1; // The return value
+    PetscScalar z = fabs(x);
+
+    if (z <= 0) return v; // erfc(0)=1
+
+    PetscScalar t = 1/(1+0.5*z);
+
+    v = t*exp((-z*z) +a1+t*(a2+t*(a3+t*(a4+t*(a5+t*(a6+t*(a7+t*(a8+t*(a9+t*a10)))))))));
+
+    if (x < 0) v = 2-v; // erfc(-x)=2-erfc(x)
+
+    return v;
+  }
+
+public:
+
+  PetscScalar HCI_Probability_Semiconductor_n(const PetscScalar &dis)
+  {
+    if( dis > 30*HCI_LAMHN  ) return 0;
+    return exp( - dis/ HCI_LAMHN);
+  }
+
+  PetscScalar HCI_Probability_Semiconductor_p(const PetscScalar &dis)
+  {
+    if( dis > 30*HCI_LAMHP  ) return 0;
+    return exp( - dis/ HCI_LAMHP);
+  }
+
+  PetscScalar HCI_Integral_Fiegna_n(const PetscScalar &phin, const PetscScalar &Eeff)
+  {
+    if( HCI_Fiegna_X > 30*Eeff  ) return 0;
+    return HCI_Fiegna_A/(3*HCI_Fiegna_X)*pow(Eeff, 1.5)/sqrt(phin)*exp(-HCI_Fiegna_X*pow(phin, 3.0)/pow(Eeff, 1.5));
+  }
+
+
+  PetscScalar HCI_Integral_Fiegna_p(const PetscScalar &phip, const PetscScalar &Eeff)
+  {
+    if( HCI_Fiegna_X > 30*Eeff  ) return 0;
+    return HCI_Fiegna_A/(3*HCI_Fiegna_X)*pow(Eeff, 1.5)/sqrt(phip)*exp(-HCI_Fiegna_X*pow(phip, 3.0)/pow(Eeff, 1.5));
+  }
+
+
+  PetscScalar HCI_Integral_Classical_n(const PetscScalar &phin, const PetscScalar &Eeff)
+  {
+    if( (HCI_Classical_Lsem_n*Eeff) < phin/30 ) return 0;
+    PetscScalar a = phin/(HCI_Classical_Lsem_n*Eeff);
+    return 1.0/(2*HCI_Classical_Lsemr_n)*(exp(-a) - sqrt(3.14159265359)*sqrt(a)*Erfc(sqrt(a)));
+  }
+
+  PetscScalar HCI_Integral_Classical_p(const PetscScalar &phip, const PetscScalar &Eeff)
+  {
+    if( (HCI_Classical_Lsem_p*Eeff) < phip/30 ) return 0;
+    PetscScalar a = phip/(HCI_Classical_Lsem_p*Eeff);
+    return 1.0/(2*HCI_Classical_Lsemr_p)*(exp(-a) - sqrt(3.14159265359)*sqrt(a)*Erfc(sqrt(a)));
+  }
+
+
+private:
   // [band to band Tunneling]
   PetscScalar  A_BTBT;
   PetscScalar  B_BTBT;
@@ -907,8 +1295,22 @@ public:
   }
 
   ~GSS_Si_BandStructure_Schenk()
-{}}
-;
+  {}
+
+
+public:
+  int calibrate(std::vector<Parser::Parameter> & pmi_parameters)
+  {
+    IncompleteIonization_Setup(pmi_parameters);
+    return  PMIS_BandStructure::calibrate(pmi_parameters);
+  }
+
+  void post_calibrate_process()
+  {
+    Eg_PostCalibrateProcess();
+  }
+
+};
 
 
 extern "C"

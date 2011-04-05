@@ -123,6 +123,19 @@ void Plane::yz_plane (const Real xpos)
 
 
 
+Real Plane::signed_distance (const Point& p) const
+{
+  // Create a vector from the surface to point p;
+  const Point w = p - _point;
+
+  // The point is above the surface if the projection
+  // of that vector onto the normal is positive
+  Real proj = w*this->normal();
+
+  return proj;
+}
+
+
 bool Plane::above_surface (const Point& p) const
 {
   // Create a vector from the surface to point p;
@@ -185,6 +198,27 @@ Point Plane::unit_normal (const Point&) const
   return _normal;
 }
 
+
+
+bool Plane::parallel_to( const Point& p ) const
+{
+  return std::abs(_normal*p)<1.0e-10;
+}
+
+
+bool Plane::intersect_point(const Point& v1, const Point& v2, Point *result ) const
+{
+  if( this->on_surface(v1) && this->on_surface(v2) ) return false;
+  if( this->parallel_to( (v1-v2).unit() ) ) return false;
+
+  const Point unit = (v2-v1).unit();
+  const Point w = _point - v1;
+
+  Real t = w*this->_normal/(this->_normal*unit);
+  *result = v1 + t*unit;
+
+  return true;
+}
 
 
 

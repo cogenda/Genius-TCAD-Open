@@ -58,7 +58,7 @@ public:
   /**
    * Destructor.
    */
-  ~Tree() {}
+  ~Tree();
 
   unsigned int n_leaf() const
   { return N; }
@@ -112,6 +112,11 @@ private:
    * How the tree is built.
    */
   const Trees::BuildType build_type;
+
+  /**
+   * for surface elem mode, record surface elem here
+   */
+  std::vector<const Elem *> surface_elems;
 
 };
 

@@ -34,9 +34,8 @@ SOLVE
 
 #------------------------------------------------------------------------------
 # forward DC sweep
-MODEL     Region=Silicon Mobility.Force=EQF
-METHOD    Type=DDML1 NS=Basic LS=BCGS #PC=LU
+METHOD    Type=DDML1 NS=Basic LS=BCGS PC=ILU 
 SOLVE     TYpe=EQ
 SOLVE     TYpe=DCSWEEP Vscan=Anode Vstart=0.0 Vstep=0.02 Vstop=2.0 out.prefix=schottky_diode_iv
 
-EXPORT   VTKFILE=sch_pn.vtu
+EXPORT   VTKFILE=schottky_diode.vtu

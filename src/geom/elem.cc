@@ -19,6 +19,7 @@
 
 
 // C++ includes
+#include <numeric>
 #include <algorithm> // for std::sort
 #include <iterator>  // for std::ostream_iterator
 
@@ -42,6 +43,8 @@
   #include "cell_hex8_fvm.h"
 #endif
 
+#include "elem_clone.h"
+
 
 // Initialize static member variables
 const unsigned int Elem::_bp1 = 65449;
@@ -56,109 +59,109 @@ AutoPtr<Elem> Elem::build(const ElemType type,
 
   switch (type)
   {
-    // 1D elements
-  case EDGE2:
-    {
-      elem = new Edge2(p);
-      break;
-    }
+      // 1D elements
+      case EDGE2:
+      {
+        elem = new Edge2(p);
+        break;
+      }
 
-  case EDGE2_FVM:
-    {
-      elem = new Edge2_FVM(p);
-      break;
-    }
+      case EDGE2_FVM:
+      {
+        elem = new Edge2_FVM(p);
+        break;
+      }
 
-    // 2D elements
-  case TRI3:
-    {
-      elem = new Tri3(p);
-      break;
-    }
+      // 2D elements
+      case TRI3:
+      {
+        elem = new Tri3(p);
+        break;
+      }
 
-  case TRI3_FVM:
-    {
-      elem = new Tri3_FVM(p);
-      break;
-    }
+      case TRI3_FVM:
+      {
+        elem = new Tri3_FVM(p);
+        break;
+      }
 
-  case QUAD4:
-    {
-      elem = new Quad4(p);
-      break;
-    }
+      case QUAD4:
+      {
+        elem = new Quad4(p);
+        break;
+      }
 
-  case QUAD4_FVM:
-    {
-      elem = new Quad4_FVM(p);
-      break;
-    }
+      case QUAD4_FVM:
+      {
+        elem = new Quad4_FVM(p);
+        break;
+      }
 #ifdef COGENDA_COMMERCIAL_PRODUCT
-    // 3D elements
-  case TET4:
-    {
-      elem = new Tet4(p);
-      break;
-    }
-  case TET4_FVM:
-    {
-      elem = new Tet4_FVM(p);
-      break;
-    }
+      // 3D elements
+      case TET4:
+      {
+        elem = new Tet4(p);
+        break;
+      }
+      case TET4_FVM:
+      {
+        elem = new Tet4_FVM(p);
+        break;
+      }
 
-  case HEX8:
-    {
-      elem = new Hex8(p);
-      break;
-    }
-  case HEX8_FVM:
-    {
-      elem = new Hex8_FVM(p);
-      break;
-    }
+      case HEX8:
+      {
+        elem = new Hex8(p);
+        break;
+      }
+      case HEX8_FVM:
+      {
+        elem = new Hex8_FVM(p);
+        break;
+      }
 
-  case PRISM6:
-    {
-      elem = new Prism6(p);
-      break;
-    }
-  case PRISM6_FVM:
-    {
-      elem = new Prism6_FVM(p);
-      break;
-    }
+      case PRISM6:
+      {
+        elem = new Prism6(p);
+        break;
+      }
+      case PRISM6_FVM:
+      {
+        elem = new Prism6_FVM(p);
+        break;
+      }
 
-  case PYRAMID5:
-    {
-      elem = new Pyramid5(p);
-      break;
-    }
-  case PYRAMID5_FVM:
-    {
-      elem = new Pyramid5_FVM(p);
-      break;
-    }
+      case PYRAMID5:
+      {
+        elem = new Pyramid5(p);
+        break;
+      }
+      case PYRAMID5_FVM:
+      {
+        elem = new Pyramid5_FVM(p);
+        break;
+      }
 
 #else
-    case TET4:
-    case TET4_FVM:
-    case HEX8:
-    case HEX8_FVM:
-    case PRISM6:
-    case PRISM6_FVM:
-    case PYRAMID5:
-    case PYRAMID5_FVM:
-    {
-      std::cerr << "ERROR: 3D elements are not supported by Open Source Version." << std::endl;
-      genius_error();
-    }
+      case TET4:
+      case TET4_FVM:
+      case HEX8:
+      case HEX8_FVM:
+      case PRISM6:
+      case PRISM6_FVM:
+      case PYRAMID5:
+      case PYRAMID5_FVM:
+      {
+        std::cerr << "ERROR: 3D elements are not supported by Open Source Version." << std::endl;
+        genius_error();
+      }
 #endif
 
-  default:
-    {
-      std::cerr << "ERROR: Unsupported element type!." << std::endl;
-      genius_error();
-    }
+      default:
+      {
+        std::cerr << "ERROR: Unsupported element type!." << std::endl;
+        genius_error();
+      }
   }
 
   AutoPtr<Elem> ap(elem);
@@ -170,36 +173,154 @@ AutoPtr<Elem> Elem::build(const ElemType type,
 
 
 
+AutoPtr<Elem> Elem::build_clone(const ElemType type, Elem* p)
+{
+  Elem* elem = NULL;
+
+  switch (type)
+  {
+      // 1D elements
+      case EDGE2:
+      {
+        elem = new ElemClone<Edge2>(p);
+        break;
+      }
+
+      case EDGE2_FVM:
+      {
+        elem = new ElemClone<Edge2_FVM>(p);
+        break;
+      }
+
+      // 2D elements
+      case TRI3:
+      {
+        elem = new ElemClone<Tri3>(p);
+        break;
+      }
+
+      case TRI3_FVM:
+      {
+        elem = new ElemClone<Tri3_FVM>(p);
+        break;
+      }
+
+      case QUAD4:
+      {
+        elem = new ElemClone<Quad4>(p);
+        break;
+      }
+
+      case QUAD4_FVM:
+      {
+        elem = new ElemClone<Quad4_FVM>(p);
+        break;
+      }
+#ifdef COGENDA_COMMERCIAL_PRODUCT
+      // 3D elements
+      case TET4:
+      {
+        elem = new ElemClone<Tet4>(p);
+        break;
+      }
+      case TET4_FVM:
+      {
+        elem = new ElemClone<Tet4_FVM>(p);
+        break;
+      }
+
+      case HEX8:
+      {
+        elem = new ElemClone<Hex8>(p);
+        break;
+      }
+      case HEX8_FVM:
+      {
+        elem = new ElemClone<Hex8_FVM>(p);
+        break;
+      }
+
+      case PRISM6:
+      {
+        elem = new ElemClone<Prism6>(p);
+        break;
+      }
+      case PRISM6_FVM:
+      {
+        elem = new ElemClone<Prism6_FVM>(p);
+        break;
+      }
+
+      case PYRAMID5:
+      {
+        elem = new ElemClone<Pyramid5>(p);
+        break;
+      }
+      case PYRAMID5_FVM:
+      {
+        elem = new ElemClone<Pyramid5_FVM>(p);
+        break;
+      }
+
+#else
+      case TET4:
+      case TET4_FVM:
+      case HEX8:
+      case HEX8_FVM:
+      case PRISM6:
+      case PRISM6_FVM:
+      case PYRAMID5:
+      case PYRAMID5_FVM:
+      {
+        std::cerr << "ERROR: 3D elements are not supported by Open Source Version." << std::endl;
+        genius_error();
+      }
+#endif
+
+      default:
+      {
+        std::cerr << "ERROR: Unsupported element type!." << std::endl;
+        genius_error();
+      }
+  }
+
+  AutoPtr<Elem> ap(elem);
+
+  if (p) ap->subdomain_id() = p->subdomain_id();
+
+  return ap;
+}
+
 
 
 unsigned int Elem::key() const
 {
   switch (this->type())
   {
-  case EDGE2     :
-  case EDGE2_FVM :
-    return this->compute_key(this->node(0), this->node(1));
-  case TRI3      :
-  case TRI3_FVM  :
-    return this->compute_key(this->node(0), this->node(1), this->node(2));
-  case QUAD4     :
-  case QUAD4_FVM :
-    return this->compute_key(this->node(0), this->node(1), this->node(2), this->node(3));
-  case TET4         :
-  case TET4_FVM     :
-  case PYRAMID5     :
-  case PYRAMID5_FVM :
-  case PRISM6       :
-  case PRISM6_FVM   :
-  case HEX8         :
-  case HEX8_FVM     :
-    {
-      unsigned int _key=0;
-      for(unsigned int s=0; s<this->n_sides(); ++s)
-        _key += this->key(s);
-      return _key;
-    }
-  default: genius_error();
+      case EDGE2     :
+      case EDGE2_FVM :
+      return this->compute_key(this->node(0), this->node(1));
+      case TRI3      :
+      case TRI3_FVM  :
+      return this->compute_key(this->node(0), this->node(1), this->node(2));
+      case QUAD4     :
+      case QUAD4_FVM :
+      return this->compute_key(this->node(0), this->node(1), this->node(2), this->node(3));
+      case TET4         :
+      case TET4_FVM     :
+      case PYRAMID5     :
+      case PYRAMID5_FVM :
+      case PRISM6       :
+      case PRISM6_FVM   :
+      case HEX8         :
+      case HEX8_FVM     :
+      {
+        unsigned int _key=0;
+        for(unsigned int s=0; s<this->n_sides(); ++s)
+          _key += this->key(s);
+        return _key;
+      }
+      default: genius_error();
   }
 
   genius_error();
@@ -457,35 +578,35 @@ void Elem::write_connectivity (std::ostream& out,
 
   switch (iop)
   {
-  case TECPLOT:
-    {
-      // This connectivity vector will be used repeatedly instead
-      // of being reconstructed inside the loop.
-      std::vector<unsigned int> conn;
-      for (unsigned int sc=0; sc <this->n_sub_elem(); sc++)
+      case TECPLOT:
       {
-        this->connectivity(sc, TECPLOT, conn);
+        // This connectivity vector will be used repeatedly instead
+        // of being reconstructed inside the loop.
+        std::vector<unsigned int> conn;
+        for (unsigned int sc=0; sc <this->n_sub_elem(); sc++)
+        {
+          this->connectivity(sc, TECPLOT, conn);
 
-        std::copy(conn.begin(),
-                  conn.end(),
-                  std::ostream_iterator<unsigned int>(out, " "));
+          std::copy(conn.begin(),
+                    conn.end(),
+                    std::ostream_iterator<unsigned int>(out, " "));
+
+          out << '\n';
+        }
+        return;
+      }
+
+      case UCD:
+      {
+        for (unsigned int i=0; i<this->n_nodes(); i++)
+          out << this->node(i)+1 << "\t";
 
         out << '\n';
+        return;
       }
-      return;
-    }
 
-  case UCD:
-    {
-      for (unsigned int i=0; i<this->n_nodes(); i++)
-        out << this->node(i)+1 << "\t";
-
-      out << '\n';
-      return;
-    }
-
-  default:
-    genius_error();
+      default:
+      genius_error();
   }
 
   genius_error();
@@ -531,27 +652,47 @@ Real Elem::quality (const ElemQuality q) const
 {
   switch (q)
   {
-    /**
-     * I don't know what to do for this metric.
-     */
-  default:
-    {
-      genius_here();
+      /**
+       * I don't know what to do for this metric.
+       */
+      default:
+      {
+        genius_here();
 
-      std::cerr << "ERROR:  unknown quality metric: "
-      << q
-      << std::endl
-      << "Cowardly returning 1."
-      << std::endl;
+        std::cerr << "ERROR:  unknown quality metric: "
+        << q
+        << std::endl
+        << "Cowardly returning 1."
+        << std::endl;
 
-      return 1.;
-    }
+        return 1.;
+      }
   }
 
 
   // Will never get here...
   genius_error();
   return 0.;
+}
+
+
+
+/**
+ * return the interpolated value at given point
+ */
+PetscScalar Elem::interpolation( const std::vector<PetscScalar> & value, const Point &p) const
+{
+  genius_assert(value.size() == this->n_nodes());
+
+  PetscScalar v = 0.0;
+  std::vector<Real> w(this->n_nodes());
+  for(unsigned int n=0; n<this->n_nodes(); ++n)
+  {
+    w[n] = 1.0/((p - this->point(n)).size_sq()+1e-6);
+    v += w[n]*value[n];
+  }
+
+  return v/std::accumulate(w.begin(), w.end(), 0.0);
 }
 
 
@@ -965,48 +1106,48 @@ ElemType Elem::first_order_equivalent_type (const ElemType et)
 {
   switch (et)
   {
-  case EDGE2:
-  case EDGE3:
-  case EDGE4:
-    return EDGE2;
-  case EDGE2_FVM:
-    return EDGE2_FVM;
-  case TRI3:
-  case TRI6:
-    return TRI3;
-  case TRI3_FVM:
-    return TRI3_FVM;
-  case QUAD4:
-  case QUAD8:
-  case QUAD9:
-    return QUAD4;
-  case QUAD4_FVM:
-    return QUAD4_FVM;
-  case TET4:
-  case TET10:
-    return TET4;
-  case TET4_FVM:
-    return TET4_FVM;
-  case HEX8:
-  case HEX27:
-  case HEX20:
-    return HEX8;
-  case HEX8_FVM:
-    return HEX8_FVM;
-  case PRISM6:
-  case PRISM15:
-  case PRISM18:
-    return PRISM6;
-  case PRISM6_FVM:
-    return PRISM6_FVM;
-  case PYRAMID5:
-    return PYRAMID5;
-  case PYRAMID5_FVM:
-    return PYRAMID5_FVM;
+      case EDGE2:
+      case EDGE3:
+      case EDGE4:
+      return EDGE2;
+      case EDGE2_FVM:
+      return EDGE2_FVM;
+      case TRI3:
+      case TRI6:
+      return TRI3;
+      case TRI3_FVM:
+      return TRI3_FVM;
+      case QUAD4:
+      case QUAD8:
+      case QUAD9:
+      return QUAD4;
+      case QUAD4_FVM:
+      return QUAD4_FVM;
+      case TET4:
+      case TET10:
+      return TET4;
+      case TET4_FVM:
+      return TET4_FVM;
+      case HEX8:
+      case HEX27:
+      case HEX20:
+      return HEX8;
+      case HEX8_FVM:
+      return HEX8_FVM;
+      case PRISM6:
+      case PRISM15:
+      case PRISM18:
+      return PRISM6;
+      case PRISM6_FVM:
+      return PRISM6_FVM;
+      case PYRAMID5:
+      return PYRAMID5;
+      case PYRAMID5_FVM:
+      return PYRAMID5_FVM;
 
-  default:
-    // unknown element
-    return INVALID_ELEM;
+      default:
+      // unknown element
+      return INVALID_ELEM;
   }
 }
 
@@ -1022,67 +1163,67 @@ ElemType Elem::second_order_equivalent_type (const ElemType et,
    */
   switch (et)
   {
-  case EDGE2:
-  case EDGE2_FVM:
-    {
-      // full_ordered not relevant
-      return EDGE3;
-    }
+      case EDGE2:
+      case EDGE2_FVM:
+      {
+        // full_ordered not relevant
+        return EDGE3;
+      }
 
-  case TRI3:
-  case TRI3_FVM:
-    {
-      // full_ordered not relevant
-      return TRI6;
-    }
+      case TRI3:
+      case TRI3_FVM:
+      {
+        // full_ordered not relevant
+        return TRI6;
+      }
 
-  case QUAD4:
-  case QUAD4_FVM:
-    {
-      if (full_ordered)
-        return QUAD9;
-      else
-        return QUAD8;
-    }
+      case QUAD4:
+      case QUAD4_FVM:
+      {
+        if (full_ordered)
+          return QUAD9;
+        else
+          return QUAD8;
+      }
 
-  case TET4:
-  case TET4_FVM:
-    {
-      // full_ordered not relevant
-      return TET10;
-    }
+      case TET4:
+      case TET4_FVM:
+      {
+        // full_ordered not relevant
+        return TET10;
+      }
 
-  case HEX8:
-  case HEX8_FVM:
-    {
-      // see below how this correlates with INFHEX8
-      if (full_ordered)
-        return HEX27;
-      else
-        return HEX20;
-    }
+      case HEX8:
+      case HEX8_FVM:
+      {
+        // see below how this correlates with INFHEX8
+        if (full_ordered)
+          return HEX27;
+        else
+          return HEX20;
+      }
 
-  case PRISM6:
-  case PRISM6_FVM:
-    {
-      if (full_ordered)
-        return PRISM18;
-      else
-        return PRISM15;
-    }
+      case PRISM6:
+      case PRISM6_FVM:
+      {
+        if (full_ordered)
+          return PRISM18;
+        else
+          return PRISM15;
+      }
 
-  case PYRAMID5:
-  case PYRAMID5_FVM:
-    {
-      genius_error();
-      return INVALID_ELEM;
-    }
+      case PYRAMID5:
+      case PYRAMID5_FVM:
+      {
+        genius_error();
+        return INVALID_ELEM;
+      }
 
-  default:
-    {
-      // second-order element
-      return INVALID_ELEM;
-    }
+      default:
+      {
+        // second-order element
+        return INVALID_ELEM;
+      }
   }
 }
 
@@ -1091,41 +1232,84 @@ ElemType Elem::fvm_compatible_type (const ElemType et)
 {
   switch (et)
   {
-  case EDGE2:
-  case EDGE2_FVM:
-  case EDGE3:
-  case EDGE4:
-    return EDGE2_FVM;
-  case TRI3:
-  case TRI3_FVM:
-  case TRI6:
-    return TRI3_FVM;
-  case QUAD4:
-  case QUAD4_FVM:
-  case QUAD8:
-  case QUAD9:
-    return QUAD4_FVM;
-  case TET4:
-  case TET4_FVM:
-  case TET10:
-    return TET4_FVM;
-  case HEX8:
-  case HEX8_FVM:
-  case HEX27:
-  case HEX20:
-    return HEX8_FVM;
-  case PRISM6:
-  case PRISM6_FVM:
-  case PRISM15:
-  case PRISM18:
-    return PRISM6_FVM;
-  case PYRAMID5:
-  case PYRAMID5_FVM:
-    return PYRAMID5_FVM;
+      case EDGE2:
+      case EDGE2_FVM:
+      case EDGE3:
+      case EDGE4:
+      return EDGE2_FVM;
+      case TRI3:
+      case TRI3_FVM:
+      case TRI6:
+      return TRI3_FVM;
+      case QUAD4:
+      case QUAD4_FVM:
+      case QUAD8:
+      case QUAD9:
+      return QUAD4_FVM;
+      case TET4:
+      case TET4_FVM:
+      case TET10:
+      return TET4_FVM;
+      case HEX8:
+      case HEX8_FVM:
+      case HEX27:
+      case HEX20:
+      return HEX8_FVM;
+      case PRISM6:
+      case PRISM6_FVM:
+      case PRISM15:
+      case PRISM18:
+      return PRISM6_FVM;
+      case PYRAMID5:
+      case PYRAMID5_FVM:
+      return PYRAMID5_FVM;
 
-  default:
-    // unknown element
-    return INVALID_ELEM;
+      default:
+      // unknown element
+      return INVALID_ELEM;
+  }
+}
+
+
+unsigned int Elem::dim (const ElemType et)
+{
+  switch (et)
+  {
+      case EDGE2:
+      case EDGE2_FVM:
+      case EDGE3:
+      case EDGE4:
+      return 1;
+      case TRI3:
+      case TRI3_FVM:
+      case TRI6:
+      return 2;
+      case QUAD4:
+      case QUAD4_FVM:
+      case QUAD8:
+      case QUAD9:
+      return 2;
+      case TET4:
+      case TET4_FVM:
+      case TET10:
+      return 3;
+      case HEX8:
+      case HEX8_FVM:
+      case HEX27:
+      case HEX20:
+      return 3;
+      case PRISM6:
+      case PRISM6_FVM:
+      case PRISM15:
+      case PRISM18:
+      return 3;
+      case PYRAMID5:
+      case PYRAMID5_FVM:
+      return 3;
+
+      default:
+      // unknown element
+      return 0;
   }
 }
 
@@ -1169,4 +1353,78 @@ std::vector<unsigned short int> Elem::get_terminate_side(const Point & terminate
   return side_contain_point;
 }
 
+
+// Pack all this information into one communication to avoid two latency hits
+// For each element it is of the form
+// [ level p_level r_flag p_flag etype subdomain_id
+//   self_ID parent_ID which_child node_0 node_1 ... node_n]
+// We cannot use unsigned int because parent_ID can be negative
+void Elem::pack_element (std::vector<int> &conn) const
+{
+  conn.push_back (static_cast<int>(this->type()));
+  conn.push_back (static_cast<int>(this->processor_id()));
+  conn.push_back (static_cast<int>(this->subdomain_id()));
+  conn.push_back (this->id());
+
+#ifdef ENABLE_AMR
+  conn.push_back (static_cast<int>(this->level()));
+  conn.push_back (static_cast<int>(this->p_level()));
+  conn.push_back (static_cast<int>(this->refinement_flag()));
+  conn.push_back (static_cast<int>(this->p_refinement_flag()));
+
+  // use parent_ID of -1 to indicate a level 0 element
+  if (this->level() == 0)
+  {
+    conn.push_back(-1);
+    conn.push_back(-1);
+  }
+  else
+  {
+    conn.push_back(this->parent()->id());
+    conn.push_back(this->parent()->which_child_am_i(this));
+  }
+#endif
+
+  for (unsigned int n=0; n<this->n_nodes(); n++)
+    conn.push_back (this->node(n));
+
+  for (unsigned int n=0; n<this->n_sides(); n++)
+  {
+    const Elem * neighbor = this->neighbor(n);
+    int neighbor_id = neighbor ? static_cast<int>(neighbor->id()) : -1;
+    conn.push_back (neighbor_id);
+  }
+
+}
+
+
+unsigned int Elem::pack_size( ElemType t )
+{
+#ifdef ENABLE_AMR
+  unsigned int header = 10;
+#else
+  unsigned int header = 4;
+#endif
+
+  switch (t)
+  {
+      case EDGE2        :
+      case EDGE2_FVM    :      return header + 2 + 2;
+      case TRI3         :
+      case TRI3_FVM     :      return header + 3 + 3;
+      case QUAD4        :
+      case QUAD4_FVM    :      return header + 4 + 4;
+      case TET4         :
+      case TET4_FVM     :      return header + 4 + 4;
+      case PYRAMID5     :
+      case PYRAMID5_FVM :      return header + 5 + 5;
+      case PRISM6       :
+      case PRISM6_FVM   :      return header + 6 + 5;
+      case HEX8         :
+      case HEX8_FVM     :      return header + 8 + 6;
+      default: genius_error();
+  }
+  genius_error();
+  return 0;
+}
 

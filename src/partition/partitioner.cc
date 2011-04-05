@@ -20,7 +20,7 @@
 
 
 // C++ Includes   -----------------------------------
-
+#include <vector>
 
 // Local Includes -----------------------------------
 #include "partitioner.h"
@@ -132,27 +132,42 @@ void Partitioner::_set_node_processor_ids(MeshBase& mesh)
   {
     Elem* elem = *elem_it;
 
-    elem->on_local() = false;
+    bool on_local = false;
 
     // the element is belongs to this processor
     if(elem->processor_id() == Genius::processor_id())
-      elem->on_local() = true;
+      on_local = true;
 
     // otherwise, it has at lease one node belongs to this processor
+    // or my neighbor on this processor
     else
     {
       for( unsigned int n=0; n<elem->n_nodes(); n++ )
-      if( elem->get_node(n)->processor_id() == Genius::processor_id() )
-        elem->on_local() = true;
+        if( elem->get_node(n)->processor_id() == Genius::processor_id() )
+      { on_local = true; break; }
     }
 
-    // if we find it, make all its node on_local
+    // also, if elem has a on_local neighbor
+    for( unsigned int s=0; s<elem->n_sides(); s++ )
+    {
+      Elem* neighbor_elem = elem->neighbor(s);
+      if(!neighbor_elem) continue;
+
+      if(neighbor_elem->processor_id() == Genius::processor_id())
+        on_local = true;
+      for( unsigned int n=0; n<neighbor_elem->n_nodes(); n++ )
+        if( neighbor_elem->get_node(n)->processor_id() == Genius::processor_id() )
+      { on_local = true; break; }
+    }
+
+    elem->on_local() = on_local;
+
     if(elem->on_local())
     {
-       for( unsigned int n=0; n<elem->n_nodes(); n++ )
-         elem->get_node(n)->on_local() = true;
+      // if we find it, make all its node on_local
+      for( unsigned int n=0; n<elem->n_nodes(); n++ )
+        elem->get_node(n)->on_local() = true;
     }
-
   }
 
 }

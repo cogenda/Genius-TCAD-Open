@@ -22,6 +22,8 @@
 
 #include <cmath>
 #include <iomanip>
+#include <fstream>
+
 #include "point.h"
 #include "fvm_node_data.h"
 
@@ -47,14 +49,44 @@ PetscScalar PMI_Server::ReadTime () const
   return *p_clock;
 }
 
+
 /**
- * aux function to return user defined scalar value
+ * check iff given variable eixst
  */
-PetscScalar PMI_Server::ReadUserScalarValue (std::string &name) const
+bool PMI_Server::HasVariable(const std::string &v, DataType t) const
 {
-  PetscScalar d = (*pp_node_data)->UserScalarValue(name);
-  return d;
+  if ( (*pp_variables)->find(v) == (*pp_variables)->end() ) return false;
+  return ((*pp_variables)->find(v)->second.variable_data_type == t);
 }
+
+
+/**
+ * @return index of given variable
+ */
+unsigned int PMI_Server::VariableIndex(const std::string &v) const
+{
+  if( (*pp_variables)->find(v) == (*pp_variables)->end() ) return invalid_uint;
+  return (*pp_variables)->find(v)->second.variable_index;
+}
+
+
+/**
+ * aux function return scalar value of given variable.
+ */
+PetscScalar PMI_Server::ReadRealVariable (const unsigned int v) const
+{
+  return (*pp_node_data)->data<Real>(v);
+}
+
+
+/**
+ * aux function return scalar value of given variable.
+ */
+PetscScalar PMI_Server::ReadRealVariable (const std::string & v) const
+{
+  return (*pp_node_data)->data<Real>(v);
+}
+
 
 /**
  * set numeric parameter value by its name.
@@ -89,7 +121,7 @@ int PMI_Server::calibrate_string_parameter(const std::string & var_name, const s
 /**
  * set numeric and string parameters value by its name.
  */
-int PMI_Server::calibrate(const std::vector<Parser::Parameter> & pmi_parameters)
+int PMI_Server::calibrate(std::vector<Parser::Parameter> & pmi_parameters)
 {
   int ierr = 0;
   std::vector<Parser::Parameter>::const_iterator it = pmi_parameters.begin();
@@ -107,6 +139,9 @@ int PMI_Server::calibrate(const std::vector<Parser::Parameter> & pmi_parameters)
       break;
     }
   }
+
+  this->post_calibrate_process();
+
   return ierr;
 }
 
@@ -180,7 +215,7 @@ std::string PMI_Server::get_parameter_string(const int verbosity)
  * also set the physical constants
  */
 PMI_Server::PMI_Server(const PMI_Environment &env)
-    : pp_point(env.pp_point), pp_node_data(env.pp_node_data), p_clock(env.p_clock)
+  : pp_variables(env.pp_variables), pp_point(env.pp_point), pp_node_data(env.pp_node_data), p_clock(env.p_clock)
 {
 
   m  = env.m;
@@ -269,3 +304,87 @@ PetscScalar PMIS_Server::ReadDopingNd () const
 }
 
 
+/*****************************************************************************
+ *               Physical Model Interface for Optical
+ ****************************************************************************/
+
+/**
+ * when refraction_data_file is not empty, read from it
+ */
+void PMIS_Optical ::post_calibrate_process()
+{
+  if(_refraction_data_file.empty()) return;
+
+  std::ifstream in(_refraction_data_file.c_str());
+  if(! in.good()) return;
+
+  _wave_table.clear();
+  while(!in.eof())
+  {
+    std::string line;
+    std::getline(in, line);
+
+    if(in.fail()) break;
+
+    std::stringstream ss(line);
+    RefractionItem item;
+    ss >> item.wavelength >> item.RefractionIndexRe >> item.RefractionIndexIm;
+    _wave_table.push_back(item);
+  }
+
+  in.close();
+}
+
+/**
+ * when refraction_data_file is not empty, read from it
+ */
+void PMII_Optical ::post_calibrate_process()
+{
+  if(_refraction_data_file.empty()) return;
+
+  std::ifstream in(_refraction_data_file.c_str());
+  if(! in.good()) return;
+
+  _wave_table.clear();
+  while(!in.eof())
+  {
+    std::string line;
+    std::getline(in, line);
+
+    if(in.fail()) break;
+
+    std::stringstream ss(line);
+    RefractionItem item;
+    ss >> item.wavelength >> item.RefractionIndexRe >> item.RefractionIndexIm;
+    _wave_table.push_back(item);
+  }
+
+  in.close();
+}
+
+/**
+ * when refraction_data_file is not empty, read from it
+ */
+void PMIC_Optical ::post_calibrate_process()
+{
+  if(_refraction_data_file.empty()) return;
+
+  std::ifstream in(_refraction_data_file.c_str());
+  if(! in.good()) return;
+
+  _wave_table.clear();
+  while(!in.eof())
+  {
+    std::string line;
+    std::getline(in, line);
+
+    if(in.fail()) break;
+
+    std::stringstream ss(line);
+    RefractionItem item;
+    ss >> item.wavelength >> item.RefractionIndexRe >> item.RefractionIndexIm;
+    _wave_table.push_back(item);
+  }
+
+  in.close();
+}

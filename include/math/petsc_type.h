@@ -24,16 +24,19 @@
 #ifndef __petsc_type_h__
 #define __petsc_type_h__
 
-// convert string to enum
+#include "enum_petsc_type.h"
 
 namespace SolverSpecify
 {
+  // convert string to enum
 
   extern NonLinearSolverType nonlinear_solver_type(const std::string & ns);
 
   extern LinearSolverType linear_solver_type(const std::string & ls);
- 
+
   extern PreconditionerType preconditioner_type(const std::string & pc);
+
+  extern LinearSolverCategory  linear_solver_category(LinearSolverType ls);
 
 }
 

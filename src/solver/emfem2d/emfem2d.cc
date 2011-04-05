@@ -22,7 +22,7 @@
 #include <fstream>
 #include <sstream>
 
-#include "mesh.h"
+#include "mesh_base.h"
 #include "emfem2d/emfem2d.h"
 #include "petsc_type.h"
 #include "fe_type.h"
@@ -52,6 +52,9 @@ int EMFEM2DSolver::create_solver()
   MESSAGE<< '\n' << "EM FEM 2D Solver init..." << std::endl;
   RECORD();
 
+  // set ac variables for each region
+  set_variables();
+
   //parse the command card here
   setup_solver_parameters();
 
@@ -70,7 +73,20 @@ int EMFEM2DSolver::create_solver()
 }
 
 
+/*------------------------------------------------------------------
+ * prepare solution and aux variables used by this solver
+ */
+int EMFEM2DSolver::set_variables()
+{
+  for ( unsigned int n=0; n<_system.n_regions(); n++ )
+  {
+    SimulationRegion * region = _system.region ( n );
+    region->add_variable("optical_efield", POINT_CENTER);
+    region->add_variable("optical_hfield", POINT_CENTER);
+  }
 
+  return 0;
+}
 
 
 /*------------------------------------------------------------------
@@ -658,13 +674,11 @@ void EMFEM2DSolver::save_TE_solution(double lambda, double power, double phase0,
       eta = floor(E_phono/Eg)*Eg/E_phono;
     }
 
-    SimulationRegion::node_iterator node_it = region->nodes_begin();
-    SimulationRegion::node_iterator node_it_end = region->nodes_end();
+    SimulationRegion::local_node_iterator node_it = region->on_local_nodes_begin();
+    SimulationRegion::local_node_iterator node_it_end = region->on_local_nodes_end();
     for(; node_it!=node_it_end; ++node_it)
     {
-      FVM_Node * fvm_node = (*node_it).second;
-      //if this node NOT belongs to this processor, continue
-      if( !fvm_node->on_local() ) continue;
+      FVM_Node * fvm_node = *node_it;
 
       const Node * node = fvm_node->root_node();
       double phase = phase0 - k*(node->x()*cos(_incidence_angle)+node->y()*sin(_incidence_angle));
@@ -724,13 +738,11 @@ void EMFEM2DSolver::save_TM_solution(double lambda, double power, double phase0,
       eta = floor(E_phono/Eg)*Eg/E_phono;
     }
 
-    SimulationRegion::node_iterator node_it = region->nodes_begin();
-    SimulationRegion::node_iterator node_it_end = region->nodes_end();
+    SimulationRegion::local_node_iterator node_it = region->on_local_nodes_begin();
+    SimulationRegion::local_node_iterator node_it_end = region->on_local_nodes_end();
     for(; node_it!=node_it_end; ++node_it)
     {
-      FVM_Node * fvm_node = (*node_it).second;
-      //if this node NOT belongs to this processor, continue
-      if( !fvm_node->on_local() ) continue;
+      FVM_Node * fvm_node = *node_it;
 
       const Node * node = fvm_node->root_node();
       double phase = phase0 - k*(node->x()*cos(_incidence_angle)+node->y()*sin(_incidence_angle));
@@ -914,6 +926,8 @@ std::vector<double> EMFEM2DSolver::curvature_of_circle(const Point &p0, const Po
 
 void EMFEM2DSolver::build_absorb_chain()
 {
+#if 0
+  const MeshBase & mesh = system.mesh();
   const BoundaryConditionCollector  * bcs = _system.get_bcs();
 
   std::vector< std::pair<const Elem *, unsigned int> > edge_chain;
@@ -923,6 +937,7 @@ void EMFEM2DSolver::build_absorb_chain()
   {
     const BoundaryCondition * bc = bcs->get_bc(b);
     if(bc->bc_type()!=AbsorbingBoundary) continue;
+
     for(unsigned n=0; n<bc->n_elems(); ++n)
       edge_chain.push_back(bc->get_elem(n));
   }
@@ -967,6 +982,7 @@ void EMFEM2DSolver::build_absorb_chain()
 
   genius_assert(absorb_edge_chain.size()==edge_chain.size());
   genius_assert(absorb_node_chain[0].first==absorb_node_chain[absorb_node_chain.size()-1].second);
+#endif
 }
 
 

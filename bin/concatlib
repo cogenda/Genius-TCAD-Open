@@ -1,4 +1,6 @@
 #!/bin/bash
+# merge libsource to libtarget
+# usage: concatlib libtarget libsource
 
 archive=$1
 shift

@@ -82,7 +82,7 @@ namespace Parser
     std::map< std::string, PatternCard>::const_iterator it;
 
     //we search card in the pattern map
-    if ( _pattern_card_map.count(card_name) ) // exactly march
+    if ( _pattern_card_map.count(card_name) ) // exactly match
       it = _pattern_card_map.find(card_name);
     else // ambiguous search
     {
@@ -212,6 +212,10 @@ namespace Parser
 #define YY_NEVER_INTERACTIVE 1
 #ifdef CYGWIN
   #define YY_NO_UNISTD_H 1
+extern "C"
+{
+extern int isatty (int );
+}
 #endif
 
 namespace PatternYY

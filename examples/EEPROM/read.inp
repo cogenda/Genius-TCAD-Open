@@ -22,13 +22,16 @@ IMPORT   CGNSFile = eeprom_init.cgns
 
 # specify physical model, use Lucent mobility here.
 PMI      Region=Silicon Type=Mobility Model=Lucent
-Model     Region=Silicon H.Mob=true Mob.force=ESimple
+Model    Region=Silicon H.Mob=true Mob.force=ESimple
 
 ATTACH   Electrode=Drain  VApp=VCC
 ATTACH   Electrode=Gate   VApp=VGATE
 
 # the computation time is a bit long...
-METHOD   Type=DDML1  NS=Basic LS=BCGS Damping=Potential MaxIt=15
+METHOD   Type=DDML1  NS=Basic LS=MUMPS Damping=Potential MaxIt=30 toler.relax=1e5
+SOLVE    Type=equ
+
+METHOD   Type=DDML1  NS=Basic LS=MUMPS Damping=Potential MaxIt=15 toler.relax=1e5
 SOLVE    Type=TRANSIENT  TStart=0 TStep=2e-12  TStepMax=1e-10  TStop=4e-9 
 
 END

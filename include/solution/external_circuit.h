@@ -271,7 +271,6 @@ public:
   {
      _Vapp = 0.0;
      _Iapp = 0.0;
-     _drv = VDRIVEN;
   }
 
   /**

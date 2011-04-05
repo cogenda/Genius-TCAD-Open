@@ -36,328 +36,318 @@
 class FVM_PML_NodeData : public FVM_NodeData
 {
 
-public:
-
-  /**
-   * the independent variable for vacuum region
-   */
-  enum   PMLData
-  {
-    /**
-     * electrostatic potential
-     */
-    _psi_
-  };
-
-
-  /**
-   * the auxiliary variable for PML region
-   */
-  enum   PMLAuxData
-  {
-    /**
-     * the density of the material
-     */
-    _density_=0,
+  public:
 
     /**
-     * electron affinity
+     * the independent variable for vacuum region
      */
-    _affinity_,
+    enum   PMLData
+    {
+      /**
+       * electrostatic potential
+       */
+      _psi_,
+
+      /**
+       * the density of the material
+       */
+      _density_,
+
+      /**
+       * electron affinity
+       */
+      _affinity_,
+
+      /**
+       * the dielectric permittivity
+       */
+      _eps_,
+
+      /**
+       * the megnetic permeability
+       */
+      _mu_,
+
+      /**
+       * electrostatic potential at previous time step
+       */
+      _psi_last_,
+
+      /**
+       * last enum number
+       */
+      ScalarDataCount
+    };
+
 
     /**
-     * the dielectric permittivity
+     * the vector auxiliary variable for PML region
      */
-    _eps_,
+    enum PMLAuxVecData
+    {
+      /**
+       * electrical field of incident optical wave
+       */
+      //_OpE_,
+
+      /**
+       * magnetic field of incident optical wave
+       */
+      //_OpH_,
+
+      /**
+       * electrical field
+       */
+      _E_,
+
+      /**
+       * last enum number
+       */
+      VectorDataCount
+    };
+
 
     /**
-     * the megnetic permeability
+     * the complex auxiliary variable for PML region
      */
-    _mu_,
+    enum PMLAuxComplexData
+    {
+      /**
+       * electrical field of incident optical wave
+       */
+      _OpE_complex_=0,
+
+      /**
+       * magnetic field of incident optical wave
+       */
+      _OpH_complex_,
+
+      /**
+       * last enum number
+       */
+      ComplexDataCount
+    };
+
+  public:
+    /**
+     * constructor
+     */
+    FVM_PML_NodeData ( DataStorage * data_storage , const std::map<std::string, SimulationVariable> & variables )
+    :FVM_NodeData ( data_storage , variables )
+    {}
 
     /**
-     * electrostatic potential at previous time step
+     * destructor
      */
-    _psi_last_
-  };
+    virtual ~FVM_PML_NodeData()  {}
 
-
-  /**
-   * the vector auxiliary variable for PML region
-   */
-  enum PMLAuxVecData
-  {
+  public:
     /**
-     * electrical field of incident optical wave
+     * @return the solution variable number
      */
-    //_OpE_,
+    static size_t n_scalar()
+    { return static_cast<unsigned int> ( ScalarDataCount ) ; /* return last enum */ }
 
     /**
-     * magnetic field of incident optical wave
+     * @return the complex variable number
      */
-    //_OpH_,
+    static size_t n_complex()
+    { return static_cast<unsigned int> ( ComplexDataCount ) ; /* return last enum */ }
 
     /**
-     * electrical field
+     * @return the vector variable number
      */
-    _E_
-  };
-
-
-  /**
-   * the complex auxiliary variable for PML region
-   */
-  enum PMLAuxComplexData
-  {
-    /**
-     * electrical field of incident optical wave
-     */
-    _OpE_complex_=0,
+    static size_t n_vector()
+    { return static_cast<unsigned int> ( VectorDataCount ) ; /* return last enum */ }
 
     /**
-     * magnetic field of incident optical wave
+     * @return the tensor variable number
      */
-    _OpH_complex_
-  };
-
-public:
-  /**
-   * constructor
-   */
-  FVM_PML_NodeData()
-  {
-    _scalar_value = new PetscScalar[n_scalar()];
-    for(unsigned int i=0; i<n_scalar(); i++) _scalar_value[i]=0.0;
-
-    _aux_scalar_value = new PetscScalar[n_aux_scalar()];
-    for(unsigned int i=0; i<n_aux_scalar(); i++) _aux_scalar_value[i]=0.0;
-
-    _complex_value = new std::complex<PetscScalar>[n_complex()];
-    for(unsigned int i=0; i<n_scalar(); i++) _complex_value[i]=std::complex<PetscScalar>(0.0, 0.0);
-
-    _vecctor_value = new VectorValue<PetscScalar>[n_vector()];
-    for(unsigned int i=0; i<n_vector(); i++) _vecctor_value[i]=VectorValue<PetscScalar>(0.0, 0.0, 0.0);
-  }
-
-  /**
-   * destructor
-   */
-virtual ~FVM_PML_NodeData()  {}
-
-public:
-
-  /**
-   * @return the solution variable number
-   */
-  virtual size_t n_scalar() const
-    { return static_cast<unsigned int>(_psi_) +1 ; /* return last enum+1*/ }
-
-
-  /**
-   * @return the scalar aux variable number
-   */
-  virtual size_t n_aux_scalar() const
-    { return static_cast<unsigned int>(_psi_last_) +1 ; /* return last enum+1*/ }
-
-  /**
-   * @return the complex variable number
-   */
-  virtual size_t n_complex() const
-    { return static_cast<unsigned int>(_OpH_complex_) +1 ; /* return last enum+1*/ }
-
-  /**
-   * @return the vector variable number
-   */
-  virtual size_t n_vector() const
-    { return static_cast<unsigned int>(_E_) +1 ; /* return last enum+1*/ }
-
-  /**
-   * @return the tensor variable number
-   */
-  virtual size_t n_tensor() const
+    static size_t n_tensor()
     { return 0; }
 
-  /**
-   * @return the data type
-   */
-  virtual NodeDataType type() const
+    /**
+     * @return the data type
+     */
+    virtual NodeDataType type() const
     { return FVM_NodeData::VacuumData; }
 
 
-public:
+  public:
 
-  /**
-   * @return data by enum name
-   */
-  virtual PetscScalar  get_variable(SolutionVariable variable) const
-  {
-    switch(variable)
+    /**
+     * @return data by enum name
+     */
+    virtual Real  get_variable_real ( SolutionVariable variable ) const
     {
-    case POTENTIAL   :  return  psi();                            /* potential */
-    case E_FIELD     :  return  _vecctor_value[_E_].size();       /* electric field */
-    case QFN         :  return  psi();                            /* electron quasi-Fermi level */
-    case QFP         :  return  psi();                            /* hole quasi-Fermi level */
-    default          :  return  0.0;
+      switch ( variable )
+      {
+        case POTENTIAL   :  return  psi();                            /* potential */
+        case E_FIELD     :  return  E().size();                       /* electric field */
+        case QFN         :  return  psi();                            /* electron quasi-Fermi level */
+        case QFP         :  return  psi();                            /* hole quasi-Fermi level */
+        default          :  return  0.0;
+      }
     }
-  }
 
-  /**
-   * set variable by enum name
-   */
-  virtual void set_variable(SolutionVariable variable, PetscScalar value)
-  {
-    switch(variable)
+    /**
+     * set variable by enum name
+     */
+    virtual void set_variable_real ( SolutionVariable variable, Real value )
     {
-    case POTENTIAL   :  psi() = value;                             /* potential */
-    default          :  return;
+      switch ( variable )
+      {
+        case POTENTIAL   :  psi() = value;                             /* potential */
+        default          :  return;
+      }
     }
-  }
 
-  /**
-   * @return true when this variable valid
-   */
-  virtual bool is_variable_valid(SolutionVariable variable)  const
-  {
-    switch(variable)
+    /**
+     * @return true when this variable valid
+     */
+    virtual bool is_variable_valid ( SolutionVariable variable )  const
     {
-    case POTENTIAL   :  return true;
-    default          :  return false;
+      switch ( variable )
+      {
+        case POTENTIAL   :  return true;
+        default          :  return false;
+      }
     }
-  }
-  //--------------------------------------------------------------------
-  // data access function
-  //--------------------------------------------------------------------
+    //--------------------------------------------------------------------
+    // data access function
+    //--------------------------------------------------------------------
 
-  /**
-   * @return the statistic potential
-   */
-  virtual PetscScalar         psi()        const
-  { return _scalar_value[_psi_]; }
+    /**
+     * @return the statistic potential
+     */
+    virtual Real         psi()        const
+    { return _data_storage->scalar ( _psi_, _offset ); }
 
-  /**
-   * @return the statistic potential
-   */
-  virtual PetscScalar &       psi()
-  { return _scalar_value[_psi_]; }
-
-
-  /**
-   * @return the statistic potential
-   */
-  virtual std::complex<PetscScalar>         psi_ac()          const
-    { return _complex_value[_psi_]; }
-
-  /**
-   * @return the writable reference to statistic potential
-   */
-  virtual std::complex<PetscScalar> &       psi_ac()
-  { return _complex_value[_psi_]; }
-
-  /**
-   * @return the statistic potential at previous time step
-   */
-  virtual PetscScalar         psi_last()          const
-    { return _aux_scalar_value[_psi_last_]; }
-
-  /**
-   * @return the writable reference to statistic potential at previous time step
-   */
-  virtual PetscScalar &       psi_last()
-  { return _aux_scalar_value[_psi_last_]; }
+    /**
+     * @return the statistic potential
+     */
+    virtual Real &       psi()
+    { return _data_storage->scalar ( _psi_, _offset ); }
 
 
-  /**
-   * @return the complex E file. only used by EM FEM solver
-   */
-  virtual std::complex<PetscScalar>         OptE_complex()          const
-    { return _complex_value[_OpE_complex_]; }
+    /**
+     * @return the statistic potential
+     */
+    virtual std::complex<Real>         psi_ac()          const
+    { return _data_storage->complex ( _psi_, _offset ); }
 
-  /**
-   * @return the writable reference to complex E file. only used by EM FEM solver
-   */
-  virtual std::complex<PetscScalar> &       OptE_complex()
-  { return _complex_value[_OpE_complex_]; }
+    /**
+     * @return the writable reference to statistic potential
+     */
+    virtual std::complex<Real> &       psi_ac()
+    { return _data_storage->complex ( _psi_, _offset ); }
 
-  /**
-   * @return the complex H file. only used by EM FEM solver
-   */
-  virtual std::complex<PetscScalar>         OptH_complex()          const
-    { return _complex_value[_OpH_complex_]; }
+    /**
+     * @return the statistic potential at previous time step
+     */
+    virtual Real         psi_last()          const
+    { return _data_storage->scalar ( _psi_last_, _offset ); }
 
-  /**
-   * @return the writable reference to complex H file. only used by EM FEM solver
-   */
-  virtual std::complex<PetscScalar> &       OptH_complex()
-  { return _complex_value[_OpH_complex_]; }
-
-
-  /**
-   * @return the electron affinity
-   */
-  virtual PetscScalar         affinity()          const
-    { return _aux_scalar_value[_affinity_]; }
-
-  /**
-   * @return the writable reference to the electron affinity
-   */
-  virtual PetscScalar &       affinity()
-  { return _aux_scalar_value[_affinity_]; }
+    /**
+     * @return the writable reference to statistic potential at previous time step
+     */
+    virtual Real &       psi_last()
+    { return _data_storage->scalar ( _psi_last_, _offset ); }
 
 
+    /**
+     * @return the complex E file. only used by EM FEM solver
+     */
+    virtual std::complex<Real>         OptE_complex()          const
+    { return _data_storage->complex ( _OpE_complex_, _offset ); }
 
-  /**
-   * @return the mass density of the material
-   */
-  virtual PetscScalar         density()          const
-    { return _aux_scalar_value[_density_]; }
+    /**
+     * @return the writable reference to complex E file. only used by EM FEM solver
+     */
+    virtual std::complex<Real> &       OptE_complex()
+    { return _data_storage->complex ( _OpE_complex_, _offset ); }
 
-  /**
-   * @return the writable reference to the mass density of the material
-   */
-  virtual PetscScalar &       density()
-  { return _aux_scalar_value[_density_]; }
+    /**
+     * @return the complex H file. only used by EM FEM solver
+     */
+    virtual std::complex<Real>         OptH_complex()          const
+    { return _data_storage->complex ( _OpH_complex_, _offset ); }
+
+    /**
+     * @return the writable reference to complex H file. only used by EM FEM solver
+     */
+    virtual std::complex<Real> &       OptH_complex()
+    { return _data_storage->complex ( _OpH_complex_, _offset ); }
+
+
+    /**
+     * @return the electron affinity
+     */
+    virtual Real         affinity()          const
+    { return _data_storage->scalar ( _affinity_, _offset ); }
+
+    /**
+     * @return the writable reference to the electron affinity
+     */
+    virtual Real &       affinity()
+    { return _data_storage->scalar ( _affinity_, _offset ); }
 
 
 
-  /**
-   * @return the dielectric permittivity
-   */
-  virtual PetscScalar         eps()          const
-    { return _aux_scalar_value[_eps_]; }
+    /**
+     * @return the mass density of the material
+     */
+    virtual Real         density()          const
+    { return _data_storage->scalar ( _density_, _offset ); }
 
-  /**
-   * @return the writable reference to the dielectric permittivity
-   */
-  virtual PetscScalar &       eps()
-  { return _aux_scalar_value[_eps_]; }
-
-
-
-  /**
-   * @return the megnetic permeability
-   */
-  virtual PetscScalar         mu()          const
-    { return _aux_scalar_value[_mu_]; }
-
-  /**
-   * @return the writable reference to the megnetic permeability
-   */
-  virtual PetscScalar &       mu()
-  { return _aux_scalar_value[_mu_]; }
+    /**
+     * @return the writable reference to the mass density of the material
+     */
+    virtual Real &       density()
+    { return _data_storage->scalar ( _density_, _offset ); }
 
 
-  /**
-   * @return the electrical field
-   */
-  virtual VectorValue<PetscScalar> E()       const
-    { return _vecctor_value[_E_];}
+
+    /**
+     * @return the dielectric permittivity
+     */
+    virtual Real         eps()          const
+    { return _data_storage->scalar ( _eps_, _offset ); }
+
+    /**
+     * @return the writable reference to the dielectric permittivity
+     */
+    virtual Real &       eps()
+    { return _data_storage->scalar ( _eps_, _offset ); }
 
 
-  /**
-   * @return the writable reference to electrical field
-   */
-  virtual VectorValue<PetscScalar> & E()
-  { return _vecctor_value[_E_];}
+
+    /**
+     * @return the megnetic permeability
+     */
+    virtual Real         mu()          const
+    { return _data_storage->scalar ( _mu_, _offset ); }
+
+    /**
+     * @return the writable reference to the megnetic permeability
+     */
+    virtual Real &       mu()
+    { return _data_storage->scalar ( _mu_, _offset ); }
+
+
+    /**
+     * @return the electrical field
+     */
+    virtual VectorValue<Real> E()       const
+    { return _data_storage->vector ( _E_, _offset );}
+
+
+    /**
+     * @return the writable reference to electrical field
+     */
+    virtual VectorValue<Real> & E()
+    { return _data_storage->vector ( _E_, _offset );}
+
 
 };
 

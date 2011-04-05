@@ -46,7 +46,7 @@ void InsulatorSimulationRegion::HALL_Fill_Value(Vec x, Vec L)
 /*---------------------------------------------------------------------
  * build function and its jacobian for DDM1 solver
  */
-void InsulatorSimulationRegion::HALL_Function(PetscScalar * x, Vec f, InsertMode &add_value_flag)
+void InsulatorSimulationRegion::HALL_Function(const VectorValue<double> &, PetscScalar * x, Vec f, InsertMode &add_value_flag)
 {
   this->DDM1_Function(x, f, add_value_flag);
 }
@@ -55,7 +55,7 @@ void InsulatorSimulationRegion::HALL_Function(PetscScalar * x, Vec f, InsertMode
 /*---------------------------------------------------------------------
  * build function and its jacobian for DDM1 solver
  */
-void InsulatorSimulationRegion::HALL_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_value_flag)
+void InsulatorSimulationRegion::HALL_Jacobian(const VectorValue<double> &, PetscScalar * x, Mat *jac, InsertMode &add_value_flag)
 {
   this->DDM1_Jacobian(x, jac, add_value_flag);
 }
