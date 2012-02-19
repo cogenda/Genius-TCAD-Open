@@ -2,17 +2,17 @@
 
 // The libMesh Finite Element Library.
 // Copyright (C) 2002-2007  Benjamin S. Kirk, John W. Peterson
-  
+
 // This library is free software; you can redistribute it and/or
 // modify it under the terms of the GNU Lesser General Public
 // License as published by the Free Software Foundation; either
 // version 2.1 of the License, or (at your option) any later version.
-  
+
 // This library is distributed in the hope that it will be useful,
 // but WITHOUT ANY WARRANTY; without even the implied warranty of
 // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
 // Lesser General Public License for more details.
-  
+
 // You should have received a copy of the GNU Lesser General Public
 // License along with this library; if not, write to the Free Software
 // Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
@@ -23,7 +23,7 @@
 #define __perflog_h__
 
 // enable log
-//#define ENABLE_PERFORMANCE_LOGGING
+#define ENABLE_PERFORMANCE_LOGGING
 
 
 #ifdef ENABLE_PERFORMANCE_LOGGING
@@ -36,7 +36,17 @@
 #include <string>
 #include <stack>
 #include <map>
-#include <sys/time.h>
+
+#ifdef WINDOWS
+  #include <time.h>
+  typedef struct timeval_t {
+  long tv_sec;
+  long tv_usec;
+  } timeval_t;
+#else
+  #include <sys/time.h>
+#endif
+
 
 #ifdef HAVE_LOCALE
 #include <locale>
@@ -67,7 +77,7 @@ class PerfData
     called_recursively(0)
     {}
 
-  
+
   /**
    * Total time spent in this event.
    */
@@ -77,7 +87,11 @@ class PerfData
    * Structure defining when the event
    * was last started.
    */
+#ifdef WINDOWS
+  struct timeval_t tstart;
+#else
   struct timeval tstart;
+#endif
 
   /**
    * The number of times this event has
@@ -96,9 +110,9 @@ class PerfData
   void   restart ();
   double pause ();
   double stopit ();
-    
+
   int called_recursively;
-    
+
 };
 
 
@@ -109,7 +123,7 @@ class PerfData
  * An event is defined by a unique string that functions as
  * a label.  Each time the event is executed data are recorded.
  * This class is particulary useful for finding performance
- * bottlenecks. 
+ * bottlenecks.
  *
  */
 
@@ -134,7 +148,7 @@ class PerfLog
    * Destructor. Calls \p clear() and \p print_log().
    */
   ~PerfLog();
-  
+
   /**
    * Clears all the internal data and returns the
    * data structures to a pristine state.  This function
@@ -160,13 +174,13 @@ class PerfLog
    */
   void push (const std::string &label,
 	     const std::string &header="");
-  
+
   /**
    * Pop the event \p label off the stack, resuming any lower event.
    */
   void pop (const std::string &label,
 	    const std::string &header="");
-  
+
   /**
    * Start monitoring the event named \p label.
    */
@@ -180,7 +194,7 @@ class PerfLog
 		  const std::string &header="");
 
   /**
-   * Suspend monitoring of the event. 
+   * Suspend monitoring of the event.
    */
   void pause_event(const std::string &label,
 		   const std::string &header="");
@@ -190,14 +204,14 @@ class PerfLog
    */
   void restart_event(const std::string &label,
 		     const std::string &header="");
-  
+
   /**
    * @returns a string containing:
    * (1) Basic machine information (if first call)
    * (2) The performance log
    */
   std::string get_log() const;
-  
+
   /**
    * @returns a string containing ONLY the information header.
    */
@@ -207,7 +221,7 @@ class PerfLog
    * @returns a string containing ONLY the log information
    */
   std::string get_perf_info() const;
-  
+
   /**
    * Print the log.
    */
@@ -218,11 +232,11 @@ class PerfLog
    */
   double get_total_time() const
     {return total_time;}
- 
-   
+
+
  private:
 
-  
+
   /**
    * The label for this object.
    */
@@ -235,14 +249,18 @@ class PerfLog
 
   /**
    * The total running time for recorded events.
-   */  
+   */
   double total_time;
-  
+
   /**
    * The time we were constructed or last cleared.
    */
+#ifdef WINDOWS
+  struct timeval_t tstart;
+#else
   struct timeval tstart;
-  
+#endif
+
   /**
    * The actual log.
    */
@@ -254,14 +272,14 @@ class PerfLog
    * A stack to hold the current performance log trace.
    */
   std::stack<PerfData*> log_stack;
-  
+
   /**
    * Flag indicating if print_log() has been called.
    * This is used to print a header with machine-specific
    * data the first time that print_log() is called.
    */
   static bool called;
-  
+
   /**
    * Prints a line of 'n' repeated characters 'c'
    * to the output string stream "out".
@@ -275,53 +293,7 @@ class PerfLog
 
 // ------------------------------------------------------------
 // PerfData class member funcions
-inline
-void PerfData::start ()
-{
-  this->count++;
-  this->called_recursively++;
-  gettimeofday (&(this->tstart), NULL);
-}
 
-
-
-inline
-void PerfData::restart ()
-{
-  gettimeofday (&(this->tstart), NULL);
-}
-
-
-
-inline
-double PerfData::pause ()
-{
-  // save the start times, reuse the structure we have rather than create
-  // a new one.
-  const double
-    tstart_tv_sec  = this->tstart.tv_sec,
-    tstart_tv_usec = this->tstart.tv_usec;
-  
-  gettimeofday (&(this->tstart), NULL);
-  
-  const double elapsed_time = (static_cast<double>(this->tstart.tv_sec  - tstart_tv_sec) +
-			       static_cast<double>(this->tstart.tv_usec - tstart_tv_usec)*1.e-6);      
-  
-  this->tot_time += elapsed_time;
-
-  return elapsed_time;
-}
-
-
-inline
-double PerfData::stopit ()
-{
-  // stopit is just like pause except decriments the 
-  // recursive call counter
-  
-  this->called_recursively--;
-  return this->pause();
-}
 
 
 
@@ -338,9 +310,9 @@ void PerfLog::push (const std::string &label,
       PerfData *perf_data = &(log[std::make_pair(header,label)]);
 
       if (!log_stack.empty())
-	total_time += 
+	total_time +=
 	  log_stack.top()->pause();
-      
+
       perf_data->start();
       log_stack.push(perf_data);
     }
@@ -386,14 +358,13 @@ extern PerfLog  perflog;
 #  define STOP_LOG(a,b)    { perflog.pop(a,b); }
 #  define PAUSE_LOG(a,b)   { deprecated(); }
 #  define RESTART_LOG(a,b) { deprecated{}; }
-
+#  define PRINT_LOG()      { perflog.print_log(); }
 #else
-
 #  define START_LOG(a,b)   {}
 #  define STOP_LOG(a,b)    {}
 #  define PAUSE_LOG(a,b)   {}
 #  define RESTART_LOG(a,b) {}
-
+#  define PRINT_LOG()      {}
 #endif // #ifdef ENABLE_PERFORMANCE_LOGGING
 
 

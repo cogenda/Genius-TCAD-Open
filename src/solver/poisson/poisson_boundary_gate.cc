@@ -84,7 +84,7 @@ void GateContactBC::Poissin_Fill_Value(Vec , Vec L)
 /*---------------------------------------------------------------------
  * do pre-process to function for poisson solver
  */
-void GateContactBC::Poissin_Function_Preprocess(Vec f, std::vector<PetscInt> &src_row,
+void GateContactBC::Poissin_Function_Preprocess(PetscScalar *, Vec f, std::vector<PetscInt> &src_row,
     std::vector<PetscInt> &dst_row, std::vector<PetscInt> &clear_row)
 {
   BoundaryCondition::const_node_iterator node_it = nodes_begin();
@@ -126,6 +126,8 @@ void GateContactBC::Poissin_Function(PetscScalar * x, Vec f, InsertMode &add_val
     VecAssemblyEnd(f);
   }
 
+  const PetscScalar Work_Function = this->scalar("workfunction");
+
   BoundaryCondition::const_node_iterator node_it = nodes_begin();
   BoundaryCondition::const_node_iterator end_it = nodes_end();
   for(; node_it!=end_it; ++node_it )
@@ -156,7 +158,7 @@ void GateContactBC::Poissin_Function(PetscScalar * x, Vec f, InsertMode &add_val
             PetscScalar V = x[fvm_nodes[i]->local_offset()];
 
             // the governing equation
-            PetscScalar ff = V + Work_Function() - ext_circuit()->Vapp();
+            PetscScalar ff = V + Work_Function - ext_circuit()->Vapp();
             // set governing equation to function vector
             VecSetValue(f, fvm_nodes[i]->global_offset(), ff, ADD_VALUES);
 
@@ -270,7 +272,7 @@ void GateContactBC::Poissin_Jacobian_Reserve(Mat *jac, InsertMode &add_value_fla
 /*---------------------------------------------------------------------
  * do pre-process to jacobian matrix for poisson solver
  */
-void GateContactBC::Poissin_Jacobian_Preprocess(Mat *jac, std::vector<PetscInt> &src_row,
+void GateContactBC::Poissin_Jacobian_Preprocess(PetscScalar *, Mat *jac, std::vector<PetscInt> &src_row,
     std::vector<PetscInt> &dst_row, std::vector<PetscInt> &clear_row)
 {
   BoundaryCondition::const_node_iterator node_it = nodes_begin();
@@ -311,6 +313,7 @@ void GateContactBC::Poissin_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_
     MatAssemblyEnd(*jac, MAT_FLUSH_ASSEMBLY);
   }
 
+  const PetscScalar Work_Function = this->scalar("workfunction");
 
   BoundaryCondition::const_node_iterator node_it = nodes_begin();
   BoundaryCondition::const_node_iterator end_it = nodes_end();
@@ -345,7 +348,7 @@ void GateContactBC::Poissin_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_
             AutoDScalar  V = x[fvm_nodes[i]->local_offset()]; V.setADValue(0,1.0);
 
             // the governing equation
-            AutoDScalar ff = V + Work_Function() - ext_circuit()->Vapp();
+            AutoDScalar ff = V + Work_Function - ext_circuit()->Vapp();
 
             // set Jacobian of governing equation ff
             MatSetValue(*jac, fvm_nodes[i]->global_offset(), fvm_nodes[i]->global_offset(), ff.getADValue(0), ADD_VALUES);

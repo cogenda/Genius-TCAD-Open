@@ -56,6 +56,16 @@ public:
     global_index_array.clear();
   }
 
+
+  /**
+   * set the index used by global_offset
+   */
+  void set_solver_index(unsigned int index)
+  {
+    FVM_Node::set_solver_index(index);
+    BoundaryCondition::set_solver_index(index);
+  }
+
   /**
    * set data structure for parallel vector and matrix layout
    * this function implements the mapping from mesh structure

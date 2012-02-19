@@ -24,7 +24,7 @@
 #include "dlhook.h"
 #include "solver_base.h"
 
-#ifndef CYGWIN
+#ifdef DLLHOOK
 
 #include <dlfcn.h>
 
@@ -37,18 +37,28 @@ DllHook::DllHook(SolverBase & solver, const std::string & name, void * fun_data)
   std::string filename =  genius_dir + "/lib/" + name + ".so";
 
   // Get 'dlopen()' handle to the extension function
+#ifdef RTLD_DEEPBIND
+  dll_handle = dlopen(filename.c_str(),RTLD_LAZY|RTLD_DEEPBIND);
+#else
   dll_handle = dlopen(filename.c_str(),RTLD_LAZY);
+#endif
   error = dlerror();
   if(error)
   {
-    std::cout<< "Load hook faild: "<< error << std::endl;
+    std::cerr<< "Load hook faild: "<< error << std::endl;
     dll_handle = NULL;
     return;
   }
 
   // get the address of function get_hook in the dll file
   get_hook = (GET_HOOK *) dlsym(dll_handle, "get_hook");
-  genius_assert( !dlerror() );
+  error = dlerror();
+  if(error)
+  {
+    std::cerr<< "Load hook faild: "<< error << std::endl;
+    dll_handle = NULL;
+    return;
+  }
 
   // call it to get the real hook pointer
   hook = (*get_hook)(_solver, _name, fun_data);

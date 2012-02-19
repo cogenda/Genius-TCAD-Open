@@ -38,7 +38,9 @@ FVM_Node::FVM_Node(const Node *n)
     _node_data(0),
     _ghost_nodes(0),
     _volume(0),
-    _boundary_id(BoundaryInfo::invalid_id)
+    _boundary_id(BoundaryInfo::invalid_id),
+    _bc_type(INVALID_BC_TYPE),
+    _subdomain_id(invalid_uint)
 {
   for(unsigned int n=0; n<4; ++n)
   {
@@ -103,6 +105,46 @@ std::vector<unsigned int> FVM_Node::subdomains() const
   return subdomains_vector;
 }
 
+
+Real FVM_Node::outside_boundary_surface_area() const
+{
+  genius_assert(_ghost_nodes);
+  Real area = 0.0;
+  fvm_ghost_node_iterator  it = ghost_node_begin();
+  for(; it!=ghost_node_end(); ++it )
+    area += (*it).second.second;
+  return area;
+}
+
+
+Real FVM_Node::laplace_unit() const
+{
+  Real r = 0.0;
+
+  std::map< const Node *, Real >::const_iterator it = _cv_surface_area.begin();
+  for( ; it != _cv_surface_area.end();  ++it)
+  {
+    const Node * node = it->first;
+    r+= it->second/this->distance(node);
+  }
+
+  return r;
+}
+
+
+Real FVM_Node::sup_laplace_unit() const
+{
+  Real r = 0.0;
+
+  std::map< const Node *, Real >::const_iterator it = _cv_surface_area.begin();
+  for( ; it != _cv_surface_area.end();  ++it)
+  {
+    const Node * node = it->first;
+    r+= std::abs(it->second)/this->distance(node);
+  }
+
+  return r;
+}
 
 
 void FVM_Node::PDE_node_pattern(std::vector<std::pair<unsigned int, unsigned int> > & v_region_nodes, bool elem_based) const

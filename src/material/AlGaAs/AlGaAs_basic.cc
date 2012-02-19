@@ -98,9 +98,9 @@ public:
 
   void atom_fraction(std::vector<std::string> &atoms, std::vector<double> & fraction) const
   {
-    atoms.push_back("Aluminum");
-    atoms.push_back("Gallium");
-    atoms.push_back("Arsenic");
+    atoms.push_back("Al"); //Aluminum
+    atoms.push_back("Ga"); //Gallium
+    atoms.push_back("As"); //Arsenic
 
     PetscScalar mole_x = ReadxMoleFraction();
     fraction.push_back(mole_x);

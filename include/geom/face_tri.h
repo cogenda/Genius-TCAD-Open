@@ -116,6 +116,11 @@ public:
   unsigned int key (const unsigned int s) const;
 
   /**
+   * get node local index a primitive (2-noded) edge for face i.
+   */
+  void nodes_on_side (const unsigned int i, std::vector<unsigned int> & nodes ) const;
+
+  /**
    * @returns a primitive (2-noded) edge for
    * edge i.
    */

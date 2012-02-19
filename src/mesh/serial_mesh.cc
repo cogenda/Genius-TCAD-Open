@@ -322,6 +322,8 @@ static bool less_than( const Node * n1, const Node * n2 )
 
 void SerialMesh::reorder_nodes()
 {
+  START_LOG("reorder_nodes()", "Mesh");
+
   // do it only on serial mesh
   assert(_is_serial);
 
@@ -350,7 +352,7 @@ void SerialMesh::reorder_nodes()
   unsigned int new_index = 0;
   // a queue for Breadth-First Search
   std::queue<const Node *> Q;
-  std::map<const Node *, unsigned int> new_order;
+  std::vector<unsigned int> new_order(n_nodes(), invalid_uint);
 
   // do Breadth-First Search
   // begin at this node.
@@ -361,7 +363,7 @@ void SerialMesh::reorder_nodes()
   {
     const Node * current = Q.front();
     Q.pop();
-    new_order.insert(std::pair<const Node *, unsigned int>(current, new_index++) );
+    new_order[current->id()] = new_index++;
 
     std::vector<const Node*> neighbors;
     std::vector<const Node*>::iterator it;
@@ -380,16 +382,15 @@ void SerialMesh::reorder_nodes()
         visit_flag[(*it)->id()] = true;
       }
   }
-  genius_assert( new_order.size()==n_nodes() );
 
   // ok, assign ordered index to each node
   for (node_it  = nodes_begin() ; node_it != nodes_end(); ++node_it)
-    (*node_it)->set_id () = (*new_order.find(*node_it)).second;
+    (*node_it)->set_id () = new_order[(*node_it)->id()];
 
-  // if only reset the id, may cause many problems
-  // as a result, we must sort the nodes by new ID
+  // sort the nodes by new ID
   std::sort( _nodes.begin(), _nodes.end(), less_than );
 
+  STOP_LOG("reorder_nodes()", "Mesh");
 }
 
 
@@ -592,8 +593,6 @@ void SerialMesh::delete_remote_elements()
 {
   if(Genius::n_processors() == 1) return;
 
-  _is_serial = false;
-
   for(unsigned int n=0; n<_elements.size(); ++n)
   {
     if( _elements[n] && !_elements[n]->on_local() )
@@ -609,6 +608,8 @@ void SerialMesh::delete_remote_elements()
       delete_node(_nodes[n]);
     }
   }
+
+  _is_serial = false;
 
 }
 
@@ -646,6 +647,48 @@ void SerialMesh::pack_nodes(std::vector<Real> & pts) const
     pts[ 3*node_ids[n]+0 ] = node_locations[3*n+0];
     pts[ 3*node_ids[n]+1 ] = node_locations[3*n+1];
     pts[ 3*node_ids[n]+2 ] = node_locations[3*n+2];
+  }
+
+}
+
+
+void SerialMesh::pack_egeds(std::vector< std::pair<unsigned int, unsigned int> > &edges) const
+{
+  parallel_only();
+
+  std::set< std::pair<unsigned int, unsigned int> >  edges_set;
+  for (unsigned int n=0; n<_elements.size(); ++n)
+  {
+    const Elem * elem = _elements[n];
+    if(elem && elem->processor_id() == Genius::processor_id())
+    {
+      for(unsigned int e=0; e<elem->n_edges(); ++e)
+      {
+        std::pair<unsigned int, unsigned int> edge_nodes;
+        elem->nodes_on_edge(e, edge_nodes);
+        unsigned int node1_id = elem->get_node(edge_nodes.first)->id();
+        unsigned int node2_id = elem->get_node(edge_nodes.second)->id();
+        if(node1_id >  node2_id ) std::swap(node1_id, node2_id);
+        edges_set.insert( std::make_pair(node1_id, node2_id) );
+      }
+    }
+  }
+
+  std::vector<unsigned int> buffer;
+  std::set< std::pair<unsigned int, unsigned int> >::iterator it=  edges_set.begin();
+  for(; it!=edges_set.end(); ++it)
+  {
+    buffer.push_back(it->first);
+    buffer.push_back(it->second);
+  }
+  Parallel::allgather(buffer);
+
+  for(unsigned int n=0; n<buffer.size();)
+    edges_set.insert( std::make_pair(buffer[n++], buffer[n++]) );
+
+  for(it=edges_set.begin(); it!=edges_set.end(); ++it)
+  {
+    edges.push_back(*it);
   }
 
 }
@@ -806,6 +849,11 @@ void SerialMesh::broadcast (unsigned int root_id)
 
   if( Genius::processor_id() == root_id )
     assert( _is_serial );
+
+  // mesh is serial in all the processor
+  int serial = _is_serial;
+  Parallel::min(serial);
+  if(serial) return;
 
   // broadcast the pts vector
   std::vector<Real> pts;
@@ -1074,4 +1122,36 @@ void SerialMesh::_unpack_bc_nodes (const std::vector<unsigned int> &node_id,
       this->boundary_info->add_node (node, bc_id[n]);
   }
 }
+
+void SerialMesh::subdomain_graph(std::vector<std::vector<unsigned int> >& adjncy) const
+{
+  std::vector< std::set<unsigned int > > subdomain_neighbors(this->n_subdomains());
+
+  for (unsigned int n=0; n<_elements.size(); ++n)
+  {
+    const Elem * elem = _elements[n];
+    unsigned int subdomain_id = elem->subdomain_id();
+
+    for(unsigned int m=0; m<elem->n_neighbors(); ++m)
+    {
+      const Elem * neighbor = elem->neighbor(m);
+      if(!neighbor) continue;
+
+      unsigned int neighbor_subdomain_id = neighbor->subdomain_id();
+      if( neighbor_subdomain_id != subdomain_id )
+      {
+        subdomain_neighbors[subdomain_id].insert(neighbor_subdomain_id);
+      }
+    }
+  }
+
+  adjncy.clear();
+  adjncy.resize(this->n_subdomains());
+  for(unsigned int n=0; n<this->n_subdomains(); ++n)
+  {
+    adjncy[n].insert(adjncy[n].end(), subdomain_neighbors[n].begin(), subdomain_neighbors[n].end());
+  }
+}
+
+
 

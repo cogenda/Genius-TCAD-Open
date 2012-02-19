@@ -333,7 +333,7 @@ void InsulatorSimulationRegion::DDMAC_Force_equal(const FVM_Node *fvm_node, Mat 
 
   // set entry on diag of A
   PetscInt real_row = fvm_node->global_offset() + this->ebm_variable_offset(POTENTIAL);
-  PetscInt imag_row = fvm_node->global_offset() + this->ebm_n_variables() + adjacent_region->ebm_variable_offset(POTENTIAL);
+  PetscInt imag_row = fvm_node->global_offset() + this->ebm_n_variables() + this->ebm_variable_offset(POTENTIAL);
   PetscInt real_col[2]={real_row, adjacent_fvm_node->global_offset() + adjacent_region->ebm_variable_offset(POTENTIAL)};
   PetscInt imag_col[2]={imag_row, adjacent_fvm_node->global_offset() + adjacent_region->ebm_n_variables() + adjacent_region->ebm_variable_offset(POTENTIAL)};
   PetscScalar diag[2] = {1.0, -1.0};
@@ -344,7 +344,7 @@ void InsulatorSimulationRegion::DDMAC_Force_equal(const FVM_Node *fvm_node, Mat 
   if(this->get_advanced_model()->enable_Tl())
   {
     PetscInt real_row = fvm_node->global_offset() + this->ebm_variable_offset(TEMPERATURE);
-    PetscInt imag_row = fvm_node->global_offset() + this->ebm_n_variables() + adjacent_region->ebm_variable_offset(TEMPERATURE);
+    PetscInt imag_row = fvm_node->global_offset() + this->ebm_n_variables() + this->ebm_variable_offset(TEMPERATURE);
     PetscInt real_col[2]={real_row, adjacent_fvm_node->global_offset() + adjacent_region->ebm_variable_offset(TEMPERATURE)};
     PetscInt imag_col[2]={imag_row, adjacent_fvm_node->global_offset() + adjacent_region->ebm_n_variables() + adjacent_region->ebm_variable_offset(TEMPERATURE)};
     PetscScalar diag[2] = {1.0, -1.0};
@@ -366,7 +366,7 @@ void InsulatorSimulationRegion::DDMAC_Force_equal(const FVM_Node *fvm_node, cons
 
   // set entry on diag of A
   PetscInt real_row = fvm_node->global_offset() + this->ebm_variable_offset(var);
-  PetscInt imag_row = fvm_node->global_offset() + this->ebm_n_variables() + adjacent_region->ebm_variable_offset(var);
+  PetscInt imag_row = fvm_node->global_offset() + this->ebm_n_variables() + this->ebm_variable_offset(var);
   PetscInt real_col[2]={real_row, adjacent_fvm_node->global_offset() + adjacent_region->ebm_variable_offset(var)};
   PetscInt imag_col[2]={imag_row, adjacent_fvm_node->global_offset() + adjacent_region->ebm_n_variables() + adjacent_region->ebm_variable_offset(var)};
   PetscScalar diag[2] = {1.0, -1.0};

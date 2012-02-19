@@ -245,8 +245,7 @@ private:
 // DFISEIO inline members
 inline
 DFISEIO::DFISEIO (SimulationSystem& system) :
-    FieldInput<SimulationSystem> (system),
-    FieldOutput<SimulationSystem> (system)
+    FieldInput<SimulationSystem> (system)
 {
   ise_reader = 0;
   ise_writer = 0;

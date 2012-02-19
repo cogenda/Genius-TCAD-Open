@@ -65,18 +65,6 @@ public:
     { return INTER_CONNECT; }
 
   /**
-   * @return the free charge on the surface of float metal
-   */
-  virtual PetscScalar Qf() const
-  { return _Qf; }
-
-  /**
-   * @return writable reference to free charge
-   */
-  virtual PetscScalar & Qf()
-  { return _Qf; }
-
-  /**
    * @return the psi of float metal
    */
   virtual PetscScalar psi() const
@@ -114,11 +102,6 @@ public:
   virtual std::string boundary_condition_in_string() const;
 
 private:
-
-  /**
-   * free charge
-   */
-  PetscScalar      _Qf;
 
   /**
    * fermi level

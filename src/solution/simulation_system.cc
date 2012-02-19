@@ -23,6 +23,8 @@
 
 #include <sstream>
 #include <numeric>
+#include <queue>
+#include <algorithm>
 
 #include "parser.h"
 #include "unstructured_mesh.h"
@@ -42,7 +44,7 @@
 
 #include "vtk_io.h"
 #include "cgns_io.h"
-#include "silvaco_io.h"
+#include "stanford_io.h"
 #include "tif_io.h"
 #include "tif3d_io.h"
 #include "gdml_io.h"
@@ -67,26 +69,29 @@
 
 
 SimulationSystem::SimulationSystem(MeshBase & mesh)
-    : _mesh(mesh), _resistive_metal_mode(false), _bcs(0), _sources(0),
-    _field_source(0), _spice_ckt(0), _z_width(1.0)
+  : _mesh(mesh), _cylindrical_mesh(false), _resistive_metal_mode(false), _block_partition(true),
+    _bcs(0), _electrical_source(0),
+    _field_source(0), _spice_ckt(0), _global_z_width(false)
 {
   // set PhysicalUnit
   PhysicalUnit::set_unit( std::pow(1e18,1.0/3.0) );
 
   _T_external = 300.0*PhysicalUnit::K;
+  _z_width = 1.0*PhysicalUnit::um;
 }
 
 
 
 SimulationSystem::SimulationSystem(MeshBase & mesh, Parser::InputParser & _decks)
-    :  _T_external(300.0), _mesh(mesh), _resistive_metal_mode(false), _bcs(0), _sources(0),
-    _field_source(0), _spice_ckt(0), _z_width(1.0)
+  :  _T_external(300.0), _mesh(mesh), _cylindrical_mesh(false), _resistive_metal_mode(false), _block_partition(true),
+    _bcs(0), _electrical_source(0),
+    _field_source(0), _spice_ckt(0), _global_z_width(false), _z_width(1.0)
 {
 
   MESSAGE<<"Constructing Simulation System...\n"<<std::endl;  RECORD();
 
+  // set physical unit
   double doping_scale = 1e18;
-
   for( _decks.begin(); !_decks.end(); _decks.next() )
   {
     Parser::Card c = _decks.get_current_card();
@@ -94,27 +99,46 @@ SimulationSystem::SimulationSystem(MeshBase & mesh, Parser::InputParser & _decks
     {
       if( c.is_parameter_exist("dopingscale") )
         doping_scale = c.get_real("dopingscale", 1e18);
-
-      if( c.is_parameter_exist("texternal") )
-        _T_external   = c.get_real("texternal", 300.0, "latticetemp");
-
-      _z_width = c.get_real("z.width", 1.0);
-
-      _resistive_metal_mode = c.get_bool("resistivemetal", false);
     }
   }
 
   // set PhysicalUnit
   PhysicalUnit::set_unit( std::pow(doping_scale,1.0/3.0) );
-
-  MESSAGE<< "External Temperature = " << _T_external << 'K' <<std::endl; RECORD();
-  // scale temperature
   _T_external *= PhysicalUnit::K;
-  // scale dimension in z direction (only meaningful for 2D case)
   _z_width *= PhysicalUnit::um;
 
+  // parse GLOBAL card again
+  for( _decks.begin(); !_decks.end(); _decks.next() )
+  {
+    Parser::Card c = _decks.get_current_card();
+    if( c.key() == "GLOBAL" )   // find the global card
+    {
+      if( c.is_parameter_exist("texternal") )
+        _T_external   = c.get_real("texternal", 300.0, "latticetemp")*PhysicalUnit::K;
+
+      if( c.is_parameter_exist("z.width") )
+      {
+        _global_z_width = true;
+        _z_width = c.get_real("z.width", 1.0)*PhysicalUnit::um;
+      }
+
+      _cylindrical_mesh = c.get_bool("cylindricalmesh", false);
+      _resistive_metal_mode = c.get_bool("resistivemetal", false);
+      _block_partition = c.get_bool("blockpartition", true);
+
+      double res = c.get_real("leakage.res", 1e12)*PhysicalUnit::V/PhysicalUnit::A;
+      double cap = c.get_real("leakage.cap", 1e-18)*PhysicalUnit::C/PhysicalUnit::V;
+      MetalSimulationRegion::set_aux_parasitic_parameter(std::max(res, 1e-3*PhysicalUnit::V/PhysicalUnit::A), cap);
+    }
+  }
+
+  if(_cylindrical_mesh) _z_width = 1.0;
+
+
+  MESSAGE<< "External Temperature = " << _T_external/PhysicalUnit::K << 'K' <<std::endl; RECORD();
+
   // electrical source
-  _sources = new ElectricalSource( _decks );
+  _electrical_source = new ElectricalSource( _decks );
 
   // field sources
   _field_source = new FieldSource(*this, _decks);
@@ -168,7 +192,7 @@ SimulationSystem::~SimulationSystem()
   _simulation_regions.clear();
 
   delete _bcs;
-  delete _sources;
+  delete _electrical_source;
   delete _field_source;
   delete _spice_ckt;
 }
@@ -190,7 +214,7 @@ void SimulationSystem::clear(bool clear_mesh)
 
   _bcs->clear();
 
-  _sources->clear_bc_source_map();
+  _electrical_source->clear_bc_source_map();
 
   //since we cleared all the solution data, previous solve histroy is meaningless
   _solver_active_history.clear();
@@ -209,6 +233,15 @@ void SimulationSystem::reinit_region_after_import()
 {
   for(unsigned int r=0; r<_simulation_regions.size(); r++)
     _simulation_regions[r]->reinit_after_import();
+}
+
+
+void SimulationSystem::init_region_post_process()
+{
+  if( this->empty() ) return;
+
+  // apply field source to system again
+  _field_source->update_system();
 }
 
 
@@ -289,35 +322,35 @@ void SimulationSystem::build_simulation_system()
         case Material::SingleCompoundSemiconductor  :
         case Material::ComplexCompoundSemiconductor :
         {
-          _simulation_regions[r] = new SemiconductorSimulationRegion(_mesh.subdomain_label_by_id(r), _mesh.subdomain_material(r), _T_external);
+          _simulation_regions[r] = new SemiconductorSimulationRegion(_mesh.subdomain_label_by_id(r), _mesh.subdomain_material(r), _T_external, _z_width);
           break;
         }
         case Material::Insulator     :
         {
-          _simulation_regions[r] = new InsulatorSimulationRegion(_mesh.subdomain_label_by_id(r), _mesh.subdomain_material(r), _T_external);
+          _simulation_regions[r] = new InsulatorSimulationRegion(_mesh.subdomain_label_by_id(r), _mesh.subdomain_material(r), _T_external, _z_width);
           break;
         }
         case Material::Conductor     :
         {
-          _simulation_regions[r] = new ElectrodeSimulationRegion(_mesh.subdomain_label_by_id(r), _mesh.subdomain_material(r), _T_external);
+          _simulation_regions[r] = new ElectrodeSimulationRegion(_mesh.subdomain_label_by_id(r), _mesh.subdomain_material(r), _T_external, _z_width);
           break;
         }
         case Material::Resistance     :
         {
           if(_resistive_metal_mode)
-            _simulation_regions[r] = new MetalSimulationRegion(_mesh.subdomain_label_by_id(r), _mesh.subdomain_material(r), _T_external);
+            _simulation_regions[r] = new MetalSimulationRegion(_mesh.subdomain_label_by_id(r), _mesh.subdomain_material(r), _T_external, _z_width);
           else
-            _simulation_regions[r] = new ElectrodeSimulationRegion(_mesh.subdomain_label_by_id(r), _mesh.subdomain_material(r), _T_external);
+            _simulation_regions[r] = new ElectrodeSimulationRegion(_mesh.subdomain_label_by_id(r), _mesh.subdomain_material(r), _T_external, _z_width);
           break;
         }
         case Material::Vacuum       :
         {
-          _simulation_regions[r] = new VacuumSimulationRegion(_mesh.subdomain_label_by_id(r), _mesh.subdomain_material(r), _T_external);
+          _simulation_regions[r] = new VacuumSimulationRegion(_mesh.subdomain_label_by_id(r), _mesh.subdomain_material(r), _T_external, _z_width);
           break;
         }
         case Material::PML       :
         {
-          _simulation_regions[r] = new PMLSimulationRegion(_mesh.subdomain_label_by_id(r), _mesh.subdomain_material(r), _T_external);
+          _simulation_regions[r] = new PMLSimulationRegion(_mesh.subdomain_label_by_id(r), _mesh.subdomain_material(r), _T_external, _z_width);
           break;
         }
         default:
@@ -345,10 +378,7 @@ void SimulationSystem::build_simulation_system()
   _bcs->bc_setup();
 
   // electrical source should konw where is the (electrode) bc
-  _sources->link_to_bcs( _bcs );
-
-  // apply field source to system again
-  _field_source->update_system();
+  _electrical_source->link_to_bcs( _bcs );
 
   // clear surface locator to save memory
   _mesh.clear_surface_locator();
@@ -366,7 +396,7 @@ void SimulationSystem::build_simulation_system()
 
   // remove remote object when processor_id > 1
   // which means only processor 0 hold the complete mesh
-  if( Genius::processor_id() != 0 )
+  if(!_field_source->request_serial_mesh() && Genius::processor_id() !=0 )
     _mesh.delete_remote_elements();
 
 }
@@ -383,15 +413,68 @@ void SimulationSystem::build_region_fvm_mesh()
   // we should convert initial mesh elements to FVM element
   // NOTE: for parallel situation, only local elements are converted for saving memory
   // the mesh is prepared after the function call all_fvm_elem ()
-  MESSAGE<<"  Create mesh element for finite volume method...";  RECORD();
-  if( dynamic_cast<UnstructuredMesh &>(_mesh).all_fvm_elem () == false )
+
   {
-    MESSAGE<<"  bad mesh."<<std::endl;  RECORD();
-    genius_error();
+    START_LOG("build_region_fvm_mesh(1)", "SimulationSystem");
+
+    MESSAGE<<"  Create mesh topological information...";  RECORD();
+    UnstructuredMesh & mesh = dynamic_cast<UnstructuredMesh &>(_mesh);
+
+    // 2d or 3d mesh?
+    mesh.count_mesh_dimension();
+
+    // this function will renumber the the node/elem
+    mesh.all_first_order();
+
+    // let all the elements find their neighbors
+    mesh.find_neighbors();
+
+    // reorder the node index by Reverse Cuthill-McKee Algorithm
+    mesh.reorder_nodes();
+
+    // prepare for partition
+    if(_block_partition)
+      mesh.subdomain_cluster(this->build_subdomain_cluster());
+
+    // partition the mesh.
+    mesh.partition();
+
+    // ok, mesh is prepared
+    mesh.set_prepared();
+
+    MESSAGE<<std::endl;  RECORD();
+    STOP_LOG("build_region_fvm_mesh(1)", "SimulationSystem");
+
+
+    START_LOG("build_region_fvm_mesh(2)", "SimulationSystem");
+    MESSAGE<<"  Create mesh element for finite volume method...";  RECORD();
+
+    if(_cylindrical_mesh)
+    {
+      std::string error;
+      if( mesh.convert_to_cylindrical_fvm_mesh (error) == false )
+      {
+        MESSAGE<<"  bad mesh."<<std::endl;  RECORD();
+        MESSAGE<<"  ERROR:" << error <<std::endl;  RECORD();
+        genius_error();
+      }
+    }
+    else
+    {
+      std::string error;
+      if( mesh.convert_to_fvm_mesh (error) == false )
+      {
+        MESSAGE<<"  bad mesh."<<std::endl;  RECORD();
+        MESSAGE<<"  ERROR:" << error <<std::endl;  RECORD();
+        genius_error();
+      }
+    }
+    MESSAGE<<std::endl;  RECORD();
+    STOP_LOG("build_region_fvm_mesh(2)", "SimulationSystem");
   }
-  MESSAGE<<std::endl;  RECORD();
 
 
+  START_LOG("build_region_fvm_mesh(3)", "SimulationSystem");
   MESSAGE<<"  Building finite volume cells...";  RECORD();
 
   typedef const Node *                    key_type;
@@ -440,7 +523,7 @@ void SimulationSystem::build_region_fvm_mesh()
 
       // set the partial volume associated with this node
       // only on_local FVM elements own non-zero value!
-      fvm_node->set_control_volume( elem->partial_volume(n) );
+      fvm_node->set_control_volume( elem->partial_volume_truncated(n) );
 
       // insert all the node which connected to this node into node_neighbor
       for (unsigned int m=0; m<elem->n_nodes(); m++)
@@ -523,9 +606,10 @@ void SimulationSystem::build_region_fvm_mesh()
   }
 
   MESSAGE<<std::endl;  RECORD();
+  STOP_LOG("build_region_fvm_mesh(3)", "SimulationSystem");
 
 
-
+  START_LOG("build_region_fvm_mesh(4)", "SimulationSystem");
   MESSAGE<<"  Building boundary cells...";  RECORD();
   // we scan boundary face to find the area of interface side
   // NOTE here we should use side list of active elements!
@@ -586,19 +670,19 @@ void SimulationSystem::build_region_fvm_mesh()
           {
             if ( (*pos.first).second.first == elem->subdomain_id() )
             {
-              (*pos.first).second.second +=  fvm_side->partial_volume(v);
+              (*pos.first).second.second +=  fvm_side->partial_volume_truncated(v);
               break;
             }
             ++pos.first;
           }
           // not find? insert a new Node
           if (pos.first == pos.second)
-            bd_area_map.insert(pos.first, std::make_pair(node, std::make_pair(elem->subdomain_id(), fvm_side->partial_volume(v))));
+            bd_area_map.insert(pos.first, std::make_pair(node, std::make_pair(elem->subdomain_id(), fvm_side->partial_volume_truncated(v))));
 
         }
         else // not find? insert a new Node
         {
-          bd_area_map.insert(std::make_pair(node, std::make_pair(elem->subdomain_id(), fvm_side->partial_volume(v))));
+          bd_area_map.insert(std::make_pair(node, std::make_pair(elem->subdomain_id(), fvm_side->partial_volume_truncated(v))));
         }
       }
 
@@ -627,8 +711,10 @@ void SimulationSystem::build_region_fvm_mesh()
     }
   }
   MESSAGE<<std::endl;  RECORD();
+  STOP_LOG("build_region_fvm_mesh(4)", "SimulationSystem");
 
 
+  START_LOG("build_region_fvm_mesh(5)", "SimulationSystem");
   MESSAGE<<"  Building norm vector for each interface...";  RECORD();
   // build norm vector of interface
   {
@@ -692,8 +778,10 @@ void SimulationSystem::build_region_fvm_mesh()
   }
 
   MESSAGE<<std::endl;  RECORD();
+  STOP_LOG("build_region_fvm_mesh(5)", "SimulationSystem");
 
 
+  START_LOG("build_region_fvm_mesh(6)", "SimulationSystem");
   MESSAGE<<"  Setup simulation regions...";  RECORD();
 
   // reserve memory for data block
@@ -741,10 +829,15 @@ void SimulationSystem::build_region_fvm_mesh()
   }
 
 
-  // ask all the regions to do some post process
+  // ask all the regions to do some pre process
   for(unsigned int n = 0; n < this->n_regions(); n++)
   {
     _simulation_regions[n]->prepare_for_use();
+  }
+  // pre process should be executed in parallel
+  for(unsigned int n = 0; n < this->n_regions(); n++)
+  {
+    _simulation_regions[n]->prepare_for_use_parallel();
   }
 
 
@@ -774,12 +867,21 @@ void SimulationSystem::build_region_fvm_mesh()
 
   }
   MESSAGE<<std::endl;  RECORD();
-
+  STOP_LOG("build_region_fvm_mesh(6)", "SimulationSystem");
 
   MESSAGE<<"Simulation data structure build ok.\n"<<std::endl;  RECORD();
 
+
   STOP_LOG("build_region_fvm_mesh()", "SimulationSystem");
 }
+
+
+
+bool SimulationSystem::self_consistent() const
+{
+  return false;
+}
+
 
 
 void SimulationSystem::estimate_error (const Parser::Card &c, ErrorVector & error_per_cell) const
@@ -794,7 +896,7 @@ void SimulationSystem::estimate_error (const Parser::Card &c, ErrorVector & erro
     v_volume = true;
   else
   {
-    variable  = solution_string_to_enum(c.get_string("variable", ""));
+    variable  = solution_string_to_enum(FormatVariableString(c.get_string("variable", "")));
     if(variable_data_type(variable)!=SCALAR)
     {
       MESSAGE<<"ERROR at " << c.get_fileline() <<" REFINE: Refine variable should be scalar value."<<std::endl; RECORD();
@@ -947,7 +1049,7 @@ void SimulationSystem::fill_interpolator(InterpolationBase *interpolator,
     const std::string & variable_string,
     InterpolationBase::InterpolationType type) const
 {
-  SolutionVariable variable = solution_string_to_enum(variable_string);
+  SolutionVariable variable = solution_string_to_enum(FormatVariableString(variable_string));
   genius_assert(variable!=INVALID_Variable);
   genius_assert(variable_data_type(variable)==SCALAR);
 
@@ -996,7 +1098,7 @@ void SimulationSystem::fill_interpolator(InterpolationBase *interpolator,
  */
 void SimulationSystem::do_interpolation(const InterpolationBase * interpolator , const std::string & variable_string)
 {
-  SolutionVariable variable = solution_string_to_enum(variable_string);
+  SolutionVariable variable = solution_string_to_enum(FormatVariableString(variable_string));
   genius_assert(variable!=INVALID_Variable);
   genius_assert(variable_data_type(variable)==SCALAR);
 
@@ -1024,6 +1126,74 @@ void SimulationSystem::do_interpolation(const InterpolationBase * interpolator ,
 }
 
 
+
+std::vector< std::vector<unsigned int > > SimulationSystem::build_subdomain_cluster()
+{
+  std::vector<std::vector<unsigned int> > subdomain_adjncy;
+  _mesh.subdomain_graph(subdomain_adjncy);
+
+  std::set<unsigned int> metal_subdomains;
+  for(unsigned int s=0; s<_mesh.n_subdomains(); s++)
+  {
+    if( Material::material_type(_mesh.subdomain_material(s)) == Material::Resistance )
+      metal_subdomains.insert(s);
+  }
+
+  std::map<unsigned int, std::vector<unsigned int> > metal_subdomain_cluster;
+
+  std::set<unsigned int>::const_iterator metal_subdomain_it = metal_subdomains.begin();
+  for(; metal_subdomain_it != metal_subdomains.end(); ++metal_subdomain_it)
+  {
+    unsigned int metal_region = *metal_subdomain_it;
+    // find metal regions connected to me
+    std::queue<unsigned int> Q;
+    std::set<unsigned int> visit_flag;
+
+    Q.push( metal_region );
+    while(!Q.empty())
+    {
+      unsigned int region = Q.front();
+      Q.pop();
+
+      visit_flag.insert(region);
+      metal_subdomain_cluster[metal_region].push_back(region);
+
+      const std::vector<unsigned int> & region_neighbors = subdomain_adjncy[region];
+      for(unsigned int n=0; n<region_neighbors.size(); ++n)
+      {
+        unsigned int region_neighbor = region_neighbors[n];
+        if( visit_flag.find(region_neighbor) == visit_flag.end() && metal_subdomains.find(region_neighbor) != metal_subdomains.end())
+          Q.push(region_neighbor);
+      }
+    }
+  }
+
+  std::set<unsigned int> subdomain_flag;
+  std::vector< std::vector<unsigned int > > subdomain_cluster;
+  std::map<unsigned int, std::vector<unsigned int> >::const_iterator it = metal_subdomain_cluster.begin();
+  for( ; it != metal_subdomain_cluster.end(); ++it)
+  {
+    unsigned int region = it->first;
+    if(subdomain_flag.find(region) != subdomain_flag.end()) continue;
+
+    const std::vector<unsigned int> & cluster = it->second;
+    subdomain_cluster.push_back(cluster);
+    subdomain_flag.insert(cluster.begin(), cluster.end());
+  }
+
+  //for(unsigned int n=0; n < subdomain_cluster.size(); ++n)
+  // {
+  //  for(unsigned int m=0; m < subdomain_cluster[n].size(); ++m)
+  //    std::cout<< _mesh.subdomain_label_by_id(subdomain_cluster[n][m] )<<std::endl;
+  //
+  //  std::cout<<std::endl;
+  //}
+
+  return subdomain_cluster;
+}
+
+
+
 void SimulationSystem::print_info (std::ostream& os) const
 {
   os << "Simulation System Information on processor " << Genius::processor_id() << " :" << '\n'
@@ -1047,29 +1217,40 @@ void SimulationSystem::print_info (std::ostream& os) const
 void SimulationSystem::sync_print_info () const
 {
   std::stringstream   ss;
-  ss  << "Simulation System Information on processor " << Genius::processor_id() << " :" << '\n'
-  << " total regions = "         << this->n_regions()           << '\n';
+  ss  << "Simulation System Information on processor " << Genius::processor_id() << " :" << '\n';
 
   for(unsigned int n = 0; n < this->n_regions(); n++)
   {
-    unsigned int n_cell = _simulation_regions[n]->n_on_processor_cell();
-    unsigned int n_node = _simulation_regions[n]->n_on_processor_node();
+    unsigned int n_on_processor_cell = _simulation_regions[n]->n_on_processor_cell();
+    unsigned int n_on_processor_node = _simulation_regions[n]->n_on_processor_node();
+    unsigned int n_cell = n_on_processor_cell;
+    unsigned int n_node = n_on_processor_node;
     Parallel::sum(n_cell);
     Parallel::sum(n_node);
+
+    if(n_on_processor_cell==0 && n_on_processor_node==0) continue;
+
     ss << "   region " << _simulation_regions[n]->name()
     << " with material " << _simulation_regions[n]->material()
     << " has "
-    << _simulation_regions[n]->n_on_processor_cell() << " of " << n_cell << " total cells, "
-    << _simulation_regions[n]->n_on_processor_node() << " of " << n_node<<" total nodes."
+    << n_on_processor_cell << " of " << n_cell << " total cells, "
+    << n_on_processor_node << " of " << n_node<<" total nodes."
     << '\n';
   }
 
   ss << '\n';
 
   std::string out_info = ss.str();
+  std::vector<char> out_info_char(out_info.size());
+  std::copy(out_info.begin(), out_info.end(), out_info_char.begin());
+  Parallel::allgather(out_info_char);
+  out_info_char.push_back(0);
+  out_info = std::string(&out_info_char[0]);
 
-  PetscSynchronizedPrintf(PETSC_COMM_WORLD, "%s", out_info.c_str());
-  PetscSynchronizedFlush(PETSC_COMM_WORLD);
+  MESSAGE<<out_info<<std::endl;  RECORD();
+
+  //PetscSynchronizedPrintf(PETSC_COMM_WORLD, "%s", out_info.c_str());
+  //PetscSynchronizedFlush(PETSC_COMM_WORLD);
 }
 
 
@@ -1210,7 +1391,7 @@ void SimulationSystem::import_silvaco(const std::string& filename)
 {
   MESSAGE<<"Import System from Silvaco file "<< filename << "...\n" << std::endl; RECORD();
 
-  STIFIO(*this).read (filename);
+  STIFIO(*this, "silvaco").read (filename);
 }
 
 
@@ -1218,7 +1399,8 @@ void SimulationSystem::import_tif(const std::string& filename)
 {
   MESSAGE<<"Import System from TIF file "<< filename << "...\n" << std::endl; RECORD();
 
-  TIFIO(*this).read (filename);
+  //TIFIO(*this).read (filename);
+  STIFIO(*this, "medici").read (filename);
 }
 
 

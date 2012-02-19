@@ -7,6 +7,10 @@ def build(bld):
                ('AlGaN',    'AlGaN'),
                ('AlN',      'AlN'),
                ('Au',       'Au'),
+               ('W',        'W'),
+               ('Ti',       'Ti'),
+               ('CIGS',     'CIGS'),
+               ('CdS',      'CdS'),
                ('Cu',       'Cu'),
                ('Elec',     'Elec'),
                ('GaAs',     'GaAs'),
@@ -33,12 +37,17 @@ def build(bld):
                ('S-SiO2',   'SiO2S'),
                ('Si',       'Si'),
                ('TiSi2',    'TiSi2'),
-               ('Vacuum',   'Vacuum'),]
+               ('Vacuum',   'Vacuum'),
+               ('ZnO',      'ZnO'),]
 
-  bld.objects( source = 'adolc_init.cc PMI.cc',
+  common_src = ['adolc_init.cc', 'PMI.cc']
+  if bld.env.PLATFORM == 'Windows': common_src.append('../parser/parser_parameter.cc')
+  if bld.env.PLATFORM == 'AIX': common_src.append('../parser/parser_parameter.cc')
+
+  bld.objects( source = common_src,
                includes = bld.genius_includes,
                features = 'cxx',
-               use       = 'opt PETSC CGNS VTK',
+               use       = 'opt',
                target = 'material_common',
              )
 
@@ -48,7 +57,7 @@ def build(bld):
     bld.shlib( source = bld.path.ant_glob('%s/*.cc' % dir),
                includes  = bld.genius_includes,
                features  = 'cxx',
-               use       = 'opt material_common PETSC CGNS VTK',
+               use       = 'opt material_common',
                target    = fout,
                install_path = '${PREFIX}/lib',
              )

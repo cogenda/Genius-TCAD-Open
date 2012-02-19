@@ -333,6 +333,9 @@ public:
   SolData_t & sol_data(unsigned int n)
   { return _sol_data[n]; }
 
+  void add_sol_data(const SolData_t & data)
+  { _sol_data.push_back(data); }
+
 private:
 
   const std::string      _file;

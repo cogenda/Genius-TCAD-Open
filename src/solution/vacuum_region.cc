@@ -40,8 +40,8 @@ using PhysicalUnit::mu0;
 
 
 
-VacuumSimulationRegion::VacuumSimulationRegion(const std::string &name, const std::string &material, const PetscScalar T)
-:SimulationRegion(name, material, T)
+VacuumSimulationRegion::VacuumSimulationRegion(const std::string &name, const std::string &material, const double T, const double z)
+:SimulationRegion(name, material, T, z)
 {
   this->set_region_variables();
   mt = new Material::MaterialVacuum(this);
@@ -52,8 +52,7 @@ void VacuumSimulationRegion::insert_cell (const Elem * e)
 {
   // not a local element
   if( !e->on_local() ) return;
-  // should be fvm_elem
-  genius_assert(Elem::fvm_compatible_type(e->type()) == e->type());
+
   // insert into region element vector
   _region_cell.push_back(e);
   _region_cell_data.push_back(new FVM_Vacuum_CellData(&_cell_data_storage, _region_cell_variables) );

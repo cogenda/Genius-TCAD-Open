@@ -28,6 +28,7 @@
 #include <vector>
 #include <map>
 
+#include "enum_bc.h"
 #include "node.h"
 #include "fvm_node_data.h"
 
@@ -242,22 +243,35 @@ public:
           |/
    \endverbatim
    */
-  Real outside_boundary_surface_area() const
-  {
-    genius_assert(_ghost_nodes);
-    Real area = 0.0;
-    fvm_ghost_node_iterator  it = ghost_node_begin();
-    for(; it!=ghost_node_end(); ++it )
-       area += (*it).second.second;
-    return area;
-  }
+  Real outside_boundary_surface_area() const;
+
 
   /**
-   * set the bc index for this node
+   * @return sum of S/d of the control volumn
+   * S is the surface area to neighbor n
+   * d is the length to neighbor n
+   */
+  Real laplace_unit() const;
+
+  /**
+   * @return sum of abs(S)/d of the control volumn
+   * S is the surface area to neighbor n
+   * d is the length to neighbor n
+   */
+  Real sup_laplace_unit() const;
+
+  /**
+   * set the subdomain index for this node
    */
   void set_subdomain_id (unsigned int sbd_id)
   { _subdomain_id = sbd_id; }
 
+
+  /**
+   * set the boundary condition type of this node
+   */
+  void set_bc_type(BCType  bc_type)
+  { _bc_type = bc_type; }
 
   /**
    * set the boundary index for this node
@@ -282,6 +296,12 @@ public:
    */
   unsigned int subdomain_id () const
     { return _subdomain_id; }
+
+  /**
+   * @return the boundary condition type of this node
+   */
+  BCType bc_type() const
+    { return _bc_type; }
 
   /**
    * @return the node's bc index
@@ -426,6 +446,12 @@ public:
   { return (*_node - *(other->_node)).size(); }
 
   /**
+   * @return the distance to other node
+   */
+  Real distance(const Node * other) const
+  { return (*_node - *other).size(); }
+
+  /**
    * set norm vector to boundary/interface surface
    */
   void set_norm(const VectorValue<Real> &norm)
@@ -483,6 +509,7 @@ private:
 
   /**
    * control volume surface area. indicated by neighbor Node
+   * NOTE: the surface area is not truncated
    */
   std::map< const Node *, Real > _cv_surface_area;
 
@@ -508,6 +535,11 @@ private:
    * the boundary index of this node
    */
   short int _boundary_id;
+
+  /**
+   * the boundary condition type
+   */
+  BCType  _bc_type;
 
   /**
    * the subdomain id of this node

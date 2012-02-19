@@ -120,6 +120,11 @@ class SerialMesh : public UnstructuredMesh
   virtual void pack_nodes(std::vector<Real> &) const;
 
   /**
+   * pack all the mesh edge info, should be executed in parallel
+   */
+  virtual void pack_egeds(std::vector< std::pair<unsigned int, unsigned int> > &) const;
+
+  /**
    * pack all the mesh elem info, should be executed in parallel
    */
   virtual void pack_elems(std::vector<int> &) const;
@@ -187,6 +192,11 @@ class SerialMesh : public UnstructuredMesh
    * functions for reordering nodes
    */
   virtual void reorder_nodes ();
+
+  /**
+   * the subdomain interconnect graph in CSR format
+   */
+  virtual void subdomain_graph(std::vector<std::vector<unsigned int> >&) const;
 
 public:
   /**

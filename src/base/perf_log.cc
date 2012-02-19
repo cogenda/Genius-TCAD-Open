@@ -17,21 +17,98 @@
 // License along with this library; if not, write to the Free Software
 // Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 
-#ifdef ENABLE_PERFORMANCE_LOGGING
+
 
 // C++ includes
 #include <iostream>
 #include <iomanip>
 #include <ctime>
-#include <unistd.h>
-#include <sys/utsname.h>
-#include <sys/types.h>
-#include <pwd.h>
 #include <vector>
 
 // Local includes
 #include "perf_log.h"
+#include "genius_env.h"
 
+#ifdef ENABLE_PERFORMANCE_LOGGING
+
+
+#ifdef WINDOWS
+#include <windows.h>
+
+// windows does not have gettimeofday function
+inline int gettimeofday(struct timeval_t *tp, void *tzp)
+{
+  time_t clock;
+  struct tm tm;
+  SYSTEMTIME wtm;
+
+  GetLocalTime(&wtm);
+  tm.tm_year     = wtm.wYear - 1900;
+  tm.tm_mon     = wtm.wMonth - 1;
+  tm.tm_mday     = wtm.wDay;
+  tm.tm_hour     = wtm.wHour;
+  tm.tm_min     = wtm.wMinute;
+  tm.tm_sec     = wtm.wSecond;
+  tm. tm_isdst    = -1;
+  clock = mktime(&tm);
+  tp->tv_sec = clock;
+  tp->tv_usec = wtm.wMilliseconds * 1000;
+
+  return (0);
+}
+#else
+#include <sys/utsname.h>
+#include <sys/types.h>
+#include <pwd.h>
+#endif
+
+
+
+void PerfData::start ()
+{
+  this->count++;
+  this->called_recursively++;
+  gettimeofday (&(this->tstart), NULL);
+}
+
+
+
+void PerfData::restart ()
+{
+  gettimeofday (&(this->tstart), NULL);
+}
+
+
+
+
+
+double PerfData::pause ()
+{
+  // save the start times, reuse the structure we have rather than create
+  // a new one.
+  const double
+      tstart_tv_sec  = this->tstart.tv_sec,
+  tstart_tv_usec = this->tstart.tv_usec;
+
+  gettimeofday (&(this->tstart), NULL);
+
+  const double elapsed_time = (static_cast<double>(this->tstart.tv_sec  - tstart_tv_sec) +
+      static_cast<double>(this->tstart.tv_usec - tstart_tv_usec)*1.e-6);
+
+  this->tot_time += elapsed_time;
+
+  return elapsed_time;
+}
+
+
+double PerfData::stopit ()
+{
+  // stopit is just like pause except decriments the
+  // recursive call counter
+
+  this->called_recursively--;
+  return this->pause();
+}
 
 
 // ------------------------------------------------------------
@@ -54,9 +131,11 @@ PerfLog::PerfLog(const std::string& ln,
 
 PerfLog::~PerfLog()
 {
-  if (log_events)
-    this->print_log();
+
 }
+
+
+
 
 
 
@@ -93,9 +172,13 @@ std::string PerfLog::get_info_header() const
 {
   OStringStream out;
 
+#ifdef WINDOWS
+
+
+#else
+
   if (log_events)
     {
-
 #ifdef HAVE_LOCALE
       OStringStream  dateStr;
       time_t tm         = time(NULL);
@@ -162,7 +245,6 @@ std::string PerfLog::get_info_header() const
       machine_stream << "| Machine:        " << sysInfo.machine        ;
       user_stream    << "| Username:       " << p->pw_name             ;
 
-
       // Find the longest string, use that to set the line length for formatting.
       unsigned int max_length = 0;
       for (unsigned int i=0; i<v.size(); ++i)
@@ -187,7 +269,7 @@ std::string PerfLog::get_info_header() const
       this->_character_line(max_length+2, '-', out);
       out << '\n';
     }
-
+#endif
   return out.str();
 }
 
@@ -201,7 +283,12 @@ std::string PerfLog::get_perf_info() const
   if (log_events && !log.empty())
     {
       // Stop timing for this event.
+#ifdef WINDOWS
+      struct timeval_t tstop;
+#else
       struct timeval tstop;
+#endif
+
 
       gettimeofday (&tstop, NULL);
 

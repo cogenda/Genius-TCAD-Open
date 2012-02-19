@@ -45,7 +45,7 @@ using PhysicalUnit::e;
 /*---------------------------------------------------------------------
  * do pre-process to function for EBM3 solver
  */
-void HeteroInterfaceBC::EBM3_Function_Preprocess(Vec f, std::vector<PetscInt> &src_row,
+void HeteroInterfaceBC::EBM3_Function_Preprocess(PetscScalar *,Vec f, std::vector<PetscInt> &src_row,
     std::vector<PetscInt> &dst_row, std::vector<PetscInt> &clear_row)
 {
 
@@ -611,7 +611,7 @@ void HeteroInterfaceBC::EBM3_Jacobian_Reserve ( Mat *jac, InsertMode &add_value_
 /*---------------------------------------------------------------------
  * do pre-process to jacobian matrix for EBM3 solver
  */
-void HeteroInterfaceBC::EBM3_Jacobian_Preprocess(Mat *jac, std::vector<PetscInt> &src_row,
+void HeteroInterfaceBC::EBM3_Jacobian_Preprocess(PetscScalar * ,Mat *jac, std::vector<PetscInt> &src_row,
     std::vector<PetscInt> &dst_row, std::vector<PetscInt> &clear_row)
 {
 

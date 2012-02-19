@@ -21,11 +21,16 @@
 
 #include <stack>
 #include <iomanip>
+#include <numeric>
+
 
 #include "sphere.h"
 #include "mesh_base.h"
 #include "boundary_info.h"
+#include "semiconductor_region.h"
 #include "mesh_tools.h"
+#include "field_source.h"
+#include "light_lenses.h"
 #include "ray_tracing/light_thread.h"
 #include "ray_tracing/object_tree.h"
 #include "ray_tracing/ray_tracing.h"
@@ -42,6 +47,7 @@ using PhysicalUnit::mu0;
 using PhysicalUnit::h;
 
 
+
 RayTraceSolver::RayTraceSolver(SimulationSystem & system, const Parser::Card & c)
     : SolverBase(system), _card(c), surface_elem_tree(0)
 {
@@ -54,17 +60,18 @@ int RayTraceSolver::create_solver()
   MESSAGE<< '\n' << "Ray tracing Solver init... ";
   RECORD();
 
-  // broadcast mesh since we need serial mesh here
+  // since we need serial mesh here
   MeshBase & mesh = _system.mesh();
-  mesh.broadcast();
+  genius_assert(mesh.is_serial());
 
   // do necessary precomputation for fast ray tracing
   surface_elem_tree = new ObjectTree(mesh);
   build_elems_node_map();
   build_elems_edge_map();
   build_boundary_elems_map();
-
+  build_elem_carrier_density();
   // parse input deck
+  define_lenses();
   create_rays();
 
   MESSAGE<< _total_rays <<" rays for each wave length."<<std::endl;
@@ -76,6 +83,8 @@ int RayTraceSolver::create_solver()
 
 int RayTraceSolver::solve()
 {
+  START_LOG("solve()", "RayTraceSolver");
+
   // for each wavelentgh
   for(unsigned int n=0; n<_optical_sources.size(); ++n)
   {
@@ -86,8 +95,11 @@ int RayTraceSolver::solve()
     build_region_refractive_index(lamda);
 
     // clear and re-create the array to record energy deposition
-    _energy_deposit_in_elem.clear();
-    _energy_deposit_in_elem.resize(_system.mesh().n_elem(), 0.0);
+    _band_absorption_energy_in_elem.clear();
+    _band_absorption_energy_in_elem.resize(_system.mesh().n_elem(), 0.0);
+
+    _total_absorption_energy_in_elem.clear();
+    _total_absorption_energy_in_elem.resize(_system.mesh().n_elem(), 0.0);
 
     MESSAGE<< "  process light of " /*<< std::setiosflags(std::ios::fixed)*/  << lamda/um << " um";
     RECORD();
@@ -104,6 +116,9 @@ int RayTraceSolver::solve()
                                              power,
                                              power
                                             );
+
+      if(!_lenses->empty())  light = (*_lenses) << light;
+
       // call function ray_tracing to process a single ray
       ray_tracing(light);
 
@@ -113,10 +128,14 @@ int RayTraceSolver::solve()
         MESSAGE<< ".";
         RECORD();
       }
+#if defined(HAVE_FENV_H) && defined(DEBUG)
+      genius_assert( !fetestexcept(FE_INVALID) );
+#endif
     }
 
     // gather energy deposit from all the processors
-    Parallel::sum(_energy_deposit_in_elem);
+    Parallel::sum(_band_absorption_energy_in_elem);
+    Parallel::sum(_total_absorption_energy_in_elem);
 
     // convert energy deposit to carrier optical generation
     optical_generation(n);
@@ -124,6 +143,11 @@ int RayTraceSolver::solve()
     MESSAGE<< "ok" <<std::endl;
     RECORD();
   }
+#if defined(HAVE_FENV_H) && defined(DEBUG)
+  genius_assert( !fetestexcept(FE_INVALID) );
+#endif
+
+  STOP_LOG("solve()", "RayTraceSolver");
 
   return 0;
 }
@@ -149,12 +173,6 @@ int RayTraceSolver::destroy_solver()
 
   }
 
-  // change to distributed mesh
-  if( Genius::processor_id() != 0 )
-  {
-    MeshBase & mesh = _system.mesh();
-    mesh.delete_remote_elements();
-  }
 
   MESSAGE<< "Ray tracing Solver finished.\n" <<std::endl;
   RECORD();
@@ -164,6 +182,196 @@ int RayTraceSolver::destroy_solver()
 
 
 //---------------------------------------------------------------
+
+
+void RayTraceSolver::define_lenses()
+{
+  std::vector<std::string> lenses;
+  if(_card.is_parameter_exist("lenses"))
+    lenses = _card.get_array<std::string>("lenses");
+
+  for(unsigned int idx=0; idx<_card.parameter_size(); idx++)
+  {
+    Parser::Parameter p = _card.get_parameter(idx);
+    if ( p.name() == "lens" )
+    {
+      lenses.push_back(p.get_string());
+    }
+  }
+
+  _lenses = _system.get_field_source()->light_lenses();
+  _lenses->set_lenses(lenses);
+}
+
+
+void RayTraceSolver::create_rays()
+{
+
+  // optical wave is defined by command line
+  if(_card.is_parameter_exist("lambda")||_card.is_parameter_exist("wavelength"))
+  {
+    OpticalSource source;
+    source.wave_length = _card.get_real("lambda", 0.532, "wavelength")*um;// wave length of light source
+    source.power       = _card.get_real("intensity", 0.0)*J/s/cm/cm;      // incident power
+    source.eta_auto    = !_card.is_parameter_exist("quan.eff");
+    source.eta         = _card.get_real("quan.eff", 1.0);
+    _optical_sources.push_back(source);
+  }
+
+  // read optical wave from spectrum file
+  if(_card.is_parameter_exist("spectrumfile"))
+  {
+    parse_spectrum_file(_card.get_string("spectrumfile", ""));
+  }
+
+
+  const MeshBase &mesh = _system.mesh();
+
+  // ray direction
+  Point dir;
+  if(_card.is_parameter_exist("k"))
+  {
+    std::vector<double> k = _card.get_array<double>("k");
+    k.resize(3, 0.0);
+    dir = Point(&k[0]).unit();
+  }
+  else
+  {
+    double phi   = _card.get_real("k.phi",   0.0)/180.0*3.14159265358979323846;
+    double theta = _card.get_real("k.theta", 0.0)/180.0*3.14159265358979323846;
+    dir = Point(sin(phi)*cos(theta), cos(phi), sin(phi)*sin(theta));
+  }
+
+  // E vector direction
+  Point E_dir;
+  if(_card.is_parameter_exist("e"))
+  {
+    std::vector<double> e = _card.get_array<double>("e");
+    e.resize(3, 0.0);
+    E_dir = Point(&e[0]).unit();
+  }
+  else
+  {
+    double phi   = _card.get_real("e.phi",  90.0)/180.0*3.14159265358979323846;
+    double theta = _card.get_real("e.theta", 0.0)/180.0*3.14159265358979323846;
+    E_dir = Point(sin(phi)*cos(theta), cos(phi), sin(phi)*sin(theta));
+  }
+
+  // check if E//k
+  if( std::abs(dir.dot(E_dir)) > 1.0 - 1e-3 )
+  {
+    MESSAGE<<"\nERROR at " <<_card.get_fileline()<< " Ray Tracing: E vector not perpendicular to wave vector." << std::endl; RECORD();
+    genius_error();
+  }
+  // compute the E
+  E_dir = (E_dir - dir*E_dir*dir).unit();
+
+  // determine the ray density -- the distance between rays
+  double min_dist = 1e+10;
+  MeshBase::const_element_iterator       el  = mesh.elements_begin();
+  const MeshBase::const_element_iterator el_end = mesh.elements_end();
+  for (; el != el_end; ++el)
+  {
+    double hmin = (*el)->hmin();
+    if( hmin<min_dist ) min_dist = hmin;
+  }
+
+  // the mesh bounding sphere (circle in 2D)
+  Sphere bounding_sphere = MeshTools::bounding_sphere(mesh);
+  // consider lenses
+  if( !_lenses->empty() )
+  {
+    Sphere lenses_bounding_sphere = _lenses->bounding_sphere();
+    bounding_sphere = MeshTools::bounding_sphere(bounding_sphere, lenses_bounding_sphere);
+  }
+
+  // the ray start plane
+  if(_card.is_parameter_exist("ray.center"))
+  {
+    std::vector<double> c = _card.get_array<double>("ray.center");
+    c.resize(3, 0.0); // if use only gives one cood, pad it
+    _wave_plane.center    = Point(&c[0])*um;
+    if( bounding_sphere.below_surface(_wave_plane.center) )
+      _wave_plane.center  = _wave_plane.center - 2*bounding_sphere.radius()*dir;
+  }
+  else
+    _wave_plane.center    = bounding_sphere.center() - 2*bounding_sphere.radius()*dir;
+
+  _wave_plane.norm     = dir;
+  _wave_plane.E_dir    = E_dir;
+  if(_card.is_parameter_exist("ray.radius"))
+    _wave_plane.R      = _card.get_real("ray.radius",  100.0)*um;
+  else
+    _wave_plane.R      = bounding_sphere.radius();
+  if(_card.is_parameter_exist("ray.distance"))
+    _wave_plane.min_dist = _card.get_real("ray.distance", 0.1)*um;
+  else
+    _wave_plane.min_dist = min_dist/_card.get_real("ray.density", 10.0);
+
+  // this vector stores all the ray start points
+  std::vector<Point> ray_start_points;
+
+  //3D mesh
+  if(surface_elem_tree->is_octree())
+  {
+    // compute all the start point of the ray
+    const Point y_axis(0,1,0);
+
+    // two direction vector in ray start plane
+    Point d1, d2;
+
+    // if ray dir is parallel to y axis
+    if((y_axis.cross(dir)).size()<=1e-9)
+    {
+      d1 = Point(1, 0, 0); // x-axis
+      d2 = dir.cross(d1);
+    }
+    else // ray is not parallel to y axis
+    {
+      d1 = ((y_axis.cross(dir)).cross(dir)).unit();
+      d2 = dir.cross(d1);
+    }
+
+    // how many rays in one of the direction
+    int n_rays_half = int(ceil(_wave_plane.R/_wave_plane.min_dist));
+    for(int i=-n_rays_half; i<=n_rays_half; ++i)
+      for(int j=-n_rays_half; j<=n_rays_half; ++j)
+    {
+      Point s = _wave_plane.center + i*_wave_plane.min_dist*d1 + j*_wave_plane.min_dist*d2;
+      if(surface_elem_tree->hit_boundbox(s, dir))
+        ray_start_points.push_back(s);
+    }
+    _dim = 3;
+  }
+
+  //2D mesh
+  if(surface_elem_tree->is_quadtree())
+  {
+    const Point z_axis(0,0,1);
+    Point d = dir.cross(z_axis);
+
+    int n_rays_half = int(ceil(_wave_plane.R/_wave_plane.min_dist));
+    for(int i=-n_rays_half; i<=n_rays_half; ++i)
+    {
+      Point s = _wave_plane.center + i*_wave_plane.min_dist*d;
+      if(surface_elem_tree->hit_boundbox(s, dir))
+        ray_start_points.push_back(s);
+    }
+
+    _dim = 2;
+  }
+
+  // compute start point on all the processors
+  _total_rays = ray_start_points.size();
+  unsigned int on_process_rays = ray_start_points.size()/Genius::n_processors();
+  unsigned int begin = on_process_rays*Genius::processor_id();
+  unsigned int end   = std::min(begin+on_process_rays, ray_start_points.size());
+  for(unsigned int n=begin; n<end; ++n)
+    _wave_plane.ray_start_points.push_back(ray_start_points[n]);
+
+}
+
+
 
 void RayTraceSolver::parse_spectrum_file(const std::string & filename)
 {
@@ -287,6 +495,68 @@ void RayTraceSolver::build_region_refractive_index(double lamda)
   // set env refractive index
   _region_refractive_index[invalid_uint] = std::make_pair(1.0, 0.0);
 }
+
+
+void RayTraceSolver::build_elem_carrier_density()
+{
+  std::vector<unsigned int> elem_id;
+  std::map<unsigned int, double> elem_n;
+  std::map<unsigned int, double> elem_p;
+
+  for(unsigned int r=0; r<_system.n_regions(); ++r)
+  {
+    const SimulationRegion* region = _system.region(r);
+    if( region->type() != SemiconductorRegion ) continue;
+
+    SimulationRegion::const_element_iterator it = region->elements_begin();
+    SimulationRegion::const_element_iterator it_end = region->elements_end();
+    for(; it != it_end; ++it)
+    {
+      const Elem * elem = *it;
+      if( !elem->on_processor() ) continue;
+
+      double n=0, p=0;
+      for(unsigned int i=0; i<elem->n_nodes(); ++i)
+      {
+        const FVM_Node * fvm_node = elem->get_fvm_node(i);
+        const FVM_NodeData * node_data = fvm_node->node_data();
+        n += node_data->n()/elem->n_nodes();
+        p += node_data->p()/elem->n_nodes();
+      }
+      elem_id.push_back(elem->id());
+      elem_n.insert(std::make_pair(elem->id(), n));
+      elem_p.insert(std::make_pair(elem->id(), p));
+    }
+  }
+
+  Parallel::allgather(elem_id);
+  Parallel::allgather(elem_n);
+  Parallel::allgather(elem_p);
+
+  genius_assert(elem_id.size() == elem_n.size());
+  genius_assert(elem_id.size() == elem_p.size());
+
+  for(unsigned int i=0; i<elem_id.size(); ++i)
+  {
+    double n = elem_n.find(elem_id[i])->second;
+    double p = elem_p.find(elem_id[i])->second;
+    _elem_carrier_density[elem_id[i]] = std::make_pair(n, p);
+  }
+}
+
+
+double RayTraceSolver::get_free_carrier_absorption(const Elem* elem, double wavelength) const
+{
+  const SimulationRegion * region =  _system.region(elem->subdomain_id());
+  if( region->type() == SemiconductorRegion )
+  {
+    const SemiconductorSimulationRegion * semiconductor_region = dynamic_cast<const SemiconductorSimulationRegion *>(region);
+    std::pair<double, double> carrier = _elem_carrier_density.find(elem->id())->second;
+    return semiconductor_region->material()->optical->FreeCarrierAbsorption(wavelength, carrier.first, carrier.second, _system.T_external() );
+  }
+  return 0.0;
+}
+
 
 
 void RayTraceSolver::build_elems_node_map()
@@ -439,129 +709,6 @@ const Elem * RayTraceSolver::ray_hit(const Point &p, const Point &dir, const Ele
 }
 
 
-void RayTraceSolver::create_rays()
-{
-
-  // optical wave is defined by command line
-  if(_card.is_parameter_exist("lambda")||_card.is_parameter_exist("wavelength"))
-  {
-    OpticalSource source;
-    source.wave_length = _card.get_real("lambda", 0.532, "wavelength")*um;// wave length of light source
-    source.power       = _card.get_real("intensity", 0.0)*J/s/cm/cm;      // incident power
-    source.eta_auto    = !_card.is_parameter_exist("quan.eff");
-    source.eta         = _card.get_real("quan.eff", 1.0);
-    _optical_sources.push_back(source);
-  }
-
-  // read optical wave from spectrum file
-  if(_card.is_parameter_exist("spectrumfile"))
-  {
-    parse_spectrum_file(_card.get_string("spectrumfile", ""));
-  }
-
-
-  const MeshBase &mesh = _system.mesh();
-
-  // ray direction
-  double phi   = _card.get_real("k.phi",   0.0)/180.0*3.14159265358979323846;
-  double theta = _card.get_real("k.theta", 0.0)/180.0*3.14159265358979323846;
-  Point dir(sin(phi)*cos(theta), cos(phi), sin(phi)*sin(theta));
-
-  // E vector direction
-  phi   = _card.get_real("e.phi",  90.0)/180.0*3.14159265358979323846;
-  theta = _card.get_real("e.theta", 0.0)/180.0*3.14159265358979323846;
-  Point E_dir(sin(phi)*cos(theta), cos(phi), sin(phi)*sin(theta));
-
-  if( std::abs(dir.dot(E_dir)) > 1e-2 )
-  {
-    MESSAGE<<"\nERROR at " <<_card.get_fileline()<< " Ray Tracing: E vector not perpendicular to wave vector." << std::endl; RECORD();
-    genius_error();
-  }
-
-  // determine the ray density -- the distance between rays
-  double min_dist = 1e+10;
-  MeshBase::const_element_iterator       el  = mesh.elements_begin();
-  const MeshBase::const_element_iterator el_end = mesh.elements_end();
-  for (; el != el_end; ++el)
-  {
-    double hmin = (*el)->hmin();
-    if( hmin<min_dist ) min_dist = hmin;
-  }
-
-  // the mesh bounding sphere (circle in 2D)
-  Sphere bounding_sphere = MeshTools::bounding_sphere(mesh);
-
-  // the ray start plane
-  _wave_plane.center   = bounding_sphere.center() - 2*bounding_sphere.radius()*dir;
-  _wave_plane.norm     = dir;
-  _wave_plane.E_dir    = E_dir;
-  _wave_plane.R        = bounding_sphere.radius();
-  _wave_plane.min_dist = min_dist/_card.get_real("ray.density", 10.0);
-
-  // this vector stores all the ray start points
-  std::vector<Point> ray_start_points;
-
-  //3D mesh
-  if(surface_elem_tree->is_octree())
-  {
-    // compute all the start point of the ray
-    const Point y_axis(0,1,0);
-
-    // two direction vector in ray start plane
-    Point d1, d2;
-
-    // if ray dir is parallel to y axis
-    if((y_axis.cross(dir)).size()<=1e-9)
-    {
-      d1 = Point(1, 0, 0); // x-axis
-      d2 = dir.cross(d1);
-    }
-    else // ray is not parallel to y axis
-    {
-      d1 = ((y_axis.cross(dir)).cross(dir)).unit();
-      d2 = dir.cross(d1);
-    }
-
-    // how many rays in one of the direction
-    int n_rays_half = int(ceil(_wave_plane.R/_wave_plane.min_dist));
-    for(int i=-n_rays_half; i<=n_rays_half; ++i)
-      for(int j=-n_rays_half; j<=n_rays_half; ++j)
-      {
-        Point s = _wave_plane.center + i*_wave_plane.min_dist*d1 + j*_wave_plane.min_dist*d2;
-        if(surface_elem_tree->hit_boundbox(s, dir))
-          ray_start_points.push_back(s);
-      }
-    _dim = 3;
-  }
-
-  //2D mesh
-  if(surface_elem_tree->is_quadtree())
-  {
-    const Point z_axis(0,0,1);
-    Point d = dir.cross(z_axis);
-
-    int n_rays_half = int(ceil(_wave_plane.R/_wave_plane.min_dist));
-    for(int i=-n_rays_half; i<=n_rays_half; ++i)
-    {
-      Point s = _wave_plane.center + i*_wave_plane.min_dist*d;
-      if(surface_elem_tree->hit_boundbox(s, dir))
-        ray_start_points.push_back(s);
-    }
-
-    _dim = 2;
-  }
-
-  // compute start point on all the processors
-  _total_rays = ray_start_points.size();
-  unsigned int on_process_rays = ray_start_points.size()/Genius::n_processors();
-  unsigned int begin = on_process_rays*Genius::processor_id();
-  unsigned int end   = std::min(begin+on_process_rays, ray_start_points.size());
-  for(unsigned int n=begin; n<end; ++n)
-    _wave_plane.ray_start_points.push_back(ray_start_points[n]);
-
-}
-
-
 
 void RayTraceSolver::ray_tracing(LightThread *ray)
 {
@@ -594,7 +741,6 @@ void RayTraceSolver::ray_tracing(LightThread *ray)
       // the first intersection point
       assert(current_ray->result.hit_points.size());
       Hit_Point & hit_point = current_ray->result.hit_points[0];
-
       switch(hit_point.point_location)
       {
           case on_face   :  //the ray-mesh intersection point is on elem face
@@ -798,24 +944,35 @@ void RayTraceSolver::ray_tracing(LightThread *ray)
 
     // calculate energy deposit
     const Elem * elem = current_ray->hit_elem;
-
     Hit_Point  end_point = current_ray->result.hit_points[1];
-    double energy_deposit = current_ray->advance_to(end_point.p, get_refractive_index_im(elem->subdomain_id()));
+
+
+    double a_band = 4*3.14159265358979*this->get_refractive_index_im(elem->subdomain_id())/current_ray->wavelength();
+    double a_tail = 0.0;
+    double a_fc   = this->get_free_carrier_absorption(elem, current_ray->wavelength());
+
+    std::vector<double> energy_deposit = current_ray->advance_to(end_point.p, a_band, a_tail, a_fc);
+    double total_energy_deposit = std::accumulate(energy_deposit.begin(), energy_deposit.end(), 0.0);
 
     switch(current_ray->result.state)
     {
         // all the energy deposited in this elem
         case Intersect_Body :
-        _energy_deposit_in_elem[elem->id()] += energy_deposit;
+          _band_absorption_energy_in_elem[elem->id()] += energy_deposit[0];
+          _total_absorption_energy_in_elem[elem->id()] += total_energy_deposit;
         break;
         // two elem shares the energy deposite
         case On_Face        :
         {
-          _energy_deposit_in_elem[elem->id()] += 0.5*energy_deposit;
+          _band_absorption_energy_in_elem[elem->id()] += 0.5*energy_deposit[0];
+          _total_absorption_energy_in_elem[elem->id()] += 0.5*total_energy_deposit;
           unsigned int side = current_ray->result.mark;
           const Elem * neighbor = elem->neighbor(side);
           if(neighbor)
-            _energy_deposit_in_elem[neighbor->id()] += 0.5*energy_deposit;
+          {
+            _band_absorption_energy_in_elem[neighbor->id()] += 0.5*energy_deposit[0];
+            _total_absorption_energy_in_elem[neighbor->id()] += 0.5*total_energy_deposit;
+          }
           break;
         }
         // all the elems have this edge shares the deposited energy
@@ -826,7 +983,10 @@ void RayTraceSolver::ray_tracing(LightThread *ray)
           const std::vector<const Elem *> & elems = _elems_shared_this_edge.find(edge.get())->second;
           assert(elems.size());
           for(unsigned int n=0; n<elems.size(); ++n)
-            _energy_deposit_in_elem[elems[n]->id()] += energy_deposit/elems.size();
+          {
+            _band_absorption_energy_in_elem[elems[n]->id()] += energy_deposit[0]/elems.size();
+            _total_absorption_energy_in_elem[elems[n]->id()] += total_energy_deposit/elems.size();
+          }
           break;
         }
         //we should never reach here
@@ -1076,7 +1236,7 @@ void RayTraceSolver::optical_generation(unsigned int n)
   double lamda    = _optical_sources[n].wave_length;
   double quan_eff = _optical_sources[n].eta;
 
-  for (unsigned int i=0; i<_energy_deposit_in_elem.size(); i++)
+  for (unsigned int i=0; i<_band_absorption_energy_in_elem.size(); i++)
   {
     const Elem * elem = mesh.elem(i);
     if(!elem->on_local()) continue; //skip nonlocal elements
@@ -1084,30 +1244,66 @@ void RayTraceSolver::optical_generation(unsigned int n)
     SimulationRegion* elem_region = _system.region(elem->subdomain_id());
 
     // only semiconductor region generating carriers
-    if(elem_region->type() != SemiconductorRegion) continue;
-
-    double Eg = elem_region->get_optical_Eg(elem_region->T_external());
-    double E_photon = h*c/lamda;
-    if(_optical_sources[n].eta_auto)
+    if(elem_region->type() == SemiconductorRegion)
     {
-      // calculate optical gen quantum efficiency
-      quan_eff = floor(E_photon/Eg);
+      double Eg = elem_region->get_optical_Eg(elem_region->T_external());
+      double E_photon = h*c/lamda;
+      if(_optical_sources[n].eta_auto)
+      {
+        // calculate optical gen quantum efficiency
+        quan_eff = floor(E_photon/Eg);
+      }
+
+      double gen = _band_absorption_energy_in_elem[i]/E_photon*quan_eff;
+      double heat = _band_absorption_energy_in_elem[i] - Eg*gen;
+
+      double volumn = 0;
+      for(unsigned int nd=0; nd<elem->n_nodes(); nd++)
+      {
+        volumn += elem->partial_volume_truncated(nd);
+      }
+
+      for(unsigned int nd=0; nd<elem->n_nodes(); nd++)
+      {
+        const Node* node = elem->get_node(nd);
+        double vol_ratio = elem->partial_volume_truncated(nd)/(volumn+1e-10);
+
+        FVM_Node* fvm_node = elem_region->region_fvm_node(node);
+        assert(fvm_node->node_data());
+
+        fvm_node->node_data()->OptG() += gen*vol_ratio/fvm_node->volume();
+        fvm_node->node_data()->OptQ() += heat*vol_ratio/fvm_node->volume();
+      }
     }
-    double gen = _energy_deposit_in_elem[i]/E_photon*quan_eff;
-    double heat = _energy_deposit_in_elem[i] - Eg*gen;
+  }
+
+
+  for (unsigned int i=0; i<_total_absorption_energy_in_elem.size(); i++)
+  {
+    const Elem * elem = mesh.elem(i);
+    if(!elem->on_local()) continue; //skip nonlocal elements
+
+    SimulationRegion* elem_region = _system.region(elem->subdomain_id());
+
+    double energy = _total_absorption_energy_in_elem[i];
+    if(energy==0.0) continue;
+
+    double volumn = 0;
+    for(unsigned int nd=0; nd<elem->n_nodes(); nd++)
+    {
+      volumn += elem->partial_volume_truncated(nd);
+    }
 
     for(unsigned int nd=0; nd<elem->n_nodes(); nd++)
     {
       const Node* node = elem->get_node(nd);
-      double vol_ratio = elem->partial_volume(nd)/elem->volume();
+      double vol_ratio = elem->partial_volume_truncated(nd)/(volumn+1e-10);
 
       FVM_Node* fvm_node = elem_region->region_fvm_node(node);
       assert(fvm_node->node_data());
 
-      fvm_node->node_data()->OptG() += gen*vol_ratio/fvm_node->volume();
-      fvm_node->node_data()->OptQ() += heat*vol_ratio/fvm_node->volume();
+      fvm_node->node_data()->OptE() += energy*vol_ratio/fvm_node->volume();
     }
-
   }
 
 }

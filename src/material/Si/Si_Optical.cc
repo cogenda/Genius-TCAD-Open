@@ -31,10 +31,12 @@ class GSS_Si_Optical : public PMIS_Optical
 private:
 
   /**
-   * build in refraction data
+   * build in refraction data in wavelength(um), n, k
+   * NOTE: um = 1.2398/eV
    */
   void _init_default_wave_table()
   {
+    // from CRC Handbook of Chemistry and Physics
     if(!_wave_table.empty()) _wave_table.clear();
 
     _wave_table.push_back( RefractionItem(0.1240,  0.306 , 1.38) );
@@ -68,11 +70,15 @@ private:
     _wave_table.push_back( RefractionItem(0.6888,  3.796 , 0.013) );
     _wave_table.push_back( RefractionItem(0.7293,  3.752 , 0.010) );
     _wave_table.push_back( RefractionItem(0.7749,  3.714 , 0.008) );
-    _wave_table.push_back( RefractionItem(0.8266,  3.673 , 0.005) );
-    _wave_table.push_back( RefractionItem(1.240 ,  3.5163, 1.5e-6));
+    _wave_table.push_back( RefractionItem(0.8266,  3.673 , 0.005) );   // 1.5eV
+    _wave_table.push_back( RefractionItem(0.8856,  3.673 , 7.75e-3) ); // 1.4
+    _wave_table.push_back( RefractionItem(0.9537,  3.673 , 2.26e-3) ); // 1.3
+    _wave_table.push_back( RefractionItem(1.0332,  3.673 , 1.80e-4) ); // 1.2
+    _wave_table.push_back( RefractionItem(1.1271,  3.5341, 1.30e-5) ); // 1.1
+    _wave_table.push_back( RefractionItem(1.200 ,  3.5193, 2.50e-9));  // 1.033
   }
 
-
+  PetscScalar  _concentration;
 
 public:
 
@@ -103,6 +109,22 @@ public:
     return n;
   }
 
+  PetscScalar FreeCarrierAbsorption(PetscScalar lamda, PetscScalar n, PetscScalar p, PetscScalar ) const
+  {
+    // source:
+    // Free Carrier Absorption in Silicon
+    // IEEE JOURNAL OF SOLID-STATE CIRCUITS, VOL. SC-13, NO. 1,FEBRUARY 1978
+    // use experiment value
+
+    // should use um and cm^-3
+    lamda /= um;
+    n /= _concentration;
+    p /= _concentration;
+
+    return (1e-18*lamda*lamda*n + 2.7e-18*lamda*lamda*p)/cm;
+  }
+
+
 
   // constructions
 public:
@@ -110,6 +132,8 @@ public:
   {
     PMI_Info = "This is the Default optical model of Silicon";
     _init_default_wave_table();
+
+    _concentration = std::pow(cm, -3);
   }
 
   ~GSS_Si_Optical() {}

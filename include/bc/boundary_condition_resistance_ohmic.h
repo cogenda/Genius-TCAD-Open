@@ -64,33 +64,6 @@ public:
 
 
   /**
-   * @return the electron recombination velocity
-   */
-  virtual PetscScalar eRecombVelocity() const
-  { return _elec_recomb_velocity;}
-
-  /**
-   * @return writable reference to electron recombination velocity
-   */
-  virtual PetscScalar & eRecombVelocity()
-  {return _elec_recomb_velocity;}
-
-
-  /**
-   * @return the hole recombination velocity
-   */
-  virtual PetscScalar hRecombVelocity() const
-  {return _hole_recomb_velocity;}
-
-
-  /**
-   * @return writable reference to hole recombination velocity
-   */
-  virtual PetscScalar & hRecombVelocity()
-  {return _hole_recomb_velocity;}
-
-
-  /**
    * @return true when it has external circuit
    */
   virtual bool is_electrode()  const
@@ -136,16 +109,6 @@ public:
 private:
 
   /**
-   * electron recombination velocity
-   */
-  PetscScalar   _elec_recomb_velocity;
-
-  /**
-   * hole recombination velocity
-   */
-  PetscScalar   _hole_recomb_velocity;
-
-  /**
    * current flow in/out
    */
   PetscScalar   _current_flow;
@@ -160,8 +123,8 @@ private:
    */
   bool _infinity_recombination() const
   {
-    return _elec_recomb_velocity == std::numeric_limits<PetscScalar>::infinity() ||
-           _hole_recomb_velocity == std::numeric_limits<PetscScalar>::infinity();
+    return scalar("elec.recomb.velocity") == std::numeric_limits<PetscScalar>::infinity() ||
+           scalar("hole.recomb.velocity") == std::numeric_limits<PetscScalar>::infinity();
   }
 
   /**
@@ -183,6 +146,26 @@ private:
    * Ohmic BC for DDM1, assuming limited recombination rate
    */
   void _DDM1_Jacobian_Limited_Recombination(PetscScalar * , Mat *, InsertMode &);
+
+  /**
+   * Ohmic BC for DDM1, assuming infinity recombination rate
+   */
+  void _DDM1R_Function_Infinite_Recombination(PetscScalar * , Vec , InsertMode &);
+
+  /**
+   * Ohmic BC for DDM1, assuming infinity recombination rate
+   */
+  void _DDM1R_Jacobian_Infinite_Recombination(PetscScalar * , Mat *, InsertMode &);
+
+  /**
+   * Ohmic BC for DDM1, assuming limited recombination rate
+   */
+  void _DDM1R_Function_Limited_Recombination(PetscScalar * , Vec , InsertMode &);
+
+  /**
+   * Ohmic BC for DDM1, assuming limited recombination rate
+   */
+  void _DDM1R_Jacobian_Limited_Recombination(PetscScalar * , Mat *, InsertMode &);
 
 
   /**
@@ -248,7 +231,7 @@ public:
   /**
    * preprocess Jacobian function for poisson solver
    */
-  virtual void Poissin_Function_Preprocess(Vec, std::vector<PetscInt>&, std::vector<PetscInt>&, std::vector<PetscInt>&);
+  virtual void Poissin_Function_Preprocess(PetscScalar *, Vec, std::vector<PetscInt>&, std::vector<PetscInt>&, std::vector<PetscInt>&);
 
   /**
   * build function and its jacobian for poisson solver, nothing to do
@@ -263,7 +246,7 @@ public:
   /**
    * preprocess Jacobian Matrix for poisson solver
    */
-  virtual void Poissin_Jacobian_Preprocess(Mat *, std::vector<PetscInt>&, std::vector<PetscInt>&, std::vector<PetscInt>&);
+  virtual void Poissin_Jacobian_Preprocess(PetscScalar *, Mat *, std::vector<PetscInt>&, std::vector<PetscInt>&, std::vector<PetscInt>&);
 
   /**
    * build function and its jacobian for poisson solver, nothing to do
@@ -288,7 +271,7 @@ public:
   /**
    * preprocess function for level 1 DDM solver
    */
-  virtual void DDM1_Function_Preprocess(Vec, std::vector<PetscInt>&, std::vector<PetscInt>&, std::vector<PetscInt>&);
+  virtual void DDM1_Function_Preprocess(PetscScalar *, Vec, std::vector<PetscInt>&, std::vector<PetscInt>&, std::vector<PetscInt>&);
 
   /**
    * build function and its jacobian for DDML1 solver
@@ -303,7 +286,7 @@ public:
   /**
    * preprocess Jacobian Matrix of level 1 DDM equation.
    */
-  virtual void DDM1_Jacobian_Preprocess(Mat *, std::vector<PetscInt>&, std::vector<PetscInt>&, std::vector<PetscInt>&);
+  virtual void DDM1_Jacobian_Preprocess(PetscScalar *, Mat *, std::vector<PetscInt>&, std::vector<PetscInt>&, std::vector<PetscInt>&);
 
   /**
    * build function and its jacobian for DDML1 solver
@@ -317,13 +300,54 @@ public:
 
 
   //////////////////////////////////////////////////////////////////////////////////
+  //--------------Function and Jacobian evaluate for new L1 DDM-------------------//
+  //////////////////////////////////////////////////////////////////////////////////
+
+  /**
+   * fill solution data and scaling constant into petsc vector
+   */
+  virtual void DDM1R_Fill_Value(Vec x, Vec L);
+
+  /**
+   * preprocess function for level 1 DDM solver
+   */
+  virtual void DDM1R_Function_Preprocess(PetscScalar *, Vec, std::vector<PetscInt>&, std::vector<PetscInt>&, std::vector<PetscInt>&);
+
+  /**
+   * build function and its jacobian for DDML1 solver
+   */
+  virtual void DDM1R_Function(PetscScalar * , Vec , InsertMode &);
+
+  /**
+   * reserve none zero pattern in petsc matrix.
+   */
+  virtual void DDM1R_Jacobian_Reserve(Mat *jac, InsertMode &add_value_flag);
+
+  /**
+   * preprocess Jacobian Matrix of level 1 DDM equation.
+   */
+  virtual void DDM1R_Jacobian_Preprocess(PetscScalar *, Mat *, std::vector<PetscInt>&, std::vector<PetscInt>&, std::vector<PetscInt>&);
+
+  /**
+   * build function and its jacobian for DDML1 solver
+   */
+  virtual void DDM1R_Jacobian(PetscScalar * , Mat *, InsertMode &);
+
+  /**
+   * update solution data of DDML1 solver.
+   */
+  virtual void DDM1R_Update_Solution(PetscScalar *);
+
+
+
+  //////////////////////////////////////////////////////////////////////////////////
   //----------------Function and Jacobian evaluate for L2 DDM---------------------//
   //////////////////////////////////////////////////////////////////////////////////
 
   /**
    * preprocess function for level 2 DDM solver
    */
-  virtual void DDM2_Function_Preprocess(Vec, std::vector<PetscInt>&, std::vector<PetscInt>&, std::vector<PetscInt>&);
+  virtual void DDM2_Function_Preprocess(PetscScalar * ,Vec, std::vector<PetscInt>&, std::vector<PetscInt>&, std::vector<PetscInt>&);
 
   /**
    * build function and its jacobian for DDML2 solver
@@ -338,12 +362,17 @@ public:
   /**
    * preprocess Jacobian Matrix of level 2 DDM equation.
    */
-  virtual void DDM2_Jacobian_Preprocess(Mat *, std::vector<PetscInt>&, std::vector<PetscInt>&, std::vector<PetscInt>&);
+  virtual void DDM2_Jacobian_Preprocess(PetscScalar *,Mat *, std::vector<PetscInt>&, std::vector<PetscInt>&, std::vector<PetscInt>&);
 
   /**
    * build function and its jacobian for DDML2 solver
    */
   virtual void DDM2_Jacobian(PetscScalar * , Mat *, InsertMode &);
+
+  /**
+   * update solution data of DDML2 solver.
+   */
+  virtual void DDM2_Update_Solution(PetscScalar *);
 
 
   //////////////////////////////////////////////////////////////////////////////////
@@ -353,7 +382,7 @@ public:
   /**
    * preprocess function for level 3 EBM solver
    */
-  virtual void EBM3_Function_Preprocess(Vec, std::vector<PetscInt>&, std::vector<PetscInt>&, std::vector<PetscInt>&);
+  virtual void EBM3_Function_Preprocess(PetscScalar *,Vec, std::vector<PetscInt>&, std::vector<PetscInt>&, std::vector<PetscInt>&);
 
   /**
    * build function and its jacobian for level 3 EBM solver
@@ -368,7 +397,7 @@ public:
   /**
    * preprocess Jacobian Matrix of level 3 EBM equation.
    */
-  virtual void EBM3_Jacobian_Preprocess(Mat *, std::vector<PetscInt>&, std::vector<PetscInt>&, std::vector<PetscInt>&);
+  virtual void EBM3_Jacobian_Preprocess(PetscScalar * ,Mat *, std::vector<PetscInt>&, std::vector<PetscInt>&, std::vector<PetscInt>&);
 
   /**
    * build function and its jacobian for level 3 EBM solver
@@ -391,33 +420,51 @@ public:
    */
   virtual void DDMAC_Update_Solution(const PetscScalar * lxx , const Mat, const double omega);
 
+
+#ifdef COGENDA_COMMERCIAL_PRODUCT
   //////////////////////////////////////////////////////////////////////////////////
-  //----------------- functions for Fast Hydrodynamic solver  --------------------//
+  //----------------- functions for Gummel DDML1 solver --------------------------//
   //////////////////////////////////////////////////////////////////////////////////
 
   /**
-   * function for evaluating boundary for HDM method
+   * function for preprocess build RHS and matrix for gummel equation.
    */
-  virtual void HDM_Boundary( const PetscScalar * , Vec /*x*/, InsertMode &  ){}
+  virtual void DDM1_Gummel_Carrier_Preprocess(const std::string & carrier, Mat A, Vec r,
+                                              std::vector<PetscInt> &src,  std::vector<PetscInt> &dst, std::vector<PetscInt> &clear);
 
-  //////////////////////////////////////////////////////////////////////////////////
-  //-----------------  functions for Linear Poissin solver   ---------------------//
-  //////////////////////////////////////////////////////////////////////////////////
+  /**
+   * function for build RHS and matrix for gummel equation.
+   */
+  virtual void DDM1_Gummel_Carrier(const std::string & carrier, PetscScalar * x, Mat A, Vec r, InsertMode &add_value_flag);
+
 
   /**
    * function for reserve none zero pattern in petsc matrix.
    */
-  virtual void LinearPoissin_Reserve(Mat A, InsertMode &){}
+  virtual void DDM1_Half_Implicit_Current_Reserve(Mat A, InsertMode &add_value_flag);
 
   /**
-   * function for build matrix of linear poisson's equation.
+   * function for preprocess build RHS and matrix for half implicit current continuity equation.
    */
-  virtual void LinearPoissin_Matrix(Mat A, InsertMode &){}
+  virtual void DDM1_Half_Implicit_Current_Preprocess(Vec f, Mat A, std::vector<PetscInt> &src,  std::vector<PetscInt> &dst, std::vector<PetscInt> &clear);
 
   /**
-   * function for build RHS vector of linear poisson's equation.
+   * function for build RHS and matrix for half implicit current continuity equation.
    */
-  virtual void LinearPoissin_RHS(Vec b, InsertMode &){}
+  virtual void DDM1_Half_Implicit_Current(PetscScalar * x, Mat A, Vec r, InsertMode &add_value_flag);
+
+
+  /**
+   * function for preprocess build RHS and matrix for half implicit poisson correction equation.
+   */
+  virtual void DDM1_Half_Implicit_Poisson_Correction_Preprocess(Vec f, std::vector<PetscInt> &src,  std::vector<PetscInt> &dst, std::vector<PetscInt> &clear);
+
+  /**
+   * function for build RHS and matrix for half implicit poisson correction equation.
+   */
+  virtual void DDM1_Half_Implicit_Poisson_Correction(PetscScalar * x, Mat A, Vec r, InsertMode &add_value_flag);
+
+#endif
 
 };
 

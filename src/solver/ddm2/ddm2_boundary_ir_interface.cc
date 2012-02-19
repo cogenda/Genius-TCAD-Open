@@ -71,7 +71,7 @@ void ResistanceInsulatorBC::DDM2_Fill_Value(Vec , Vec L)
 /*---------------------------------------------------------------------
  * do pre-process to function for DDML2 solver
  */
-void ResistanceInsulatorBC::DDM2_Function_Preprocess(Vec f, std::vector<PetscInt> &src_row,
+void ResistanceInsulatorBC::DDM2_Function_Preprocess(PetscScalar * ,Vec f, std::vector<PetscInt> &src_row,
     std::vector<PetscInt> &dst_row, std::vector<PetscInt> &clear_row)
 {
 
@@ -179,7 +179,7 @@ void ResistanceInsulatorBC::DDM2_Function(PetscScalar * x, Vec f, InsertMode &ad
           // area of out surface of control volume related with neighbor node
           PetscScalar cv_boundary = insulator_fvm_node->cv_surface_area(nb_node->root_node());
           PetscScalar dEdt;
-          if(SolverSpecify::TS_type==SolverSpecify::BDF2 && SolverSpecify::BDF2_restart==false) //second order
+          if(SolverSpecify::TS_type==SolverSpecify::BDF2 && SolverSpecify::BDF2_LowerOrder==false) //second order
           {
             PetscScalar r = SolverSpecify::dt_last/(SolverSpecify::dt_last + SolverSpecify::dt);
             dEdt = ( (2-r)/(1-r)*(V_insulator-V_nb)
@@ -279,7 +279,7 @@ void ResistanceInsulatorBC::DDM2_Jacobian_Reserve(Mat *jac, InsertMode &add_valu
 /*---------------------------------------------------------------------
  * do pre-process to jacobian matrix for DDML2 solver
  */
-void ResistanceInsulatorBC::DDM2_Jacobian_Preprocess(Mat *jac, std::vector<PetscInt> &src_row,
+void ResistanceInsulatorBC::DDM2_Jacobian_Preprocess(PetscScalar *,Mat *jac, std::vector<PetscInt> &src_row,
     std::vector<PetscInt> &dst_row, std::vector<PetscInt> &clear_row)
 {
   BoundaryCondition::const_node_iterator node_it = nodes_begin();
@@ -388,7 +388,7 @@ void ResistanceInsulatorBC::DDM2_Jacobian(PetscScalar * x, Mat *jac, InsertMode 
           // area of out surface of control volume related with neighbor node
           PetscScalar cv_boundary = insulator_fvm_node->cv_surface_area(nb_node->root_node());
           AutoDScalar dEdt;
-          if(SolverSpecify::TS_type==SolverSpecify::BDF2 && SolverSpecify::BDF2_restart==false) //second order
+          if(SolverSpecify::TS_type==SolverSpecify::BDF2 && SolverSpecify::BDF2_LowerOrder==false) //second order
           {
             PetscScalar r = SolverSpecify::dt_last/(SolverSpecify::dt_last + SolverSpecify::dt);
             dEdt = ( (2-r)/(1-r)*(V_insulator-V_nb)

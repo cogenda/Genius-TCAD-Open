@@ -41,8 +41,8 @@ using PhysicalUnit::mu0;
 
 
 
-ElectrodeSimulationRegion::ElectrodeSimulationRegion(const std::string &name, const std::string &material, const PetscScalar T)
-:SimulationRegion(name, material, T)
+ElectrodeSimulationRegion::ElectrodeSimulationRegion(const std::string &name, const std::string &material, const double T, const double z)
+:SimulationRegion(name, material, T, z)
 {
   // material should be initializted after region variables
   this->set_region_variables();
@@ -53,8 +53,7 @@ void ElectrodeSimulationRegion::insert_cell (const Elem * e)
 {
   // not a local element
   if( !e->on_local() ) return;
-  // should be fvm_elem
-  genius_assert(Elem::fvm_compatible_type(e->type()) == e->type());
+
   // insert into region element vector
   _region_cell.push_back(e);
   _region_cell_data.push_back(new FVM_Conductor_CellData(&_cell_data_storage, _region_cell_variables) );
@@ -95,7 +94,12 @@ void ElectrodeSimulationRegion::set_region_variables()
   _region_point_variables["ev"              ] = SimulationVariable("ev", SCALAR, POINT_CENTER, "eV", FVM_Conductor_NodeData::_Ev_, true);
   _region_point_variables["eps"             ] = SimulationVariable("eps", SCALAR, POINT_CENTER, "C/V/m", FVM_Conductor_NodeData::_eps_, true);
   _region_point_variables["mu"              ] = SimulationVariable("mu", SCALAR, POINT_CENTER, "s^2*V/C/m", FVM_Conductor_NodeData::_mu_, true);
+
+  _region_point_variables["optical_energy"  ] = SimulationVariable("optical_energy", SCALAR, POINT_CENTER, "eV", FVM_Conductor_NodeData::_OptE_, true);
+  _region_point_variables["particle_energy" ] = SimulationVariable("particle_energy", SCALAR, POINT_CENTER, "eV", FVM_Conductor_NodeData::_PatE_, true);
+
   _region_point_variables["potential.last"  ] = SimulationVariable("potential.last", SCALAR, POINT_CENTER, "V", FVM_Conductor_NodeData::_psi_last_, true);
+  _region_point_variables["potential.old"     ] = SimulationVariable("potential.old", SCALAR, POINT_CENTER, "V", FVM_Conductor_NodeData::_psi_old_, true);
   _region_point_variables["temperature.last"] = SimulationVariable("temperature.last", SCALAR, POINT_CENTER, "K", FVM_Conductor_NodeData::_T_last_, true);
 
   _region_point_variables["efield"        ] = SimulationVariable("efield", VECTOR, POINT_CENTER, "V/cm", FVM_Conductor_NodeData::_E_, true);
@@ -173,7 +177,43 @@ void ElectrodeSimulationRegion::reinit_after_import()
   }
 
   //NOTE T and psi are read from data file!
-
-
 }
+
+
+void ElectrodeSimulationRegion::set_pmi(const std::string &type, const std::string &model_name, std::vector<Parser::Parameter> & pmi_parameters)
+{
+  get_material_base()->set_pmi(type,model_name,pmi_parameters);
+
+  local_node_iterator it = on_local_nodes_begin();
+  for ( ; it!=on_local_nodes_end(); ++it)
+  {
+    FVM_Node * node = (*it);
+    FVM_NodeData * node_data = (*it)->node_data();
+    genius_assert(node_data!=NULL);
+    get_material_base()->init_node(type, (*it)->root_node(), node_data);
+  }
+
+  // update buffered value as if changed by PMI
+  local_node_iterator node_it = on_local_nodes_begin();
+  local_node_iterator node_it_end = on_local_nodes_end();
+  for(; node_it!=node_it_end; ++node_it)
+  {
+    FVM_Node * fvm_node = *node_it;
+    FVM_NodeData * node_data = fvm_node->node_data();
+
+    // map current node to material buffer
+    mt->mapping(fvm_node->root_node(), node_data, 0.0);
+
+    // lattice temperature, have been read from data file!
+    PetscScalar T =node_data->T();
+
+    // set aux data for insulator
+    node_data->affinity() = mt->basic->Affinity(T);
+    node_data->density()  = mt->basic->Density(T);
+    node_data->eps()      = eps0*mt->basic->Permittivity();
+    node_data->mu()       = mu0*mt->basic->Permeability();
+  }
+}
+
+
 

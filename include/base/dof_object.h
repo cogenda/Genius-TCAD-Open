@@ -181,6 +181,36 @@ public:
 
 
   /**
+   * test if two DofObject objects are equal
+   */
+  class Equal
+  {
+    public:
+     /**
+      * Call DofObject::Equal()(a,b) to check equal-ness.
+      */
+      bool operator()(const DofObject &a, const DofObject &b) const
+      { return a._id == b._id; }
+  };
+
+
+  /**
+   * weakly less test of two DofObject objects
+   */
+  class Less
+  {
+    public:
+      /**
+       * Call DofObject::Less()(a,b) to check less.
+       */
+      bool operator () (const DofObject &a, const DofObject &b) const
+      {
+        return a._id < b._id;
+      }
+  };
+
+
+  /**
    * An invaild \p id to distinguish an uninitialized \p DofObject
    */
   static const unsigned int invalid_id;

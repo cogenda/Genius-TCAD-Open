@@ -24,6 +24,13 @@
 #include "node_elem.h"
 
 
+void Edge::nodes_on_side (const unsigned int i, std::vector<unsigned int> & nodes ) const
+{
+  genius_assert(i < 2);
+  nodes.push_back(i);
+}
+
+
 AutoPtr<DofObject> Edge::side (const unsigned int i) const
 {
   genius_assert(i < 2);

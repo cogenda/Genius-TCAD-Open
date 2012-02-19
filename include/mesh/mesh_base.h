@@ -163,6 +163,11 @@ public:
   virtual void pack_nodes(std::vector<Real> &) const {}
 
   /**
+   * pack all the mesh edge info, should be executed in parallel
+   */
+  virtual void pack_egeds(std::vector< std::pair<unsigned int, unsigned int> > &) const {}
+
+  /**
    * pack all the mesh elem info, should be executed in parallel
    */
   virtual void pack_elems(std::vector<int> &) const {}
@@ -178,11 +183,15 @@ public:
   virtual void pack_boundary_nodes (std::vector<unsigned int> &, std::vector<short int> &) const {}
 
   /**
+   * count the logical dimension of the mesh.
+   */
+  void count_mesh_dimension ();
+
+  /**
    * @Returns the logical dimension of the mesh.
-   * when _magic_num<2008, 2d. else 3d
    */
   unsigned int mesh_dimension () const
-  {return _magic_num <2008 ? 2 : 3;}
+  { genius_assert(_is_prepared); return _mesh_dim;}
 
   /**
    * @Returns the spatial dimension of the mesh.  Note that this is
@@ -258,7 +267,7 @@ public:
   /**
    * @Returns the number of active elements on the local processor.
    */
-  unsigned int n_active_local_elem () const
+  unsigned int n_active_on_processor_elem () const
   { return this->n_active_elem_on_proc (Genius::processor_id()); }
 
   /**
@@ -410,6 +419,11 @@ public:
   void partition (const unsigned int n_parts=Genius::n_processors());
 
   /**
+   * build the partition cluster, the elems belongs to the same cluster will be partitioned into the same block
+   */
+  virtual void partition_cluster(std::vector<std::vector<unsigned int> > &) {}
+
+  /**
    * Returns the number of subdomains in the global mesh. Note that it is
    * convenient to have one subdomain on each processor on parallel machines,
    * however this is not required. Multiple subdomains can exist on the same
@@ -475,6 +489,11 @@ public:
    */
   int subdomain_weight(unsigned int id) const
   { genius_assert(id<_subdomain_materials.size()); return (*_subdomain_weight.find(id)).second; }
+
+  /**
+   * the subdomain interconnect graph
+   */
+  virtual void subdomain_graph(std::vector<std::vector<unsigned int> >&) const=0;
 
   /**
    * Returns the number of partitions which have been defined via
@@ -756,9 +775,14 @@ protected:
   unsigned int _n_parts;
 
   /**
-   * The logical dimension of the mesh.
+   * The dimension of the node cood, always 3 even for 2D mesh.
    */
   const unsigned int _dim;
+
+  /**
+   * The logical dimension of the mesh.
+   */
+  unsigned int _mesh_dim;
 
   /**
    * Flag indicating if the mesh has been prepared for use.

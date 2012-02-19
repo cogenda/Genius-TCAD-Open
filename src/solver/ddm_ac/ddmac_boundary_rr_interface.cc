@@ -60,7 +60,25 @@ void ResistanceResistanceBC::DDMAC_Fill_Matrix_Vector( Mat A, Vec b, const Mat J
       {
         const FVM_Node * insulator_fvm_node = (*rnode_it).second.second;
         region->DDMAC_Fill_Nodal_Matrix_Vector(insulator_fvm_node, A, b, J, omega, add_value_flag, _r1, resistance_fvm_node_1);
-        region->DDMAC_Force_equal(insulator_fvm_node, A, add_value_flag, _r1, resistance_fvm_node_1);
+        // phi_insulator = 0.5*(phi_r1 + phi_r2)
+        {
+          PetscInt real_row = insulator_fvm_node->global_offset() + region->ebm_variable_offset(POTENTIAL);
+          PetscInt imag_row = insulator_fvm_node->global_offset() + region->ebm_n_variables() + region->ebm_variable_offset(POTENTIAL);
+          PetscInt real_col[2]={real_row, resistance_fvm_node_1->global_offset() + _r1->ebm_variable_offset(POTENTIAL)};
+          PetscInt imag_col[2]={imag_row, resistance_fvm_node_1->global_offset() + _r1->ebm_n_variables() + _r1->ebm_variable_offset(POTENTIAL)};
+          PetscScalar diag[2] = {1.0, -0.5};
+          MatSetValues(A, 1, &real_row, 2, real_col, diag, ADD_VALUES);
+          MatSetValues(A, 1, &imag_row, 2, imag_col, diag, ADD_VALUES);
+        }
+        {
+          PetscInt real_row = insulator_fvm_node->global_offset() + region->ebm_variable_offset(POTENTIAL);
+          PetscInt imag_row = insulator_fvm_node->global_offset() + region->ebm_n_variables() + region->ebm_variable_offset(POTENTIAL);
+          PetscInt real_col[2]={real_row, resistance_fvm_node_2->global_offset() + _r2->ebm_variable_offset(POTENTIAL)};
+          PetscInt imag_col[2]={imag_row, resistance_fvm_node_2->global_offset() + _r2->ebm_n_variables() + _r2->ebm_variable_offset(POTENTIAL)};
+          PetscScalar diag[2] = {1.0, -0.5};
+          MatSetValues(A, 1, &real_row, 2, real_col, diag, ADD_VALUES);
+          MatSetValues(A, 1, &imag_row, 2, imag_col, diag, ADD_VALUES);
+        }
       }
     }
   }

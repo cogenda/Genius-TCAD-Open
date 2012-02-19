@@ -108,9 +108,9 @@ public:
 
   std::string boundary_condition_in_string() const;
 
-  double T_external() const;
-  double Heat_Transfer() const;
-  double Work_Function() const;
+  //double T_external() const;
+  //double Heat_Transfer() const;
+  //double Work_Function() const;
 
 };
 // }}}

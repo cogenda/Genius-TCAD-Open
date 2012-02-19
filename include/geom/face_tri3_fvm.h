@@ -133,6 +133,12 @@ public:
   virtual Real partial_volume (unsigned int i) const
     { return v[i]; }
 
+  /**
+   * @return the truncated partial (length/area/volume) of the geometric element by local index.
+   */
+  virtual Real partial_volume_truncated (unsigned int i) const
+    { return vt[i]; }
+
 
   /**
    * @return the edge associated partial (length/area) of the geometric element with local edge index.
@@ -166,6 +172,7 @@ public:
   virtual void prepare_for_fvm();
 
   // For FVM usage, we need more Geom information of a TRI3
+  // memory storage is not a problem for 2D elem, here we buffer as many data as possible
 private:
 
   /**
@@ -203,6 +210,12 @@ private:
    * circumcircle center and edge center
    */
   Real v[3]; // 3- node index
+
+  /**
+   * truncated partial volumn of each region seperated by segment made up of
+   * circumcircle center and edge center
+   */
+  Real vt[3]; // 3- node index
 
   /**
    * the volume of TRI3, store this vlaue for efficiency reason

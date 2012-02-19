@@ -102,6 +102,11 @@ namespace PhysicalUnit
   double   us;
 
   /**
+   *  define as 1e-9*s
+   */
+  double   ns;
+
+  /**
    * define as 1e-12*s
    */
   double   ps;
@@ -170,6 +175,7 @@ namespace PhysicalUnit
     g  = 1e-3*kg;
     eV = 1.602176462e-19*J;
     us = 1e-6*s;
+    ns = 1e-9*s;
     ps = 1e-12*s;
     A  = C/s;
     mA = 1e-3*A;
@@ -202,6 +208,7 @@ namespace PhysicalUnit
     g  = 1e-3*kg;
     eV = 1.602176462e-19*J;
     us = 1e-6*s;
+    ns = 1e-9*s;
     ps = 1e-12*s;
     A  = C/s;
     mA = 1e-3*A;
@@ -233,6 +240,7 @@ namespace PhysicalUnit
     g  = 1e-3*kg;
     eV = 1.602176462e-19*J;
     us = 1e-6*s;
+    ns = 1e-9*s;
     ps = 1e-12*s;
     A  = C/s;
     mA = 1e-3*A;
@@ -266,6 +274,7 @@ namespace PhysicalUnit
     g  = 1e-3*kg;
     eV = 1.602176462e-19*J;
     us = 1e-6*s;
+    ns = 1e-9*s;
     ps = 1e-12*s;
     A  = C/s;
     mA = 1e-3*A;

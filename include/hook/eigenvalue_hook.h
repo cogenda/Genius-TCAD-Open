@@ -64,6 +64,12 @@ public:
   virtual void pre_iteration();
 
   /**
+   *  This is executed after each (nonlinear) iteration
+   *  i.e. for collecting convergence information or implementing various damping strategy
+   */
+  virtual void post_iteration();
+
+  /**
    * This is executed after the finalization of the solver
    */
   virtual void on_close();

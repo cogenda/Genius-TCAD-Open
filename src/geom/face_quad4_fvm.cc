@@ -21,7 +21,7 @@
 
 //  $Id: face_quad4_fvm.cc,v 1.6 2008/07/10 09:39:38 gdiso Exp $
 
-#include "face_tri3_fvm.h"
+
 #include "face_quad4_fvm.h"
 #include "edge_edge2_fvm.h"
 #include <TNT/jama_lu.h>
@@ -219,13 +219,14 @@ void Quad4_FVM::prepare_for_fvm()
   }
 
   // self test
+#ifdef DEBUG
   Real V = 0;
   for( unsigned int i=0; i<4; i++ )
   {
     V += v[i];
   }
-
-  genius_assert( std::abs(V-vol) < 1e-4*vol );
+  genius_assert( (vol > 1e-10 ? (std::abs(V-vol) < 1e-3*vol) : (std::abs(V-vol) < std::max(1e-13, 1e-2*vol))) );
+#endif
 
   // set data for least square fitting
   prepare_for_least_squares();

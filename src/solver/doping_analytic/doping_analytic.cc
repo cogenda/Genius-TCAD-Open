@@ -22,7 +22,9 @@
 //  $Id: doping_analytic.cc,v 1.10 2008/07/09 05:58:16 gdiso Exp $
 
 
+#include "polygon.h"
 #include "mesh_base.h"
+#include "doping_analytic/doping_fun.h"
 #include "doping_analytic/doping_analytic.h"
 #include "semiconductor_region.h"
 #include "interpolation_1d_linear.h"
@@ -34,6 +36,27 @@
 
 using PhysicalUnit::cm;
 using PhysicalUnit::um;
+
+
+DopingAnalytic::DopingAnalytic(SimulationSystem & system, Parser::InputParser & decks)
+  : PointSolver(system), _decks(decks)
+{system.record_active_solver(this->solver_type());}
+
+
+DopingAnalytic::~DopingAnalytic()
+{
+  for(size_t n=0; n<_doping_funs.size(); n++)
+    delete _doping_funs[n];
+  _doping_funs.clear();
+  for(size_t n=0; n<_doping_data.size(); n++)
+    delete _doping_data[n].second;
+  _doping_data.clear();
+  for(std::map<std::string,DopingFunction *>::iterator it=_custom_profile_funs.begin();
+      it!=_custom_profile_funs.end(); it++)
+    delete it->second;
+  _custom_profile_funs.clear();
+}
+
 
 /*------------------------------------------------------------------
  * we parse input deck for doping profile here
@@ -61,6 +84,13 @@ int DopingAnalytic::create_solver()
       if(c.is_enum_value("type","analytic"))
         set_doping_function_analytic(c);
 
+      if(c.is_enum_value("type","analytic2"))
+      {
+        if(c.is_parameter_exist("mask.polygon"))
+          set_doping_function_analytic2_poly_mask(c);
+        else
+          set_doping_function_analytic2_rec_mask(c);
+      }
       if(c.is_enum_value("type","file"))
         set_doping_function_file(c);
     }
@@ -144,14 +174,33 @@ int DopingAnalytic::solve()
 void DopingAnalytic::set_doping_function_file(const Parser::Card & c)
 {
   std::string fname = c.get_string("file", "");
-  int skip_line      = c.get_int("skipline", 0);
+  int skip_line     = c.get_int("skipline", 0);
 
-  VectorValue<double> translate(c.get_real("translate.x", 0.0) * um,
-                                c.get_real("translate.y", 0.0) * um,
-                                c.get_real("translate.z", 0.0) * um);
-  TensorValue<double> transform(c.get_real("transform.xx", 1.0), c.get_real("transform.xy", 0.0), c.get_real("transform.xz", 0.0),
-                                c.get_real("transform.yx", 0.0), c.get_real("transform.yy", 1.0), c.get_real("transform.yz", 0.0),
-                                c.get_real("transform.zx", 0.0), c.get_real("transform.zy", 0.0), c.get_real("transform.zz", 1.0));
+  VectorValue<double> translate;
+  TensorValue<double> transform;
+  if( c.is_parameter_exist("translate") )
+  {
+    std::vector<double> dummy = c.get_array<double>("translate");
+    translate = VectorValue<double>(&dummy[0])*um;
+  }
+  else
+  {
+    translate = VectorValue<double>(c.get_real("translate.x", 0.0)*um,
+                                    c.get_real("translate.y", 0.0)*um,
+                                    c.get_real("translate.z", 0.0)*um);
+  }
+
+  if( c.is_parameter_exist("transform") )
+  {
+    std::vector<double> dummy = c.get_array<double>("transform");
+    transform = TensorValue<double>(&dummy[0]);
+  }
+  else
+  {
+    transform = TensorValue<double>(c.get_real("transform.xx", 1.0), c.get_real("transform.xy", 0.0), c.get_real("transform.xz", 0.0),
+                                    c.get_real("transform.yx", 0.0), c.get_real("transform.yy", 1.0), c.get_real("transform.yz", 0.0),
+                                    c.get_real("transform.zx", 0.0), c.get_real("transform.zy", 0.0), c.get_real("transform.zz", 1.0));
+  }
 
   double ion  = 0;
   if(c.is_enum_value("ion","donor"))
@@ -354,7 +403,7 @@ void DopingAnalytic::set_doping_function_uniform(const Parser::Card & c)
 void DopingAnalytic::set_doping_function_analytic(const Parser::Card & c)
 {
 
-  // get the doping profile bond box
+  // get the doping profile mask box
   double xmin = c.get_real("x.min", 0.0, "x.left")*um;
   double xmax = c.get_real("x.max", 0.0, "x.right")*um;
   double ymin = c.get_real("y.min", 0.0, "y.top")*um;
@@ -463,6 +512,154 @@ void DopingAnalytic::set_doping_function_analytic(const Parser::Card & c)
   }
 
 }
+
+
+void DopingAnalytic::set_doping_function_analytic2_poly_mask(const Parser::Card & c)
+{
+
+  // get the doping profile mask polygon
+  std::vector<Point> poly;
+
+  std::vector<double> coods = c.get_array<double>("mask.polygon");
+  if( coods.size() % 3 != 0 )
+  {
+    MESSAGE<<"ERROR at " << c.get_fileline() <<" PROFILE: Mask polygon has incorrect coordinates."<<std::endl; RECORD();
+    genius_error();
+  }
+  if( coods.size() < 9 )
+  {
+    MESSAGE<<"ERROR at " << c.get_fileline() <<" PROFILE: Mask polygon should have at least 3 vertex."<<std::endl; RECORD();
+    genius_error();
+  }
+
+  for(unsigned int i=0; i<coods.size();)
+  {
+    poly.push_back(Point(coods[i++]*um, coods[i++]*um, coods[i++]*um));
+  }
+
+  Polygon polygon(poly);
+  if(!polygon.valid())
+  {
+    MESSAGE<<"ERROR at " << c.get_fileline() <<" PROFILE: Mask polygon should coplaner."<<std::endl; RECORD();
+    genius_error();
+  }
+
+
+  // the peak value of doping profile
+  double peak = c.get_real("n.peak",0.0)/pow(cm,3);
+  genius_assert(peak>=0.0);
+
+  // the ion type
+  genius_assert(c.is_parameter_exist("ion"));
+  double ion  = 0;
+  if(c.is_enum_value("ion","donor"))
+    ion = 1.0;
+  else if(c.is_enum_value("ion","acceptor"))
+    ion = -1.0;
+
+  double rmin = c.get_real("implant.rmin", 0.0)*um;
+  double rmax = c.get_real("implant.rmax", 0.0)*um;
+
+  double theta = c.get_real("implant.theta", 0.0);
+  double phi = c.get_real("implant.phi", 0.0);
+
+  double char_depth = c.get_real("depth.char", 0.1)*um;
+  double char_lateral = c.get_real("lateral.char", 0.1)*um;
+
+  double resolution_factor = c.get_real("resolution", 4.0);
+
+  // explicit specified ion
+  if(c.is_enum_value("ion","donor") || c.is_enum_value("ion","acceptor"))
+  {
+    //build analytic doping function
+    DopingFunction * df = new PolyMaskDopingFunction(ion,poly,theta,phi,rmin,rmax,peak,char_depth,char_lateral,resolution_factor);
+
+    //push it into _doping_funs vector
+    _doping_funs.push_back(df);
+  }
+
+  // custom specified, the N or P ion will be determined by region material vai PMI
+  if(c.is_enum_value("ion","custom"))
+  {
+    genius_assert(c.is_parameter_exist("id"));
+    std::string name = c.get_string("id", "custom_profile");
+    //build analytic doping function
+    DopingFunction * df = new PolyMaskDopingFunction(1.0,poly,theta,phi,rmin,rmax,peak,char_depth,char_lateral,resolution_factor);
+    _custom_profile_funs.insert(std::pair<std::string,DopingFunction*>(name,df));
+  }
+
+}
+
+
+void DopingAnalytic::set_doping_function_analytic2_rec_mask(const Parser::Card & c)
+{
+
+  // get the doping profile mask box
+  double xmin = c.get_real("mask.xmin", 0.0, "x.min")*um;
+  double xmax = c.get_real("mask.xmax", 0.0, "x.max")*um;
+  double ymin = c.get_real("mask.ymin", 0.0, "y.min")*um;
+  double ymax = c.get_real("mask.ymax", 0.0, "y.max")*um;
+  double zmin = c.get_real("mask.zmin", 0.0, "z.min")*um;
+  double zmax = c.get_real("mask.zmax", 0.0, "z.max")*um;
+
+  if(xmin>xmax || ymin>ymax || zmin>zmax)
+  {
+    MESSAGE<<"ERROR at " << c.get_fileline() <<" PROFILE: Mask has incorrect XYZ bound."<<std::endl; RECORD();
+    genius_error();
+  }
+
+  if(c.is_parameter_exist("mask.x"))
+    xmin = xmax = c.get_real("mask.x", 0.0)*um;
+  if(c.is_parameter_exist("mask.y"))
+    ymin = ymax = c.get_real("mask.y", 0.0)*um;
+  if(c.is_parameter_exist("mask.z"))
+    zmin = zmax = c.get_real("mask.z", 0.0)*um;
+
+  // the peak value of doping profile
+  double peak = c.get_real("n.peak",0.0)/pow(cm,3);
+  genius_assert(peak>=0.0);
+
+  // the ion type
+  genius_assert(c.is_parameter_exist("ion"));
+  double ion  = 0;
+  if(c.is_enum_value("ion","donor"))
+    ion = 1.0;
+  else if(c.is_enum_value("ion","acceptor"))
+    ion = -1.0;
+
+  double rmin = c.get_real("implant.rmin", 0.0)*um;
+  double rmax = c.get_real("implant.rmax", 0.0)*um;
+
+  double theta = c.get_real("implant.theta", 0.0);
+  double phi = c.get_real("implant.phi", 0.0);
+
+  double char_depth = c.get_real("depth.char", 0.1)*um;
+  double char_lateral = c.get_real("lateral.char", 0.1)*um;
+
+  double resolution_factor = c.get_real("resolution", 4.0);
+
+  // explicit specified ion
+  if(c.is_enum_value("ion","donor") || c.is_enum_value("ion","acceptor"))
+  {
+    //build analytic doping function
+    DopingFunction * df = new RecMaskDopingFunction(ion,xmin,xmax,ymin,ymax,zmin,zmax,theta,phi,rmin,rmax,peak,char_depth,char_lateral,resolution_factor);
+
+    //push it into _doping_funs vector
+    _doping_funs.push_back(df);
+  }
+
+  // custom specified, the N or P ion will be determined by region material vai PMI
+  if(c.is_enum_value("ion","custom"))
+  {
+    genius_assert(c.is_parameter_exist("id"));
+    std::string name = c.get_string("id", "custom_profile");
+    //build analytic doping function
+    DopingFunction * df = new RecMaskDopingFunction(1.0,xmin,xmax,ymin,ymax,zmin,zmax,theta,phi,rmin,rmax,peak,char_depth,char_lateral,resolution_factor);
+    _custom_profile_funs.insert(std::pair<std::string,DopingFunction*>(name,df));
+  }
+
+}
+
 
 double DopingAnalytic::_do_doping_interp(int i, const Node *node, const std::string &msg)
 {

@@ -21,9 +21,10 @@
 
 
 // C++ includes
+#include <algorithm>
 #include <numeric>
 
-#include "asinh.hpp" // for asinh
+#include "adsmt.h"
 
 // Local includes
 #include "simulation_system.h"
@@ -58,7 +59,7 @@ void IF_Metal_OhmicBC::DDM1_Fill_Value(Vec , Vec L)
       const SimulationRegion * region = ( *rnode_it ).second.first;
       switch ( region->type() )
       {
-        case SemiconductorRegion:
+      case SemiconductorRegion:
         {
           const FVM_Node * fvm_node = ( *rnode_it ).second.second;
           VecSetValue(L, fvm_node->global_offset()+0, 1.0, INSERT_VALUES);
@@ -67,13 +68,13 @@ void IF_Metal_OhmicBC::DDM1_Fill_Value(Vec , Vec L)
           break;
         }
 
-        case InsulatorRegion:
+      case InsulatorRegion:
         {
           const FVM_Node * fvm_node = ( *rnode_it ).second.second;
           VecSetValue(L, fvm_node->global_offset(), 1.0, INSERT_VALUES);
           break;
         }
-        default: break;
+      default: break;
       }
     }
   }
@@ -107,7 +108,7 @@ void IF_Metal_OhmicBC::DDM1_Jacobian( PetscScalar * x, Mat *jac, InsertMode &add
 /*---------------------------------------------------------------------
  * do pre-process to jacobian matrix for DDML1 solver
  */
-void IF_Metal_OhmicBC::DDM1_Function_Preprocess(Vec f, std::vector<PetscInt> &src_row,  std::vector<PetscInt> &dst_row, std::vector<PetscInt> &clear_row)
+void IF_Metal_OhmicBC::DDM1_Function_Preprocess(PetscScalar *x, Vec f, std::vector<PetscInt> &src_row,  std::vector<PetscInt> &dst_row, std::vector<PetscInt> &clear_row)
 {
 
   const SimulationRegion * _r1 = bc_regions().first;
@@ -155,12 +156,14 @@ void IF_Metal_OhmicBC::DDM1_Function_Preprocess(Vec f, std::vector<PetscInt> &sr
       if ( ( *node_it )->processor_id() !=Genius::processor_id() ) continue;
 
       const FVM_Node * semiconductor_node  = get_region_fvm_node ( ( *node_it ), _r1 );
+      const FVM_NodeData * semiconductor_node_data = semiconductor_node->node_data();
 
       clear_row.push_back ( semiconductor_node->global_offset()+0 );
       clear_row.push_back ( semiconductor_node->global_offset()+1 );
       clear_row.push_back ( semiconductor_node->global_offset()+2 );
 
       // for conduction current
+      PetscScalar inject_current = 0;
       {
         PetscInt    ix[2] = {semiconductor_node->global_offset()+1, semiconductor_node->global_offset()+2};
         // I={In, Ip} the electron and hole current flow into this boundary cell.
@@ -171,8 +174,46 @@ void IF_Metal_OhmicBC::DDM1_Function_Preprocess(Vec f, std::vector<PetscInt> &sr
         VecGetValues(f, 2, ix, I);
 
         // the current = In - Ip;
-        this->_current_buffer.push_back(I[1] - I[0]);
+        // inject_current is the current from semiconductor region to metal region, thus has a negative sign
+        inject_current = (-(I[0] - I[1]));
       }
+
+      // displacement current in semiconductor region
+      if(SolverSpecify::TimeDependent == true)
+      {
+        const PetscScalar V_semiconductor  = x[semiconductor_node->local_offset() ];
+
+        PetscScalar I_displacement = 0.0;
+        FVM_Node::fvm_neighbor_node_iterator nb_it = semiconductor_node->neighbor_node_begin();
+        for ( ; nb_it != semiconductor_node->neighbor_node_end(); ++nb_it )
+        {
+          const FVM_Node *nb_node = ( *nb_it ).second;
+          const FVM_NodeData * nb_node_data = nb_node->node_data();
+          // the psi of neighbor node
+          PetscScalar V_nb = x[nb_node->local_offset() +0];
+          // distance from nb node to this node
+          PetscScalar distance = semiconductor_node->distance ( nb_node );
+          // area of out surface of control volume related with neighbor node
+          PetscScalar cv_boundary = semiconductor_node->cv_surface_area ( nb_node->root_node() );
+          PetscScalar dEdt;
+          if ( SolverSpecify::TS_type==SolverSpecify::BDF2 && SolverSpecify::BDF2_LowerOrder==false ) //second order
+          {
+            PetscScalar r = SolverSpecify::dt_last/ ( SolverSpecify::dt_last + SolverSpecify::dt );
+            dEdt = ( ( 2-r ) / ( 1-r ) * ( V_semiconductor-V_nb )
+                     - 1.0/ ( r* ( 1-r ) ) * ( semiconductor_node_data->psi()-nb_node_data->psi() )
+                     + ( 1-r ) /r* ( semiconductor_node_data->psi_last()-nb_node_data->psi_last() ) ) /distance/ ( SolverSpecify::dt_last+SolverSpecify::dt );
+          }
+          else//first order
+          {
+            dEdt = ( ( V_semiconductor-V_nb )- ( semiconductor_node_data->psi()-nb_node_data->psi() ) ) /distance/SolverSpecify::dt;
+          }
+
+          I_displacement += cv_boundary*semiconductor_node_data->eps() *dEdt;
+        }
+        inject_current -= I_displacement;
+      }
+
+      this->_current_buffer.push_back(inject_current);
 
       if ( has_associated_region ( ( *node_it ), InsulatorRegion ) )
       {
@@ -199,6 +240,8 @@ void IF_Metal_OhmicBC::_DDM1_Function_Limited_Recombination ( PetscScalar * x, V
   // Ohmic boundary condition is processed here.
 
   const PetscScalar T = T_external();
+  const PetscScalar eRecombVelocity = scalar("elec.recomb.velocity");
+  const PetscScalar hRecombVelocity = scalar("hole.recomb.velocity");
 
   // note, we will use ADD_VALUES to set values of vec f
   // if the previous operator is not ADD_VALUES, we should assembly the vec
@@ -277,15 +320,15 @@ void IF_Metal_OhmicBC::_DDM1_Function_Limited_Recombination ( PetscScalar * x, V
     PetscScalar f_psi =  V_semiconductor - kb*T/e*boost::math::asinh(semiconductor_node_data->Net_doping()/(2*nie))
                          + Eg/(2*e)
                          + kb*T*log(Nc/Nv)/(2*e)
-                         + semiconductor_node_data->affinity()
-                         - (V_resistance + resistance_node_data->affinity()) ;
+                         + semiconductor_node_data->affinity()/e
+                         - (V_resistance + resistance_node_data->affinity()/e) ;
     VecSetValue ( f, semiconductor_node->global_offset(), f_psi, ADD_VALUES );
 
 
     // conservation equation of electron/hole
     PetscScalar S  = semiconductor_node->outside_boundary_surface_area();
-    PetscScalar In = - eRecombVelocity() * ( n-electron_density ) *S; // electron emit to resistance region
-    PetscScalar Ip =   hRecombVelocity() * ( p-hole_density ) *S; // hole emit to resistance region
+    PetscScalar In = - eRecombVelocity * ( n-electron_density ) *S; // electron emit to resistance region
+    PetscScalar Ip =   hRecombVelocity * ( p-hole_density ) *S; // hole emit to resistance region
     iy.push_back ( semiconductor_node->global_offset() +1 );
     y.push_back ( In );
     iy.push_back ( semiconductor_node->global_offset() +2 );
@@ -307,7 +350,7 @@ void IF_Metal_OhmicBC::_DDM1_Function_Limited_Recombination ( PetscScalar * x, V
     if(SolverSpecify::TimeDependent == true)
     {
       //second order
-      if(SolverSpecify::TS_type==SolverSpecify::BDF2 && SolverSpecify::BDF2_restart==false)
+      if(SolverSpecify::TS_type==SolverSpecify::BDF2 && SolverSpecify::BDF2_LowerOrder==false)
       {
         PetscScalar r = SolverSpecify::dt_last/(SolverSpecify::dt_last + SolverSpecify::dt);
         PetscScalar Tn = -((2-r)/(1-r)*n - 1.0/(r*(1-r))*semiconductor_node_data->n() + (1-r)/r*semiconductor_node_data->n_last())
@@ -342,7 +385,7 @@ void IF_Metal_OhmicBC::_DDM1_Function_Limited_Recombination ( PetscScalar * x, V
         // area of out surface of control volume related with neighbor node
         PetscScalar cv_boundary = semiconductor_node->cv_surface_area ( nb_node->root_node() );
         PetscScalar dEdt;
-        if ( SolverSpecify::TS_type==SolverSpecify::BDF2 && SolverSpecify::BDF2_restart==false ) //second order
+        if ( SolverSpecify::TS_type==SolverSpecify::BDF2 && SolverSpecify::BDF2_LowerOrder==false ) //second order
         {
           PetscScalar r = SolverSpecify::dt_last/ ( SolverSpecify::dt_last + SolverSpecify::dt );
           dEdt = ( ( 2-r ) / ( 1-r ) * ( V_semiconductor-V_nb )
@@ -422,6 +465,8 @@ void IF_Metal_OhmicBC::_DDM1_Function_Infinite_Recombination ( PetscScalar * x, 
   // for 2D mesh, z_width() is the device dimension in Z direction; for 3D mesh, z_width() is 1.0
   const PetscScalar current_scale = this->z_width();
 
+  const PetscScalar distributed_res = this->scalar("contact.resistance");
+
   const SimulationRegion * _r1 = bc_regions().first;
   const SimulationRegion * _r2 = bc_regions().second;
 
@@ -434,7 +479,7 @@ void IF_Metal_OhmicBC::_DDM1_Function_Infinite_Recombination ( PetscScalar * x, 
   // search and process all the boundary nodes
   BoundaryCondition::const_node_iterator node_it = nodes_begin();
   BoundaryCondition::const_node_iterator end_it = nodes_end();
-  for (unsigned int i=0 ; node_it!=end_it; ++node_it )
+  for (unsigned int i=0 ; node_it!=end_it; ++node_it,++i )
   {
     // skip node not belongs to this processor
     if ( ( *node_it )->processor_id() !=Genius::processor_id() ) continue;
@@ -461,6 +506,12 @@ void IF_Metal_OhmicBC::_DDM1_Function_Infinite_Recombination ( PetscScalar * x, 
     const PetscScalar Nv  = semiconductor_region->material()->band->Nv ( T );
     const PetscScalar Eg  = semiconductor_region->material()->band->Eg ( T );
 
+    // here we should calculate current flow into this cell
+    const PetscScalar inject_current = this->_current_buffer[i];//pre-computed
+
+    //potential drop in distributed contact resistance
+    const PetscScalar cv_boundary = std::abs(semiconductor_node->outside_boundary_surface_area())+1e-10;
+    const PetscScalar dV = -inject_current*distributed_res/(cv_boundary*current_scale);// dV = V_resistance - V_semiconductor
 
     //governing equation for Ohmic contact boundary
     if(semiconductor_region->get_advanced_model()->Fermi) //Fermi
@@ -469,8 +520,8 @@ void IF_Metal_OhmicBC::_DDM1_Function_Infinite_Recombination ( PetscScalar * x, 
       PetscScalar Ev =  -(e*V_semiconductor + semiconductor_node_data->affinity()+ Eg);
 
       // the quasi-fermi potential equals to electrode Vapp
-      PetscScalar phin = V_resistance + resistance_node_data->affinity();
-      PetscScalar phip = V_resistance + resistance_node_data->affinity();
+      PetscScalar phin = V_resistance - dV + resistance_node_data->affinity()/e;
+      PetscScalar phip = V_resistance - dV + resistance_node_data->affinity()/e;
 
       PetscScalar etan = (-e*phin-Ec)/kb/T;
       PetscScalar etap = (Ev+e*phip)/kb/T;
@@ -486,8 +537,8 @@ void IF_Metal_OhmicBC::_DDM1_Function_Infinite_Recombination ( PetscScalar * x, 
       PetscScalar f_psi =  V_semiconductor - kb*T/e*boost::math::asinh(semiconductor_node_data->Net_doping()/(2*nie))
                            + Eg/(2*e)
                            + kb*T*log(Nc/Nv)/(2*e)
-                           + semiconductor_node_data->affinity()
-                           - (V_resistance + resistance_node_data->affinity()) ;
+                           + semiconductor_node_data->affinity()/e
+                           - (V_resistance - dV + resistance_node_data->affinity()/e) ;
       y.push_back(f_psi);
 
       PetscScalar  electron_density;
@@ -511,44 +562,6 @@ void IF_Metal_OhmicBC::_DDM1_Function_Infinite_Recombination ( PetscScalar * x, 
     iy.push_back(semiconductor_node->global_offset()+0);
     iy.push_back(semiconductor_node->global_offset()+1);
     iy.push_back(semiconductor_node->global_offset()+2);
-
-
-    // here we should calculate current flow into this cell
-    PetscScalar inject_current=this->_current_buffer[i++];//pre-computed
-
-
-    // displacement current in semiconductor region
-    if(SolverSpecify::TimeDependent == true)
-    {
-      PetscScalar I_displacement = 0.0;
-      FVM_Node::fvm_neighbor_node_iterator nb_it = semiconductor_node->neighbor_node_begin();
-      for ( ; nb_it != semiconductor_node->neighbor_node_end(); ++nb_it )
-      {
-        const FVM_Node *nb_node = ( *nb_it ).second;
-        const FVM_NodeData * nb_node_data = nb_node->node_data();
-        // the psi of neighbor node
-        PetscScalar V_nb = x[nb_node->local_offset() +0];
-        // distance from nb node to this node
-        PetscScalar distance = semiconductor_node->distance ( nb_node );
-        // area of out surface of control volume related with neighbor node
-        PetscScalar cv_boundary = semiconductor_node->cv_surface_area ( nb_node->root_node() );
-        PetscScalar dEdt;
-        if ( SolverSpecify::TS_type==SolverSpecify::BDF2 && SolverSpecify::BDF2_restart==false ) //second order
-        {
-          PetscScalar r = SolverSpecify::dt_last/ ( SolverSpecify::dt_last + SolverSpecify::dt );
-          dEdt = ( ( 2-r ) / ( 1-r ) * ( V_semiconductor-V_nb )
-                   - 1.0/ ( r* ( 1-r ) ) * ( semiconductor_node_data->psi()-nb_node_data->psi() )
-                   + ( 1-r ) /r* ( semiconductor_node_data->psi_last()-nb_node_data->psi_last() ) ) /distance/ ( SolverSpecify::dt_last+SolverSpecify::dt );
-        }
-        else//first order
-        {
-          dEdt = ( ( V_semiconductor-V_nb )- ( semiconductor_node_data->psi()-nb_node_data->psi() ) ) /distance/SolverSpecify::dt;
-        }
-
-        I_displacement += cv_boundary*semiconductor_node_data->eps() *dEdt;
-      }
-      inject_current -= I_displacement;
-    }
 
 
     // process resistance region, the equation is \sigma J = 0
@@ -589,7 +602,8 @@ void IF_Metal_OhmicBC::_DDM1_Function_Infinite_Recombination ( PetscScalar * x, 
 /*---------------------------------------------------------------------
  * do pre-process to jacobian matrix for DDML1 solver
  */
-void IF_Metal_OhmicBC::DDM1_Jacobian_Preprocess(Mat *jac, std::vector<PetscInt> &src_row,  std::vector<PetscInt> &dst_row, std::vector<PetscInt> &clear_row)
+void IF_Metal_OhmicBC::DDM1_Jacobian_Preprocess(PetscScalar *x, Mat *jac, std::vector<PetscInt> &src_row,
+    std::vector<PetscInt> &dst_row, std::vector<PetscInt> &clear_row)
 {
   const SimulationRegion * _r1 = bc_regions().first;
   const SimulationRegion * _r2 = bc_regions().second;
@@ -638,14 +652,15 @@ void IF_Metal_OhmicBC::DDM1_Jacobian_Preprocess(Mat *jac, std::vector<PetscInt> 
       // only process nodes belong to this processor
       if( (*node_it)->processor_id() != Genius::processor_id() ) continue;
 
+      std::map<PetscInt, PetscScalar>    J_col;
+
       // get the derivative of electrode current to ohmic node
       const FVM_Node * semiconductor_node  = get_region_fvm_node ( ( *node_it ), _r1 );
       const FVM_NodeData * semiconductor_node_data = semiconductor_node->node_data();
       const FVM_Node * resistance_node = get_region_fvm_node ( ( *node_it ), _r2 );
 
       PetscScalar A1[3], A2[3];
-      std::vector<PetscScalar> JM(3), JN(3);
-      std::vector<PetscInt>    row(3);
+      PetscInt row[3];
       row[0] = semiconductor_node->global_offset()+0;
       row[1] = semiconductor_node->global_offset()+1;
       row[2] = semiconductor_node->global_offset()+2;
@@ -654,10 +669,12 @@ void IF_Metal_OhmicBC::DDM1_Jacobian_Preprocess(Mat *jac, std::vector<PetscInt> 
       MatGetValues(*jac, 1, &row[1], 3, &row[0], &A1[0]);
       MatGetValues(*jac, 1, &row[2], 3, &row[0], &A2[0]);
 
-      JM[0] = -(A1[0]-A2[0]);
-      JM[1] = -(A1[1]-A2[1]);
-      JM[2] = -(A1[2]-A2[2]);
+      J_col[row[0]] += (-(A1[0]-A2[0]));
+      J_col[row[1]] += (-(A1[1]-A2[1]));
+      J_col[row[2]] += (-(A1[2]-A2[2]));
 
+      //col_vec.insert(col_vec.end(), row.begin(), row.end());
+      //J_vec.insert(J_vec.begin(), JM.begin(), JM.end());
 
       // get the derivative of electrode current to neighbors of ohmic node
       // NOTE neighbors and ohmic bc node may on different processor!
@@ -667,12 +684,7 @@ void IF_Metal_OhmicBC::DDM1_Jacobian_Preprocess(Mat *jac, std::vector<PetscInt> 
       {
         const FVM_Node *  semiconductor_nb_node = (*nb_it).second;
 
-        // distance from nb node to this node
-        PetscScalar distance = semiconductor_node->distance( semiconductor_nb_node );
-        // area of out surface of control volume related with neighbor node
-        PetscScalar cv_boundary = semiconductor_node->cv_surface_area(semiconductor_nb_node->root_node());
-
-        std::vector<PetscInt>    col(3);
+        PetscInt  col[3];
         col[0] = semiconductor_nb_node->global_offset()+0;
         col[1] = semiconductor_nb_node->global_offset()+1;
         col[2] = semiconductor_nb_node->global_offset()+2;
@@ -680,18 +692,61 @@ void IF_Metal_OhmicBC::DDM1_Jacobian_Preprocess(Mat *jac, std::vector<PetscInt> 
         MatGetValues(*jac, 1, &row[1], 3, &col[0], &A1[0]);
         MatGetValues(*jac, 1, &row[2], 3, &col[0], &A2[0]);
 
-        JN[0] = -(A1[0]-A2[0]);
-        JN[1] = -(A1[1]-A2[1]);
-        JN[2] = -(A1[2]-A2[2]);
-
-        _buffer_rows.push_back(resistance_node->global_offset());
-        _buffer_cols.push_back(col);
-        _buffer_jacobian_entries.push_back(JN);
+        J_col[col[0]] += (-(A1[0]-A2[0]));
+        J_col[col[1]] += (-(A1[1]-A2[1]));
+        J_col[col[2]] += (-(A1[2]-A2[2]));
       }
+
+      // displacement current
+      if(SolverSpecify::TimeDependent == true)
+      {
+        adtl::AutoDScalar::numdir=2;
+        AutoDScalar V_semiconductor  = x[semiconductor_node->local_offset() ]; V_semiconductor.setADValue(0, 1.0);
+        FVM_Node::fvm_neighbor_node_iterator nb_it = semiconductor_node->neighbor_node_begin();
+        for ( ; nb_it != semiconductor_node->neighbor_node_end(); ++nb_it )
+        {
+          const FVM_Node *nb_node = ( *nb_it ).second;
+          const FVM_NodeData * nb_node_data = nb_node->node_data();
+          // the psi of neighbor node
+          AutoDScalar V_nb = x[nb_node->local_offset() +0]; V_nb.setADValue(1, 1.0);
+          // distance from nb node to this node
+          PetscScalar distance = semiconductor_node->distance ( nb_node );
+          // area of out surface of control volume related with neighbor node
+          PetscScalar cv_boundary = semiconductor_node->cv_surface_area ( nb_node->root_node() );
+          AutoDScalar dEdt;
+          if ( SolverSpecify::TS_type==SolverSpecify::BDF2 && SolverSpecify::BDF2_LowerOrder==false ) //second order
+          {
+            PetscScalar r = SolverSpecify::dt_last/ ( SolverSpecify::dt_last + SolverSpecify::dt );
+            dEdt = ( ( 2-r ) / ( 1-r ) * ( V_semiconductor-V_nb )
+                     - 1.0/ ( r* ( 1-r ) ) * ( semiconductor_node_data->psi()-nb_node_data->psi() )
+                     + ( 1-r ) /r* ( semiconductor_node_data->psi_last()-nb_node_data->psi_last() ) ) / distance/ ( SolverSpecify::dt_last+SolverSpecify::dt );
+          }
+          else//first order
+          {
+            dEdt = ( ( V_semiconductor-V_nb )- ( semiconductor_node_data->psi()-nb_node_data->psi() ) ) /distance/SolverSpecify::dt;
+          }
+
+          AutoDScalar I_displacement = cv_boundary*semiconductor_node_data->eps() *dEdt;
+          J_col[semiconductor_node->global_offset()] += -I_displacement.getADValue(0);
+          J_col[nb_node->global_offset()] += -I_displacement.getADValue(1);
+        }
+      }
+
       _buffer_rows.push_back(resistance_node->global_offset());
-      _buffer_cols.push_back(row);
-      _buffer_jacobian_entries.push_back(JM);
+
+      std::vector<PetscInt> col_vec;
+      std::vector<PetscScalar> J_vec;
+      std::map<PetscInt, PetscScalar>::const_iterator it = J_col.begin();
+      for(; it != J_col.end(); ++it)
+      {
+        col_vec.push_back(it->first);
+        J_vec.push_back(it->second);
+      }
+      _buffer_cols.push_back(col_vec);
+      _buffer_jacobian_entries.push_back(J_vec);
+
     }
+
 
     // then, we can zero all the rows corresponding to Ohmic bc since they have been filled previously.
     for ( node_it = nodes_begin(); node_it!=end_it; ++node_it )
@@ -738,6 +793,8 @@ void IF_Metal_OhmicBC::_DDM1_Jacobian_Limited_Recombination ( PetscScalar * x, M
   }
 
   const PetscScalar T = T_external();
+  const PetscScalar eRecombVelocity = scalar("elec.recomb.velocity");
+  const PetscScalar hRecombVelocity = scalar("hole.recomb.velocity");
 
   const SimulationRegion * _r1 = bc_regions().first;
   const SimulationRegion * _r2 = bc_regions().second;
@@ -797,16 +854,16 @@ void IF_Metal_OhmicBC::_DDM1_Jacobian_Limited_Recombination ( PetscScalar * x, M
     AutoDScalar f_phi =  V_semiconductor - kb*T/e*adtl::asinh(semiconductor_node_data->Net_doping()/(2*nie))
                          + Eg/(2*e)
                          + kb*T*log(Nc/Nv)/(2*e)
-                         + semiconductor_node_data->affinity()
-                         - (V_resistance + resistance_node_data->affinity()) ;
+                         + semiconductor_node_data->affinity()/e
+                         - (V_resistance + resistance_node_data->affinity()/e) ;
     MatSetValue ( *jac, semiconductor_node->global_offset(), resistance_node->global_offset(), f_phi.getADValue ( 0 ), ADD_VALUES );
     MatSetValue ( *jac, semiconductor_node->global_offset(), semiconductor_node->global_offset(), f_phi.getADValue ( 1 ), ADD_VALUES );
 
 
     // conservation equation of electron/hole
     PetscScalar S  = semiconductor_node->outside_boundary_surface_area();
-    AutoDScalar In = -eRecombVelocity() * ( n-electron_density ) *S; // electron emit to resistance region
-    AutoDScalar Ip =  hRecombVelocity() * ( p-hole_density ) *S; // hole emit to resistance region
+    AutoDScalar In = -eRecombVelocity * ( n-electron_density ) *S; // electron emit to resistance region
+    AutoDScalar Ip =  hRecombVelocity * ( p-hole_density ) *S; // hole emit to resistance region
     MatSetValue ( *jac, semiconductor_node->global_offset() +1, semiconductor_node->global_offset() +1, In.getADValue ( 2 ), ADD_VALUES );
     MatSetValue ( *jac, semiconductor_node->global_offset() +2, semiconductor_node->global_offset() +2, -Ip.getADValue ( 3 ), ADD_VALUES );
 
@@ -819,7 +876,7 @@ void IF_Metal_OhmicBC::_DDM1_Jacobian_Limited_Recombination ( PetscScalar * x, M
     if(SolverSpecify::TimeDependent == true)
     {
       //second order
-      if(SolverSpecify::TS_type==SolverSpecify::BDF2 && SolverSpecify::BDF2_restart==false)
+      if(SolverSpecify::TS_type==SolverSpecify::BDF2 && SolverSpecify::BDF2_LowerOrder==false)
       {
         PetscScalar r = SolverSpecify::dt_last/(SolverSpecify::dt_last + SolverSpecify::dt);
         AutoDScalar Tn = -((2-r)/(1-r)*n - 1.0/(r*(1-r))*semiconductor_node_data->n() + (1-r)/r*semiconductor_node_data->n_last())
@@ -855,7 +912,7 @@ void IF_Metal_OhmicBC::_DDM1_Jacobian_Limited_Recombination ( PetscScalar * x, M
         // area of out surface of control volume related with neighbor node
         PetscScalar cv_boundary = semiconductor_node->cv_surface_area ( nb_node->root_node() );
         AutoDScalar dEdt;
-        if ( SolverSpecify::TS_type==SolverSpecify::BDF2 && SolverSpecify::BDF2_restart==false ) //second order
+        if ( SolverSpecify::TS_type==SolverSpecify::BDF2 && SolverSpecify::BDF2_LowerOrder==false ) //second order
         {
           PetscScalar r = SolverSpecify::dt_last/ ( SolverSpecify::dt_last + SolverSpecify::dt );
           dEdt = ( ( 2-r ) / ( 1-r ) * ( V_semiconductor-V_nb )
@@ -911,6 +968,10 @@ void IF_Metal_OhmicBC::_DDM1_Jacobian_Infinite_Recombination ( PetscScalar * x, 
   }
 
   const PetscScalar T = T_external();
+  const PetscScalar distributed_res = this->scalar("contact.resistance");
+
+  // for 2D mesh, z_width() is the device dimension in Z direction; for 3D mesh, z_width() is 1.0
+  const PetscScalar current_scale = this->z_width();
 
   const SimulationRegion * _r1 = bc_regions().first;
   const SimulationRegion * _r2 = bc_regions().second;
@@ -918,24 +979,13 @@ void IF_Metal_OhmicBC::_DDM1_Jacobian_Infinite_Recombination ( PetscScalar * x, 
   const SemiconductorSimulationRegion * semiconductor_region = dynamic_cast<const SemiconductorSimulationRegion *> ( _r1 );
   const MetalSimulationRegion * resistance_region = dynamic_cast<const MetalSimulationRegion *> ( _r2 );
 
-  // d(current)/d(independent variables of bd node and its neighbors)
-  for(unsigned int n=0; n<_buffer_rows.size(); ++n)
-  {
-    MatSetValues(*jac, 1, &_buffer_rows[n], 3, &(_buffer_cols[n])[0], &(_buffer_jacobian_entries[n])[0], ADD_VALUES);
-  }
-
-  adtl::AutoDScalar::numdir=4;
-  //synchronize with material database
-  semiconductor_region->material()->set_ad_num(adtl::AutoDScalar::numdir);
 
   // search and process all the boundary nodes
   BoundaryCondition::const_node_iterator node_it = nodes_begin();
   BoundaryCondition::const_node_iterator end_it = nodes_end();
-  for ( ; node_it!=end_it; ++node_it )
+  for (unsigned int i=0 ; node_it!=end_it; ++node_it,++i)
   {
-    // skip node not belongs to this processor
-    if ( ( *node_it )->processor_id() !=Genius::processor_id() ) continue;
-
+    assert ( ( *node_it )->processor_id() == Genius::processor_id() );
 
     const FVM_Node * semiconductor_node  = get_region_fvm_node ( ( *node_it ), _r1 );
     const FVM_NodeData * semiconductor_node_data = semiconductor_node->node_data();
@@ -943,50 +993,78 @@ void IF_Metal_OhmicBC::_DDM1_Jacobian_Infinite_Recombination ( PetscScalar * x, 
     const FVM_Node * resistance_node = get_region_fvm_node ( ( *node_it ), _r2 );
     const FVM_NodeData * resistance_node_data = resistance_node->node_data();
 
-    AutoDScalar V_resistance = x[resistance_node->local_offset() ];  V_resistance.setADValue ( 0,1.0 );
-    AutoDScalar V_semiconductor  = x[semiconductor_node->local_offset() ]; V_semiconductor.setADValue ( 1,1.0 );
-    AutoDScalar n = x[semiconductor_node->local_offset() +1]; n.setADValue ( 2,1.0 );
-    AutoDScalar p = x[semiconductor_node->local_offset() +2]; p.setADValue ( 3,1.0 );
+    // the insert position
+    PetscInt row[4];
+    row[0] = resistance_node->global_offset();
+    row[1] = semiconductor_node->global_offset()+0;
+    row[2] = semiconductor_node->global_offset()+1;
+    row[3] = semiconductor_node->global_offset()+2;
+
+    std::vector<PetscInt> col_pattern;
+    col_pattern.push_back(resistance_node->global_offset());
+    col_pattern.push_back(semiconductor_node->global_offset()+0);
+    col_pattern.push_back(semiconductor_node->global_offset()+1);
+    col_pattern.push_back(semiconductor_node->global_offset()+2);
+    std::sort(col_pattern.begin(), col_pattern.end());
+
+    AsmtDScalar V_resistance( x[resistance_node->local_offset()] );  V_resistance.setADValue(col_pattern, resistance_node->global_offset(), 1.0 );
+    AsmtDScalar V_semiconductor( x[semiconductor_node->local_offset()] ); V_semiconductor.setADValue (col_pattern, semiconductor_node->global_offset()+0,1.0 );
+    AsmtDScalar n(x[semiconductor_node->local_offset()+1]); n.setADValue(col_pattern, semiconductor_node->global_offset()+1,1.0 );
+    AsmtDScalar p(x[semiconductor_node->local_offset()+2]); p.setADValue(col_pattern, semiconductor_node->global_offset()+2,1.0 );
 
     // process semiconductor region
 
     // mapping this node to material library
     semiconductor_region->material()->mapping ( semiconductor_node->root_node(), semiconductor_node_data, SolverSpecify::clock );
 
-    AutoDScalar nie = semiconductor_region->material()->band->nie ( p, n, T );
+    const PetscScalar nie = semiconductor_region->material()->band->nie ( p.getValue(), n.getValue(), T );
     const PetscScalar Nc  = semiconductor_region->material()->band->Nc ( T );
     const PetscScalar Nv  = semiconductor_region->material()->band->Nv ( T );
     const PetscScalar Eg  = semiconductor_region->material()->band->Eg ( T );
 
+    // d(current)/d(independent variables of bd node and its neighbors)
+    const std::vector<PetscInt> & inject_current_col = _buffer_cols[i];
+    const std::vector<PetscScalar> & inject_current_J = _buffer_jacobian_entries[i];
+
+    // here we should calculate current flow into this cell
+    AsmtDScalar inject_current(this->_current_buffer[i], inject_current_col, inject_current_J);//pre-computed
+
+    //potential drop in distributed contact resistance
+    const PetscScalar cv_boundary = std::abs(semiconductor_node->outside_boundary_surface_area())+1e-10;
+    AsmtDScalar dV = -inject_current*distributed_res/(cv_boundary*current_scale);// dV = V_resistance - V_semiconductor
+
     //governing equation for Ohmic contact boundary
-    AutoDScalar f_phi,f_elec,f_hole;
     if(semiconductor_region->get_advanced_model()->Fermi) //Fermi
     {
-      AutoDScalar Ec =  -(e*V_semiconductor + semiconductor_node_data->affinity());
-      AutoDScalar Ev =  -(e*V_semiconductor + semiconductor_node_data->affinity() + Eg);
+      AsmtDScalar Ec =  -(e*V_semiconductor + semiconductor_node_data->affinity());
+      AsmtDScalar Ev =  -(e*V_semiconductor + semiconductor_node_data->affinity() + Eg);
 
       // the quasi-fermi potential equals to electrode Vapp
-      AutoDScalar phin = V_resistance + resistance_node_data->affinity();
-      AutoDScalar phip = V_resistance + resistance_node_data->affinity();
+      AsmtDScalar phin = V_resistance - dV + resistance_node_data->affinity()/e;
+      AsmtDScalar phip = V_resistance - dV + resistance_node_data->affinity()/e;
 
-      AutoDScalar etan = (-e*phin-Ec)/kb/T;
-      AutoDScalar etap = (Ev+e*phip)/kb/T;
+      AsmtDScalar etan = (-e*phin-Ec)/kb/T;
+      AsmtDScalar etap = (Ev+e*phip)/kb/T;
 
-      f_phi =  Nc*fermi_half(etan) - Nv*fermi_half(etap) - semiconductor_node_data->Net_doping();
-      f_elec =  n - Nc*fermi_half(etan);
-      f_hole =  p - Nv*fermi_half(etap);
+      AsmtDScalar f_phi =  Nc*fermi_half(etan) - Nv*fermi_half(etap) - semiconductor_node_data->Net_doping();
+      AsmtDScalar f_elec =  n - Nc*fermi_half(etan);
+      AsmtDScalar f_hole =  p - Nv*fermi_half(etap);
+
+      // set Jacobian of governing equations
+      MatSetValues(*jac, 1, &row[1], f_phi.getADSize(), f_phi.getADIndex(), f_phi.getADValue(), ADD_VALUES);
+      MatSetValues(*jac, 1, &row[2], f_elec.getADSize(), f_elec.getADIndex(), f_elec.getADValue(), ADD_VALUES);
+      MatSetValues(*jac, 1, &row[3], f_hole.getADSize(), f_hole.getADIndex(), f_hole.getADValue(), ADD_VALUES);
     }
     else //Boltzmann
     {
+      AsmtDScalar f_phi = V_semiconductor - kb*T/e*boost::math::asinh(semiconductor_node_data->Net_doping()/(2*nie))
+                         + Eg/(2*e)
+                         + kb*T*log(Nc/Nv)/(2*e)
+                         + semiconductor_node_data->affinity()/e
+                         - (V_resistance -dV + resistance_node_data->affinity()/e);
 
-      f_phi = V_semiconductor - kb*T/e*adtl::asinh(semiconductor_node_data->Net_doping()/(2*nie))
-              + Eg/(2*e)
-              + kb*T*log(Nc/Nv)/(2*e)
-              + semiconductor_node_data->affinity()
-              - V_resistance + resistance_node_data->affinity();
-
-      AutoDScalar  electron_density;
-      AutoDScalar  hole_density;
+      PetscScalar  electron_density;
+      PetscScalar  hole_density;
       PetscScalar  net_dpoing = semiconductor_node_data->Net_doping();
       if( net_dpoing <0 )   //p-type
       {
@@ -999,56 +1077,18 @@ void IF_Metal_OhmicBC::_DDM1_Jacobian_Infinite_Recombination ( PetscScalar * x, 
         hole_density = nie*nie/electron_density;
       }
 
-      f_elec =  n - electron_density;  //governing equation for electron density
-      f_hole =  p - hole_density;      //governing equation for hole density
+      AsmtDScalar f_elec =  n - electron_density;  //governing equation for electron density
+      AsmtDScalar f_hole =  p - hole_density;      //governing equation for hole density
+
+      // set Jacobian of governing equations
+      MatSetValues(*jac, 1, &row[1], f_phi.getADSize(),  f_phi.getADIndex(),  f_phi.getADValue(),  ADD_VALUES);
+      MatSetValues(*jac, 1, &row[2], f_elec.getADSize(), f_elec.getADIndex(), f_elec.getADValue(), ADD_VALUES);
+      MatSetValues(*jac, 1, &row[3], f_hole.getADSize(), f_hole.getADIndex(), f_hole.getADValue(), ADD_VALUES);
     }
 
-    // the insert position
-    PetscInt row[3], col[4];
-    col[0] = resistance_node->global_offset();
-    col[1] = row[0] = semiconductor_node->global_offset()+0;
-    col[2] = row[1] = semiconductor_node->global_offset()+1;
-    col[3] = row[2] = semiconductor_node->global_offset()+2;
 
-    // set Jacobian of governing equations
-    MatSetValues(*jac, 1, &row[0], 4, &col[0], f_phi.getADValue(), ADD_VALUES);
-    MatSetValues(*jac, 1, &row[1], 4, &col[0], f_elec.getADValue(), ADD_VALUES);
-    MatSetValues(*jac, 1, &row[2], 4, &col[0], f_hole.getADValue(), ADD_VALUES);
-
+    MatSetValues(*jac, 1, &row[0], inject_current.getADSize(), inject_current.getADIndex(), inject_current.getADValue(), ADD_VALUES);
     //MatSetValue(*jac, semiconductor_node->global_offset(), semiconductor_node->global_offset(), 1.0e-12, ADD_VALUES);
-
-    // displacement current
-    if(SolverSpecify::TimeDependent == true)
-    {
-      FVM_Node::fvm_neighbor_node_iterator nb_it = semiconductor_node->neighbor_node_begin();
-      for ( ; nb_it != semiconductor_node->neighbor_node_end(); ++nb_it )
-      {
-        const FVM_Node *nb_node = ( *nb_it ).second;
-        const FVM_NodeData * nb_node_data = nb_node->node_data();
-        // the psi of neighbor node
-        AutoDScalar V_nb = x[nb_node->local_offset() +0]; V_nb.setADValue ( 2, 1.0 );
-        // distance from nb node to this node
-        PetscScalar distance = semiconductor_node->distance ( nb_node );
-        // area of out surface of control volume related with neighbor node
-        PetscScalar cv_boundary = semiconductor_node->cv_surface_area ( nb_node->root_node() );
-        AutoDScalar dEdt;
-        if ( SolverSpecify::TS_type==SolverSpecify::BDF2 && SolverSpecify::BDF2_restart==false ) //second order
-        {
-          PetscScalar r = SolverSpecify::dt_last/ ( SolverSpecify::dt_last + SolverSpecify::dt );
-          dEdt = ( ( 2-r ) / ( 1-r ) * ( V_semiconductor-V_nb )
-                   - 1.0/ ( r* ( 1-r ) ) * ( semiconductor_node_data->psi()-nb_node_data->psi() )
-                   + ( 1-r ) /r* ( semiconductor_node_data->psi_last()-nb_node_data->psi_last() ) ) /distance/ ( SolverSpecify::dt_last+SolverSpecify::dt );
-        }
-        else//first order
-        {
-          dEdt = ( ( V_semiconductor-V_nb )- ( semiconductor_node_data->psi()-nb_node_data->psi() ) ) /distance/SolverSpecify::dt;
-        }
-
-        AutoDScalar I_displacement = cv_boundary*semiconductor_node_data->eps() *dEdt;
-        MatSetValue ( *jac, resistance_node->global_offset(), semiconductor_node->global_offset(), -I_displacement.getADValue ( 1 ), ADD_VALUES );
-        MatSetValue ( *jac, resistance_node->global_offset(), nb_node->global_offset(), -I_displacement.getADValue ( 2 ), ADD_VALUES );
-      }
-    }
 
     // if we have insulator node?
     if ( has_associated_region ( ( *node_it ), InsulatorRegion ) )
@@ -1060,10 +1100,8 @@ void IF_Metal_OhmicBC::_DDM1_Jacobian_Infinite_Recombination ( PetscScalar * x, 
         const SimulationRegion * region = ( *rnode_it ).second.first;
         if ( region->type() != InsulatorRegion ) continue;
         const FVM_Node * insulator_node  = ( *rnode_it ).second.second;
-        AutoDScalar V_insulator  = x[insulator_node->local_offset() ]; V_insulator.setADValue ( 1, 1.0 );
-        AutoDScalar f_phi =  V_insulator - V_resistance;
-        MatSetValue ( *jac, insulator_node->global_offset(), resistance_node->global_offset(), f_phi.getADValue ( 0 ), ADD_VALUES );
-        MatSetValue ( *jac, insulator_node->global_offset(), insulator_node->global_offset(), f_phi.getADValue ( 1 ), ADD_VALUES );
+        MatSetValue ( *jac, insulator_node->global_offset(), resistance_node->global_offset(), -1.0, ADD_VALUES );
+        MatSetValue ( *jac, insulator_node->global_offset(), insulator_node->global_offset(), 1.0, ADD_VALUES );
       }
     }
   }

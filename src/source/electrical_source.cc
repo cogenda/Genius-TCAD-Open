@@ -19,12 +19,12 @@
 /*                                                                              */
 /********************************************************************************/
 
-
+#include "parser.h"
 #include "electrical_source.h"
 #include "simulation_system.h"
 #include "boundary_condition_collector.h"
 
-#ifdef CYGWIN
+#ifdef WINDOWS
   #include <Windows.h>
   #undef max
   #undef min
@@ -38,7 +38,7 @@ using  PhysicalUnit::V;
 using  PhysicalUnit::A;
 
 
-ElectricalSource::ElectricalSource(Parser::InputParser & decks)
+ElectricalSource::ElectricalSource(Parser::InputParser & decks):_bcs(0), _counter(0)
 {
 
   //setup voltage, current source and light source
@@ -109,12 +109,12 @@ ElectricalSource::ElectricalSource(Parser::InputParser & decks)
 
 ElectricalSource::~ElectricalSource()
 {
-  std::map<const std::string, VSource * >::iterator it1 = _vsource_list.begin();
+  std::map<std::string, VSource * >::iterator it1 = _vsource_list.begin();
   for(; it1!=_vsource_list.end(); ++it1)
     delete (*it1).second;
   _vsource_list.clear();
 
-  std::map<const std::string, ISource * >::iterator it2 = _isource_list.begin();
+  std::map<std::string, ISource * >::iterator it2 = _isource_list.begin();
   for(; it2!=_isource_list.end(); ++it2)
     delete (*it2).second;
   _isource_list.clear();
@@ -128,6 +128,46 @@ void ElectricalSource::link_to_bcs(BoundaryConditionCollector * bcs)
 
 
 
+void ElectricalSource::attach_source_to_electrode(const std::string & electrode_label, const std::string & source )
+{
+  BoundaryCondition *bc = _bcs->get_bc(electrode_label);
+
+  // bc should not be null
+  genius_assert(bc);
+
+  // should be an electrode
+  genius_assert( bc->is_electrode() );
+
+  // can we find this electrode already in the table?
+  BIt bc_source_it = _bc_source_map.find(electrode_label);
+
+  // if not find, insert a new empty item
+  if( bc_source_it == _bc_source_map.end() )
+  {
+    std::vector<VSource *> vsource_list;
+    std::vector<ISource *> isource_list;
+    _bc_source_map[electrode_label] = std::pair<std::vector<VSource *>, std::vector<ISource *> >(vsource_list, isource_list);
+    bc_source_it = _bc_source_map.find(electrode_label);
+    genius_assert( bc_source_it != _bc_source_map.end() );
+  }
+
+  // clear old value if exist
+  bc_source_it->second.first.clear();
+  bc_source_it->second.second.clear();
+
+  // insert the source into map if we find
+  if( _vsource_list.find(source) != _vsource_list.end() )
+    bc_source_it->second.first.push_back( (*_vsource_list.find(source)).second );
+
+  if( _isource_list.find(source) != _isource_list.end() )
+    bc_source_it->second.second.push_back( (*_isource_list.find(source)).second );
+
+  // the electrode should only have one kind sources at a time, either vsource or isource
+  // so we should check it
+  genius_assert( bc_source_it->second.first.empty() || bc_source_it->second.second.empty() );
+}
+
+
 void ElectricalSource::attach_sources_to_electrode(const std::string & electrode_label, const std::vector<std::string> & source_list )
 {
   BoundaryCondition *bc = _bcs->get_bc(electrode_label);
@@ -139,70 +179,60 @@ void ElectricalSource::attach_sources_to_electrode(const std::string & electrode
   genius_assert( bc->is_electrode() );
 
   // can we find this electrode already in the table?
-  BIt it = _bc_source_map.find(electrode_label);
+  BIt bc_source_it = _bc_source_map.find(electrode_label);
 
   // if not find, insert a new empty item
-  if( it == _bc_source_map.end() )
+  if( bc_source_it == _bc_source_map.end() )
   {
     std::vector<VSource *> vsource_list;
     std::vector<ISource *> isource_list;
     _bc_source_map[electrode_label] = std::pair<std::vector<VSource *>, std::vector<ISource *> >(vsource_list, isource_list);
-    it = _bc_source_map.find(electrode_label);
-    genius_assert( it != _bc_source_map.end() );
+    bc_source_it = _bc_source_map.find(electrode_label);
+    genius_assert( bc_source_it != _bc_source_map.end() );
   }
 
   // clear old value if exist
-  (*it).second.first.clear();
-  (*it).second.second.clear();
+  bc_source_it->second.first.clear();
+  bc_source_it->second.second.clear();
 
   // insert the source into map if we find
   for(unsigned int i=0; i<source_list.size(); ++i)
   {
     if( _vsource_list.find(source_list[i]) != _vsource_list.end() )
-      (*it).second.first.push_back( (*_vsource_list.find(source_list[i])).second );
+      bc_source_it->second.first.push_back( (*_vsource_list.find(source_list[i])).second );
 
     if( _isource_list.find(source_list[i]) != _isource_list.end() )
-      (*it).second.second.push_back( (*_isource_list.find(source_list[i])).second );
+      bc_source_it->second.second.push_back( (*_isource_list.find(source_list[i])).second );
   }
 
   // the electrode should only have one kind sources at a time, either vsource or isource
   // so we should check it
-  genius_assert( (*it).second.first.empty() || (*it).second.second.empty() );
+  genius_assert( bc_source_it->second.first.empty() || bc_source_it->second.second.empty() );
 }
 
 
-void ElectricalSource::attach_voltage_to_electrode(const std::string & electrode_label, PetscScalar vconst )
+void ElectricalSource::attach_voltage_to_electrode(const std::string & electrode_label, double vconst )
 {
-  BoundaryCondition *bc = _bcs->get_bc(electrode_label);
+  // create an VDC with vconst
+  std::stringstream ss;
+  ss << "##VCONST##" << _counter++ <<"##";
+  std::string vlabel = ss.str();
+  _vsource_list[vlabel] = new VDC(vlabel, 0, vconst);
 
-  // bc should not be null
-  genius_assert(bc);
-
-  // should be an electrode
-  genius_assert( bc->is_electrode() );
-
-  // remove old sources
-  remove_electrode_source(electrode_label);
-
-  assign_voltage_to(electrode_label, vconst);
+  attach_source_to_electrode(electrode_label, vlabel);
 }
 
 
 
-void ElectricalSource::attach_current_to_electrode(const std::string & electrode_label, PetscScalar iconst )
+void ElectricalSource::attach_current_to_electrode(const std::string & electrode_label, double iconst )
 {
-  BoundaryCondition *bc = _bcs->get_bc(electrode_label);
+  // create an IDC with iconst
+  std::stringstream ss;
+  ss << "##ICONST##" << _counter++ <<"##";
+  std::string ilabel = ss.str();
+  _isource_list[ilabel] = new IDC(ilabel, 0, iconst);
 
-  // bc should not be null
-  genius_assert(bc);
-
-  // should be an electrode
-  genius_assert( bc->is_electrode() );
-
-  // remove old sources
-  remove_electrode_source(electrode_label);
-
-  assign_current_to(electrode_label, iconst);
+  attach_source_to_electrode(electrode_label, ilabel);
 }
 
 
@@ -210,38 +240,38 @@ void ElectricalSource::attach_current_to_electrode(const std::string & electrode
 void ElectricalSource::remove_electrode_source(const std::string & electrode_label)
 {
   // can we find this electrode already in the table?
-  BIt it = _bc_source_map.find(electrode_label);
+  BIt bc_source_it = _bc_source_map.find(electrode_label);
 
   // if find, clear all the sources
-  if( it != _bc_source_map.end() )
+  if( bc_source_it != _bc_source_map.end() )
   {
     // clear old value if exist
-    (*it).second.first.clear();
-    (*it).second.second.clear();
+    bc_source_it->second.first.clear();
+    bc_source_it->second.second.clear();
   }
 
 }
 
 
 
-PetscScalar ElectricalSource::limit_dt(PetscScalar time, PetscScalar dt, PetscScalar v_change, PetscScalar i_change) const
+double ElectricalSource::limit_dt(double time, double dt, double v_change, double i_change) const
 {
   CBIt it = _bc_source_map.begin();
-  PetscScalar dt_limited = dt;
+  double dt_limited = dt;
 
   for(; it!=_bc_source_map.end(); ++it)
   {
-    const PetscScalar vapp = _vapp(it->first, time);
-    const PetscScalar iapp = _iapp(it->first, time);
+    const double vapp = this->vapp(it->first, time);
+    const double iapp = this->iapp(it->first, time);
 
-    PetscScalar vapp_next = _vapp(it->first, time+dt_limited);
-    PetscScalar iapp_next = _iapp(it->first, time+dt_limited);
+    double vapp_next = this->vapp(it->first, time+dt_limited);
+    double iapp_next = this->iapp(it->first, time+dt_limited);
 
-    while( dt_limited>0.1*dt && (std::abs(vapp_next-vapp) > v_change || std::abs(iapp_next-iapp) > i_change) )
+    while( dt_limited>0.01*dt && (std::abs(vapp_next-vapp) > v_change || std::abs(iapp_next-iapp) > i_change) )
     {
       dt_limited *= 0.9;
-      vapp_next = _vapp(it->first, time+dt_limited);
-      iapp_next = _iapp(it->first, time+dt_limited);
+      vapp_next = this->vapp(it->first, time+dt_limited);
+      iapp_next = this->iapp(it->first, time+dt_limited);
     }
   }
 
@@ -250,7 +280,7 @@ PetscScalar ElectricalSource::limit_dt(PetscScalar time, PetscScalar dt, PetscSc
 
 
 
-void ElectricalSource::update(PetscScalar time)
+void ElectricalSource::update(double time)
 {
   BIt it = _bc_source_map.begin();
 
@@ -268,7 +298,7 @@ void ElectricalSource::update(PetscScalar time)
     // we find voltage source
     if( !(*it).second.first.empty() )
     {
-      PetscScalar vapp = 0;
+      double vapp = 0;
       for(unsigned int i=0; i<(*it).second.first.size(); ++i)
         vapp += (*it).second.first[i]->vapp(time);
 
@@ -279,7 +309,7 @@ void ElectricalSource::update(PetscScalar time)
     // or we find current source
     if( !(*it).second.second.empty() )
     {
-      PetscScalar iapp = 0;
+      double iapp = 0;
       for(unsigned int i=0; i<(*it).second.second.size(); ++i)
         iapp += (*it).second.second[i]->iapp(time);
 
@@ -290,27 +320,147 @@ void ElectricalSource::update(PetscScalar time)
 }
 
 
-PetscScalar ElectricalSource::_vapp(const std::string &bc, PetscScalar time) const
+
+
+unsigned int ElectricalSource::steps_by_limiter(double v_change, double i_change, double time) const
+{
+  double vapp_max = 0;
+  double iapp_max = 0;
+
+  CBIt it = _bc_source_map.begin();
+  for(; it!=_bc_source_map.end(); ++it)
+  {
+    BoundaryCondition *bc = _bcs->get_bc( it->first );
+
+    double v_0 = _bc_state_vapp(bc->label());
+    double i_0 = _bc_state_iapp(bc->label());
+
+    double v_t = this->vapp(it->first, time);
+    double i_t = this->iapp(it->first, time);
+
+    vapp_max = std::max(vapp_max, std::abs(v_t - v_0));
+    iapp_max = std::max(iapp_max, std::abs(i_t - i_0));
+  }
+
+  return static_cast<unsigned int>(ceil(std::max(1.0, std::max(vapp_max/v_change, iapp_max/i_change))));
+}
+
+
+void ElectricalSource::save_bc_source_state()
+{
+  _bc_source_state.clear();
+
+  CBIt it = _bc_source_map.begin();
+  for(; it!=_bc_source_map.end(); ++it)
+  {
+    // get the bc
+    const BoundaryCondition *bc = _bcs->get_bc( it->first );
+    // bc should not be null
+    genius_assert(bc);
+    // should be an electrode
+    genius_assert( bc->is_electrode() );
+
+    switch( bc->ext_circuit()->driven_state() )
+    {
+      case ExternalCircuit::VDRIVEN : _bc_source_state[ bc->label() ] = std::make_pair( static_cast<int>(ExternalCircuit::VDRIVEN) , bc->ext_circuit()->Vapp() ); break;
+      case ExternalCircuit::IDRIVEN : _bc_source_state[ bc->label() ] = std::make_pair( static_cast<int>(ExternalCircuit::IDRIVEN) , bc->ext_circuit()->Iapp() ); break;
+    }
+  }
+}
+
+
+double ElectricalSource::_bc_state_vapp(const std::string &bc) const
+{
+  if(_bc_source_state.find(bc) != _bc_source_state.end())
+  {
+    const std::pair<int, double> & source_state = _bc_source_state.find(bc)->second;
+    if( static_cast<ExternalCircuit::DRIVEN>(source_state.first) == ExternalCircuit::VDRIVEN )
+    {
+      return  source_state.second;
+    }
+  }
+  return 0.0;
+}
+
+
+double ElectricalSource::_bc_state_iapp(const std::string &bc) const
+{
+  if(_bc_source_state.find(bc) != _bc_source_state.end())
+  {
+    const std::pair<int, double> & source_state = _bc_source_state.find(bc)->second;
+    if( static_cast<ExternalCircuit::DRIVEN>(source_state.first) == ExternalCircuit::IDRIVEN )
+    {
+      return  source_state.second;
+    }
+  }
+  return 0.0;
+}
+
+
+void ElectricalSource::rampup(double a, double time)
+{
+  BIt it = _bc_source_map.begin();
+  for(; it!=_bc_source_map.end(); ++it)
+  {
+    // get the bc
+    BoundaryCondition *bc = _bcs->get_bc( it->first );
+
+    // bc should not be null
+    genius_assert(bc);
+
+    // should be an electrode
+    genius_assert( bc->is_electrode() );
+
+    // we find voltage source
+    if( !it->second.first.empty() )
+    {
+      double vapp_0 = _bc_state_vapp(bc->label());
+      double vapp = 0;
+      for(unsigned int i=0; i<it->second.first.size(); ++i)
+        vapp += it->second.first[i]->vapp(time);
+
+      bc->ext_circuit()->Vapp() = vapp_0 + a*(vapp-vapp_0);
+      bc->ext_circuit()->set_voltage_driven();
+    }
+
+    // or we find current source
+    if( !it->second.second.empty() )
+    {
+      double iapp_0 = _bc_state_iapp(bc->label());
+      double iapp = 0;
+      for(unsigned int i=0; i<it->second.second.size(); ++i)
+        iapp += it->second.second[i]->iapp(time);
+
+      bc->ext_circuit()->Iapp() = iapp_0 + a*(iapp-iapp_0);
+      bc->ext_circuit()->set_current_driven();
+    }
+  }
+}
+
+
+
+
+double ElectricalSource::vapp(const std::string &bc, double time) const
 {
   CBIt it = _bc_source_map.find(bc);
-  PetscScalar vapp = 0;
+  double vapp = 0;
   for(unsigned int i=0; i<(*it).second.first.size(); ++i)
     vapp += (*it).second.first[i]->vapp(time);
   return vapp;
 }
 
 
-PetscScalar ElectricalSource::_iapp(const std::string &bc, PetscScalar time) const
+double ElectricalSource::iapp(const std::string &bc, double time) const
 {
   CBIt it = _bc_source_map.find(bc);
-  PetscScalar iapp = 0;
+  double iapp = 0;
   for(unsigned int i=0; i<(*it).second.second.size(); ++i)
     iapp += (*it).second.second[i]->iapp(time);
   return iapp;
 }
 
 
-void  ElectricalSource::assign_voltage_to(const std::string & electrode_label, PetscScalar vapp)
+void  ElectricalSource::assign_voltage_to(const std::string & electrode_label, double vapp)
 {
   // get the bc
   BoundaryCondition *bc = _bcs->get_bc( electrode_label );
@@ -327,7 +477,7 @@ void  ElectricalSource::assign_voltage_to(const std::string & electrode_label, P
 }
 
 
-void ElectricalSource::assign_voltage_to(const std::vector<std::string> & electrode_labels, PetscScalar vapp)
+void ElectricalSource::assign_voltage_to(const std::vector<std::string> & electrode_labels, double vapp)
 {
 
   for(unsigned int n=0; n<electrode_labels.size(); ++n)
@@ -337,7 +487,7 @@ void ElectricalSource::assign_voltage_to(const std::vector<std::string> & electr
 
 
 
-void ElectricalSource::assign_current_to(const std::string & electrode_label, PetscScalar iapp)
+void ElectricalSource::assign_current_to(const std::string & electrode_label, double iapp)
 {
   // get the bc
   BoundaryCondition *bc = _bcs->get_bc( electrode_label );
@@ -355,7 +505,7 @@ void ElectricalSource::assign_current_to(const std::string & electrode_label, Pe
 
 
 
-void ElectricalSource::assign_current_to(const std::vector<std::string> & electrode_labels, PetscScalar vapp)
+void ElectricalSource::assign_current_to(const std::vector<std::string> & electrode_labels, double vapp)
 {
 
   for(unsigned int n=0; n<electrode_labels.size(); ++n)
@@ -369,11 +519,9 @@ void  ElectricalSource::SetVDC(const Parser::Card &c)
 {
 
   std::string label = c.get_string("id","");
-
   genius_assert( label!="" );
 
   double v = c.get_real("vconst",0.0)*V;
-
   double Tdelay = c.get_real("tdelay",0.0)*s;
 
   _vsource_list[label] = new VDC(label, Tdelay, v);
@@ -390,19 +538,13 @@ void  ElectricalSource::SetVDC(const Parser::Card &c)
 void  ElectricalSource::SetVSIN(const Parser::Card &c)
 {
   std::string label = c.get_string("id","");
-
   genius_assert( label!="" );
 
   double v0 = c.get_real("vconst",0.0)*V;
-
   double vamp = c.get_real("vamp",0.0)*V;
-
   double Tdelay = c.get_real("tdelay",0.0)*s;
-
   double freq = c.get_real("freq",0.0)*1.0/s;
-
   double alpha= c.get_real("alpha",0.0)*1.0/s;
-
 
   _vsource_list[label] = new VSIN(label, Tdelay, v0, vamp, freq, alpha);
 
@@ -421,15 +563,11 @@ void  ElectricalSource::SetVSIN(const Parser::Card &c)
 void ElectricalSource::SetVEXP(const Parser::Card &c)
 {
   std::string label = c.get_string("id","");
-
   genius_assert( label!="" );
 
   double Tdelay = c.get_real("tdelay",0.0)*s;
-
   double trc = c.get_real("trc",0.0)*s;
-
   double tfd = c.get_real("tfd",0.0)*s;
-
   double tfc = c.get_real("tfc",0.0)*s;
 
   double v1, v2;
@@ -463,29 +601,24 @@ void ElectricalSource::SetVEXP(const Parser::Card &c)
 void  ElectricalSource::SetVPULSE(const Parser::Card &c)
 {
   std::string label = c.get_string("id","");
-
   genius_assert( label!="" );
 
   double Tdelay = c.get_real("tdelay",0.0)*s;
-
-  double tr = c.get_real("tr",1e-12)*s;
-
-  double tf = c.get_real("tf",1e-12)*s;
-
-  double pw = c.get_real("pw",0.0)*s;
-
-  double pr = c.get_real("pr",0.0)*s;
+  double tr = c.get_real("tr",1e-9)*s;
+  double tf = c.get_real("tf",1e-9)*s;
+  double pw = c.get_real("pw",5e-7)*s;
+  double pr = c.get_real("pr",1e-6)*s;
 
   double v1, v2;
   if ( c.is_parameter_exist("v1") && c.is_parameter_exist("v2"))
   {
     v1 = c.get_real("v1",0.0)*V;
-    v2 = c.get_real("v2",0.0)*V;
+    v2 = c.get_real("v2",1.0)*V;
   }
   else
   {
     v1 = c.get_real("vlo",0.0)*V;
-    v2 = c.get_real("vhi",0.0)*V;
+    v2 = c.get_real("vhi",1.0)*V;
   }
 
   _vsource_list[label] = new VPULSE(label, Tdelay, v1, v2, tr, tf, pw, pr);
@@ -523,14 +656,12 @@ void  ElectricalSource::SetVSHELL(const Parser::Card &c)
 {
 
   std::string label = c.get_string("id","");
-
   genius_assert( label!="" );
 
   std::string filename = c.get_string("dll","");
-
   std::string funcname = c.get_string("func","");
 
-#ifdef CYGWIN
+#ifdef WINDOWS
 
   HINSTANCE hInstLibrary = LoadLibrary(filename.c_str());
 
@@ -540,7 +671,11 @@ void  ElectricalSource::SetVSHELL(const Parser::Card &c)
 
 #else
 
+#ifdef RTLD_DEEPBIND
+  void * dp = dlopen(filename.c_str(), RTLD_LAZY|RTLD_DEEPBIND);
+#else
   void * dp = dlopen(filename.c_str(), RTLD_LAZY);
+#endif
   genius_assert(dp);
 
   void *fp = dlsym(dp,funcname.c_str());
@@ -566,11 +701,9 @@ void  ElectricalSource::SetVSHELL(const Parser::Card &c)
 void  ElectricalSource::SetIDC(const Parser::Card &c)
 {
   std::string label = c.get_string("id","");
-
   genius_assert( label!="" );
 
   double i = c.get_real("iconst",0.0)*A;
-
   double Tdelay = c.get_real("tdelay",0.0)*s;
 
   _isource_list[label] = new IDC(label, Tdelay, i);
@@ -588,17 +721,12 @@ void  ElectricalSource::SetIDC(const Parser::Card &c)
 void  ElectricalSource::SetISIN(const Parser::Card &c)
 {
   std::string label = c.get_string("id","");
-
   genius_assert( label!="" );
 
   double i0 = c.get_real("iconst",0.0)*A;
-
   double iamp = c.get_real("iamp",0.0)*A;
-
   double Tdelay = c.get_real("tdelay",0.0)*s;
-
   double freq = c.get_real("freq",0.0)*1.0/s;
-
   double alpha= c.get_real("alpha",0.0)*1.0/s;
 
   _isource_list[label] = new ISIN(label, Tdelay, i0, iamp, freq, alpha);
@@ -618,27 +746,23 @@ void  ElectricalSource::SetISIN(const Parser::Card &c)
 void  ElectricalSource::SetIEXP(const Parser::Card &c)
 {
   std::string label = c.get_string("id","");
-
   genius_assert( label!="" );
 
   double Tdelay = c.get_real("tdelay",0.0)*s;
-
   double trc = c.get_real("trc",0.0)*s;
-
   double tfd = c.get_real("tfd",0.0)*s;
-
   double tfc = c.get_real("tfc",0.0)*s;
 
   double i1, i2;
   if ( c.is_parameter_exist("i1") && c.is_parameter_exist("i2"))
   {
-    i1 = c.get_real("i1",0.0)*V;
-    i2 = c.get_real("i2",0.0)*V;
+    i1 = c.get_real("i1",0.0)*A;
+    i2 = c.get_real("i2",0.0)*A;
   }
   else
   {
-    i1 = c.get_real("ilo",0.0)*V;
-    i2 = c.get_real("ihi",0.0)*V;
+    i1 = c.get_real("ilo",0.0)*A;
+    i2 = c.get_real("ihi",0.0)*A;
   }
 
   _isource_list[label] = new IEXP(label, Tdelay, i1, i2, trc, tfd, tfc);
@@ -660,29 +784,24 @@ void  ElectricalSource::SetIEXP(const Parser::Card &c)
 void  ElectricalSource::SetIPULSE(const Parser::Card &c)
 {
   std::string label = c.get_string("id","");
-
   genius_assert( label!="" );
 
   double Tdelay = c.get_real("tdelay",0.0)*s;
-
-  double tr = c.get_real("tr",1e-12)*s;
-
-  double tf = c.get_real("tf",1e-12)*s;
-
-  double pw = c.get_real("pw",0.0)*s;
-
-  double pr = c.get_real("pr",0.0)*s;
+  double tr = c.get_real("tr",1e-9)*s;
+  double tf = c.get_real("tf",1e-9)*s;
+  double pw = c.get_real("pw",5e-7)*s;
+  double pr = c.get_real("pr",1e-6)*s;
 
   double i1, i2;
   if ( c.is_parameter_exist("v1") && c.is_parameter_exist("v2"))
   {
-    i1 = c.get_real("i1",0.0)*V;
-    i2 = c.get_real("i2",0.0)*V;
+    i1 = c.get_real("i1",0.0)*A;
+    i2 = c.get_real("i2",1.0)*A;
   }
   else
   {
-    i1 = c.get_real("ilo",0.0)*V;
-    i2 = c.get_real("ihi",0.0)*V;
+    i1 = c.get_real("ilo",0.0)*A;
+    i2 = c.get_real("ihi",1.0)*A;
   }
 
   _isource_list[label] = new IPULSE(label, Tdelay, i1, i2, tr, tf, pw, pr);
@@ -717,16 +836,13 @@ void  ElectricalSource::SetIUSER(const Parser::Card &c)
 void  ElectricalSource::SetISHELL(const Parser::Card &c)
 {
 
-
   std::string label = c.get_string("id","");
-
   genius_assert( label!="" );
 
   std::string filename = c.get_string("dll","");
-
   std::string funcname = c.get_string("func","");
 
-#ifdef CYGWIN
+#ifdef WINDOWS
 
   HINSTANCE hInstLibrary = LoadLibrary(filename.c_str());
 
@@ -735,7 +851,11 @@ void  ElectricalSource::SetISHELL(const Parser::Card &c)
   _isource_list[label] = new ISHELL(label, hInstLibrary, fp, s, A);
 
 #else
+#ifdef RTLD_DEEPBIND
+  void * dp = dlopen(filename.c_str(), RTLD_LAZY|RTLD_DEEPBIND);
+#else
   void * dp = dlopen(filename.c_str(), RTLD_LAZY);
+#endif
   genius_assert(dp);
 
 

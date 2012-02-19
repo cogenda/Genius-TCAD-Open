@@ -140,7 +140,7 @@ void OhmicContactBC::LinearPoissin_RHS(Vec b, InsertMode &add_value_flag)
           PetscScalar V =  kb*T/e*boost::math::asinh(node_data->Net_doping()/(2*ni))
                          - Eg/(2*e)
                          - kb*T*log(Nc/Nv)/(2*e)
-                         - node_data->affinity()
+                         - node_data->affinity()/e
                          + ext_circuit()->Vapp();
 
           // set governing equation to function vector

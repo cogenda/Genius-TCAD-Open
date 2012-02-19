@@ -20,7 +20,7 @@
 static std::string keyword;
 static int state;
 static int error_report(const char *s);
-/*#define VERBOSE*/
+//#define VERBOSE
 
 
 
@@ -33,6 +33,7 @@ name                          [a-zA-Z\_][a-zA-Z\_0-9\.]*
 separator                     [ \r\t\v\f\n]
 blank                         [ \t]*
 cstring                       [\"]([^\"\\\n]|([\\](.|[\n])))*[\"]
+fstring                       [\']([^\'\\\n]|([\\](.|[\n])))*[\']
 lineinfo                      \!{cstring}
 D       [0-9]
 E       [EeDd][+-]?{D}+
@@ -124,6 +125,9 @@ string                             { state = STRING_DEFINE; return STRING_TYPE;}
         }
         // return exact card name
         strcpy(yylval.sval, keyword.c_str());
+#ifdef VERBOSE
+        printf("KEYWORD %s\n",yylval.sval);
+#endif
         return KEYWORD;
 
         //we should never reach here
@@ -140,21 +144,33 @@ string                             { state = STRING_DEFINE; return STRING_TYPE;}
         if (state == BOOL_DEFINE)
         {
           strncpy(yylval.sval, yytext,1023);
+#ifdef VERBOSE
+        printf("BOOL_ID %s\n",yytext);
+#endif
           return BOOL_ID;
         }
         if (state == INT_DEFINE)
         {
           strncpy(yylval.sval, yytext,1023);
+#ifdef VERBOSE
+        printf("INT_ID %s\n",yytext);
+#endif
           return INT_ID;
         }
         if (state == REAL_DEFINE)
         {
           strncpy(yylval.sval, yytext,1023);
+#ifdef VERBOSE
+        printf("REAL_ID %s\n",yytext);
+#endif
           return REAL_ID;
         }
         if (state == STRING_DEFINE)
         {
           strncpy(yylval.sval, yytext,1023);
+#ifdef VERBOSE
+        printf("STRING_ID %s\n",yytext);
+#endif
           return STRING_ID;
         }
 
@@ -168,14 +184,20 @@ string                             { state = STRING_DEFINE; return STRING_TYPE;}
             if(isupper(yylval.sval[c]))
               yylval.sval[c]=tolower(yylval.sval[c]);
           }
+
           std::string pname = yylval.sval;
-          switch ( p->_pattern.check_parameter_type(keyword, pname) )
+          Parser::ElemType type = p->_pattern.check_parameter_type(keyword, pname);
+          strcpy(yylval.sval, pname.c_str());
+#ifdef VERBOSE
+          printf("PARAMETER_ID %s type %d\n",yylval.sval, type);
+#endif
+          switch ( type )
           {
-            case        Parser::BOOL      :  strcpy(yylval.sval, pname.c_str());return BOOL_PARAMETER;
-            case        Parser::INTEGER   :  strcpy(yylval.sval, pname.c_str());return INT_PARAMETER;
-            case        Parser::REAL      :  strcpy(yylval.sval, pname.c_str());return REAL_PARAMETER;
-            case        Parser::STRING    :  strcpy(yylval.sval, pname.c_str());return STRING_PARAMETER;
-            case        Parser::ENUM      :  strcpy(yylval.sval, pname.c_str());return STRING_PARAMETER;
+            case        Parser::BOOL      :  return BOOL_PARAMETER;
+            case        Parser::INTEGER   :  return INT_PARAMETER;
+            case        Parser::REAL      :  ;return REAL_PARAMETER;
+            case        Parser::STRING    :  ;return STRING_PARAMETER;
+            case        Parser::ENUM      :  ;return STRING_PARAMETER;
             default:    break;
           }
           // if user mistakenly input an wrong parameter, however it matches ID
@@ -189,19 +211,31 @@ string                             { state = STRING_DEFINE; return STRING_TYPE;}
 
         if(p->bool_var.count(name))
         {
+#ifdef VERBOSE
+              printf("BOOL_ID %s\n",yytext);
+#endif
           return BOOL_ID;
         }
 
         if(p->int_var.count(name))
         {
+#ifdef VERBOSE
+            printf("INT_ID %s\n",yytext);
+#endif
           return INT_ID;
         }
         if(p->real_var.count(name))
         {
+#ifdef VERBOSE
+            printf("REAL_ID %s\n",yytext);
+#endif
           return REAL_ID;
         }
         if(p->string_var.count(name))
         {
+#ifdef VERBOSE
+            printf("STRING_ID %s\n",yytext);
+#endif
           return STRING_ID;
         }
 
@@ -227,6 +261,12 @@ string                             { state = STRING_DEFINE; return STRING_TYPE;}
 \{                                     { return '{'; }
 
 \}                                     { return '}'; }
+
+\[                                     { return '['; }
+
+\]                                     { return ']'; }
+
+\,                                     { return ','; }
 
 \!                                     { return NOT;}
 
@@ -294,7 +334,9 @@ string                             { state = STRING_DEFINE; return STRING_TYPE;}
         {
           return STRING_ID;
         }
-
+#ifdef VERBOSE
+        printf("STRING_VALUE %s\n",yylval.sval);
+#endif
         // at larst, return as STRING_VALUE;
         return STRING_VALUE;
 
@@ -308,8 +350,24 @@ string                             { state = STRING_DEFINE; return STRING_TYPE;}
         // the only poissable is STRING_VALUE
         yytext[yyleng-1]='\0';
         strncpy(yylval.sval, &yytext[1],1023);
+#ifdef VERBOSE
+        printf("STRING_VALUE %s\n",yylval.sval);
+#endif
         return STRING_VALUE;
 }
+
+
+{fstring}                                    {
+        // fortran style string
+        // the only poissable is STRING_VALUE
+    yytext[yyleng-1]='\0';
+        strncpy(yylval.sval, &yytext[1],1023);
+#ifdef VERBOSE
+        printf("STRING_VALUE %s\n",yylval.sval);
+#endif
+        return STRING_VALUE;
+}
+
 
 
 bool\<{name}\>/{blank}\=                     {
@@ -361,8 +419,6 @@ string\<{name}\>                     {
         return UD_STRING_PARAMETER;
 }
 
-
-\,        {}
 
 \;        {state = 0; return ';';}
 

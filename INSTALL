@@ -6,10 +6,10 @@ from git@github.
 
 Pre-requisites
 --------------
-1. The GCC compilers (gcc, g++ and gfortran) are required. 
-Most modern GCC versions (starting from 3.4.6) should work. 
+1. The GCC compilers (gcc, g++ and gfortran) are required.
+Most modern GCC versions (starting from 3.4.6) should work.
 We recommend 4.1 and later versions.
-Intel Compilers (>=10.0) are supported. The Intel math library alone 
+Intel Compilers (ver 10 and 11) are supported. The Intel math library alone
 provides significant performance enhancement, due to the more
 efficient pow(x,y) function.
 
@@ -17,33 +17,50 @@ efficient pow(x,y) function.
 
 3. Petsc
 	the latest petsc-3.1 version is recommended.
+        petsc-3.2 works, but not fully tested.
 
 The compiling of PETSC requires you to set two system variables:
 'PETSC_DIR' point to the directory of PETSC.
 'PETSC_ARCH' to give a tag of PETSC configuation.
-And MPI implemention is requird. MPICH2 is recommended.
-The recommended configure arguments are
-  ./configure --download-f-blas-lapack=1 --with-debugging=0 --with-umfpack=1 --download-umfpack=1 \
-  --with-superlu=1 --download-superlu=1 --with-superlu_dist=1 --download-superlu_dist=1  \
-  --with-blacs=1 --download-blacs=1 --with-scalapack=1 --download-scalapack=1 \
-  --with-parmetis=1 --download-parmetis=1 --with-mumps=1 --download-mumps=1 \
-  --COPTFLAGS="-O2" --CXXOPTFLAGS="-O2" --FOPTFLAGS="-O2" --useThreads=0 --with-shared=1
+
+For MPI version of petsc, both MPICH2 and OpenMPI works well.
+The recommended configure arguments for petsc-3.1 are
+  ./configure --download-mpich=1 \
+  --with-debugging=0 --with-shared=0 --with-x=0 --with-pic=1 \
+  --download-f-blas-lapack=1 \
+  --download-superlu=1 --download-superlu_dist=1  \
+  --download-blacs=1 --download-scalapack=1 \
+  --download-parmetis=1 --download-mumps=1 \
+  --COPTFLAGS="-O2" --CXXOPTFLAGS="-O2" --FOPTFLAGS="-O2"
+
+For serial version of petsc
+The recommended configure arguments for petsc-3.1 are
+  ./configure --with-mpi=0 \
+  --with-debugging=0 --with-shared=0 --with-x=0 --with-pic=1 \
+  --download-f-blas-lapack=1 \
+  --download-metis=1 \
+  --download-superlu=1 \
+  --COPTFLAGS="-O2" --CXXOPTFLAGS="-O2" --FOPTFLAGS="-O2"
+
+NOTE: --download-parmetis=1 or --download-metis=1 is requred.
+Genius will use (par)metis as its mesh partitioner
+
 
 4. cgnslib-2.5.
-By default, the headers and libraries are installed installed in 
+By default, the headers and libraries are installed installed in
 /usr/local/include and /usr/local/lib, respectively.
 
 Note: cgns 3.0 is not tested, and probably will not work.
 
 5. VTK-5.4.x.
-By default, the headers and libraries are installed installed in 
+By default, the headers and libraries are installed installed in
 /usr/local/include/vtk-5.4 and /usr/local/lib/vtk-5.4, respectively.
 
-Note: VTK 5.6.x has some API changes, and is not supported yet.
+Note: VTK 5.6.x also works, but not fully tested.
 
 6. Configure and build Genius
-  ./waf --prefix=$PWD --with-petsc-dir=/usr/local/petsc \
-        --with-petsc-arch=linux-gcc configure build install
+  ./waf --prefix=$PWD --with-petsc-dir=$PETSC_DIR \
+        --with-petsc-arch=$PETSC_ARCH configure build install
 
 Basic Options:
   --prefix                      Where Genius binaries will be installed
@@ -53,9 +70,9 @@ Basic Options:
 If CGNS and VTK are installed in non-standard directories, you need the
 following options:
   --with-cgns-dir=<dir>         Directory of CGNS installation (/usr and
-                                /usr/local will be automatically searched). 
+                                /usr/local will be automatically searched).
   --with-vtk-dir=<dir>          Directory to VTK installation (/usr and
-                                /usr/local will be automatically searched). 
+                                /usr/local will be automatically searched).
   --with-vtk-ver=<str>          Version of VTK (vtk-5.4 or vtk-5.2, etc.).
 
 Further options:
@@ -67,10 +84,10 @@ Further options:
   --debug                       Enable debug, and disable optimization.
 
 To get a complete list of options, run
-./waf 
+./waf --help
 
 7. Start using Genius
-export GENIUS_DIR=<path/to/genius/installation>
+export GENIUS_DIR=<path/to/genius/>
 cd examples/PN_Diode/2D
 $GENIUS_DIR/bin/genius.LINUX -i pn2d.inp
 

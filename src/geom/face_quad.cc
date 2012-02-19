@@ -33,30 +33,59 @@ unsigned int Quad::key (const unsigned int s) const
   switch (s)
     {
     case 0:
-      return
-    this->compute_key (this->node(0),
-               this->node(1));
+      return  this->compute_key (this->node(0), this->node(1));
 
     case 1:
-      return
-    this->compute_key (this->node(1),
-               this->node(2));
+      return  this->compute_key (this->node(1), this->node(2));
 
     case 2:
-      return
-    this->compute_key (this->node(2),
-               this->node(3));
+      return  this->compute_key (this->node(2), this->node(3));
 
     case 3:
-      return
-    this->compute_key (this->node(3),
-               this->node(0));
+      return  this->compute_key (this->node(3), this->node(0));
     }
 
 
   // We will never get here...  Look at the code above.
   genius_error();
   return 0;
+}
+
+
+
+void Quad::nodes_on_side (const unsigned int i, std::vector<unsigned int> & nodes ) const
+{
+  switch (i)
+  {
+    case 0:
+    {
+      nodes.push_back(0);
+      nodes.push_back(1);
+      return;
+    }
+    case 1:
+    {
+      nodes.push_back(1);
+      nodes.push_back(2);
+      return;
+    }
+    case 2:
+    {
+      nodes.push_back(2);
+      nodes.push_back(3);
+      return;
+    }
+    case 3:
+    {
+      nodes.push_back(3);
+      nodes.push_back(0);
+      return;
+    }
+    default:
+    {
+      genius_error();
+    }
+  }
 }
 
 
@@ -70,39 +99,39 @@ AutoPtr<DofObject> Quad::side (const unsigned int i) const
     {
     case 0:
       {
-    edge->set_node(0) = this->get_node(0);
-    edge->set_node(1) = this->get_node(1);
+        edge->set_node(0) = this->get_node(0);
+        edge->set_node(1) = this->get_node(1);
 
         AutoPtr<DofObject> ap_edge(edge);
-    return ap_edge;
+        return ap_edge;
       }
     case 1:
       {
-    edge->set_node(0) = this->get_node(1);
-    edge->set_node(1) = this->get_node(2);
+        edge->set_node(0) = this->get_node(1);
+        edge->set_node(1) = this->get_node(2);
 
         AutoPtr<DofObject> ap_edge(edge);
-    return ap_edge;
+        return ap_edge;
       }
     case 2:
       {
-    edge->set_node(0) = this->get_node(2);
-    edge->set_node(1) = this->get_node(3);
+        edge->set_node(0) = this->get_node(2);
+        edge->set_node(1) = this->get_node(3);
 
         AutoPtr<DofObject> ap_edge(edge);
-    return ap_edge;
+        return ap_edge;
       }
     case 3:
       {
-    edge->set_node(0) = this->get_node(3);
-    edge->set_node(1) = this->get_node(0);
+        edge->set_node(0) = this->get_node(3);
+        edge->set_node(1) = this->get_node(0);
 
         AutoPtr<DofObject> ap_edge(edge);
-    return ap_edge;
+        return ap_edge;
       }
     default:
       {
-    genius_error();
+        genius_error();
       }
     }
 

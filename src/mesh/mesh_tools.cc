@@ -135,6 +135,15 @@ Sphere MeshTools::bounding_sphere(const MeshBase& mesh)
 }
 
 
+Sphere  MeshTools::bounding_sphere (const Sphere& s1, const Sphere& s2)
+{
+  Point c1 = s1.center();
+  Point c2 = s2.center();
+  Point s_end1 = c1 + (c1-c2).unit(true)*s1.radius();
+  Point s_end2 = c2 + (c2-c1).unit(true)*s2.radius();
+  return Sphere(0.5*(s_end1 + s_end2), 0.5*(s_end1-s_end2).size());
+}
+
 
 MeshTools::BoundingBox MeshTools::processor_bounding_box (const MeshBase& mesh, const unsigned int pid)
 {

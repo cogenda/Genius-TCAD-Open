@@ -26,7 +26,7 @@
 
 #include "config.h"
 
-#ifndef CYGWIN
+#ifdef DLLHOOK
 
 #include "hook.h"
 

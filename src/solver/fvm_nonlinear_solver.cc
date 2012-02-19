@@ -21,6 +21,7 @@
 
 
 #include <numeric>
+#include <iomanip>
 
 #include "fvm_nonlinear_solver.h"
 #include "parallel.h"
@@ -173,20 +174,18 @@ void FVM_NonlinearSolver::setup_nonlinear_data()
 
   // create the global solution vector
   ierr = VecCreateMPI(PETSC_COMM_WORLD, n_local_dofs, n_global_dofs, &x); genius_assert(!ierr);
-  // use VecDuplicate to create vector with same pattern
-  ierr = VecDuplicate(x, &f);genius_assert(!ierr);
-  ierr = VecDuplicate(x, &L);genius_assert(!ierr);
+  ierr = VecCreateMPI(PETSC_COMM_WORLD, n_local_dofs, n_global_dofs, &f); genius_assert(!ierr);
+  ierr = VecCreateMPI(PETSC_COMM_WORLD, n_local_dofs, n_global_dofs, &L); genius_assert(!ierr);
 
   // set all the components of scale vector L to 1.0
   ierr = VecSet(L, 1.0); genius_assert(!ierr);
 
   // create local vector, which has extra room for ghost dofs! the MPI_COMM here is PETSC_COMM_SELF
   ierr = VecCreateSeq(PETSC_COMM_SELF,  local_index_array.size() , &lx); genius_assert(!ierr);
-  // use VecDuplicate to create vector with same pattern
-  ierr = VecDuplicate(lx, &lf);genius_assert(!ierr);
+  ierr = VecCreateSeq(PETSC_COMM_SELF,  local_index_array.size() , &lf); genius_assert(!ierr);
 
   // create the index for vector statter
-#ifdef PETSC_VERSION_DEV
+#if PETSC_VERSION_GE(3,2,0)
   ierr = ISCreateGeneral(PETSC_COMM_WORLD, global_index_array.size(), &global_index_array[0] , PETSC_COPY_VALUES, &gis); genius_assert(!ierr);
   ierr = ISCreateGeneral(PETSC_COMM_SELF,  local_index_array.size(),  &local_index_array[0] ,  PETSC_COPY_VALUES, &lis); genius_assert(!ierr);
 #else
@@ -197,8 +196,12 @@ void FVM_NonlinearSolver::setup_nonlinear_data()
   // it seems we can free global_index_array and local_index_array to save the memory
 
   // create the vector statter
+#if defined(PETSC_HAVE_MPI_WIN_CREATE) && defined(AIX)
+  //NOTE Scatter with default settings will crash on AIX6.1 with POE. vecscatter_window can be a workaround here.
+  // this line should before VecScatterCreate
+  ierr = PetscOptionsSetValue("-vecscatter_window","1"); genius_assert(!ierr);
+#endif
   ierr = VecScatterCreate(x, gis, lx, lis, &scatter); genius_assert(!ierr);
-
 
 
   // create the jacobian matrix
@@ -218,7 +221,6 @@ void FVM_NonlinearSolver::setup_nonlinear_data()
     // alloc memory for sequence matrix here
     ierr = MatSeqAIJSetPreallocation(J, 0, &n_nz[0]); genius_assert(!ierr);
   }
-
 
 
   // indicates when PetscUtils::MatZeroRows() is called the zeroed entries are kept in the nonzero structure
@@ -245,7 +247,7 @@ void FVM_NonlinearSolver::setup_nonlinear_data()
 
 
   // set petsc nonlinear solver type here
-  set_petsc_nonelinear_solver_type( SolverSpecify::NS );
+  set_petsc_nonelinear_solver_type();
 
   // set the nonlinear function
   ierr = SNESSetFunction (snes, f, __genius_petsc_snes_residual, this);genius_assert(!ierr);
@@ -264,9 +266,6 @@ void FVM_NonlinearSolver::setup_nonlinear_data()
   // Have the Krylov subspace method use our good initial guess rather than 0
   ierr = SNESGetKSP (snes, &ksp); genius_assert(!ierr);
 
-  // set user defined ksy convergence criterion
-  ierr = KSPSetConvergenceTest (ksp, __genius_petsc_ksp_convergence_test, this, PETSC_NULL); genius_assert(!ierr);
-
 
   // Have the Krylov subspace method use our good initial guess rather than 0
   //ierr = KSPSetInitialGuessNonzero (ksp, PETSC_TRUE); genius_assert(!ierr);
@@ -276,10 +275,12 @@ void FVM_NonlinearSolver::setup_nonlinear_data()
   ierr = KSPGetPC(ksp, &pc); genius_assert(!ierr);
 
   // Set user-specified linear solver and preconditioner types
-  set_petsc_linear_solver_type    ( SolverSpecify::LS );
-  set_petsc_preconditioner_type   ( SolverSpecify::PC );
+  set_petsc_linear_solver_type ();
+  set_petsc_preconditioner_type();
 
 
+  // set user defined ksy convergence criterion
+  ierr = KSPSetConvergenceTest (ksp, __genius_petsc_ksp_convergence_test, this, PETSC_NULL); genius_assert(!ierr);
 
 }
 
@@ -289,28 +290,90 @@ void FVM_NonlinearSolver::setup_nonlinear_data()
 /*------------------------------------------------------------------
  * dump jacobian matrix to external file for analysis
  */
-void FVM_NonlinearSolver::dump_jacobian_matrix_petsc(const std::string &file) const
+void FVM_NonlinearSolver::dump_matrix_petsc(const Mat mat,const std::string &file) const
 {
   PetscViewer viewer;
   PetscViewerBinaryOpen(PETSC_COMM_WORLD, file.c_str(), FILE_MODE_WRITE, &viewer);
   //PetscViewerSetFormat(viewer,PetscViewerFormat format)
-  MatView(J, viewer);
-  PetscViewerDestroy(viewer);
+  MatView(mat, viewer);
+  PetscViewerDestroy(PetscDestroyObject(viewer));
 }
+
+
+/*------------------------------------------------------------------
+ * dump jacobian matrix in asc format to external file
+ */
+void FVM_NonlinearSolver::dump_matrix_asc(const Mat mat, const std::string &file) const
+{
+  PetscViewer viewer;
+  PetscViewerASCIIOpen(PETSC_COMM_WORLD, file.c_str(), &viewer);
+  //PetscViewerSetFormat(viewer,PetscViewerFormat format)
+  MatView(mat, viewer);
+  PetscViewerDestroy(PetscDestroyObject(viewer));
+}
+
+
+/*------------------------------------------------------------------
+ * dump jacobian matrix in triplet format to external file
+ */
+void FVM_NonlinearSolver::dump_matrix_triplet(const Mat mat, const std::string &file) const
+{
+  // serial only
+  genius_assert(Genius::n_processors() ==1);
+
+  std::ofstream out(file.c_str());
+  out<<std::scientific<<std::setprecision(15);
+
+  PetscInt nrow, ncol;
+  MatGetSize(mat, &nrow, &ncol);
+
+  for(PetscInt row=0; row<nrow; row++)
+  {
+    PetscInt row_ncol;
+    const PetscInt * row_cols_pointer;
+    const PetscScalar * row_vals_pointer;
+
+    MatGetRow(mat, row, &row_ncol, &row_cols_pointer, &row_vals_pointer);
+
+    for(PetscInt c=0; c<row_ncol; ++c)
+      out << row << " " << row_cols_pointer[c] << " " << row_vals_pointer[c] << std::endl;
+    // restore pointers
+    MatRestoreRow(mat, row, &row_ncol, &row_cols_pointer, &row_vals_pointer);
+  }
+
+  out.close();
+}
+
 
 
 /*------------------------------------------------------------------
  * dump function to external file
  */
-void FVM_NonlinearSolver::dump_function_vector_petsc(const std::string &file) const
+void FVM_NonlinearSolver::dump_vector_petsc(const Vec vec, const std::string &file) const
 {
   PetscViewer viewer;
   PetscViewerBinaryOpen(PETSC_COMM_WORLD, file.c_str(), FILE_MODE_WRITE, &viewer);
-  VecView(f, viewer);
-  PetscViewerDestroy(viewer);
+  VecView(vec, viewer);
+  PetscViewerDestroy(PetscDestroyObject(viewer));
 }
 
 
+/*------------------------------------------------------------------
+ * create a new vector with (compatable parallel) pattern
+ */
+void FVM_NonlinearSolver::create_vector(Vec &vec)
+{
+  VecDuplicate(x, &vec);
+}
+
+
+/*------------------------------------------------------------------
+ * destroy a vector
+ */
+void FVM_NonlinearSolver::destroy_vector(Vec &vec)
+{
+  VecDestroy(PetscDestroyObject(vec));
+}
 
 
 /*------------------------------------------------------------------
@@ -320,16 +383,17 @@ void FVM_NonlinearSolver::clear_nonlinear_data()
 {
   PetscErrorCode ierr;
   // free everything
-  ierr = VecDestroy(x);              genius_assert(!ierr);
-  ierr = VecDestroy(f);              genius_assert(!ierr);
-  ierr = VecDestroy(L);              genius_assert(!ierr);
-  ierr = VecDestroy(lx);             genius_assert(!ierr);
-  ierr = VecDestroy(lf);             genius_assert(!ierr);
-  ierr = ISDestroy(gis);             genius_assert(!ierr);
-  ierr = ISDestroy(lis);             genius_assert(!ierr);
-  ierr = VecScatterDestroy(scatter); genius_assert(!ierr);
-  ierr = MatDestroy(J);              genius_assert(!ierr);
+  ierr = VecDestroy(PetscDestroyObject(x));              genius_assert(!ierr);
+  ierr = VecDestroy(PetscDestroyObject(f));              genius_assert(!ierr);
+  ierr = VecDestroy(PetscDestroyObject(L));              genius_assert(!ierr);
+  ierr = VecDestroy(PetscDestroyObject(lx));             genius_assert(!ierr);
+  ierr = VecDestroy(PetscDestroyObject(lf));             genius_assert(!ierr);
+  ierr = ISDestroy(PetscDestroyObject(gis));             genius_assert(!ierr);
+  ierr = ISDestroy(PetscDestroyObject(lis));             genius_assert(!ierr);
+  ierr = VecScatterDestroy(PetscDestroyObject(scatter)); genius_assert(!ierr);
+  ierr = MatDestroy(PetscDestroyObject(J));              genius_assert(!ierr);
 }
+
 
 /*------------------------------------------------------------------
  * destructor: destroy context
@@ -337,7 +401,7 @@ void FVM_NonlinearSolver::clear_nonlinear_data()
 FVM_NonlinearSolver::~FVM_NonlinearSolver()
 {
   PetscErrorCode ierr;
-  ierr = SNESDestroy(snes);          genius_assert(!ierr);
+  ierr = SNESDestroy(PetscDestroyObject(snes));          genius_assert(!ierr);
 }
 
 
@@ -399,6 +463,8 @@ void FVM_NonlinearSolver::sens_line_search_pre_check(Vec , Vec , PetscBool *)
  */
 void FVM_NonlinearSolver::sens_line_search_post_check(Vec x, Vec y, Vec w, PetscBool *changed_y, PetscBool *changed_w)
 {
+  hook_list()->post_iteration();
+
   bool _changed_y = false, _changed_w = false;
   hook_list()->post_iteration((void*)f, (void*)x, (void*)y, (void*)w, _changed_y, _changed_w);
   *changed_y = _changed_y ? PETSC_TRUE : *changed_y;
@@ -410,13 +476,11 @@ void FVM_NonlinearSolver::sens_line_search_post_check(Vec x, Vec y, Vec w, Petsc
 
 //--------------------------------------------------------------------------------------------------------------------
 
-void FVM_NonlinearSolver::set_petsc_nonelinear_solver_type(SolverSpecify::NonLinearSolverType nonlinear_solver_type)
+void FVM_NonlinearSolver::set_petsc_nonelinear_solver_type()
 {
   int ierr = 0;
 
-  _nonlinear_solver_type = nonlinear_solver_type;
-
-  switch (nonlinear_solver_type)
+  switch (_nonlinear_solver_type)
   {
       case SolverSpecify::Newton:
       ierr = SNESSetType(snes,SNESLS); genius_assert(!ierr);
@@ -441,7 +505,7 @@ void FVM_NonlinearSolver::set_petsc_nonelinear_solver_type(SolverSpecify::NonLin
 
       default :
       std::cerr << "ERROR:  Unsupported PETSC Nonlinear Solver: "
-      << nonlinear_solver_type     << std::endl
+      << _nonlinear_solver_type     << std::endl
       << "Continuing with PETSC defaults" << std::endl;
   }
 
@@ -449,13 +513,11 @@ void FVM_NonlinearSolver::set_petsc_nonelinear_solver_type(SolverSpecify::NonLin
 
 
 
-void FVM_NonlinearSolver::set_petsc_linear_solver_type(SolverSpecify::LinearSolverType linear_solver_type)
+void FVM_NonlinearSolver::set_petsc_linear_solver_type()
 {
   int ierr = 0;
 
-  _linear_solver_type = linear_solver_type;
-
-  switch (linear_solver_type)
+  switch (_linear_solver_type)
   {
 
       case SolverSpecify::CG:
@@ -491,8 +553,10 @@ void FVM_NonlinearSolver::set_petsc_linear_solver_type(SolverSpecify::LinearSolv
       ierr = KSPSetType (ksp, (char*) KSPBCGS);       genius_assert(!ierr); return;
 
       case SolverSpecify::BCGSL:
-      MESSAGE<< "Using BCGSL linear solver..."<<std::endl;  RECORD();
-      ierr = KSPSetType (ksp, (char*) KSPBCGSL);      genius_assert(!ierr); return;
+      MESSAGE<< "Using BCGS(l) linear solver..."<<std::endl;  RECORD();
+      ierr = KSPSetType (ksp, (char*) KSPBCGSL);      genius_assert(!ierr);
+      //ierr = PetscOptionsSetValue("-ksp_bcgsl_ell", "4");  genius_assert(!ierr);
+      return;
 
       case SolverSpecify::MINRES:
       MESSAGE<< "Using MINRES linear solver..."<<std::endl;  RECORD();
@@ -502,14 +566,23 @@ void FVM_NonlinearSolver::set_petsc_linear_solver_type(SolverSpecify::LinearSolv
       MESSAGE<< "Using GMRES linear solver..."<<std::endl;  RECORD();
       ierr = KSPSetType (ksp, (char*) KSPGMRES);      genius_assert(!ierr);
       // for GMRES method, we need to enlarge restart step (default is 30)
-      ierr = KSPGMRESSetRestart(ksp, 100);            genius_assert(!ierr);
+      ierr = KSPGMRESSetRestart(ksp, 60);            genius_assert(!ierr);
       return;
+
+#if PETSC_VERSION_GE(3,2,0)
+      case SolverSpecify::DGMRES:
+      MESSAGE<< "Using DGMRES linear solver..."<<std::endl;  RECORD();
+      ierr = KSPSetType (ksp, (char*) KSPDGMRES);      genius_assert(!ierr);
+      // for GMRES method, we need to enlarge restart step (default is 30)
+      ierr = KSPGMRESSetRestart(ksp, 60);            genius_assert(!ierr);
+      return;
+#endif
 
       case SolverSpecify::FGMRES:
       MESSAGE<< "Using FGMRES linear solver..."<<std::endl;  RECORD();
       ierr = KSPSetType (ksp, (char*) KSPFGMRES);      genius_assert(!ierr);
       // for GMRES method, we need to enlarge restart step (default is 30)
-      ierr = KSPGMRESSetRestart(ksp, 100);            genius_assert(!ierr);
+      ierr = KSPGMRESSetRestart(ksp, 60);            genius_assert(!ierr);
       return;
 
       case SolverSpecify::RICHARDSON:
@@ -528,7 +601,7 @@ void FVM_NonlinearSolver::set_petsc_linear_solver_type(SolverSpecify::LinearSolv
       case SolverSpecify::SuperLU_DIST:
       if (Genius::n_processors()>1)
       {
-        switch(linear_solver_type)
+        switch(_linear_solver_type)
         {
             case   SolverSpecify::LU :
             case   SolverSpecify::MUMPS :
@@ -545,7 +618,9 @@ void FVM_NonlinearSolver::set_petsc_linear_solver_type(SolverSpecify::LinearSolv
 #else
             MESSAGE<< "Warning:  no MUMPS solver configured, use BCGS instead!" << std::endl;
             RECORD();
-            ierr = KSPSetType (ksp, (char*) KSPBCGS);       genius_assert(!ierr); return;
+            ierr = KSPSetType (ksp, (char*) KSPBCGSL);  genius_assert(!ierr);
+            ierr = PCSetType (pc, (char*) PCASM);       genius_assert(!ierr);
+            return;
 #endif
             break;
 
@@ -559,12 +634,14 @@ void FVM_NonlinearSolver::set_petsc_linear_solver_type(SolverSpecify::LinearSolv
 #else
             MESSAGE<< "Warning:  no PaStiX solver configured, use BCGS instead!" << std::endl;
             RECORD();
-            ierr = KSPSetType (ksp, (char*) KSPBCGS);       genius_assert(!ierr); return;
+            ierr = KSPSetType (ksp, (char*) KSPBCGSL);  genius_assert(!ierr);
+            ierr = PCSetType (pc, (char*) PCASM);       genius_assert(!ierr);
+            return;
 #endif
             break;
 
             case SolverSpecify::SuperLU_DIST:
-#ifdef PETSC_HAVE_LIBSUPERLU_DIST_2
+#ifdef PETSC_HAVE_SUPERLU_DIST
             MESSAGE<< "Using SuperLU_DIST linear solver..."<<std::endl;
             RECORD();
             ierr = KSPSetType (ksp, (char*) KSPPREONLY); genius_assert(!ierr);
@@ -573,18 +650,22 @@ void FVM_NonlinearSolver::set_petsc_linear_solver_type(SolverSpecify::LinearSolv
 #else
             MESSAGE<< "Warning:  no SuperLU_DIST solver configured, use BCGS instead!" << std::endl;
             RECORD();
-            ierr = KSPSetType (ksp, (char*) KSPBCGS);       genius_assert(!ierr); return;
+            ierr = KSPSetType (ksp, (char*) KSPBCGSL);  genius_assert(!ierr);
+            ierr = PCSetType (pc, (char*) PCASM);       genius_assert(!ierr);
+            return;
 #endif
             break;
             default:
-            ierr = KSPSetType (ksp, (char*) KSPBCGS);       genius_assert(!ierr); return;
+              ierr = KSPSetType (ksp, (char*) KSPBCGSL);  genius_assert(!ierr);
+              ierr = PCSetType (pc, (char*) PCASM);       genius_assert(!ierr);
+              return;
         }
       }
       else
       {
         ierr = KSPSetType (ksp, (char*) KSPPREONLY); genius_assert(!ierr);
         ierr = PCSetType  (pc, (char*) PCLU); genius_assert(!ierr);
-        switch (linear_solver_type)
+        switch (_linear_solver_type)
         {
             case SolverSpecify::LU :
             MESSAGE<< "Using LAPACK-LU linear solver..."<<std::endl;  RECORD();
@@ -630,7 +711,7 @@ void FVM_NonlinearSolver::set_petsc_linear_solver_type(SolverSpecify::LinearSolv
 #endif
             break;
             case   SolverSpecify::SuperLU_DIST:
-#ifdef PETSC_HAVE_LIBSUPERLU_DIST_2
+#ifdef PETSC_HAVE_SUPERLU_DIST
             MESSAGE<< "Using SuperLU_DIST linear solver..."<<std::endl;
             RECORD();
             ierr = PCFactorSetMatSolverPackage (pc, "superlu_dist"); genius_assert(!ierr);
@@ -650,29 +731,21 @@ void FVM_NonlinearSolver::set_petsc_linear_solver_type(SolverSpecify::LinearSolv
       ierr = PCFactorSetReuseFill(pc, PETSC_TRUE);genius_assert(!ierr);
       ierr = PCFactorSetReuseOrdering(pc, PETSC_TRUE); genius_assert(!ierr);
       // prevent zero pivot in LU factorization
-#if PETSC_VERSION_LE(3,0,0)
-      ierr = PCFactorSetPivoting(pc, 1.0); genius_assert(!ierr);
-      //ierr = PCFactorReorderForNonzeroDiagonal(pc, 1e-20); genius_assert(!ierr);<-- Caught signal number 11 SEGV error will occure when diag value < 1e-20
-      ierr = PCFactorSetShiftNonzero(pc, 1e-20); genius_assert(!ierr);
-#endif
-
-#if PETSC_VERSION_GE(3,1,0)
       ierr = PCFactorSetColumnPivot(pc, 1.0); genius_assert(!ierr);
       //ierr = PCFactorReorderForNonzeroDiagonal(pc, 1e-20); genius_assert(!ierr);<-- Caught signal number 11 SEGV error will occure when diag value < 1e-20
       ierr = PCFactorSetShiftType(pc,MAT_SHIFT_NONZERO);genius_assert(!ierr);
-#endif
       return;
 
       default:
       std::cerr << "ERROR:  Unsupported PETSC Solver: "
-      << linear_solver_type        << std::endl
+      << _linear_solver_type        << std::endl
       << "Continuing with PETSC defaults" << std::endl;
   }
 }
 
 
 
-void FVM_NonlinearSolver::set_petsc_preconditioner_type(SolverSpecify::PreconditionerType preconditioner_type)
+void FVM_NonlinearSolver::set_petsc_preconditioner_type()
 {
   int ierr = 0;
 
@@ -685,14 +758,10 @@ void FVM_NonlinearSolver::set_petsc_preconditioner_type(SolverSpecify::Precondit
       _linear_solver_type == SolverSpecify::SuperLU_DIST
      )
   {
-    ierr = KSPSetType (ksp, (char*) KSPPREONLY);
-    genius_assert(!ierr);
     return;
   }
 
-  _preconditioner_type = preconditioner_type;
-
-  switch (preconditioner_type)
+  switch (_preconditioner_type)
   {
       case SolverSpecify::IDENTITY_PRECOND:
       ierr = PCSetType (pc, (char*) PCNONE);      genius_assert(!ierr); return;
@@ -732,14 +801,9 @@ void FVM_NonlinearSolver::set_petsc_preconditioner_type(SolverSpecify::Precondit
         ierr = PCSetType (pc, (char*) PCILU);            genius_assert(!ierr);
         ierr = PCFactorSetReuseFill(pc, PETSC_TRUE);     genius_assert(!ierr);
         ierr = PCFactorSetReuseOrdering(pc, PETSC_TRUE); genius_assert(!ierr);
-#if PETSC_VERSION_LE(3,0,0)
-        ierr = PCFactorSetPivoting(pc, 1.0); genius_assert(!ierr);
-        ierr = PCFactorSetShiftNonzero(pc, 1e-12);  genius_assert(!ierr);
-#endif
-#if PETSC_VERSION_GE(3,1,0)
         ierr = PCFactorSetColumnPivot(pc, 1.0); genius_assert(!ierr);
         ierr = PCFactorSetShiftType(pc,MAT_SHIFT_NONZERO);genius_assert(!ierr);
-#endif
+
         //ierr = PCFactorSetMatOrderingType(pc, MATORDERING_ND); genius_assert(!ierr);
         //ierr = PCFactorSetMatOrderingType(pc, MATORDERING_RCM);
         //ierr = PetscOptionsSetValue("-pc_factor_nonzeros_along_diagonal", 0); genius_assert(!ierr);
@@ -758,29 +822,53 @@ void FVM_NonlinearSolver::set_petsc_preconditioner_type(SolverSpecify::Precondit
         RECORD();
         ierr = PCSetType (pc, (char*) PCILU);     genius_assert(!ierr);
         ierr = PCFactorSetMatSolverPackage (pc, "superlu"); genius_assert(!ierr);
-        //ierr = PetscOptionsSetValue("-mat_superlu_ilu_droptol","1e-7"); genius_assert(!ierr);
-        //ierr = PetscOptionsSetValue("-mat_superlu_ilu_filltol","1e-2"); genius_assert(!ierr);
-        //ierr = PetscOptionsSetValue("-mat_superlu_ilu_fillfactor","200"); genius_assert(!ierr);
+        ierr = PetscOptionsSetValue("-mat_superlu_rowperm","LargeDiag"); genius_assert(!ierr);
+        ierr = PetscOptionsSetValue("-mat_superlu_ilu_droptol","1e-4"); genius_assert(!ierr);
+        ierr = PetscOptionsSetValue("-mat_superlu_ilu_filltol","1e-2"); genius_assert(!ierr);
+        ierr = PetscOptionsSetValue("-mat_superlu_ilu_fillfactor","20"); genius_assert(!ierr);
         return;
 #else
-        MESSAGE << "Warning:  no ILUT preconditioner configured, use ASM instead!" << std::endl;
+        MESSAGE << "Warning:  no ILUT preconditioner configured, use ILU0 instead!" << std::endl;
         RECORD();
         ierr = PCSetType (pc, (char*) PCASM);       genius_assert(!ierr);
         return;
 #endif
-
       }
       else
       {
-        MESSAGE << "Warning:  no parallel ILUT preconditioner configured, use ASM instead!" << std::endl;
+#ifdef PETSC_HAVE_SUPERLU
+        MESSAGE<< "Using ASM + SuperLU ILUT preconditioner..."<<std::endl;
+        RECORD();
+        ierr = PCSetType (pc, (char*) PCASM);       genius_assert(!ierr);
+        ierr = PetscOptionsSetValue("-sub_pc_type","ilu"); genius_assert(!ierr);
+        ierr = PetscOptionsSetValue("-sub_pc_factor_mat_solver_package","superlu"); genius_assert(!ierr);
+        ierr = PetscOptionsSetValue("-mat_superlu_rowperm","LargeDiag"); genius_assert(!ierr);
+        ierr = PetscOptionsSetValue("-mat_superlu_ilu_droptol","1e-4"); genius_assert(!ierr);
+        ierr = PetscOptionsSetValue("-mat_superlu_ilu_filltol","1e-2"); genius_assert(!ierr);
+        ierr = PetscOptionsSetValue("-mat_superlu_ilu_fillfactor","20"); genius_assert(!ierr);
+        //ierr = PetscOptionsSetValue("-mat_superlu_ilu_milu","2"); genius_assert(!ierr);
+        //ierr = PetscOptionsSetValue("-mat_superlu_replacetinypivot","1"); genius_assert(!ierr);
+        return;
+#else
+        MESSAGE << "Warning:  no ILUT preconditioner configured, use ILU0 instead!" << std::endl;
         RECORD();
         ierr = PCSetType (pc, (char*) PCASM);       genius_assert(!ierr);
         return;
+#endif
       }
 
-      // some times, we still need a LU solver as strong preconditioner
+
+      // some times, we still need a LU solver as strong preconditioner, here we use GMRES as linear solver
       case SolverSpecify::LU_PRECOND :
       {
+        if (_linear_solver_type != SolverSpecify::GMRES )
+        {
+          MESSAGE << "Warning:  Set Linear solver to GMRES with LU preconditioner!" << std::endl;
+          RECORD();
+          _linear_solver_type = SolverSpecify::GMRES;
+          ierr = KSPSetType (ksp, (char*) KSPGMRES);      genius_assert(!ierr);
+        }
+
         if (Genius::n_processors()==1)
         {
           ierr = PCSetType (pc, (char*) PCLU);       genius_assert(!ierr);
@@ -790,14 +878,8 @@ void FVM_NonlinearSolver::set_petsc_preconditioner_type(SolverSpecify::Precondit
 #endif
           ierr = PCFactorSetReuseFill(pc, PETSC_TRUE);genius_assert(!ierr);
           ierr = PCFactorSetReuseOrdering(pc, PETSC_TRUE); genius_assert(!ierr);
-#if PETSC_VERSION_LE(3,0,0)
-          ierr = PCFactorSetPivoting(pc, 1.0); genius_assert(!ierr);
-          ierr = PCFactorSetShiftNonzero(pc, 1e-12);  genius_assert(!ierr);
-#endif
-#if PETSC_VERSION_GE(3,1,0)
           ierr = PCFactorSetColumnPivot(pc, 1.0); genius_assert(!ierr);
           ierr = PCFactorSetShiftType(pc, MAT_SHIFT_NONZERO);genius_assert(!ierr);
-#endif
           return;
         }
         else
@@ -808,14 +890,8 @@ void FVM_NonlinearSolver::set_petsc_preconditioner_type(SolverSpecify::Precondit
           ierr = PCFactorSetMatSolverPackage (pc, "mumps"); genius_assert(!ierr);
           ierr = PCFactorSetReuseFill(pc, PETSC_TRUE);genius_assert(!ierr);
           ierr = PCFactorSetReuseOrdering(pc, PETSC_TRUE); genius_assert(!ierr);
-#if PETSC_VERSION_LE(3,0,0)
-          ierr = PCFactorSetPivoting(pc, 1.0); genius_assert(!ierr);
-          ierr = PCFactorSetShiftNonzero(pc, 1e-12);  genius_assert(!ierr);
-#endif
-  #if PETSC_VERSION_GE(3,1,0)
           ierr = PCFactorSetColumnPivot(pc, 1.0); genius_assert(!ierr);
           ierr = PCFactorSetShiftType(pc,MAT_SHIFT_NONZERO);genius_assert(!ierr);
-#endif
 #else
           MESSAGE << "Warning:  no parallel LU preconditioner configured, use ASM instead!" << std::endl;
           RECORD();
@@ -824,20 +900,27 @@ void FVM_NonlinearSolver::set_petsc_preconditioner_type(SolverSpecify::Precondit
           return;
         }
       }
+
       case SolverSpecify::ASM_PRECOND:
+      case SolverSpecify::ASMILU0_PRECOND:
+      case SolverSpecify::ASMILU1_PRECOND:
+      case SolverSpecify::ASMILU2_PRECOND:
+      case SolverSpecify::ASMILU3_PRECOND:
       {
         if (Genius::n_processors() > 1)
         {
           ierr = PCSetType (pc, (char*) PCASM);       genius_assert(!ierr);
-          //#ifdef PETSC_HAVE_MUMPS
-          //ierr = SNESSetLagPreconditioner(snes, 2); genius_assert(!ierr);
-          //ierr = PetscOptionsSetValue("-sub_ksp_type","preonly"); genius_assert(!ierr);
-          //ierr = PetscOptionsSetValue("-sub_pc_type","lu"); genius_assert(!ierr);
-          //ierr = PetscOptionsSetValue("-sub_pc_factor_mat_solver_package","mumps"); genius_assert(!ierr);
-          //#else
           ierr = PetscOptionsSetValue("-sub_pc_type","ilu"); genius_assert(!ierr);
-          //#endif
-          ierr = PetscOptionsSetValue("-sub_pc_factor_shift_nonzero","1e-12"); genius_assert(!ierr);
+          ierr = PetscOptionsSetValue("-sub_pc_factor_reuse_fill","1"); genius_assert(!ierr);
+          ierr = PetscOptionsSetValue("-sub_pc_factor_reuse_ordering","1"); genius_assert(!ierr);
+          switch ( _preconditioner_type )
+          {
+            case SolverSpecify::ASMILU0_PRECOND: PetscOptionsSetValue("-sub_pc_factor_levels","0"); break;
+            case SolverSpecify::ASMILU1_PRECOND: PetscOptionsSetValue("-sub_pc_factor_levels","1"); break;
+            case SolverSpecify::ASMILU2_PRECOND: PetscOptionsSetValue("-sub_pc_factor_levels","2"); break;
+            case SolverSpecify::ASMILU3_PRECOND: PetscOptionsSetValue("-sub_pc_factor_levels","3"); break;
+          }
+          ierr = PetscOptionsSetValue("-sub_pc_factor_shift_type","NONZERO"); genius_assert(!ierr);
           ierr = PCFactorSetReuseFill(pc, PETSC_TRUE);genius_assert(!ierr);
           ierr = PCFactorSetReuseOrdering(pc, PETSC_TRUE); genius_assert(!ierr);
         }
@@ -846,17 +929,33 @@ void FVM_NonlinearSolver::set_petsc_preconditioner_type(SolverSpecify::Precondit
           ierr = PCSetType (pc, (char*) PCILU);       genius_assert(!ierr);
           ierr = PCFactorSetReuseFill(pc, PETSC_TRUE);genius_assert(!ierr);
           ierr = PCFactorSetReuseOrdering(pc, PETSC_TRUE); genius_assert(!ierr);
-#if PETSC_VERSION_LE(3,0,0)
-          ierr = PCFactorSetPivoting(pc, 1.0); genius_assert(!ierr);
-          ierr = PCFactorSetShiftNonzero(pc, 1e-12);  genius_assert(!ierr);
-#endif
-#if PETSC_VERSION_GE(3,1,0)
           ierr = PCFactorSetColumnPivot(pc, 1.0); genius_assert(!ierr);
           ierr = PCFactorSetShiftType(pc,MAT_SHIFT_NONZERO);genius_assert(!ierr);
-#endif
-          //ierr = PetscOptionsSetValue("-pc_factor_nonzeros_along_diagonal", 0); genius_assert(!ierr);
-          ierr = PetscOptionsSetValue("-pc_factor_diagonal_fill", 0); genius_assert(!ierr);
+          ierr = PCFactorSetAllowDiagonalFill(pc);genius_assert(!ierr);
+          switch ( _preconditioner_type )
+          {
+            case SolverSpecify::ASMILU0_PRECOND: PetscOptionsSetValue("-pc_factor_levels","0"); break;
+            case SolverSpecify::ASMILU1_PRECOND: PetscOptionsSetValue("-pc_factor_levels","1"); break;
+            case SolverSpecify::ASMILU2_PRECOND: PetscOptionsSetValue("-pc_factor_levels","2"); break;
+            case SolverSpecify::ASMILU3_PRECOND: PetscOptionsSetValue("-pc_factor_levels","3"); break;
+          }
         }
+        return;
+      }
+
+      case SolverSpecify::ASMLU_PRECOND:
+      {
+        ierr = PCSetType (pc, (char*) PCASM);       genius_assert(!ierr);
+#ifdef PETSC_HAVE_MUMPS
+        ierr = PetscOptionsSetValue("-sub_ksp_type","preonly"); genius_assert(!ierr);
+        ierr = PetscOptionsSetValue("-sub_pc_type","lu"); genius_assert(!ierr);
+        ierr = PetscOptionsSetValue("-sub_pc_factor_mat_solver_package","mumps"); genius_assert(!ierr);
+#else
+        ierr = PetscOptionsSetValue("-sub_pc_type","ilu"); genius_assert(!ierr);
+#endif
+        ierr = PetscOptionsSetValue("-sub_pc_factor_shift_type","NONZERO"); genius_assert(!ierr);
+        ierr = PCFactorSetReuseFill(pc, PETSC_TRUE);genius_assert(!ierr);
+        ierr = PCFactorSetReuseOrdering(pc, PETSC_TRUE); genius_assert(!ierr);
         return;
       }
 
@@ -916,16 +1015,19 @@ void FVM_NonlinearSolver::set_petsc_preconditioner_type(SolverSpecify::Precondit
       default:
       std::cerr
       << "ERROR:  Unsupported PETSC Preconditioner: "
-      << preconditioner_type       << std::endl
+      << _preconditioner_type       << std::endl
       << "Continuing with PETSC defaults" << std::endl;
   }
 }
 
-#ifndef PETSC_VERSION_DEV
+
+#if PETSC_VERSION_LE(3,1,0)
 #define SNES_DIVERGED_LINE_SEARCH SNES_DIVERGED_LS_FAILURE
 #endif
 void FVM_NonlinearSolver::sens_solve()
 {
+  START_LOG("sens_solve()", "FVM_NonlinearSolver");
+
   // do snes solve
   SNESSolve ( snes, PETSC_NULL, x );
 
@@ -942,6 +1044,7 @@ void FVM_NonlinearSolver::sens_solve()
     SNESSolve ( snes, PETSC_NULL, x );
   }
 
+  STOP_LOG("sens_solve()", "FVM_NonlinearSolver");
 }
 
 
@@ -998,20 +1101,23 @@ double FVM_NonlinearSolver::condition_number_of_jacobian_matrix()
     ierr = PCSetType  (pc_s, (char*) PCLU); assert(!ierr);
     ierr = PCFactorSetShiftType(pc_s,MAT_SHIFT_NONZERO); assert(!ierr);
 #endif
+
   }
   else
   {
     // direct solver as preconditioner
     ierr = KSPSetType (ksp_s, (char*) KSPGMRES); assert(!ierr);
     // superlu_dist which also use static pivot (right?). anyway, mumps use partial pivot does not work
-#ifdef PETSC_HAVE_LIBSUPERLU_DIST_2
+#ifdef PETSC_HAVE_SUPERLU_DIST
     ierr = PCSetType  (pc_s, (char*) PCLU); assert(!ierr);
     ierr = PCFactorSetMatSolverPackage (pc_s, "superlu_dist"); assert(!ierr);
 #else
     // no direct solver? use ASM. seems never work
     ierr = PCSetType (pc_s, (char*) PCASM);       assert(!ierr);
 #endif
+
   }
+
 
   // Set solver parameters at runtime
   ierr = SVDSetFromOptions(svd_s);  assert(!ierr);
@@ -1021,28 +1127,41 @@ double FVM_NonlinearSolver::condition_number_of_jacobian_matrix()
   ierr = SVDSetUp(svd_l); assert(!ierr);
 
   PetscReal sigma_large=1, sigma_small=1;
-  PetscInt nconv;
+  PetscInt nconv_l, nconv_s;
   PetscReal error;
 
   // find the largest singular value
 
   SVDSolve(svd_l);
-  SVDGetConverged(svd_l, &nconv);  assert(nconv>0);
-  SVDGetSingularTriplet(svd_l, 0, &sigma_large, PETSC_NULL, PETSC_NULL);
-  SVDComputeRelativeError(svd_l, 0, &error);
+  SVDGetConverged(svd_l, &nconv_l);
+  if(nconv_l>0)
+  {
+    SVDGetSingularTriplet(svd_l, 0, &sigma_large, PETSC_NULL, PETSC_NULL);
+    SVDComputeRelativeError(svd_l, 0, &error);
+    MESSAGE<< "Largest singular value  : " << std::scientific << std::setprecision(6)<<std::setw(10) << sigma_large << " with error " << error << std::endl;
+    RECORD();
+  }
 
-  //std::cout<<sigma_large << " " << error << std::endl;
   // find the smallest singular value
 
   SVDSolve(svd_s);
-  SVDGetConverged(svd_s, &nconv);  assert(nconv>0);
-  SVDGetSingularTriplet(svd_s, 0, &sigma_small, PETSC_NULL, PETSC_NULL);
-  SVDComputeRelativeError(svd_s, 0, &error);
+  SVDGetConverged(svd_s, &nconv_s);
+  if(nconv_s>0)
+  {
+    SVDGetSingularTriplet(svd_s, 0, &sigma_small, PETSC_NULL, PETSC_NULL);
+    SVDComputeRelativeError(svd_s, 0, &error);
+    MESSAGE<< "Smallest singular value : " << std::scientific << std::setprecision(6)<<std::setw(10) << sigma_small << " with error " << error << std::endl;
+    RECORD();
+  }
 
-  //std::cout<<sigma_small << " " << error << std::endl;
+  if(nconv_l>0 && nconv_s>0)
+  {
+    MESSAGE<< "Approx condition number: " << std::scientific << std::setprecision(6)<<std::setw(10) << sigma_large/sigma_small << std::endl;
+    RECORD();
+  }
 
-  ierr = SVDDestroy(svd_s);            assert(!ierr);
-  ierr = SVDDestroy(svd_l);            assert(!ierr);
+  ierr = SVDDestroy(PetscDestroyObject(svd_s));            assert(!ierr);
+  ierr = SVDDestroy(PetscDestroyObject(svd_l));            assert(!ierr);
 
   return sigma_large/sigma_small;
 #else
@@ -1052,54 +1171,121 @@ double FVM_NonlinearSolver::condition_number_of_jacobian_matrix()
 
 
 
-void FVM_NonlinearSolver::eigen_value_of_jacobian_matrix()
+void FVM_NonlinearSolver::eigen_value_of_jacobian_matrix(int n, int is, Vec Vrs, int il, Vec Vrl)
 {
+  PetscErrorCode ierr;
+
 #ifdef HAVE_SLEPC
-
-  EPS            eps_s;
-  EPS            eps_l;
-
-  // create eigen value problem solver
+  // get the smallest eigen value
+  PetscInt    nconv_s;
+  PetscScalar k_s;
+  EPS         eps_s;
+  // create eigen value solver for smallest one
   EPSCreate(PETSC_COMM_WORLD, &eps_s);
-  EPSCreate(PETSC_COMM_WORLD, &eps_l);
+  EPSSetDimensions(eps_s, n, 3*n, PETSC_DECIDE);
   // Set operator
+  // NOTE, each time the jacobian matrix changes, EPSSetOperators should be called
   EPSSetOperators(eps_s, J, PETSC_NULL);
-  EPSSetOperators(eps_l, J, PETSC_NULL);
-
-  EPSSetWhichEigenpairs(eps_s, EPS_SMALLEST_MAGNITUDE);
-  EPSSetWhichEigenpairs(eps_l, EPS_LARGEST_MAGNITUDE);
-
-  //EPSSetType(eps_l, EPSARPACK);
-
+  // set target to 0.0 (smallest eigen value)
+  EPSSetWhichEigenpairs(eps_s, EPS_TARGET_MAGNITUDE);
+  EPSSetTarget(eps_s, 0.0);
   // shift-and-invert spectral transformation to enhance convergence of eigenvalues near zero
-  ST st_s;
+  ST             st_s;
+  KSP            ksp_s;
+  PC             pc_s;
   EPSGetST(eps_s, &st_s);
   STSetType(st_s, STSINVERT);
 
+  ierr = STGetKSP(st_s, &ksp_s);
+  ierr = KSPGetPC(ksp_s, &pc_s);
+  // since we have to deal with bad conditioned problem, we choose direct solver whenever possible
+  if (Genius::n_processors() == 1)
+  {
+    // direct solver as preconditioner
+    ierr = KSPSetType (ksp_s, (char*) KSPGMRES); assert(!ierr);
+    // superlu which use static pivot seems very stable
+#ifdef PETSC_HAVE_SUPERLU
+    ierr = PCSetType  (pc_s, (char*) PCLU); assert(!ierr);
+    ierr = PCFactorSetMatSolverPackage (pc_s, "superlu"); assert(!ierr);
+#else
+    ierr = PCSetType  (pc_s, (char*) PCLU); assert(!ierr);
+    ierr = PCFactorSetShiftType(pc_s,MAT_SHIFT_NONZERO); assert(!ierr);
+#endif
+  }
+  else
+  {
+    // direct solver as preconditioner
+    ierr = KSPSetType (ksp_s, (char*) KSPGMRES); assert(!ierr);
+    // superlu_dist which also use static pivot (right?). anyway, mumps use partial pivot does not work
+#ifdef PETSC_HAVE_SUPERLU_DIST
+    ierr = PCSetType  (pc_s, (char*) PCLU); assert(!ierr);
+    ierr = PCFactorSetMatSolverPackage (pc_s, "superlu_dist"); assert(!ierr);
+#else
+    // no direct solver? use ASM. seems never work
+    ierr = PCSetType (pc_s, (char*) PCASM);       assert(!ierr);
+#endif
+
+  }
+
   // Set solver parameters at runtime
   EPSSetFromOptions(eps_s);
-  EPSSetFromOptions(eps_l);
-
-  PetscScalar kr, ki; /* eigenvalue, k */
-  PetscInt nconv;
-  PetscReal error;
-
+  // solve here!
   EPSSolve( eps_s );
-  EPSGetConverged( eps_s, &nconv );
-  genius_assert(nconv>0);
-  EPSGetEigenvalue( eps_s, 0, &kr, &ki );
-  EPSComputeRelativeError( eps_s, 0, &error );
-  std::cout<<std::complex<PetscScalar>(kr, ki) << " " << error << std::endl;
+  EPSGetConverged( eps_s, &nconv_s );
+  if( nconv_s > 0 )
+  {
+    for(PetscInt i=0; i<nconv_s; ++i)
+    {
+      PetscReal   error_s;
+      PetscScalar kr_s, ki_s;
+      EPSGetEigenvalue( eps_s, i, &kr_s, &ki_s );
+      EPSComputeRelativeError( eps_s, i, &error_s );
+      MESSAGE<< "Smallest " << i << " eigen value: " << std::scientific << std::setprecision(6)<<std::setw(10) << kr_s << " with error " << error_s << std::endl;
+      RECORD();
+      if(i==is) EPSGetEigenpair( eps_s, i, &k_s, &ki_s, Vrs, PETSC_NULL);
+    }
+  }
+  EPSDestroy(PetscDestroyObject(eps_s));
 
+
+  // get the largest eigen value
+
+  PetscInt    nconv_l;
+  PetscScalar k_l;
+  EPS         eps_l;
+  // create eigen value solver for largest one
+  EPSCreate(PETSC_COMM_WORLD, &eps_l);
+  EPSSetDimensions(eps_l, n, 3*n, PETSC_DECIDE);
+  // Set operator
+  // NOTE, each time the jacobian matrix changes, EPSSetOperators should be called
+  EPSSetOperators(eps_l, J, PETSC_NULL);
+  // set target to largest eigen value
+  EPSSetWhichEigenpairs(eps_l, EPS_LARGEST_MAGNITUDE);
+  // Set solver parameters at runtime
+  EPSSetFromOptions(eps_l);
+  // solve here!
   EPSSolve( eps_l );
-  EPSGetConverged( eps_l, &nconv );
-  genius_assert(nconv>0);
-  EPSGetEigenvalue( eps_l, 0, &kr, &ki );
-  EPSComputeRelativeError( eps_l, 0, &error );
-  std::cout<<std::complex<PetscScalar>(kr, ki) << " " << error << std::endl;
+  EPSGetConverged( eps_l, &nconv_l );
+  if( nconv_l > 0 )
+  {
+    for(PetscInt i=0; i<nconv_l; ++i)
+    {
+      PetscReal   error_l;
+      PetscScalar kr_l, ki_l;
+      EPSGetEigenvalue( eps_l, i, &kr_l, &ki_l );
+      EPSComputeRelativeError( eps_l, i, &error_l );
+      MESSAGE<< "Largest  "<< i << " eigen value: " << std::scientific << std::setprecision(6)<<std::setw(10) << kr_l << " with error " << error_l << std::endl;
+      RECORD();
+      if(i==il) EPSGetEigenpair( eps_l, i, &k_l, &ki_l, Vrl, PETSC_NULL);
+    }
+  }
+  EPSDestroy(PetscDestroyObject(eps_l));
 
-  EPSDestroy(eps_s);
-  EPSDestroy(eps_l);
+  if( nconv_s > 0 && nconv_l > 0 )
+  {
+    MESSAGE<< "Approx reciprocal condition number: " << std::scientific << std::setprecision(6)<<std::setw(10) << std::abs(k_s/k_l) << std::endl;
+    RECORD();
+  }
 
 #endif
 }

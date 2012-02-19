@@ -30,9 +30,9 @@
  *          o                      o
  *         / \                    / \
  *        /   \                  /   \
- *       /     \                /     \
+ *    e2 /     \ e1             /     \
  *      /       \              /       \
- *     /         \            /         \
+ *     /    e0   \            /         \
  *    o-----------o          o-----------o
  *    0           1          A           B
  */
@@ -102,6 +102,7 @@ void Tri3_FVM::prepare_for_fvm()
 
   // clear partitial volume
   v[0] = v[1] = v[2] = 0;
+  vt[0] = vt[1] = vt[2] = 0;
 
   // the circle centre of ABC
   Point circumcircle_center;
@@ -146,19 +147,35 @@ void Tri3_FVM::prepare_for_fvm()
   // special process to obtuse angle: Truncated negative length
   if(obtuse_edge!=invalid_uint)
   {
+   /*
+    *     TRI3:              p3
+    *                        o
+    *                     *     *
+    *                  *          *
+    *               *               *
+    *            *   \            /   *
+    *         * a1    \          /    a2*
+    *      o-----------o--------o---------o
+    *      p1          m1      m2         p2
+    */
     unsigned int obtuse_node = (2+obtuse_edge)%3;
     Point p1 =  this->point(side_nodes_map[obtuse_edge][0]) ;
     Point p2 =  this->point(side_nodes_map[obtuse_edge][1]) ;
     Point p3 =  this->point(obtuse_node) ;
-    double a1 = (p1-p2).angle(p1-p3);
-    double a2 = (p2-p1).angle(p2-p3);
+    Real  a1 = (p1-p2).angle(p1-p3);
+    Real  a2 = (p2-p1).angle(p2-p3);
+
+    Point pre_edge_center = 0.5*(p1 + p3);
+    Point pos_edge_center = 0.5*(p2 + p3);
+    Point m1 = p1 + (p2-p1).unit()*(pre_edge_center-p1).size()/cos(a1);
+    Point m2 = p2 + (p1-p2).unit()*(pos_edge_center-p2).size()/cos(a2);
 
     unsigned int pre_edge = (obtuse_edge + 3 - 1)%3;
     unsigned int pos_edge = (obtuse_edge + 3 + 1)%3;
 
     dt[obtuse_edge] = 0;
-    dt[pre_edge] = 0.5*(p3-p1).size()*tan(a1);
-    dt[pos_edge] = 0.5*(p3-p2).size()*tan(a2);
+    dt[pre_edge] = (pre_edge_center-m1).size();
+    dt[pos_edge] = (pos_edge_center-m2).size();
   }
 
 
@@ -169,15 +186,18 @@ void Tri3_FVM::prepare_for_fvm()
     unsigned int node2 = side_nodes_map[i][1];
     v[node1] +=  0.5 * 0.5 * l[i] * d[i];
     v[node2] +=  0.5 * 0.5 * l[i] * d[i];
+    vt[node1] +=  0.5 * 0.5 * l[i] * dt[i];
+    vt[node2] +=  0.5 * 0.5 * l[i] * dt[i];
   }
 
 
   // self test
+#ifdef DEBUG
   Real V = 0;
   for( unsigned int i=0; i<3; i++ )
     V += v[i];
-  genius_assert( vol > 1e-10 ? (std::abs(V-vol) < 1e-3*vol) : (std::abs(V-vol) < 1e-2*vol) );
-
+  genius_assert( (vol > 1e-10 ? (std::abs(V-vol) < 1e-3*vol) : (std::abs(V-vol) < std::max(1e-13, 1e-2*vol))) );
+#endif
 
   prepare_for_vector_reconstruct();
 }

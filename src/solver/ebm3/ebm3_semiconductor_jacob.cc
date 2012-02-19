@@ -274,18 +274,6 @@ void SemiconductorSimulationRegion::EBM3_Jacobian(PetscScalar * x, Mat *jac, Ins
       // the length of this edge
       const double length = elem->edge_length(ne);
 
-      // partial area associated with this edge
-      double partial_area = elem->partial_area_with_edge(ne);
-      double partial_volume = elem->partial_volume_with_edge(ne); // partial volume associated with this edge
-
-      double truncated_partial_area =  partial_area;
-      double truncated_partial_volume =  partial_volume;
-      if(truncation)
-      {
-        truncated_partial_area =  elem->partial_area_with_edge_truncated(ne);
-        truncated_partial_volume =  elem->partial_volume_with_edge_truncated(ne);
-      }
-
       // fvm_node of node1
       const FVM_Node * fvm_n1 = elem->get_fvm_node(edge_nodes.first);
       // fvm_node of node2
@@ -295,6 +283,17 @@ void SemiconductorSimulationRegion::EBM3_Jacobian(PetscScalar * x, Mat *jac, Ins
       const FVM_NodeData * n1_data =  fvm_n1->node_data() ;   genius_assert(n1_data);
       // fvm_node_data of node2
       const FVM_NodeData * n2_data =  fvm_n2->node_data() ;   genius_assert(n2_data);
+
+      double partial_area = elem->partial_area_with_edge(ne);        // partial area associated with this edge
+      double partial_volume = elem->partial_volume_with_edge(ne);    // partial volume associated with this edge
+      double truncated_partial_area =  partial_area;
+      double truncated_partial_volume =  partial_volume;
+      if(truncation)
+      {
+        // use truncated partial area to avoid negative area due to bad mesh elem
+        truncated_partial_area =  this->truncated_partial_area(elem, ne);
+        truncated_partial_volume =  elem->partial_volume_with_edge_truncated(ne);
+      }
 
       unsigned int n1_local_offset = fvm_n1->local_offset();
       unsigned int n2_local_offset = fvm_n2->local_offset();
@@ -895,158 +894,6 @@ void SemiconductorSimulationRegion::EBM3_Jacobian(PetscScalar * x, Mat *jac, Ins
 
 
 
-void SemiconductorSimulationRegion::EBM3_Time_Dependent_Function(PetscScalar * x, Vec f, InsertMode &add_value_flag)
-{
-
-  // find the node variable offset
-  unsigned int node_n_offset   = ebm_variable_offset(ELECTRON);
-  unsigned int node_p_offset   = ebm_variable_offset(HOLE);
-  unsigned int node_Tl_offset  = ebm_variable_offset(TEMPERATURE);
-  unsigned int node_Tn_offset  = ebm_variable_offset(E_TEMP);
-  unsigned int node_Tp_offset  = ebm_variable_offset(H_TEMP);
-
-  // note, we will use ADD_VALUES to set values of vec f
-  // if the previous operator is not ADD_VALUES, we should assembly the vec first!
-  if( (add_value_flag != ADD_VALUES) && (add_value_flag != NOT_SET_VALUES) )
-  {
-    VecAssemblyBegin(f);
-    VecAssemblyEnd(f);
-  }
-
-  // set local buf here
-  std::vector<int>          iy;
-  std::vector<PetscScalar>  y;
-
-  // process node related terms
-  // including \rho of poisson's equation and recombination term of continuation equation
-  const_processor_node_iterator node_it = on_processor_nodes_begin();
-  const_processor_node_iterator node_it_end = on_processor_nodes_end();
-  for(; node_it!=node_it_end; ++node_it)
-  {
-    const FVM_Node * fvm_node = *node_it;
-    const FVM_NodeData * node_data = fvm_node->node_data();
-
-    mt->mapping(fvm_node->root_node(), node_data, SolverSpecify::clock);
-
-    // process \partial t
-
-    //second order
-    if(SolverSpecify::TS_type==SolverSpecify::BDF2 && SolverSpecify::BDF2_restart==false)
-    {
-      PetscScalar r = SolverSpecify::dt_last/(SolverSpecify::dt_last + SolverSpecify::dt);
-
-      // electron density
-      PetscScalar n    =  x[fvm_node->local_offset()+node_n_offset];
-      PetscScalar dndt = -((2-r)/(1-r)*n - 1.0/(r*(1-r))*node_data->n() + (1-r)/r*node_data->n_last())
-                         / (SolverSpecify::dt_last+SolverSpecify::dt) * fvm_node->volume();
-      iy.push_back(fvm_node->global_offset()+node_n_offset);                     // save index in the buffer
-      y.push_back( dndt );
-
-
-      // hole density
-      PetscScalar p    =  x[fvm_node->local_offset()+node_p_offset];
-      PetscScalar dpdt = -((2-r)/(1-r)*p - 1.0/(r*(1-r))*node_data->p() + (1-r)/r*node_data->p_last())
-                         / (SolverSpecify::dt_last+SolverSpecify::dt) * fvm_node->volume();
-      iy.push_back(fvm_node->global_offset()+node_p_offset);
-      y.push_back( dpdt );
-
-
-      // lattice temperature if required
-      if(get_advanced_model()->enable_Tl())
-      {
-        PetscScalar Tl    =  x[fvm_node->local_offset()+node_Tl_offset];
-        PetscScalar HeatCapacity =  mt->thermal->HeatCapacity(Tl);
-        PetscScalar dTldt = -((2-r)/(1-r)*Tl - 1.0/(r*(1-r))*node_data->T() + (1-r)/r*node_data->T_last())*node_data->density()*HeatCapacity
-                            / (SolverSpecify::dt_last+SolverSpecify::dt) * fvm_node->volume();
-        iy.push_back(fvm_node->global_offset()+node_Tl_offset);
-        y.push_back( dTldt );
-      }
-
-      // electron temperature if required
-      if(get_advanced_model()->enable_Tn())
-      {
-        PetscScalar n     =  x[fvm_node->local_offset()+node_n_offset];
-        PetscScalar Tn    =  x[fvm_node->local_offset()+node_Tn_offset]/n;
-        PetscScalar dWndt = -((2-r)/(1-r)*1.5*n*kb*Tn - 1.0/(r*(1-r))*1.5*node_data->n()*kb*node_data->Tn() + (1-r)/r*1.5*node_data->n_last()*kb*node_data->Tn_last())
-                            / (SolverSpecify::dt_last+SolverSpecify::dt) * fvm_node->volume();
-        iy.push_back(fvm_node->global_offset()+node_Tn_offset);
-        y.push_back( dWndt );
-      }
-
-      // hole temperature if required
-      if(get_advanced_model()->enable_Tp())
-      {
-        PetscScalar p     =  x[fvm_node->local_offset()+node_p_offset];
-        PetscScalar Tp    =  x[fvm_node->local_offset()+node_Tp_offset]/p;
-        PetscScalar dWpdt = -((2-r)/(1-r)*1.5*p*kb*Tp - 1.0/(r*(1-r))*1.5*node_data->p()*kb*node_data->Tp() + (1-r)/r*1.5*node_data->p_last()*kb*node_data->Tp_last())
-                            / (SolverSpecify::dt_last+SolverSpecify::dt) * fvm_node->volume();
-        iy.push_back(fvm_node->global_offset()+node_Tp_offset);
-        y.push_back( dWpdt );
-      }
-    }
-    else //first order
-    {
-      // electron density
-      PetscScalar n    =  x[fvm_node->local_offset()+node_n_offset];
-      PetscScalar dndt = -(n - node_data->n())/SolverSpecify::dt*fvm_node->volume();
-      iy.push_back(fvm_node->global_offset()+node_n_offset);                     // save index in the buffer
-      y.push_back( dndt );
-
-
-      // hole density
-      PetscScalar p    =  x[fvm_node->local_offset()+node_p_offset];
-      PetscScalar dpdt = -(p - node_data->p())/SolverSpecify::dt*fvm_node->volume();
-      iy.push_back(fvm_node->global_offset()+node_p_offset);
-      y.push_back( dpdt );
-
-
-      // lattice temperature if required
-      if(get_advanced_model()->enable_Tl())
-      {
-        PetscScalar Tl    =  x[fvm_node->local_offset()+node_Tl_offset];
-        PetscScalar HeatCapacity =  mt->thermal->HeatCapacity(Tl);
-        PetscScalar dTldt = -(Tl - node_data->T())*node_data->density()*HeatCapacity/SolverSpecify::dt*fvm_node->volume();
-        iy.push_back(fvm_node->global_offset()+node_Tl_offset);
-        y.push_back( dTldt );
-      }
-
-      // electron temperature if required
-      if(get_advanced_model()->enable_Tn())
-      {
-        PetscScalar n     =  x[fvm_node->local_offset()+node_n_offset];
-        PetscScalar Tn    =  x[fvm_node->local_offset()+node_Tn_offset]/n;
-
-        PetscScalar dWndt = -(1.5*n*kb*Tn - 1.5*node_data->n()*kb*node_data->Tn())/SolverSpecify::dt*fvm_node->volume();
-        iy.push_back(fvm_node->global_offset()+node_Tn_offset);
-        y.push_back( dWndt );
-      }
-
-      // hole temperature if required
-      if(get_advanced_model()->enable_Tp())
-      {
-        PetscScalar p     =  x[fvm_node->local_offset()+node_p_offset];
-        PetscScalar Tp    =  x[fvm_node->local_offset()+node_Tp_offset]/p;
-
-        PetscScalar dWpdt = -(1.5*p*kb*Tp - 1.5*node_data->p()*kb*node_data->Tp())/SolverSpecify::dt*fvm_node->volume();
-        iy.push_back(fvm_node->global_offset()+node_Tp_offset);
-        y.push_back( dWpdt );
-      }
-    }
-  }
-
-
-  // add into petsc vector, we should prevent zero length vector add here.
-  if(iy.size())  VecSetValues(f, iy.size(), &iy[0], &y[0], ADD_VALUES);
-
-  // the last operator is ADD_VALUES
-  add_value_flag = ADD_VALUES;
-
-
-#if defined(HAVE_FENV_H) && defined(DEBUG)
-  genius_assert( !fetestexcept(FE_INVALID) );
-#endif
-
-}
 
 
 
@@ -1077,6 +924,8 @@ void SemiconductorSimulationRegion::EBM3_Time_Dependent_Jacobian(PetscScalar * x
   //synchronize with material database
   mt->set_ad_num(adtl::AutoDScalar::numdir);
 
+  const double r = SolverSpecify::dt_last/(SolverSpecify::dt_last + SolverSpecify::dt);
+
   // process node related terms
   // including \rho of poisson's equation and recombination term of continuation equation
   const_processor_node_iterator node_it = on_processor_nodes_begin();
@@ -1091,98 +940,102 @@ void SemiconductorSimulationRegion::EBM3_Time_Dependent_Jacobian(PetscScalar * x
     // process \partial t
 
     //second order
-    if(SolverSpecify::TS_type==SolverSpecify::BDF2 && SolverSpecify::BDF2_restart==false)
+    if(SolverSpecify::TS_type==SolverSpecify::BDF2 && SolverSpecify::BDF2_LowerOrder==false)
     {
-      PetscScalar r = SolverSpecify::dt_last/(SolverSpecify::dt_last + SolverSpecify::dt);
-
       // electron density
-      AutoDScalar n    =  x[fvm_node->local_offset()+node_n_offset];   n.setADValue(0, 1.0);
-      AutoDScalar dndt = -((2-r)/(1-r)*n - 1.0/(r*(1-r))*node_data->n() + (1-r)/r*node_data->n_last())
-                         / (SolverSpecify::dt_last+SolverSpecify::dt)*fvm_node->volume();
-      MatSetValue(*jac, fvm_node->global_offset()+node_n_offset,  fvm_node->global_offset()+node_n_offset, dndt.getADValue(0), ADD_VALUES);
+      AutoDScalar n         =  x[fvm_node->local_offset()+node_n_offset];   n.setADValue(0, 1.0);
+      AutoDScalar dndt_BDF2 = -((2-r)/(1-r)*n - 1.0/(r*(1-r))*node_data->n() + (1-r)/r*node_data->n_last())
+                              / (SolverSpecify::dt_last+SolverSpecify::dt)*fvm_node->volume();
+
+      MatSetValue(*jac, fvm_node->global_offset()+node_n_offset,  fvm_node->global_offset()+node_n_offset, dndt_BDF2.getADValue(0), ADD_VALUES);
+
 
       // hole density
-      AutoDScalar p    =  x[fvm_node->local_offset()+node_p_offset];   p.setADValue(0, 1.0);
-      AutoDScalar dpdt = -((2-r)/(1-r)*p - 1.0/(r*(1-r))*node_data->p() + (1-r)/r*node_data->p_last())
-                         / (SolverSpecify::dt_last+SolverSpecify::dt)*fvm_node->volume();
-      MatSetValue(*jac, fvm_node->global_offset()+node_p_offset,  fvm_node->global_offset()+node_p_offset, dpdt.getADValue(0), ADD_VALUES);
+      AutoDScalar p         =  x[fvm_node->local_offset()+node_p_offset];   p.setADValue(0, 1.0);
+      AutoDScalar dpdt_BDF2 = -((2-r)/(1-r)*p - 1.0/(r*(1-r))*node_data->p() + (1-r)/r*node_data->p_last())
+                              / (SolverSpecify::dt_last+SolverSpecify::dt)*fvm_node->volume();
+      MatSetValue(*jac, fvm_node->global_offset()+node_p_offset,  fvm_node->global_offset()+node_p_offset, dpdt_BDF2.getADValue(0), ADD_VALUES);
+
 
       // lattice temperature if required
       if(get_advanced_model()->enable_Tl())
       {
-        AutoDScalar Tl    =  x[fvm_node->local_offset()+3];   Tl.setADValue(0, 1.0);              // lattice temperature
+        AutoDScalar Tl           =  x[fvm_node->local_offset()+3];   Tl.setADValue(0, 1.0);              // lattice temperature
         AutoDScalar HeatCapacity =  mt->thermal->HeatCapacity(Tl);
-        AutoDScalar dTldt = -((2-r)/(1-r)*Tl - 1.0/(r*(1-r))*node_data->T() + (1-r)/r*node_data->T_last())*node_data->density()*HeatCapacity
-                            / (SolverSpecify::dt_last+SolverSpecify::dt) * fvm_node->volume();
-        MatSetValue(*jac, fvm_node->global_offset()+node_Tl_offset,  fvm_node->global_offset()+node_Tl_offset, dTldt.getADValue(0), ADD_VALUES);
+        AutoDScalar dTldt_BDF2   = -((2-r)/(1-r)*Tl - 1.0/(r*(1-r))*node_data->T() + (1-r)/r*node_data->T_last())*node_data->density()*HeatCapacity
+                                   / (SolverSpecify::dt_last+SolverSpecify::dt) * fvm_node->volume();
+        MatSetValue(*jac, fvm_node->global_offset()+node_Tl_offset,  fvm_node->global_offset()+node_Tl_offset, dTldt_BDF2.getADValue(0), ADD_VALUES);
+
       }
 
       // electron temperature if required
       if(get_advanced_model()->enable_Tn())
       {
-        AutoDScalar n     =  x[fvm_node->local_offset()+node_n_offset];  n.setADValue(0, 1.0);
-        AutoDScalar nTn   =  x[fvm_node->local_offset()+node_Tn_offset]; nTn.setADValue(1, 1.0);
-        AutoDScalar Tn    =  nTn/n;
-        AutoDScalar dWndt = -((2-r)/(1-r)*1.5*n*kb*Tn - 1.0/(r*(1-r))*1.5*node_data->n()*kb*node_data->Tn() + (1-r)/r*1.5*node_data->n_last()*kb*node_data->Tn_last())
-                            / (SolverSpecify::dt_last+SolverSpecify::dt) * fvm_node->volume();
-        MatSetValue(*jac, fvm_node->global_offset()+node_Tn_offset,  fvm_node->global_offset()+node_n_offset,  dWndt.getADValue(0), ADD_VALUES);
-        MatSetValue(*jac, fvm_node->global_offset()+node_Tn_offset,  fvm_node->global_offset()+node_Tn_offset, dWndt.getADValue(1), ADD_VALUES);
+        AutoDScalar n           =  x[fvm_node->local_offset()+node_n_offset];  n.setADValue(0, 1.0);
+        AutoDScalar nTn         =  x[fvm_node->local_offset()+node_Tn_offset]; nTn.setADValue(1, 1.0);
+        AutoDScalar Tn          =  nTn/n;
+        AutoDScalar dWndt_BDF2  = -((2-r)/(1-r)*1.5*n*kb*Tn - 1.0/(r*(1-r))*1.5*node_data->n()*kb*node_data->Tn() + (1-r)/r*1.5*node_data->n_last()*kb*node_data->Tn_last())
+                                  / (SolverSpecify::dt_last+SolverSpecify::dt) * fvm_node->volume();
+
+        MatSetValue(*jac, fvm_node->global_offset()+node_Tn_offset,  fvm_node->global_offset()+node_n_offset,  dWndt_BDF2.getADValue(0), ADD_VALUES);
+        MatSetValue(*jac, fvm_node->global_offset()+node_Tn_offset,  fvm_node->global_offset()+node_Tn_offset, dWndt_BDF2.getADValue(1), ADD_VALUES);
       }
 
       // hole temperature if required
-      if(get_advanced_model()->enable_Tn())
+      if(get_advanced_model()->enable_Tp())
       {
-        AutoDScalar p     =  x[fvm_node->local_offset()+node_p_offset];  p.setADValue(0, 1.0);
-        AutoDScalar pTp   =  x[fvm_node->local_offset()+node_Tp_offset]; pTp.setADValue(1, 1.0);
-        AutoDScalar Tp    =  pTp/p;
-        AutoDScalar dWpdt = -((2-r)/(1-r)*1.5*p*kb*Tp - 1.0/(r*(1-r))*1.5*node_data->p()*kb*node_data->Tp() + (1-r)/r*1.5*node_data->p_last()*kb*node_data->Tp_last())
-                            / (SolverSpecify::dt_last+SolverSpecify::dt) * fvm_node->volume();
-        MatSetValue(*jac, fvm_node->global_offset()+node_Tp_offset,  fvm_node->global_offset()+node_p_offset,  dWpdt.getADValue(0), ADD_VALUES);
-        MatSetValue(*jac, fvm_node->global_offset()+node_Tp_offset,  fvm_node->global_offset()+node_Tp_offset, dWpdt.getADValue(1), ADD_VALUES);
+        AutoDScalar p           =  x[fvm_node->local_offset()+node_p_offset];  p.setADValue(0, 1.0);
+        AutoDScalar pTp         =  x[fvm_node->local_offset()+node_Tp_offset]; pTp.setADValue(1, 1.0);
+        AutoDScalar Tp          =  pTp/p;
+        AutoDScalar dWpdt_BDF2  = -((2-r)/(1-r)*1.5*p*kb*Tp - 1.0/(r*(1-r))*1.5*node_data->p()*kb*node_data->Tp() + (1-r)/r*1.5*node_data->p_last()*kb*node_data->Tp_last())
+                                  / (SolverSpecify::dt_last+SolverSpecify::dt) * fvm_node->volume();
+
+        MatSetValue(*jac, fvm_node->global_offset()+node_Tp_offset,  fvm_node->global_offset()+node_p_offset,  dWpdt_BDF2.getADValue(0), ADD_VALUES);
+        MatSetValue(*jac, fvm_node->global_offset()+node_Tp_offset,  fvm_node->global_offset()+node_Tp_offset, dWpdt_BDF2.getADValue(1), ADD_VALUES);
       }
 
     }
     else //first order
     {
       // electron density
-      AutoDScalar n    =  x[fvm_node->local_offset()+node_n_offset];   n.setADValue(0, 1.0);
-      AutoDScalar dndt = -(n - node_data->n())/SolverSpecify::dt*fvm_node->volume();
-      MatSetValue(*jac, fvm_node->global_offset()+node_n_offset,  fvm_node->global_offset()+node_n_offset, dndt.getADValue(0), ADD_VALUES);
+      AutoDScalar n         =  x[fvm_node->local_offset()+node_n_offset];   n.setADValue(0, 1.0);
+      AutoDScalar dndt_BDF1 = -(n - node_data->n())/SolverSpecify::dt*fvm_node->volume();
+      MatSetValue(*jac, fvm_node->global_offset()+node_n_offset,  fvm_node->global_offset()+node_n_offset, dndt_BDF1.getADValue(0), ADD_VALUES);
 
       // hole density
-      AutoDScalar p    =  x[fvm_node->local_offset()+node_p_offset];   p.setADValue(0, 1.0);
-      AutoDScalar dpdt = -(p - node_data->p())/SolverSpecify::dt*fvm_node->volume();
-      MatSetValue(*jac, fvm_node->global_offset()+node_p_offset,  fvm_node->global_offset()+node_p_offset, dpdt.getADValue(0), ADD_VALUES);
+      AutoDScalar p         =  x[fvm_node->local_offset()+node_p_offset];   p.setADValue(0, 1.0);
+      AutoDScalar dpdt_BDF1 = -(p - node_data->p())/SolverSpecify::dt*fvm_node->volume();
+      MatSetValue(*jac, fvm_node->global_offset()+node_p_offset,  fvm_node->global_offset()+node_p_offset, dpdt_BDF1.getADValue(0), ADD_VALUES);
 
       // lattice temperature if required
       if(get_advanced_model()->enable_Tl())
       {
-        AutoDScalar Tl    =  x[fvm_node->local_offset()+3];   Tl.setADValue(0, 1.0);              // lattice temperature
+        AutoDScalar Tl           =  x[fvm_node->local_offset()+3];   Tl.setADValue(0, 1.0);              // lattice temperature
         AutoDScalar HeatCapacity =  mt->thermal->HeatCapacity(Tl);
-        AutoDScalar dTldt = -(Tl - node_data->T())*node_data->density()*HeatCapacity/SolverSpecify::dt*fvm_node->volume();
-        MatSetValue(*jac, fvm_node->global_offset()+node_Tl_offset,  fvm_node->global_offset()+node_Tl_offset, dTldt.getADValue(0), ADD_VALUES);
+        AutoDScalar dTldt_BDF1   = -(Tl - node_data->T())*node_data->density()*HeatCapacity/SolverSpecify::dt*fvm_node->volume();
+        MatSetValue(*jac, fvm_node->global_offset()+node_Tl_offset,  fvm_node->global_offset()+node_Tl_offset, dTldt_BDF1.getADValue(0), ADD_VALUES);
       }
 
       // electron temperature if required
       if(get_advanced_model()->enable_Tn())
       {
-        AutoDScalar n     =  x[fvm_node->local_offset()+node_n_offset];  n.setADValue(0, 1.0);
-        AutoDScalar nTn   =  x[fvm_node->local_offset()+node_Tn_offset]; nTn.setADValue(1, 1.0);
-        AutoDScalar Tn    =  nTn/n;
-        AutoDScalar dWndt = -(1.5*n*kb*Tn - 1.5*node_data->n()*kb*node_data->Tn())/SolverSpecify::dt*fvm_node->volume();
-        MatSetValue(*jac, fvm_node->global_offset()+node_Tn_offset,  fvm_node->global_offset()+node_n_offset,  dWndt.getADValue(0), ADD_VALUES);
-        MatSetValue(*jac, fvm_node->global_offset()+node_Tn_offset,  fvm_node->global_offset()+node_Tn_offset, dWndt.getADValue(1), ADD_VALUES);
+        AutoDScalar n          =  x[fvm_node->local_offset()+node_n_offset];  n.setADValue(0, 1.0);
+        AutoDScalar nTn        =  x[fvm_node->local_offset()+node_Tn_offset]; nTn.setADValue(1, 1.0);
+        AutoDScalar Tn         =  nTn/n;
+        AutoDScalar dWndt_BDF1 = -(1.5*n*kb*Tn - 1.5*node_data->n()*kb*node_data->Tn())/SolverSpecify::dt*fvm_node->volume();
+        MatSetValue(*jac, fvm_node->global_offset()+node_Tn_offset,  fvm_node->global_offset()+node_n_offset,  dWndt_BDF1.getADValue(0), ADD_VALUES);
+        MatSetValue(*jac, fvm_node->global_offset()+node_Tn_offset,  fvm_node->global_offset()+node_Tn_offset, dWndt_BDF1.getADValue(1), ADD_VALUES);
       }
 
       // hole temperature if required
       if(get_advanced_model()->enable_Tn())
       {
-        AutoDScalar p     =  x[fvm_node->local_offset()+node_p_offset];  p.setADValue(0, 1.0);
-        AutoDScalar pTp   =  x[fvm_node->local_offset()+node_Tp_offset]; pTp.setADValue(1, 1.0);
-        AutoDScalar Tp    =  pTp/p;
-        AutoDScalar dWpdt = -(1.5*p*kb*Tp - 1.5*node_data->p()*kb*node_data->Tp())/SolverSpecify::dt*fvm_node->volume();
-        MatSetValue(*jac, fvm_node->global_offset()+node_Tp_offset,  fvm_node->global_offset()+node_p_offset,  dWpdt.getADValue(0), ADD_VALUES);
-        MatSetValue(*jac, fvm_node->global_offset()+node_Tp_offset,  fvm_node->global_offset()+node_Tp_offset, dWpdt.getADValue(1), ADD_VALUES);
+        AutoDScalar p          =  x[fvm_node->local_offset()+node_p_offset];  p.setADValue(0, 1.0);
+        AutoDScalar pTp        =  x[fvm_node->local_offset()+node_Tp_offset]; pTp.setADValue(1, 1.0);
+        AutoDScalar Tp         =  pTp/p;
+        AutoDScalar dWpdt_BDF1 = -(1.5*p*kb*Tp - 1.5*node_data->p()*kb*node_data->Tp())/SolverSpecify::dt*fvm_node->volume();
+        MatSetValue(*jac, fvm_node->global_offset()+node_Tp_offset,  fvm_node->global_offset()+node_p_offset,  dWpdt_BDF1.getADValue(0), ADD_VALUES);
+        MatSetValue(*jac, fvm_node->global_offset()+node_Tp_offset,  fvm_node->global_offset()+node_Tp_offset, dWpdt_BDF1.getADValue(1), ADD_VALUES);
       }
 
     }

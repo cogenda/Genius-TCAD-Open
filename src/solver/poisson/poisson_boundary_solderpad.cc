@@ -84,7 +84,7 @@ void SolderPadBC::Poissin_Fill_Value(Vec , Vec L)
 /*---------------------------------------------------------------------
  * do pre-process to function evaluation for poisson solver
  */
-void SolderPadBC::Poissin_Function_Preprocess(Vec f, std::vector<PetscInt> &src_row,
+void SolderPadBC::Poissin_Function_Preprocess(PetscScalar *, Vec f, std::vector<PetscInt> &src_row,
                                               std::vector<PetscInt> &dst_row, std::vector<PetscInt> &clear_row)
 {
   BoundaryCondition::const_node_iterator node_it = nodes_begin();
@@ -138,14 +138,19 @@ void SolderPadBC::Poissin_Function(PetscScalar * x, Vec f, InsertMode &add_value
     VecAssemblyEnd(f);
   }
 
-  // get the workfunction and sigma
-  const SimulationRegion * region = bc_regions().first; genius_assert(region);
-  const MetalSimulationRegion * resistance_region = dynamic_cast<const MetalSimulationRegion *>(region); genius_assert(resistance_region);
-  const PetscScalar workfunction = resistance_region->material()->basic->Affinity(T_external());
-
   // the electrode potential should be zero
   PetscScalar Ve = ext_circuit()->Vapp();
 
+  const SimulationRegion * _r1 = bc_regions().first;
+  const SimulationRegion * _r2 = bc_regions().second;
+
+  const MetalSimulationRegion * resistance_region = 0;
+  if( _r1 && _r1->type() == MetalRegion ) resistance_region = dynamic_cast<const MetalSimulationRegion *>(_r1);
+  if( _r2 && _r2->type() == MetalRegion ) resistance_region = dynamic_cast<const MetalSimulationRegion *>(_r2);
+  genius_assert(resistance_region);
+
+  const double workfunction = resistance_region->material()->basic->Affinity(T_external());
+  const double sigma = resistance_region->material()->basic->Conductance();
 
   BoundaryCondition::const_node_iterator node_it = nodes_begin();
   BoundaryCondition::const_node_iterator end_it = nodes_end();
@@ -154,21 +159,22 @@ void SolderPadBC::Poissin_Function(PetscScalar * x, Vec f, InsertMode &add_value
     // skip node not belongs to this processor
     if( (*node_it)->processor_id()!=Genius::processor_id() ) continue;
 
+
     BoundaryCondition::region_node_iterator  rnode_it     = region_node_begin ( *node_it );
     BoundaryCondition::region_node_iterator  end_rnode_it = region_node_end ( *node_it );
     for ( ; rnode_it!=end_rnode_it; ++rnode_it )
     {
       const SimulationRegion * region = ( *rnode_it ).second.first;
+      const FVM_Node * fvm_node = ( *rnode_it ).second.second;
+      const FVM_NodeData * node_data = fvm_node->node_data();
+
       switch ( region->type() )
       {
           case MetalRegion :
           {
-
-            const FVM_Node * fvm_node = ( *rnode_it ).second.second;
-            const FVM_NodeData * node_data = fvm_node->node_data();
             // phi of this node
             PetscScalar V = x[fvm_node->local_offset()+0];
-            PetscScalar f_phi = V + workfunction - Ve;
+            PetscScalar f_phi = V + node_data->affinity()/e - Ve;
 
             // set governing equation to function vector
             VecSetValue(f, fvm_node->global_offset(), f_phi, ADD_VALUES);
@@ -177,7 +183,6 @@ void SolderPadBC::Poissin_Function(PetscScalar * x, Vec f, InsertMode &add_value
 
           case InsulatorRegion:
           {
-            const FVM_Node * fvm_node = ( *rnode_it ).second.second;
             // phi of this node
             PetscScalar V = x[fvm_node->local_offset()];
             PetscScalar f_phi = (V + workfunction - Ve);
@@ -203,7 +208,7 @@ void SolderPadBC::Poissin_Function(PetscScalar * x, Vec f, InsertMode &add_value
 /*---------------------------------------------------------------------
  * do pre-process to jacobian matrix for poisson solver
  */
-void SolderPadBC::Poissin_Jacobian_Preprocess(Mat *jac, std::vector<PetscInt> &src_row,
+void SolderPadBC::Poissin_Jacobian_Preprocess(PetscScalar *, Mat *jac, std::vector<PetscInt> &src_row,
     std::vector<PetscInt> &dst_row, std::vector<PetscInt> &clear_row)
 {
     BoundaryCondition::const_node_iterator node_it = nodes_begin();
@@ -245,11 +250,18 @@ void SolderPadBC::Poissin_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_va
     MatAssemblyEnd(*jac, MAT_FLUSH_ASSEMBLY);
   }
 
-  const SimulationRegion * region = bc_regions().first; genius_assert(region);
-  const MetalSimulationRegion * resistance_region = dynamic_cast<const MetalSimulationRegion *>(region);
-  const PetscScalar workfunction = resistance_region->material()->basic->Affinity(T_external());
-
   PetscScalar Ve = ext_circuit()->Vapp();
+
+  const SimulationRegion * _r1 = bc_regions().first;
+  const SimulationRegion * _r2 = bc_regions().second;
+
+  const MetalSimulationRegion * resistance_region = 0;
+  if( _r1 && _r1->type() == MetalRegion ) resistance_region = dynamic_cast<const MetalSimulationRegion *>(_r1);
+  if( _r2 && _r2->type() == MetalRegion ) resistance_region = dynamic_cast<const MetalSimulationRegion *>(_r2);
+  genius_assert(resistance_region);
+
+  const double workfunction = resistance_region->material()->basic->Affinity(T_external());
+  const double sigma = resistance_region->material()->basic->Conductance();
 
   // we use AD again. no matter it is overkill here.
   //the indepedent variable number, we only need 1 here.
@@ -268,17 +280,16 @@ void SolderPadBC::Poissin_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_va
     for ( ; rnode_it!=end_rnode_it; ++rnode_it )
     {
       const SimulationRegion * region = ( *rnode_it ).second.first;
+      const FVM_Node * fvm_node = ( *rnode_it ).second.second;
+      const FVM_NodeData * node_data = fvm_node->node_data();
 
       switch ( region->type() )
       {
           case MetalRegion :
           {
-            const FVM_Node * fvm_node = ( *rnode_it ).second.second;
-            const FVM_NodeData * node_data = fvm_node->node_data();
-
             // phi of this node
             AutoDScalar V = x[fvm_node->local_offset()];  V.setADValue(0, 1.0);
-            AutoDScalar f_phi = V + workfunction - Ve;
+            AutoDScalar f_phi = V + node_data->affinity()/e - Ve;
 
             //governing equation
             MatSetValue(*jac, fvm_node->global_offset(), fvm_node->global_offset(), f_phi.getADValue(0), ADD_VALUES);
@@ -286,8 +297,6 @@ void SolderPadBC::Poissin_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_va
           }
           case InsulatorRegion :
           {
-            const FVM_Node * fvm_node = ( *rnode_it ).second.second;
-
             // phi of this node
             AutoDScalar V = x[fvm_node->local_offset()];  V.setADValue(0, 1.0);
             AutoDScalar f_phi = (V + workfunction - Ve);

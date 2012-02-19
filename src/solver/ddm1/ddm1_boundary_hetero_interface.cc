@@ -40,7 +40,7 @@ using PhysicalUnit::e;
 /*---------------------------------------------------------------------
  * do pre-process to function for DDML1 solver
  */
-void HeteroInterfaceBC::DDM1_Function_Preprocess(Vec f, std::vector<PetscInt> &src_row,
+void HeteroInterfaceBC::DDM1_Function_Preprocess(PetscScalar *, Vec f, std::vector<PetscInt> &src_row,
     std::vector<PetscInt> &dst_row, std::vector<PetscInt> &clear_row)
 {
   // search for all the node with this boundary type
@@ -120,7 +120,7 @@ void HeteroInterfaceBC::DDM1_Function(PetscScalar * x, Vec f, InsertMode &add_va
 
   const PetscScalar T = T_external();
   const PetscScalar Vt  = kb*T/e;
-
+  const PetscScalar qf = this->scalar("qf");
 
   // buffer for Vec value
   std::vector<PetscInt> iy;
@@ -174,6 +174,9 @@ void HeteroInterfaceBC::DDM1_Function(PetscScalar * x, Vec f, InsertMode &add_va
           Ec0 = Ec0 - e*Vt*log(gamma_f(fabs(n0)/n0_data->Nc()));
           Ev0 = Ev0 + e*Vt*log(gamma_f(fabs(p0)/n0_data->Nv()));
         }
+
+        PetscScalar boundary_area = std::abs(fvm_node->outside_boundary_surface_area());
+        VecSetValue(f, fvm_node->global_offset(), qf*boundary_area, ADD_VALUES);
       }
 
       // other semiconductor region
@@ -402,7 +405,7 @@ void HeteroInterfaceBC::DDM1_Jacobian_Reserve(Mat *jac, InsertMode &add_value_fl
 /*---------------------------------------------------------------------
  * do pre-process to jacobian matrix for DDML1 solver
  */
-void HeteroInterfaceBC::DDM1_Jacobian_Preprocess(Mat *jac, std::vector<PetscInt> &src_row,
+void HeteroInterfaceBC::DDM1_Jacobian_Preprocess(PetscScalar *, Mat *jac, std::vector<PetscInt> &src_row,
     std::vector<PetscInt> &dst_row, std::vector<PetscInt> &clear_row)
 {
   // search for all the node with this boundary type

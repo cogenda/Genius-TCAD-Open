@@ -126,7 +126,7 @@ namespace Material
   }
 
 
-  std::map<const std::string, MaterialType> material_type_string_to_enum;
+  std::map<std::string, MaterialType> material_type_string_to_enum;
   static void _build_material_type_string_to_enum_map()
   {
     material_type_string_to_enum["Semiconductor"               ] = Semiconductor;
@@ -140,7 +140,7 @@ namespace Material
   }
 
 
-  std::map<const std::string, MaterialType> material_name_to_material_type;
+  std::map<std::string, MaterialType> material_name_to_material_type;
   static void _init_material_name_to_material_type_map()
   {
     for(unsigned int n=0; n<materials.size(); ++n)
@@ -153,7 +153,7 @@ namespace Material
   }
 
 
-  std::map<const std::string, std::string> material_name_conversion;
+  std::map<std::string, std::string> material_name_conversion;
   static void _init_material_name_conversion_map()
   {
     for(unsigned int n=0; n<materials.size(); ++n)
@@ -310,6 +310,7 @@ namespace Material
   int material_weight(const std::string & mat_name)
   {
     if( IsSemiconductor(mat_name) ) return 4;
+    if( IsResistance(mat_name) )    return 2;
     return 1;
   }
 

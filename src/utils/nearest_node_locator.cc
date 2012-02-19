@@ -92,6 +92,12 @@ std::vector<const Node * > NearestNodeLocator::nearest_nodes(const Point &p1, co
 {
   std::vector<const Node *> nn;
   std::set<const Node *> nn_set;
+
+  std::vector< const Node * > nn1 = this->nearest_nodes(p1, radius, subdomain);
+  std::vector< const Node * > nn2 = this->nearest_nodes(p2, radius, subdomain);
+  nn_set.insert(nn1.begin(), nn1.end());
+  nn_set.insert(nn2.begin(), nn2.end());
+
   this->nearest_nodes(p1, p2, radius, subdomain, nn_set);
   nn.insert(nn.end(), nn_set.begin(), nn_set.end());
   return nn;
@@ -101,12 +107,11 @@ std::vector<const Node * > NearestNodeLocator::nearest_nodes(const Point &p1, co
 void NearestNodeLocator::nearest_nodes(const Point &p1, const Point &p2, Real radius, unsigned int subdomain, std::set<const Node * >& nns) const
 {
   unsigned int nn_num = nns.size();
-  std::vector< const Node * > nn1 = this->nearest_nodes(p1, radius, subdomain);
-  std::vector< const Node * > nn2 = this->nearest_nodes(p2, radius, subdomain);
-  nns.insert(nn1.begin(), nn1.end());
-  nns.insert(nn2.begin(), nn2.end());
 
-  if( nns.size() > nn_num )
+  std::vector< const Node * > nnn = this->nearest_nodes(0.5*(p1+p2), radius, subdomain);
+  nns.insert(nnn.begin(), nnn.end());
+
+  if( (p2-p1).size() > 0.5*radius || nns.size() > nn_num )
   {
     this->nearest_nodes( p1, 0.5*(p1+p2), radius, subdomain, nns );
     this->nearest_nodes( 0.5*(p1+p2), p2, radius, subdomain, nns );

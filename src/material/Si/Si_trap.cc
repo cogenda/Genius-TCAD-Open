@@ -21,6 +21,7 @@
 //
 // Material Type: Silicon
 
+#include "point.h"
 #include "PMI.h"
 
 #include <algorithm>
@@ -212,7 +213,7 @@ public:
     genius_assert(spec<TrapSpecs.size());
 
     // trap location is used as the key in TrapStore
-    TrapLocation tloc = TrapLocation(point,TrapSpecs[spec].type);
+    TrapLocation tloc = TrapLocation(point.x(), point.y(), point.z(), TrapSpecs[spec].type);
 
     PetscScalar n_t;
     if (TrapSpecs[spec].charge_type == Acceptor)
@@ -252,7 +253,7 @@ public:
    */
   PetscScalar Charge(const bool flag_bulk)
   {
-    TrapLocation tloc = TrapLocation(*(*pp_point),flag_bulk?Bulk:Interface);
+    TrapLocation tloc = TrapLocation((*pp_point)->x(), (*pp_point)->y(), (*pp_point)->z(), flag_bulk?Bulk:Interface);
 
     TrapStore_t::iterator it = TrapStore.find(tloc);
 
@@ -285,7 +286,7 @@ public:
    */
   AutoDScalar ChargeAD(const bool flag_bulk)
   {
-    TrapLocation tloc = TrapLocation(*(*pp_point),flag_bulk?Bulk:Interface);
+    TrapLocation tloc = TrapLocation((*pp_point)->x(), (*pp_point)->y(), (*pp_point)->z(), flag_bulk?Bulk:Interface);
 
     TrapStore_t::iterator it = TrapStore.find(tloc);
 
@@ -316,7 +317,7 @@ public:
   {
     PetscScalar theta_n = 1.0e7*cm/s * sqrt(Tl/300/K);     // electron thermal velocity
 
-    TrapLocation tloc = TrapLocation(*(*pp_point),flag_bulk?Bulk:Interface);
+    TrapLocation tloc = TrapLocation((*pp_point)->x(), (*pp_point)->y(), (*pp_point)->z(), flag_bulk?Bulk:Interface);
 
     TrapStore_t::iterator it = TrapStore.find(tloc);
 
@@ -355,7 +356,7 @@ public:
   {
     AutoDScalar theta_n = 1.0e7*cm/s * sqrt(Tl/300/K);
 
-    TrapLocation tloc = TrapLocation(*(*pp_point),flag_bulk?Bulk:Interface);
+    TrapLocation tloc = TrapLocation((*pp_point)->x(), (*pp_point)->y(), (*pp_point)->z(), flag_bulk?Bulk:Interface);
 
     TrapStore_t::iterator it = TrapStore.find(tloc);
 
@@ -392,7 +393,7 @@ public:
   {
     PetscScalar theta_p = 1.0e7*cm/s * sqrt(Tl/300/K);     // hole thermal velocity
 
-    TrapLocation tloc = TrapLocation(*(*pp_point),flag_bulk?Bulk:Interface);
+    TrapLocation tloc = TrapLocation((*pp_point)->x(), (*pp_point)->y(), (*pp_point)->z(), flag_bulk?Bulk:Interface);
 
     TrapStore_t::iterator it = TrapStore.find(tloc);
 
@@ -431,7 +432,7 @@ public:
   {
     AutoDScalar theta_p = 1.0e7*cm/s * sqrt(Tl/300/K);
 
-    TrapLocation tloc = TrapLocation(*(*pp_point),flag_bulk?Bulk:Interface);
+    TrapLocation tloc = TrapLocation((*pp_point)->x(), (*pp_point)->y(), (*pp_point)->z(), flag_bulk?Bulk:Interface);
 
     TrapStore_t::iterator it = TrapStore.find(tloc);
 
@@ -464,7 +465,7 @@ public:
     PetscScalar theta_n = 1.0e7*cm/s * sqrt(Tl/300/K);     // electron thermal velocity
     PetscScalar theta_p = 1.0e7*cm/s * sqrt(Tl/300/K);     // hole thermal velocity
 
-    TrapLocation tloc = TrapLocation(*(*pp_point),flag_bulk?Bulk:Interface);
+    TrapLocation tloc = TrapLocation((*pp_point)->x(), (*pp_point)->y(), (*pp_point)->z(), flag_bulk?Bulk:Interface);
 
     TrapStore_t::iterator it = TrapStore.find(tloc);
 
@@ -508,7 +509,7 @@ public:
     AutoDScalar theta_n = 1.0e7*cm/s * sqrt(Tl/300/K);     // electron thermal velocity
     AutoDScalar theta_p = 1.0e7*cm/s * sqrt(Tl/300/K);     // hole thermal velocity
 
-    TrapLocation tloc = TrapLocation(*(*pp_point),flag_bulk?Bulk:Interface);
+    TrapLocation tloc = TrapLocation((*pp_point)->x(), (*pp_point)->y(), (*pp_point)->z(), flag_bulk?Bulk:Interface);
 
     TrapStore_t::iterator it = TrapStore.find(tloc);
 
@@ -551,7 +552,7 @@ public:
   {
     AutoDScalar theta_n = 1.0e7*cm/s * sqrt(Tl/300/K);     // electron thermal velocity
 
-    TrapLocation tloc = TrapLocation(*(*pp_point),flag_bulk?Bulk:Interface);
+    TrapLocation tloc = TrapLocation((*pp_point)->x(), (*pp_point)->y(), (*pp_point)->z(), flag_bulk?Bulk:Interface);
 
     TrapStore_t::iterator it = TrapStore.find(tloc);
 
@@ -630,7 +631,7 @@ public:
   void Calculate(const bool flag_bulk, const PetscScalar &p, const PetscScalar &n, const PetscScalar &ni, const PetscScalar &Tl)
   {
 
-    TrapLocation tloc = TrapLocation(*(*pp_point),flag_bulk?Bulk:Interface);
+    TrapLocation tloc = TrapLocation((*pp_point)->x(), (*pp_point)->y(), (*pp_point)->z(), flag_bulk?Bulk:Interface);
 
     TrapStore_t::iterator it = TrapStore.find(tloc);
 
@@ -689,7 +690,7 @@ public:
   void Calculate(const bool flag_bulk, const AutoDScalar &p, const AutoDScalar &n, const AutoDScalar &ni, const AutoDScalar &Tl)
   {
 
-    TrapLocation tloc = TrapLocation(*(*pp_point),flag_bulk?Bulk:Interface);
+    TrapLocation tloc = TrapLocation((*pp_point)->x(), (*pp_point)->y(), (*pp_point)->z(), flag_bulk?Bulk:Interface);
 
     TrapStore_t::iterator it = TrapStore.find(tloc);
 
@@ -744,7 +745,7 @@ public:
    */
   void Update(const bool flag_bulk, const PetscScalar &p, const PetscScalar &n, const PetscScalar &ni, const PetscScalar &Tl)
   {
-    TrapLocation tloc = TrapLocation(*(*pp_point),flag_bulk?Bulk:Interface);
+    TrapLocation tloc = TrapLocation((*pp_point)->x(), (*pp_point)->y(), (*pp_point)->z(), flag_bulk?Bulk:Interface);
 
     TrapStore_t::iterator it = TrapStore.find(tloc);
 

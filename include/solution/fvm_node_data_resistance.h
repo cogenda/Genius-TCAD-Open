@@ -43,6 +43,11 @@ class FVM_Resistance_NodeData : public FVM_NodeData
     enum   ResistanceData
     {
       /**
+       * electron density
+       */
+      _n_=0,
+
+      /**
       * electrostatic potential
       */
       _psi_,
@@ -83,9 +88,29 @@ class FVM_Resistance_NodeData : public FVM_NodeData
       _mu_,
 
       /**
+       * energy deposite of incident wave
+       */
+      _OptE_,
+
+      /**
+       * energy deposite of high energy particle
+       */
+      _PatE_,
+
+      /**
+       * electron density at previous time step
+       */
+      _n_last_=0,
+
+      /**
        * electrostatic potential at previous time step
        */
       _psi_last_,
+
+      /**
+       * old electrostatic potential
+       */
+      _psi_old_,
 
       /**
        * lattice temperature at previous time step
@@ -212,7 +237,7 @@ class FVM_Resistance_NodeData : public FVM_NodeData
       switch ( variable )
       {
         case POTENTIAL   :  return  psi();                            /* potential */
-        case ELECTRON    :  return  0.0;                              /* electron concentration */
+        case ELECTRON    :  return  n();                              /* electron concentration */
         case HOLE        :  return  0.0;                              /* hole concentration */
         case TEMPERATURE :  return  T();                              /* lattice temperature */
         case E_TEMP      :  return  T();                              /* electron temperature */
@@ -231,6 +256,7 @@ class FVM_Resistance_NodeData : public FVM_NodeData
       switch ( variable )
       {
         case POTENTIAL   :  psi() = value;                             /* potential */
+        case ELECTRON    :  n() = value;                               /* electron concentration */
         case TEMPERATURE :  T() = value;                               /* lattice temperature */
         default          :  return;
       }
@@ -244,6 +270,7 @@ class FVM_Resistance_NodeData : public FVM_NodeData
       switch ( variable )
       {
         case POTENTIAL   :
+        case ELECTRON    :
         case TEMPERATURE :  return true;
         default          :  return false;
       }
@@ -266,6 +293,17 @@ class FVM_Resistance_NodeData : public FVM_NodeData
     { return _data_storage->scalar ( _psi_, _offset ); }
 
 
+    /**
+     * @return the electron density
+     */
+    virtual Real         n()          const
+    { return _data_storage->scalar ( _n_, _offset ); }
+
+    /**
+     * @return the writable reference to electron density
+     */
+    virtual Real &       n()
+    { return _data_storage->scalar ( _n_, _offset ); }
 
     /**
      * @return the lattice temperature
@@ -306,6 +344,19 @@ class FVM_Resistance_NodeData : public FVM_NodeData
      */
     virtual Real &       Tp()
     { return _data_storage->scalar ( _T_, _offset ); }
+
+
+    /**
+     * @return the optical energy
+     */
+    virtual Real         OptE()          const
+    { return _data_storage->scalar ( _OptE_, _offset ); }
+
+    /**
+     * @return the writable optical energy
+     */
+    virtual Real &       OptE()
+    { return _data_storage->scalar ( _OptE_, _offset ); }
 
 
     /**
@@ -359,6 +410,19 @@ class FVM_Resistance_NodeData : public FVM_NodeData
 
 
     /**
+     * @return the electron density at previous time step
+     */
+    virtual Real         n_last()          const
+    { return _data_storage->scalar ( _n_last_, _offset ); }
+
+    /**
+     * @return the writable reference to electron density at previous time step
+     */
+    virtual Real &       n_last()
+    { return _data_storage->scalar ( _n_last_, _offset ); }
+
+
+    /**
      * @return the statistic potential at previous time step
      */
     virtual Real         psi_last()          const
@@ -369,6 +433,19 @@ class FVM_Resistance_NodeData : public FVM_NodeData
      */
     virtual Real &       psi_last()
     { return _data_storage->scalar ( _psi_last_, _offset ); }
+
+
+    /**
+     * @return the old statistic potential
+     */
+    virtual Real         psi_old()          const
+    { return _data_storage->scalar ( _psi_old_, _offset ); }
+
+    /**
+     * @return the writable reference to old statistic potential
+     */
+    virtual Real &       psi_old()
+    { return _data_storage->scalar ( _psi_old_, _offset ); }
 
 
 
@@ -461,6 +538,8 @@ class FVM_Resistance_NodeData : public FVM_NodeData
      */
     virtual Real &       mu()
     { return _data_storage->scalar ( _mu_, _offset ); }
+
+
 
     /**
      * @return the quasi-fermi potential of electron

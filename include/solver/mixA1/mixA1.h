@@ -74,17 +74,13 @@ public:
    * virtual function, write solver intermediate data into system
    * It can be used to monitor the field data evolution during solve action
    */
-  virtual void flush_system();
+  virtual void flush_system(Vec );
 
   /**
    * load previous state into solution vector
    */
   virtual int diverged_recovery();
 
-  /**
-   * @return the extra dofs of spice circuit
-   */
-  virtual unsigned int extra_dofs() const;
 
   /**
    * @return node's dof for each region.
@@ -144,9 +140,14 @@ public:
   }
 
   /**
+   * test if BDF2 can be used for next time step
+   */
+  virtual bool BDF2_positive_defined() const;
+
+  /**
    * compute the norm of local truncate error (LTE)
    */
-  virtual PetscScalar LTE_norm();
+  virtual PetscReal LTE_norm();
 
   /**
    * check carrier density after projection
@@ -166,7 +167,7 @@ public:
     switch (bc->bc_type())
     {
       case OhmicContact      : return 3; // ohmic electrode current
-      case SchottkyContact   : return 1; // displacement current
+      case SchottkyContact   : return 3; // displacement current
       case SimpleGateContact : return 1; // displacement current
       case GateContact       : return 1; // displacement current
       case SolderPad         : return 1; // conductance current

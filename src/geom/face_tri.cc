@@ -33,18 +33,11 @@ unsigned int Tri::key (const unsigned int s) const
   switch (s)
     {
     case 0:
-      return
-    this->compute_key (this->node(0),
-               this->node(1));
-
+      return  this->compute_key (this->node(0), this->node(1));
     case 1:
-      return
-    this->compute_key (this->node(1),
-               this->node(2));
+      return  this->compute_key (this->node(1), this->node(2));
     case 2:
-      return
-    this->compute_key (this->node(2),
-               this->node(0));
+      return  this->compute_key (this->node(2), this->node(0));
     }
 
 
@@ -53,6 +46,36 @@ unsigned int Tri::key (const unsigned int s) const
   return 0;
 }
 
+
+void Tri::nodes_on_side (const unsigned int i, std::vector<unsigned int> & nodes ) const
+{
+  switch (i)
+  {
+    case 0:
+    {
+      nodes.push_back(0);
+      nodes.push_back(1);
+      return;
+    }
+    case 1:
+    {
+      nodes.push_back(1);
+      nodes.push_back(2);
+      return;
+    }
+    case 2:
+    {
+      nodes.push_back(2);
+      nodes.push_back(0);
+      return;
+    }
+    default:
+    {
+      genius_error();
+    }
+  }
+
+}
 
 
 AutoPtr<DofObject> Tri::side (const unsigned int i) const
@@ -65,31 +88,31 @@ AutoPtr<DofObject> Tri::side (const unsigned int i) const
     {
     case 0:
       {
-    edge->set_node(0) = this->get_node(0);
-    edge->set_node(1) = this->get_node(1);
+        edge->set_node(0) = this->get_node(0);
+        edge->set_node(1) = this->get_node(1);
 
         AutoPtr<DofObject> ap_edge(edge);
-    return ap_edge;
+        return ap_edge;
       }
     case 1:
       {
-    edge->set_node(0) = this->get_node(1);
-    edge->set_node(1) = this->get_node(2);
+        edge->set_node(0) = this->get_node(1);
+        edge->set_node(1) = this->get_node(2);
 
         AutoPtr<DofObject> ap_edge(edge);
-    return ap_edge;
+        return ap_edge;
       }
     case 2:
       {
-    edge->set_node(0) = this->get_node(2);
-    edge->set_node(1) = this->get_node(0);
+        edge->set_node(0) = this->get_node(2);
+        edge->set_node(1) = this->get_node(0);
 
         AutoPtr<DofObject> ap_edge(edge);
-    return ap_edge;
+        return ap_edge;
       }
     default:
       {
-    genius_error();
+        genius_error();
       }
     }
 

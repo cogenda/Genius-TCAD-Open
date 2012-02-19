@@ -57,6 +57,11 @@ class FVM_Semiconductor_NodeData : public FVM_NodeData
       _psi_,
 
       /**
+       * correction of potential
+       */
+      _dpsi_,
+
+      /**
        * lattice temperature
        */
       _T_,
@@ -182,6 +187,11 @@ class FVM_Semiconductor_NodeData : public FVM_NodeData
       _Recomb_Auger_,
 
       /**
+       * impact ionization
+       */
+      _ImpactIonization_,
+
+      /**
        * the _OptG_*time +  _PatG_*time
        */
       _Field_G_,
@@ -197,9 +207,19 @@ class FVM_Semiconductor_NodeData : public FVM_NodeData
       _OptQ_,
 
       /**
+       * energy deposite of incident wave
+       */
+      _OptE_,
+
+      /**
        * carrier generation due to high energy particle
        */
       _PatG_,
+
+      /**
+       * energy deposite of high energy particle
+       */
+      _PatE_,
 
       /**
        * electron inject ratio
@@ -240,6 +260,21 @@ class FVM_Semiconductor_NodeData : public FVM_NodeData
        * hole temperature, at previous time step
        */
       _Tp_last_,
+
+      /**
+       * old electron density
+       */
+      _n_old_,
+
+      /**
+       * old hole density
+       */
+      _p_old_,
+
+      /**
+       * old electrostatic potential
+       */
+      _psi_old_,
 
       /**
        * charge density
@@ -503,6 +538,20 @@ class FVM_Semiconductor_NodeData : public FVM_NodeData
 
 
 
+
+    /**
+     * @return the correction of potential
+     */
+    virtual Real         dpsi()          const
+    { return _data_storage->scalar ( _dpsi_, _offset ); }
+
+    /**
+     * @return the writable reference to correction of potential
+     */
+    virtual Real &       dpsi()
+    { return _data_storage->scalar ( _dpsi_, _offset ); }
+
+
     /**
      * @return the lattice temperature
      */
@@ -690,6 +739,19 @@ class FVM_Semiconductor_NodeData : public FVM_NodeData
     { return _data_storage->scalar ( _psi_last_, _offset ); }
 
 
+    /**
+     * @return the old statistic potential
+     */
+    virtual Real         psi_old()          const
+    { return _data_storage->scalar ( _psi_old_, _offset ); }
+
+    /**
+     * @return the writable reference to old statistic potential
+     */
+    virtual Real &       psi_old()
+    { return _data_storage->scalar ( _psi_old_, _offset ); }
+
+
 
     /**
      * @return the lattice temperature at previous time step
@@ -717,6 +779,17 @@ class FVM_Semiconductor_NodeData : public FVM_NodeData
     virtual Real &       n_last()
     { return _data_storage->scalar ( _n_last_, _offset ); }
 
+    /**
+     * @return the old electron density
+     */
+    virtual Real         n_old()          const
+    { return _data_storage->scalar ( _n_old_, _offset ); }
+
+    /**
+     * @return the writable reference to old electron density
+     */
+    virtual Real &       n_old()
+    { return _data_storage->scalar ( _n_old_, _offset ); }
 
 
     /**
@@ -730,6 +803,18 @@ class FVM_Semiconductor_NodeData : public FVM_NodeData
      */
     virtual Real &       p_last()
     { return _data_storage->scalar ( _p_last_, _offset ); }
+
+    /**
+     * @return the old hole density
+     */
+    virtual Real         p_old()          const
+    { return _data_storage->scalar ( _p_old_, _offset ); }
+
+    /**
+     * @return the writable reference to old hole density
+     */
+    virtual Real &       p_old()
+    { return _data_storage->scalar ( _p_old_, _offset ); }
 
 
     /**
@@ -1089,6 +1174,18 @@ class FVM_Semiconductor_NodeData : public FVM_NodeData
     virtual Real &       Recomb_Auger()
     { return _data_storage->scalar ( _Recomb_Auger_, _offset ); }
 
+    /**
+     * @return the impact ionization
+     */
+    virtual Real         ImpactIonization()          const
+    { return _data_storage->scalar ( _ImpactIonization_, _offset ); }
+
+    /**
+     * @return the writable reference to impact ionization
+     */
+    virtual Real &       ImpactIonization()
+    { return _data_storage->scalar ( _ImpactIonization_, _offset ); }
+
 
     /**
      * @return the electrical field
@@ -1168,6 +1265,19 @@ class FVM_Semiconductor_NodeData : public FVM_NodeData
     virtual Real &       OptQ()
     { return _data_storage->scalar ( _OptQ_, _offset ); }
 
+
+    /**
+     * @return the optical energy
+     */
+    virtual Real         OptE()          const
+    { return _data_storage->scalar ( _OptE_, _offset ); }
+
+    /**
+     * @return the writable optical energy
+     */
+    virtual Real &       OptE()
+    { return _data_storage->scalar ( _OptE_, _offset ); }
+
     /**
      * @return the particle generation ratio
      */
@@ -1179,6 +1289,20 @@ class FVM_Semiconductor_NodeData : public FVM_NodeData
      */
     virtual Real &       PatG()
     { return _data_storage->scalar ( _PatG_, _offset ); }
+
+
+    /**
+     * @return the energy deposite of particle
+     */
+    virtual Real         PatE()          const
+    { return _data_storage->scalar ( _PatE_, _offset ); }
+
+    /**
+     * @return the writable energy deposite of particle
+     */
+    virtual Real &       PatE()
+    { return _data_storage->scalar ( _PatE_, _offset ); }
+
 
 
     /**

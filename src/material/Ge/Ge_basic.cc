@@ -53,7 +53,7 @@ public:
 
   void atom_fraction(std::vector<std::string> &atoms, std::vector<double> & fraction) const
   {
-    atoms.push_back("Germanium");
+    atoms.push_back("Ge");//Germanium
     fraction.push_back(1.0);
   }
 

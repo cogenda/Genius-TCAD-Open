@@ -89,6 +89,17 @@ public:
   { return FVM_NodeData::_scalar_dummy_; }
 
 
+  /**
+   * @return the correction of potential
+   */
+  virtual Real         dpsi()          const
+  { return 0; }
+
+  /**
+   * @return the writable reference to correction of potential
+   */
+  virtual Real &       dpsi()
+  { return FVM_NodeData::_scalar_dummy_; }
 
   /**
    * @return the lattice temperature
@@ -271,6 +282,18 @@ public:
   virtual Real &       psi_last()
   { return FVM_NodeData::_scalar_dummy_; }
 
+  /**
+   * @return the old statistic potential
+   */
+  virtual Real         psi_old()          const
+  { return 0; }
+
+  /**
+   * @return the writable reference to old statistic potential
+   */
+  virtual Real &       psi_old()
+  { return FVM_NodeData::_scalar_dummy_; }
+
 
 
   /**
@@ -300,6 +323,19 @@ public:
   { return FVM_NodeData::_scalar_dummy_; }
 
 
+  /**
+   * @return the old electron density
+   */
+  virtual Real         n_old()          const
+  { return 0; }
+
+  /**
+   * @return the writable reference to old electron density
+   */
+  virtual Real &       n_old()
+  { return FVM_NodeData::_scalar_dummy_; }
+
+
 
   /**
    * @return the hole density at previous time step
@@ -311,6 +347,19 @@ public:
    * @return the writable reference to hole density at previous time step
    */
   virtual Real &       p_last()
+  { return FVM_NodeData::_scalar_dummy_; }
+
+
+  /**
+   * @return the old hole density
+   */
+  virtual Real         p_old()          const
+  { return 0; }
+
+  /**
+   * @return the writable reference to old hole density
+   */
+  virtual Real &       p_old()
   { return FVM_NodeData::_scalar_dummy_; }
 
 
@@ -569,6 +618,18 @@ public:
   virtual Real &       OptQ()
   { return FVM_NodeData::_scalar_dummy_; }
 
+  /**
+   * @return the optical energy
+   */
+  virtual Real         OptE()          const
+  { return 0; }
+
+  /**
+   * @return the writable optical energy
+   */
+  virtual Real &       OptE()
+  { return FVM_NodeData::_scalar_dummy_; }
+
 
   /**
    * @return the particle generation ratio
@@ -580,6 +641,18 @@ public:
    * @return the writable particle generation ratio
    */
   virtual Real &       PatG()
+  { return FVM_NodeData::_scalar_dummy_; }
+
+  /**
+   * @return the particle energy
+   */
+  virtual Real         PatE()          const
+  { return 0; }
+
+  /**
+   * @return the writable particle generation ratio
+   */
+  virtual Real &       PatE()
   { return FVM_NodeData::_scalar_dummy_; }
 
 
@@ -723,6 +796,19 @@ public:
    * @return the writable reference to SRH recombnation rate
    */
   virtual Real &       Recomb_SRH()
+  { return FVM_NodeData::_scalar_dummy_; }
+
+
+  /**
+   * @return the impact ionization
+   */
+  virtual Real         ImpactIonization()          const
+  { return 0; }
+
+  /**
+   * @return the writable reference to impact ionization
+   */
+  virtual Real &       ImpactIonization()
   { return FVM_NodeData::_scalar_dummy_; }
 
 

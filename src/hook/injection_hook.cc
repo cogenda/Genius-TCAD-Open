@@ -138,7 +138,7 @@ InjectionHook::InjectionHook(SolverBase & solver, const std::string & name, void
         {
           const Node * node = fvm_side->get_node(v);
           if(node == fvm_node->root_node())
-            injection_surface.surface_area.push_back(fvm_side->partial_volume(v));
+            injection_surface.surface_area.push_back(fvm_side->partial_volume_truncated(v));
         }
       }
       injection_surface.surface_patches = fvm_node->partly_has_n_elem();
@@ -240,7 +240,7 @@ void InjectionHook::on_close()
 
 
 
-#ifndef CYGWIN
+#ifdef DLLHOOK
 
 // dll interface
 extern "C"

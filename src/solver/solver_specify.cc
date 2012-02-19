@@ -21,7 +21,7 @@
 
 //  $Id: solver_specify.cc,v 1.5 2008/07/09 12:25:19 gdiso Exp $
 
-
+#include <limits>
 #include <deque>
 #include <string>
 #include <vector>
@@ -35,7 +35,7 @@ using PhysicalUnit::V;
 using PhysicalUnit::W;
 using PhysicalUnit::C;
 using PhysicalUnit::s;
-
+using PhysicalUnit::um;
 
 /**
  * this namespace stores information for controlling the solver.
@@ -63,6 +63,11 @@ namespace SolverSpecify
    * the prefix string for output file
    */
   std::string      out_prefix;
+
+  /**
+   * the append model for output file
+   */
+  bool      out_append;
 
   /**
    * hooks to be installed \<id \<hook_name, hook_parameters\> \>
@@ -95,6 +100,57 @@ namespace SolverSpecify
    */
   VoronoiTruncationFlag VoronoiTruncation;
 
+  //--------------------------------------------
+  // half implicit method
+  //--------------------------------------------
+
+  /**
+   * linear solver scheme: LU, BCGS, GMRES ... for carrier continuity equation
+   */
+  LinearSolverType        LS_CARRIER;
+
+  /**
+   * linear solver scheme: LU, BCGS, GMRES ... for full current equation
+   */
+  LinearSolverType        LS_CURRENT;
+
+  /**
+   * linear solver scheme: LU, BCGS, GMRES ... for poisson correction equation
+   */
+  LinearSolverType        LS_POISSON;
+
+  /**
+   * preconditioner scheme: ASM ILU ... for carrier continuity equation
+   */
+  PreconditionerType      PC_CARRIER;
+
+  /**
+   * preconditioner scheme: ASM ILU ... for full current equation
+   */
+  PreconditionerType      PC_CURRENT;
+
+  /**
+   * preconditioner scheme: ASM ILU ... for poisson correction equation
+   */
+  PreconditionerType      PC_POISSON;
+
+  /**
+   * linearize error threshold of half implicit method
+   */
+  double    LinearizeErrorThreshold;
+
+
+  /**
+   * solve carrier distribution again after poisson correction in half implicit method
+   */
+  bool      ReSolveCarrier;
+
+  /**
+   * allow artificial carrier generation,
+   * which makes poisson's equation self-consistant
+   */
+  bool      ArtificialCarrier;
+
 
   //--------------------------------------------
   // linear solver convergence criteria
@@ -115,6 +171,11 @@ namespace SolverSpecify
    * where fnorm is the nonlinear function norm
    */
   double   ksp_atol_fnorm;
+
+  /**
+   * consider the system is singular
+   */
+  bool     ksp_singular;
 
   //--------------------------------------------
   // nonlinear solver convergence criteria
@@ -195,6 +256,11 @@ namespace SolverSpecify
    */
   double      electrode_abs_toler;
 
+  /**
+   * The absolute converged criteria for the spice circuit.
+   */
+  double      spice_abs_toler;
+
   //--------------------------------------------
   // TS (transient solver)
   //--------------------------------------------
@@ -221,6 +287,11 @@ namespace SolverSpecify
   double    TStep;
 
   /**
+   * the minimal time step. TStep will not exceed this value
+   */
+  double    TStepMin;
+
+  /**
    * the maximum time step. TStep will not exceed this value
    */
   double    TStepMax;
@@ -234,6 +305,11 @@ namespace SolverSpecify
    * indicate if auto step control should be used
    */
   bool      AutoStep;
+
+  /**
+   * reject time steps that LTE not satisfied
+   */
+  bool      RejectStep;
 
   /**
    * indicate if predict of next solution value should be used
@@ -253,7 +329,7 @@ namespace SolverSpecify
   /**
    * indicate BDF2 can be started.
    */
-  bool      BDF2_restart;
+  bool      BDF2_LowerOrder;
 
   /**
    * use initial condition, only for mixA solver
@@ -289,6 +365,7 @@ namespace SolverSpecify
    *  the simulation cycles
    */
   int       T_Cycles;
+
 
   //------------------------------------------------------
   // parameters for DC and TRACE simulation
@@ -350,6 +427,11 @@ namespace SolverSpecify
   int       DC_Cycles;
 
   /**
+   * use node set, only for mixA solver
+   */
+  bool      NodeSet;
+
+  /**
    * ramp up the voltage/current sources in circuit, only for mixA solver
    */
   int       RampUpSteps;
@@ -375,14 +457,11 @@ namespace SolverSpecify
    */
   double    Gmin;
 
-  //------------------------------------------------------
-  // parameters for MIX simulation
-  //------------------------------------------------------
-
   /**
-   * TCP port number
+   * drive the system to steadystate
    */
-  unsigned short int ServerPort;
+  bool     OpToSteady;
+
 
   //------------------------------------------------------
   // parameters for AC simulation
@@ -419,7 +498,83 @@ namespace SolverSpecify
 
 
   //------------------------------------------------------
-  // parameters for MIX simulation
+  // parameters for pseudo time stepping method
+  //------------------------------------------------------
+
+  /**
+   * if pseudo time stepping method enabled
+   */
+  bool PseudoTimeMethod;
+
+  /**
+   * if pseudo time method for CMOS enabled
+   * in this mode, sigma of metal region will be modified
+   */
+  bool PseudoTimeCMOS;
+
+  /**
+   * characteristic length of CMOS device, default value is 0.1um
+   */
+  double PseudoTimeCMOSLambda;
+
+  /**
+   * characteristic resistance of CMOS device, default value is 1K
+   */
+  double PseudoTimeCMOSRes;
+
+  /**
+   * characteristic capatance of CMOS device, default value is 1f
+   */
+  double PseudoTimeCMOSCap;
+
+  /**
+   * characteristic time of CMOS device, default value is 0.1ns
+   */
+  double PseudoTimeCMOSTime;
+
+  /**
+   * pseudo time step for carrier in semiconductor region
+   */
+  double PseudoTimeStepCarrier;
+
+  /**
+   * pseudo time step for potential in semiconductor region
+   */
+  double PseudoTimeStepPotential;
+
+  /**
+   * pseudo time step for metal region
+   */
+  double PseudoTimeStepMetal;
+
+  /**
+   * maximum pseudo time step
+   */
+  double PseudoTimeStepMax;
+
+  /**
+   * relative X convergence criteria in pseudo time step mode
+   */
+  double PseudoTimeMethodRXTol;
+
+  /**
+   * relative function convergence criteria in pseudo time step mode
+   */
+  double PseudoTimeMethodRFTol;
+
+  /**
+   * convergence relax to absolute tol in pseudo time step mode
+   */
+  double PseudoTimeTolRelax;
+
+  /**
+   * max pseudo time step
+   */
+  int PseudoTimeSteps;
+
+
+  //------------------------------------------------------
+  // parameters for optical / particle effect
   //------------------------------------------------------
 
   /**
@@ -433,6 +588,15 @@ namespace SolverSpecify
    * the particle carrier generation is considered in the simulation
    */
   bool      PatG;
+
+  /**
+   * coupled source effect
+   */
+  bool      SourceCoupled;
+
+  //------------------------------------------------------
+  // initial parameters
+  //------------------------------------------------------
 
   /**
    * set default values
@@ -449,53 +613,86 @@ namespace SolverSpecify
     LS                = BCGSL;
     PC                = ASM_PRECOND;
 #endif
+
+    out_append        = false;
+
     Damping           = DampingPotential;
     VoronoiTruncation = VoronoiTruncationAlways;
-    MaxIteration      = 20;
 
+    LS_POISSON        = GMRES;
+    PC_POISSON        = ASM_PRECOND;
+    LinearizeErrorThreshold   = 1.0;
+    ReSolveCarrier    = false;
+    ArtificialCarrier = true;
 
     MaxIteration              = 30;
     potential_update          = 1.0;
 
     ksp_rtol                  = 1e-8;
-    ksp_atol                  = 1e-20;
-    ksp_atol_fnorm            = 1e-6;
+    ksp_atol                  = 1e-15;
+    ksp_atol_fnorm            = 1e-7;
+    ksp_singular              = false;
 
     absolute_toler            = 1e-12;
     relative_toler            = 1e-5;
     toler_relax               = 1e4;
-    poisson_abs_toler         = 1e-29*C;
-    elec_continuity_abs_toler = 5e-18*A;
-    hole_continuity_abs_toler = 5e-18*A;
+    poisson_abs_toler         = 1e-31*C;
+    elec_continuity_abs_toler = 1e-19*A;
+    hole_continuity_abs_toler = 1e-19*A;
     heat_equation_abs_toler   = 1e-11*W;
     elec_energy_abs_toler     = 1e-18*W;
     hole_energy_abs_toler     = 1e-18*W;
     electrode_abs_toler       = 1e-9*V;
+    spice_abs_toler           = 1e-15*A;
     elec_quantum_abs_toler    = 1e-29*C;
     hole_quantum_abs_toler    = 1e-29*C;
 
-    TimeDependent     = false;
-    TS_type           = BDF2;
-    BDF2_restart      = true;
-    UIC               = false;
-    tran_op           = true;
-    AutoStep          = true;
-    Predict           = true;
-    clock             = 0.0;
+    TimeDependent             = false;
+    TStepMin                  = 1e-14*s;
+    TS_type                   = BDF2;
+    BDF2_LowerOrder           = true;
+    UIC                       = false;
+    tran_op                   = true;
+    AutoStep                  = true;
+    RejectStep                = true;
+    Predict                   = true;
+    clock                     = 0.0;
+    dt                        = 1e100;
+
 
     VStepMax          = 1.0;
     IStepMax          = 1.0;
 
+    NodeSet           = true;
     RampUpSteps       = 1;
-    RampUpVStep       = 0.25;
-    RampUpIStep       = 0.1;
+    RampUpVStep       = std::numeric_limits<double>::infinity();
+    RampUpIStep       = std::numeric_limits<double>::infinity();
 
-    GminInit          = 1e-6;
+    GminInit          = 1e-12;
     Gmin              = 1e-12;
 
     VAC               = 0.0;
+
+    OpToSteady        = true;
+
     OptG              = false;
     PatG              = false;
+    SourceCoupled     = false;
+
+    PseudoTimeMethod            = false;
+    PseudoTimeCMOS              = true;
+    PseudoTimeCMOSLambda        = 0.1*um;
+    PseudoTimeCMOSRes           = 1e3*V/A;
+    PseudoTimeCMOSCap           = 1e-15*C/V;
+    PseudoTimeCMOSTime          = 1e-10*s;
+    PseudoTimeStepPotential     = 1e-6*s;
+    PseudoTimeStepCarrier       = 1e-8*s;
+    PseudoTimeStepMetal         = 1e-10*s;
+    PseudoTimeStepMax           = 1e-6*s;
+    PseudoTimeMethodRXTol       = 1e-2;
+    PseudoTimeMethodRFTol       = 1e-2;
+    PseudoTimeTolRelax          = 1e8;
+    PseudoTimeSteps             = 50;
   }
 
   SolutionType type_string_to_enum(const std::string s)

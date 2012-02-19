@@ -24,13 +24,17 @@
 #include <sstream>
 #include <iomanip>
 
+
 #include "genius_common.h"
+#include "parser.h"
 #include "simulation_system.h"
 #include "simulation_region.h"
 #include "field_source.h"
+#include "light_lenses.h"
 #include "solver_specify.h"
 #include "log.h"
 #include "parallel.h"
+
 
 
 using  PhysicalUnit::s;
@@ -57,6 +61,9 @@ FieldSource::FieldSource(SimulationSystem & system, Parser::InputParser & decks)
       }
     }
   }
+
+  // if any lens defined?
+  _light_lenses = new LightLenses(_decks);
 
   for( _decks.begin(); !_decks.end(); _decks.next() )
   {
@@ -114,16 +121,20 @@ FieldSource::FieldSource(SimulationSystem & system, Parser::InputParser & decks)
 
     if(c.key() == "RAYTRACE" )
     {
-      Light_Source * light_source = new Light_Source(system);
+      Light_Source * light_source = new Light_Source_RayTracing(system, c);
       add_light_source(light_source);
     }
 
     if(c.key() == "EMFEM2D")
     {
-      Light_Source * light_source = new Light_Source(system);
+      Light_Source * light_source = new Light_Source_EMFEM2D(system, c);
       add_light_source(light_source);
     }
   }
+
+#if defined(HAVE_FENV_H) && defined(DEBUG)
+  genius_assert( !fetestexcept(FE_INVALID) );
+#endif
 }
 
 
@@ -143,13 +154,33 @@ FieldSource::~FieldSource()
   std::map<std::string, Waveform *>::iterator it= _waveforms.begin();
   for(; it!=_waveforms.end(); ++it )
     delete it->second;
+
+  //free lens
+  delete _light_lenses;
 }
 
 
-void FieldSource::update(double time)
+void FieldSource::update(double time, bool force_update_system)
 {
   // fast detect if we need to do something
   if(!SolverSpecify::PatG && !SolverSpecify::OptG) return;
+
+  if(force_update_system)
+    this->update_system();
+
+  // second order trapezoidal quadrature
+  double particle_gen_waveform = 0.0;
+  std::vector<Particle_Source *>::iterator pit = _particle_sources.begin();
+  for(; pit!=_particle_sources.end(); ++pit)
+  {
+    particle_gen_waveform += 0.5*((*pit)->carrier_generation(time) + (*pit)->carrier_generation(time-SolverSpecify::dt));
+  }
+
+
+  double optical_gen_waveform = 1.0;
+  if(current_waveform)
+    optical_gen_waveform = 0.5*(current_waveform->waveform(time) + current_waveform->waveform(time-SolverSpecify::dt));
+
 
   for(unsigned int n=0; n<_system.n_regions(); n++)
   {
@@ -162,29 +193,20 @@ void FieldSource::update(double time)
       {
         FVM_Node * fvm_node = (*it);
         FVM_NodeData * fvm_node_data = fvm_node->node_data();
-        genius_assert(fvm_node_data);
 
         double G=0;
 
         if(SolverSpecify::PatG)
         {
-          std::vector<Particle_Source *>::iterator pit = _particle_sources.begin();
-          for(; pit!=_particle_sources.end(); ++pit)
-          {
-            G += fvm_node_data->PatG()*(*pit)->carrier_generation(time);
-          }
+          G += fvm_node_data->PatG()*particle_gen_waveform;
         }
 
         if(SolverSpecify::OptG)
         {
-          double A = 1.0;
-          if(current_waveform)
-            A = current_waveform->waveform(time);
-          G += fvm_node_data->OptG()*A;
+          G += fvm_node_data->OptG()*optical_gen_waveform;
         }
 
         fvm_node_data->Field_G() = G;
-
       }
     }
   }
@@ -196,13 +218,69 @@ void FieldSource::update(double time)
 
 void FieldSource::update_system()
 {
+  // clear old particle and optical generation if exist
+  for(unsigned int n=0; n<_system.n_regions(); n++)
+  {
+    SimulationRegion * region = _system.region(n);
+    if( region->type()== SemiconductorRegion)
+    {
+      SimulationRegion::processor_node_iterator it = region->on_local_nodes_begin();
+      SimulationRegion::processor_node_iterator it_end = region->on_local_nodes_end();
+      for(; it!=it_end; ++it)
+      {
+        FVM_Node * fvm_node = (*it);
+        FVM_NodeData * fvm_node_data = fvm_node->node_data();
+        fvm_node_data->PatG() = 0.0;
+        fvm_node_data->OptG() = 0.0;
+      }
+    }
+  }
+
+  // calculate particle generation
   std::vector<Particle_Source *>::iterator pit = _particle_sources.begin();
   for(; pit!=_particle_sources.end(); ++pit)
     (*pit)->update_system();
 
+  // calculate optical generation
   std::vector<Light_Source *>::iterator lit = _light_sources.begin();
   for(; lit!=_light_sources.end(); ++lit)
     (*lit)->update_system();
+
+#if defined(HAVE_FENV_H) && defined(DEBUG)
+  genius_assert( !fetestexcept(FE_INVALID) );
+#endif
+}
+
+
+
+double FieldSource::limit_dt(double time, double dt) const
+{
+  std::vector<Particle_Source *>::const_iterator pit = _particle_sources.begin();
+  for(; pit!=_particle_sources.end(); ++pit)
+    dt = std::min(dt, (*pit)->limit_dt(time, dt));
+
+  if(current_waveform)
+  {
+    double dt_orig = dt;
+    do
+    {
+      double a1 = current_waveform->waveform(time);
+      double am = current_waveform->waveform(time+0.5*dt);
+      double a2 = current_waveform->waveform(time+dt);
+      if( 0.5*fabs(a1+a2)<1e-3 || fabs(am-0.5*a1-0.5*a2)<0.05*fabs(a1+a2) ) break;
+      if( dt < 0.1*dt_orig ) break;
+    } while( dt*=0.9 );
+  }
+  return dt;
+}
+
+
+bool FieldSource::request_serial_mesh() const
+{
+  std::vector<Light_Source *>::const_iterator lit = _light_sources.begin();
+  for(; lit!=_light_sources.end(); ++lit)
+    if( (*lit)->light_source_type() == "light_source_raytracing") return true;
+  return false;
 }
 
 
@@ -263,7 +341,7 @@ void FieldSource::parse_spectrum_file(const std::string & filename, SimulationSy
 
         if(ss.fail())
         {
-          MESSAGE<<"ERROR at " << c.get_fileline() <<": error reading spectrum file " << filename << std::endl; RECORD();
+          MESSAGE<<"ERROR at " << c.get_fileline() <<": Reading spectrum file error." << filename << std::endl; RECORD();
           genius_error();
         }
 
@@ -307,7 +385,11 @@ void FieldSource::parse_spectrum_file(const std::string & filename, SimulationSy
   unsigned int n_sources = sources.size();
 
   //post process
-  genius_assert(n_sources>=2);
+  if(n_sources < 2)
+  {
+    MESSAGE<<"ERROR at " << c.get_fileline() <<": Spectrum file shoule contain at least 2 spectrums." << filename << std::endl; RECORD();
+    genius_error();
+  }
 
   double total_power = 0.0;
   std::vector<double> lambda_distance;
@@ -323,7 +405,7 @@ void FieldSource::parse_spectrum_file(const std::string & filename, SimulationSy
 
     if(ld<=0)
     {
-      MESSAGE << "Wavelength must be strictly increasing." << std::endl; RECORD();
+      MESSAGE<<"ERROR at " << c.get_fileline() <<": Wavelength in spectrum file must be strictly increasing." << filename << std::endl; RECORD();
       genius_error();
     }
 
@@ -367,7 +449,7 @@ void FieldSource::SetWaveformGauss(const Parser::Card &c)
 
   double amplitude = c.get_real("amplitude", 1.0);
   double t0 = c.get_real("t0",0.0)*s;
-  double tao = c.get_real("tao",1e-12)*s;
+  double tao = c.get_real("tau",1e-12)*s;
 
   _waveforms[label] = new WaveformGauss(label, t0, tao, amplitude);
 }

@@ -43,7 +43,7 @@ using PhysicalUnit::e;
 /*---------------------------------------------------------------------
  * do pre-process to function for DDM1 solver
  */
-void ChargedContactBC::DDM1_Function_Preprocess(Vec f, std::vector<PetscInt> &src_row,
+void ChargedContactBC::DDM1_Function_Preprocess(PetscScalar *, Vec f, std::vector<PetscInt> &src_row,
     std::vector<PetscInt> &dst_row, std::vector<PetscInt> &clear_row)
 {
   const SimulationRegion * _r1 = bc_regions().first;
@@ -125,7 +125,7 @@ void ChargedContactBC::DDM1_Function(PetscScalar * x, Vec f, InsertMode &add_val
     PetscScalar V_metal = x[metal_node->local_offset()];
 
     // psi of metal node phi + affinity = fermi
-    PetscScalar f_fermi = V_metal + metal_node_data->affinity() - phi_f;
+    PetscScalar f_fermi = V_metal + metal_node_data->affinity()/e - phi_f;
     VecSetValue(f,  metal_node->global_offset(), f_fermi, ADD_VALUES);
 
     // search all the fvm_node which has *node_it as root node, these fvm_nodes have the same location in geometry,
@@ -182,7 +182,7 @@ void ChargedContactBC::DDM1_Function(PetscScalar * x, Vec f, InsertMode &add_val
   VecSetValue(f, this->inter_connect_hub()->global_offset(), surface_integral_electric_displacement, ADD_VALUES);
 
   add_value_flag = ADD_VALUES;
-  genius_assert( !fetestexcept(FE_INVALID) );
+
 }
 
 
@@ -253,7 +253,7 @@ void ChargedContactBC::DDM1_Jacobian_Reserve(Mat *jac, InsertMode &add_value_fla
 /*---------------------------------------------------------------------
  * do pre-process to jacobian matrix for DDM1 solver
  */
-void ChargedContactBC::DDM1_Jacobian_Preprocess(Mat *jac, std::vector<PetscInt> &src_row,
+void ChargedContactBC::DDM1_Jacobian_Preprocess(PetscScalar *, Mat *jac, std::vector<PetscInt> &src_row,
     std::vector<PetscInt> &dst_row, std::vector<PetscInt> &clear_row)
 {
 
@@ -327,7 +327,7 @@ void ChargedContactBC::DDM1_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_
     AutoDScalar V_metal = x[metal_node->local_offset()];  V_metal.setADValue(1, 1.0);
 
     // psi of metal node phi + affinity = fermi
-    AutoDScalar f_fermi = V_metal + metal_node_data->affinity() - phi_f;
+    AutoDScalar f_fermi = V_metal + metal_node_data->affinity()/e - phi_f;
     // set Jacobian of governing equation ff
     MatSetValue(*jac, metal_node->global_offset(), metal_node->global_offset(), f_fermi.getADValue(1), ADD_VALUES);
     MatSetValue(*jac, metal_node->global_offset(), this->inter_connect_hub()->global_offset(), f_fermi.getADValue(0), ADD_VALUES);
@@ -380,7 +380,7 @@ void ChargedContactBC::DDM1_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_
 
   // the last operator is ADD_VALUES
   add_value_flag = ADD_VALUES;
-  genius_assert( !fetestexcept(FE_INVALID) );
+
 }
 
 
@@ -390,6 +390,13 @@ void ChargedContactBC::DDM1_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_
 void ChargedContactBC::DDM1_Update_Solution(PetscScalar *lxx)
 {
   const SimulationRegion * _r2 = bc_regions().second;
-  this->psi() = lxx[this->inter_connect_hub()->local_offset()] - _r2->get_affinity(T_external());
+  this->psi() = lxx[this->inter_connect_hub()->local_offset()] - _r2->get_affinity(T_external())/e;
+}
+
+
+
+void ChargedContactBC::DDM1_Pre_Process()
+{
+  _current_flow = 0.0;
 }
 

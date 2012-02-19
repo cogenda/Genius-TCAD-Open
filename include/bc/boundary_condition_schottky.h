@@ -69,30 +69,6 @@ public:
   virtual void set_boundary_type(BoundaryType type)
   { _bd_type = type; }
 
-  /**
-   * @return the heat transfer rate of this boundary
-   */
-  virtual PetscScalar Heat_Transfer() const
-    {return _Heat_Transfer;}
-
-  /**
-   * @return writable reference to heat transfer rate of this boundary
-   */
-  virtual PetscScalar & Heat_Transfer()
-  {return _Heat_Transfer;}
-
-
-  /**
-   * @return the work function of electrode material
-   */
-  virtual PetscScalar Work_Function() const
-    {return _WorkFunction;}
-
-  /**
-   * @return writable reference to work function of electrode material
-   */
-  virtual PetscScalar & Work_Function()
-  {return _WorkFunction;}
 
   /**
    * @return the reflection flag of this boundary
@@ -126,15 +102,6 @@ public:
   virtual std::string boundary_condition_in_string() const;
 
 private:
-  /**
-   * heat transfer rate of this boundary
-   */
-  PetscScalar   _Heat_Transfer;
-
-  /**
-   * workfunction of electrode material
-   */
-  PetscScalar   _WorkFunction;
 
   /**
    * the boundary type, can be interface or boundary.
@@ -160,7 +127,7 @@ public:
   /**
    * preprocess Jacobian function for poisson solver
    */
-  virtual void Poissin_Function_Preprocess(Vec, std::vector<PetscInt>&, std::vector<PetscInt>&, std::vector<PetscInt>&);
+  virtual void Poissin_Function_Preprocess(PetscScalar *, Vec, std::vector<PetscInt>&, std::vector<PetscInt>&, std::vector<PetscInt>&);
 
   /**
    * build function and its jacobian for poisson solver, nothing to do
@@ -175,7 +142,7 @@ public:
   /**
    * preprocess Jacobian Matrix for poisson solver
    */
-  virtual void Poissin_Jacobian_Preprocess(Mat *, std::vector<PetscInt>&, std::vector<PetscInt>&, std::vector<PetscInt>&);
+  virtual void Poissin_Jacobian_Preprocess(PetscScalar *, Mat *, std::vector<PetscInt>&, std::vector<PetscInt>&, std::vector<PetscInt>&);
 
   /**
    * build function and its jacobian for poisson solver, nothing to do
@@ -199,7 +166,7 @@ public:
   /**
    * preprocess function for level 1 DDM solver
    */
-  virtual void DDM1_Function_Preprocess(Vec, std::vector<PetscInt>&, std::vector<PetscInt>&, std::vector<PetscInt>&);
+  virtual void DDM1_Function_Preprocess(PetscScalar *, Vec, std::vector<PetscInt>&, std::vector<PetscInt>&, std::vector<PetscInt>&);
 
   /**
    * reserve none zero pattern in petsc matrix.
@@ -214,7 +181,7 @@ public:
   /**
    * preprocess Jacobian Matrix of level 1 DDM equation.
    */
-  virtual void DDM1_Jacobian_Preprocess(Mat *, std::vector<PetscInt>&, std::vector<PetscInt>&, std::vector<PetscInt>&);
+  virtual void DDM1_Jacobian_Preprocess(PetscScalar *, Mat *, std::vector<PetscInt>&, std::vector<PetscInt>&, std::vector<PetscInt>&);
 
   /**
    * build function and its jacobian for DDML1 solver
@@ -239,7 +206,7 @@ public:
   /**
    * preprocess function for level 1 DDM solver
    */
-  virtual void MixA_DDM1_Function_Preprocess(Vec, std::vector<PetscInt>&, std::vector<PetscInt>&, std::vector<PetscInt>&);
+  virtual void MixA_DDM1_Function_Preprocess(PetscScalar *, Vec, std::vector<PetscInt>&, std::vector<PetscInt>&, std::vector<PetscInt>&);
 
   /**
    * build function and its jacobian for Advanced Mixed DDML1 solver
@@ -254,7 +221,7 @@ public:
   /**
    * preprocess Jacobian Matrix for Advanced Mixed type level 1 DDM equation.
    */
-  virtual void MixA_DDM1_Jacobian_Preprocess(Mat *, std::vector<PetscInt> &,  std::vector<PetscInt> &, std::vector<PetscInt> &);
+  virtual void MixA_DDM1_Jacobian_Preprocess(PetscScalar *, Mat *, std::vector<PetscInt> &,  std::vector<PetscInt> &, std::vector<PetscInt> &);
 
   /**
    * build function and its jacobian for Advanced Mixed DDML1 solver
@@ -274,7 +241,7 @@ public:
   /**
    * preprocess function for level 2 DDM solver
    */
-  virtual void DDM2_Function_Preprocess(Vec, std::vector<PetscInt>&, std::vector<PetscInt>&, std::vector<PetscInt>&);
+  virtual void DDM2_Function_Preprocess(PetscScalar * ,Vec, std::vector<PetscInt>&, std::vector<PetscInt>&, std::vector<PetscInt>&);
 
   /**
    * build function and its jacobian for DDML2 solver
@@ -289,7 +256,7 @@ public:
   /**
    * preprocess Jacobian Matrix of level 2 DDM equation.
    */
-  virtual void DDM2_Jacobian_Preprocess(Mat *, std::vector<PetscInt>&, std::vector<PetscInt>&, std::vector<PetscInt>&);
+  virtual void DDM2_Jacobian_Preprocess(PetscScalar *,Mat *, std::vector<PetscInt>&, std::vector<PetscInt>&, std::vector<PetscInt>&);
 
   /**
    * build function and its jacobian for DDML2 solver
@@ -314,7 +281,7 @@ public:
   /**
    * preprocess function for level 2 DDM solver
    */
-  virtual void MixA_DDM2_Function_Preprocess(Vec, std::vector<PetscInt>&, std::vector<PetscInt>&, std::vector<PetscInt>&);
+  virtual void MixA_DDM2_Function_Preprocess(PetscScalar * ,Vec, std::vector<PetscInt>&, std::vector<PetscInt>&, std::vector<PetscInt>&);
 
   /**
    * build function and its jacobian for Advanced Mixed DDML2 solver
@@ -329,7 +296,7 @@ public:
   /**
    * preprocess Jacobian Matrix for Advanced Mixed type level 2 DDM equation.
    */
-  virtual void MixA_DDM2_Jacobian_Preprocess(Mat *, std::vector<PetscInt> &,  std::vector<PetscInt> &, std::vector<PetscInt> &);
+  virtual void MixA_DDM2_Jacobian_Preprocess(PetscScalar *,Mat *, std::vector<PetscInt> &,  std::vector<PetscInt> &, std::vector<PetscInt> &);
 
   /**
    * build function and its jacobian for Advanced Mixed DDML2 solver
@@ -349,7 +316,7 @@ public:
   /**
    * preprocess function for level 3 EBM solver
    */
-  virtual void EBM3_Function_Preprocess(Vec, std::vector<PetscInt>&, std::vector<PetscInt>&, std::vector<PetscInt>&);
+  virtual void EBM3_Function_Preprocess(PetscScalar *,Vec, std::vector<PetscInt>&, std::vector<PetscInt>&, std::vector<PetscInt>&);
 
   /**
    * build function and its jacobian for level 3 EBM solver
@@ -364,7 +331,7 @@ public:
   /**
    * preprocess Jacobian Matrix of level 3 EBM equation.
    */
-  virtual void EBM3_Jacobian_Preprocess(Mat *, std::vector<PetscInt>&, std::vector<PetscInt>&, std::vector<PetscInt>&);
+  virtual void EBM3_Jacobian_Preprocess(PetscScalar * ,Mat *, std::vector<PetscInt>&, std::vector<PetscInt>&, std::vector<PetscInt>&);
 
   /**
    * build function and its jacobian for level 3 EBM solver
@@ -389,7 +356,7 @@ public:
   /**
    * preprocess function for Advanced Mixed EBM3 solver
    */
-  virtual void MixA_EBM3_Function_Preprocess(Vec, std::vector<PetscInt>&, std::vector<PetscInt>&, std::vector<PetscInt>&);
+  virtual void MixA_EBM3_Function_Preprocess(PetscScalar *,Vec, std::vector<PetscInt>&, std::vector<PetscInt>&, std::vector<PetscInt>&);
 
   /**
    * build function and its jacobian for Advanced Mixed EBM3 solver
@@ -404,7 +371,7 @@ public:
   /**
    * preprocess Jacobian Matrix for Advanced Mixed type EBM3 equation.
    */
-  virtual void MixA_EBM3_Jacobian_Preprocess(Mat *, std::vector<PetscInt> &,  std::vector<PetscInt> &, std::vector<PetscInt> &);
+  virtual void MixA_EBM3_Jacobian_Preprocess(PetscScalar * ,Mat *, std::vector<PetscInt> &,  std::vector<PetscInt> &, std::vector<PetscInt> &);
 
   /**
    * build function and its jacobian for Advanced Mixed EBM3 solver

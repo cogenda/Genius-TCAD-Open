@@ -97,6 +97,14 @@ public:
    */
   inline const Point& normal () const;
 
+
+  /**
+   * Returns plane parameter as Ax+By+Cz+D=0
+   * normalize as A^2+B^2+C^2+D^2=1
+   */
+  void plane_parameter(Real &A, Real &B, Real &C, Real &D) const;
+
+
   /**
    * Creates an XY plane located at z=zpos,
    */
@@ -111,6 +119,21 @@ public:
    * Creates an YZ plane located at x=xpos,
    */
   void yz_plane (const Real xpos=0.);
+
+  /**
+   * @return true for plane XY
+   */
+  bool is_xy_plane() const;
+
+  /**
+   * @return true for plane XZ
+   */
+  bool is_xz_plane() const;
+
+  /**
+   * @return true for plane YZ
+   */
+  bool is_yz_plane() const;
 
   /**
    * @return the signed distance of p to the plane
@@ -158,6 +181,12 @@ public:
    * line segment should not parallel/on the plane
    */
   bool intersect_point(const Point& v1, const Point& v2, Point *result ) const;
+
+  /**
+   * @return the plane - ray intersection point by t
+   * ray should not parallel/on the plane
+   */
+  bool intersect_point(const Point& p, const Point& dir, Real &t ) const;
 
 private:
 

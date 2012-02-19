@@ -70,7 +70,7 @@ void ResistanceInsulatorBC::Poissin_Fill_Value(Vec , Vec L)
 /*---------------------------------------------------------------------
  * do pre-process to function for poisson solver
  */
-void ResistanceInsulatorBC::Poissin_Function_Preprocess(Vec f, std::vector<PetscInt> &src_row,
+void ResistanceInsulatorBC::Poissin_Function_Preprocess(PetscScalar *, Vec f, std::vector<PetscInt> &src_row,
     std::vector<PetscInt> &dst_row, std::vector<PetscInt> &clear_row)
 {
 
@@ -213,7 +213,7 @@ void ResistanceInsulatorBC::Poissin_Jacobian_Reserve(Mat *jac, InsertMode &add_v
 /*---------------------------------------------------------------------
  * do pre-process to jacobian matrix for poisson solver
  */
-void ResistanceInsulatorBC::Poissin_Jacobian_Preprocess(Mat *jac, std::vector<PetscInt> &src_row,
+void ResistanceInsulatorBC::Poissin_Jacobian_Preprocess(PetscScalar *, Mat *jac, std::vector<PetscInt> &src_row,
     std::vector<PetscInt> &dst_row, std::vector<PetscInt> &clear_row)
 {
 

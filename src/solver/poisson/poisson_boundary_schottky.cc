@@ -88,7 +88,7 @@ void SchottkyContactBC::Poissin_Fill_Value(Vec , Vec L)
 /*---------------------------------------------------------------------
  * do pre-process to function for poisson solver
  */
-void SchottkyContactBC::Poissin_Function_Preprocess(Vec f, std::vector<PetscInt> &src_row,
+void SchottkyContactBC::Poissin_Function_Preprocess(PetscScalar *, Vec f, std::vector<PetscInt> &src_row,
     std::vector<PetscInt> &dst_row, std::vector<PetscInt> &clear_row)
 {
   BoundaryCondition::const_node_iterator node_it = nodes_begin();
@@ -148,6 +148,8 @@ void SchottkyContactBC::Poissin_Function(PetscScalar * x, Vec f, InsertMode &add
     VecAssemblyEnd(f);
   }
 
+  const PetscScalar Work_Function = this->scalar("workfunction");
+
   BoundaryCondition::const_node_iterator node_it = nodes_begin();
   BoundaryCondition::const_node_iterator end_it = nodes_end();
   for(; node_it!=end_it; ++node_it )
@@ -180,7 +182,7 @@ void SchottkyContactBC::Poissin_Function(PetscScalar * x, Vec f, InsertMode &add
           PetscScalar V = x[fvm_nodes[i]->local_offset()];
 
           //governing equation for Schottky contact boundary
-          PetscScalar ff = V + Work_Function() - ext_circuit()->Vapp();
+          PetscScalar ff = V + Work_Function - ext_circuit()->Vapp();
 
           // set governing equation to function vector
           VecSetValue(f, fvm_nodes[i]->global_offset(), ff, ADD_VALUES);
@@ -318,7 +320,7 @@ void SchottkyContactBC::Poissin_Jacobian_Reserve(Mat *jac, InsertMode &add_value
 /*---------------------------------------------------------------------
  * do pre-process to jacobian matrix for poisson solver
  */
-void SchottkyContactBC::Poissin_Jacobian_Preprocess(Mat *jac, std::vector<PetscInt> &src_row,
+void SchottkyContactBC::Poissin_Jacobian_Preprocess(PetscScalar *, Mat *jac, std::vector<PetscInt> &src_row,
     std::vector<PetscInt> &dst_row, std::vector<PetscInt> &clear_row)
 {
   BoundaryCondition::const_node_iterator node_it = nodes_begin();
@@ -379,6 +381,8 @@ void SchottkyContactBC::Poissin_Jacobian(PetscScalar * x, Mat *jac, InsertMode &
     MatAssemblyEnd(*jac, MAT_FLUSH_ASSEMBLY);
   }
 
+  const PetscScalar Work_Function = this->scalar("workfunction");
+
   BoundaryCondition::const_node_iterator node_it = nodes_begin();
   BoundaryCondition::const_node_iterator end_it = nodes_end();
   for(node_it = nodes_begin(); node_it!=end_it; ++node_it )
@@ -415,7 +419,7 @@ void SchottkyContactBC::Poissin_Jacobian(PetscScalar * x, Mat *jac, InsertMode &
           AutoDScalar V = x[fvm_nodes[i]->local_offset()]; V.setADValue(0,1.0);
 
           //governing equation for Schottky contact boundary
-          AutoDScalar ff = V + Work_Function() - ext_circuit()->Vapp();
+          AutoDScalar ff = V + Work_Function - ext_circuit()->Vapp();
 
           // set Jacobian of governing equation ff
           MatSetValue(*jac, fvm_nodes[i]->global_offset(), fvm_nodes[i]->global_offset(), ff.getADValue(0), ADD_VALUES);

@@ -25,12 +25,15 @@
 
 #include <vector>
 #include <map>
-#include "parser.h"
 #include "waveform.h"
 #include "particle_source.h"
 #include "light_source.h"
 
-
+namespace Parser{
+  class InputParser;
+  class Card;
+}
+class LightLenses;
 class SimulationSystem;
 
 /**
@@ -49,13 +52,19 @@ public:
 
   /**
    * update the source stimulate to each mesh node
+   * when force is true, will update system
    */
-  void update(double time);
+  void update(double time, bool force_update_system=false);
 
   /**
    * update system after mesh refine
    */
   void update_system();
+
+  /**
+   * @return the limited time step
+   */
+  double limit_dt(double time, double dt) const;
 
   /**
    * @return true when we have particle incident
@@ -64,10 +73,22 @@ public:
     { return _particle_sources.size()>0; }
 
   /**
+   * @return lens system
+   */
+  LightLenses  * light_lenses() const
+  { return _light_lenses; }
+
+  /**
    * @return true when we have light source
    */
   bool is_light_source_exist() const
     { return _light_sources.size()>0; }
+
+  /**
+   * if we need serial mesh on each processor
+   * @return true when ray tracing solver exist
+   */
+  bool request_serial_mesh() const;
 
   /**
    * set the effect waveform
@@ -118,6 +139,11 @@ private:
    * all the light sources
    */
   std::vector<Light_Source *> _light_sources;
+
+  /**
+   * lens system
+   */
+  LightLenses  *_light_lenses;
 
   /**
    * all the waveforms

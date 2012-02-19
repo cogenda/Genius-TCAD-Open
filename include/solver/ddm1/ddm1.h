@@ -71,7 +71,7 @@ public:
    * virtual function, write solver intermediate data into system
    * It can be used to monitor the field data evolution during solve action
    */
-  virtual void flush_system();
+  virtual void flush_system(Vec );
 
   /**
    * load previous state into solution vector
@@ -140,7 +140,7 @@ public:
     switch (bc->bc_type())
     {
       case OhmicContact      : return 3; // ohmic electrode current
-      case SchottkyContact   : return 1; // displacement current
+      case SchottkyContact   : return 3; // displacement current
       case SimpleGateContact : return 1; // displacement current
       case SolderPad         : return 1; // conductance current
       case GateContact       : return 1; // displacement current
@@ -183,25 +183,40 @@ public:
   virtual void set_trace_electrode(BoundaryCondition *);
 
   /**
-   * function for line search post check. do Newton damping here
+   * function for line search pre check. do Newton damping here
    */
-  virtual void sens_line_search_post_check(Vec x, Vec y, Vec w, PetscBool *changed_y, PetscBool *changed_w)
+  virtual void sens_line_search_pre_check(Vec x, Vec y, PetscBool *changed_y)
   {
     switch( SolverSpecify::Damping )
     {
-      case SolverSpecify::DampingPotential      : potential_damping(x, y, w, false, changed_y, changed_w); break;
-      case SolverSpecify::DampingSuperPotential : potential_damping(x, y, w, true, changed_y, changed_w); break;
-      case SolverSpecify::DampingBankRose       : bank_rose_damping(x, y, w, changed_y, changed_w); break;
-      case SolverSpecify::DampingNo             : positive_density_damping(x, y, w, changed_y, changed_w); break;
-      default: positive_density_damping(x, y, w, changed_y, changed_w);
+      case SolverSpecify::DampingPotential      : potential_damping(x, y, changed_y); break;
+      case SolverSpecify::DampingBankRose       : bank_rose_damping(x, y, changed_y); break;
+      default: break;
     }
+
+    FVM_NonlinearSolver::sens_line_search_pre_check(x, y, changed_y);
+  }
+
+
+  /**
+   * function for line search post check. check for positive carrier density
+   */
+  virtual void sens_line_search_post_check(Vec x, Vec y, Vec w, PetscBool *changed_y, PetscBool *changed_w)
+  {
+    check_positive_density(x, y, w, changed_y, changed_w);
     FVM_NonlinearSolver::sens_line_search_post_check(x, y, w, changed_y, changed_w);
   }
+
+
+  /**
+   * test if BDF2 can be used for next time step
+   */
+  virtual bool BDF2_positive_defined() const;
 
   /**
    * compute the norm of local truncate error (LTE)
    */
-  virtual PetscScalar LTE_norm();
+  virtual PetscReal LTE_norm();
 
   /**
    * check carrier density after projection
@@ -213,22 +228,27 @@ public:
    */
   virtual void error_norm();
 
+  /**
+   * function for convergence test of pseudo time step method
+   */
+  virtual bool pseudo_time_step_convergence_test();
+
 private:
 
   /**
    * Potential Newton damping scheme
    */
-  void potential_damping(Vec x, Vec y, Vec w, bool super, PetscBool *changed_y, PetscBool *changed_w);
+  void potential_damping(Vec x, Vec y, PetscBool *changed_y);
 
   /**
    * Bank-Rose Newton damping scheme
    */
-  void bank_rose_damping(Vec x, Vec y, Vec w, PetscBool *changed_y, PetscBool *changed_w);
+  void bank_rose_damping(Vec x, Vec y, PetscBool *changed_y);
 
   /**
-   * Positive carrier density Newton damping scheme
+   * check for positive carrier density
    */
-  void positive_density_damping(Vec x, Vec y, Vec w, PetscBool *changed_y, PetscBool *changed_w);
+  void check_positive_density(Vec x, Vec y, Vec w, PetscBool *changed_y, PetscBool *changed_w);
 };
 
 

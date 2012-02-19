@@ -79,7 +79,7 @@ void GateContactBC::DDM1_Fill_Value(Vec x, Vec L)
 /*---------------------------------------------------------------------
  * do pre-process to function for DDML1 solver
  */
-void GateContactBC::DDM1_Function_Preprocess(Vec f, std::vector<PetscInt> &src_row,
+void GateContactBC::DDM1_Function_Preprocess(PetscScalar *, Vec f, std::vector<PetscInt> &src_row,
     std::vector<PetscInt> &dst_row, std::vector<PetscInt> &clear_row)
 {
   BoundaryCondition::const_node_iterator node_it = nodes_begin();
@@ -127,6 +127,8 @@ void GateContactBC::DDM1_Function(PetscScalar * x, Vec f, InsertMode &add_value_
   // for 2D mesh, z_width() is the device dimension in Z direction; for 3D mesh, z_width() is 1.0
   PetscScalar current_scale = this->z_width();
 
+  const PetscScalar Work_Function = this->scalar("workfunction");
+
   // the electrode potential in current iteration
   genius_assert( local_offset()!=invalid_uint );
   PetscScalar Ve = x[this->local_offset()];
@@ -163,10 +165,10 @@ void GateContactBC::DDM1_Function(PetscScalar * x, Vec f, InsertMode &add_value_
             PetscScalar V = x[fvm_nodes[i]->local_offset()];
 
             // the governing equation
-            PetscScalar ff = V + Work_Function() - Ve;
+            PetscScalar f_psi = V + Work_Function - Ve;
 
             // set governing equation to function vector
-            VecSetValue(f, fvm_nodes[i]->global_offset(), ff, ADD_VALUES);
+            VecSetValue(f, fvm_nodes[i]->global_offset(), f_psi, ADD_VALUES);
 
             // MOS gate can have displacement current and tunneling current
 
@@ -185,7 +187,7 @@ void GateContactBC::DDM1_Function(PetscScalar * x, Vec f, InsertMode &add_value_
                 // area of out surface of control volume related with neighbor node
                 PetscScalar cv_boundary = fvm_nodes[i]->cv_surface_area(nb_node->root_node());
                 PetscScalar dEdt;
-                if(SolverSpecify::TS_type==SolverSpecify::BDF2 && SolverSpecify::BDF2_restart==false) //second order
+                if(SolverSpecify::TS_type==SolverSpecify::BDF2 && SolverSpecify::BDF2_LowerOrder==false) //second order
                 {
                   PetscScalar r = SolverSpecify::dt_last/(SolverSpecify::dt_last + SolverSpecify::dt);
                   dEdt = ( (2-r)/(1-r)*(V-V_nb)
@@ -411,19 +413,27 @@ void GateContactBC::DDM1_Jacobian_Reserve(Mat *jac, InsertMode &add_value_flag)
     std::vector<PetscInt> bc_node_reserve;
     for(node_it = nodes_begin(); node_it!=end_it; ++node_it )
     {
-      // get the derivative of electrode current to ohmic node
-      const FVM_Node *  fvm_node = get_region_fvm_node(*node_it, InsulatorRegion);
-      if(fvm_node->on_processor())
+      // get the derivative of electrode current to gate node
+      BoundaryCondition::region_node_iterator  rnode_it     = region_node_begin(*node_it);
+      BoundaryCondition::region_node_iterator  end_rnode_it = region_node_end(*node_it);
+      for(unsigned int i=0 ; rnode_it!=end_rnode_it; ++i, ++rnode_it  )
       {
-        bc_node_reserve.push_back(fvm_node->global_offset()+0);
+        const SimulationRegion * region = ( (*rnode_it).second.first );
+        if(region->type() != InsulatorRegion) continue;
 
-        // get the derivative of electrode current to neighbors of bc node
-        FVM_Node::fvm_neighbor_node_iterator nb_it = fvm_node->neighbor_node_begin();
-        FVM_Node::fvm_neighbor_node_iterator nb_it_end = fvm_node->neighbor_node_end();
-        for(; nb_it != nb_it_end; ++nb_it)
+        const FVM_Node * fvm_node = (*rnode_it).second.second;
+        if(fvm_node->on_processor())
         {
-          const FVM_Node *  fvm_nb_node = (*nb_it).second;
-          bc_node_reserve.push_back(fvm_nb_node->global_offset()+0);
+          bc_node_reserve.push_back(fvm_node->global_offset());
+
+          // get the derivative of electrode current to neighbors of bc node
+          FVM_Node::fvm_neighbor_node_iterator nb_it = fvm_node->neighbor_node_begin();
+          FVM_Node::fvm_neighbor_node_iterator nb_it_end = fvm_node->neighbor_node_end();
+          for(; nb_it != nb_it_end; ++nb_it)
+          {
+            const FVM_Node *  fvm_nb_node = (*nb_it).second;
+            bc_node_reserve.push_back(fvm_nb_node->global_offset());
+          }
         }
       }
     }
@@ -458,7 +468,7 @@ void GateContactBC::DDM1_Jacobian_Reserve(Mat *jac, InsertMode &add_value_flag)
 /*---------------------------------------------------------------------
  * do pre-process to jacobian matrix for DDML1 solver
  */
-void GateContactBC::DDM1_Jacobian_Preprocess(Mat *jac, std::vector<PetscInt> &src_row,
+void GateContactBC::DDM1_Jacobian_Preprocess(PetscScalar *, Mat *jac, std::vector<PetscInt> &src_row,
     std::vector<PetscInt> &dst_row, std::vector<PetscInt> &clear_row)
 {
 
@@ -509,6 +519,7 @@ void GateContactBC::DDM1_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_val
   PetscScalar L = ext_circuit()->L();             // inductance
   PetscScalar dt = SolverSpecify::dt;
 
+  const PetscScalar Work_Function = this->scalar("workfunction");
 
   // do gate boundary process here
 
@@ -556,7 +567,7 @@ void GateContactBC::DDM1_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_val
             AutoDScalar Ve = x[this->local_offset()];         Ve.setADValue(1, 1.0);
 
             // the governing equation of gate electrode
-            AutoDScalar ff = V + Work_Function() - Ve;
+            AutoDScalar f_psi = V + Work_Function - Ve;
 
             // the insert position
             std::vector<PetscInt> row, col;
@@ -565,7 +576,7 @@ void GateContactBC::DDM1_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_val
             col.push_back(this->global_offset()); // the position of electrode equation
 
             // set Jacobian of governing equation ff
-            MatSetValues(*jac, 1, &row[0], col.size(), &col[0], ff.getADValue(), ADD_VALUES);
+            MatSetValues(*jac, 1, &row[0], col.size(), &col[0], f_psi.getADValue(), ADD_VALUES);
 
             /*
              * process the Jacobian of current flow out of gate electrode
@@ -596,7 +607,7 @@ void GateContactBC::DDM1_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_val
                 // area of out surface of control volume related with neighbor node
                 PetscScalar cv_boundary = fvm_nodes[i]->cv_surface_area(nb_node->root_node());
                 AutoDScalar dEdt;
-                if(SolverSpecify::TS_type==SolverSpecify::BDF2 && SolverSpecify::BDF2_restart==false) //second order
+                if(SolverSpecify::TS_type==SolverSpecify::BDF2 && SolverSpecify::BDF2_LowerOrder==false) //second order
                 {
                   PetscScalar r = SolverSpecify::dt_last/(SolverSpecify::dt_last + SolverSpecify::dt);
                   dEdt = ( (2-r)/(1-r)*(V-V_nb)

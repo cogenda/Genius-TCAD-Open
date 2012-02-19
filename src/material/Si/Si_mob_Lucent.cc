@@ -48,8 +48,91 @@ private:
   PetscScalar me_over_m0;
   PetscScalar mh_over_m0;
   PetscScalar me_over_mh;
+
+  //
+  std::vector<PetscScalar>  Pn_temperature_table;
+  std::vector<PetscScalar>  Pp_temperature_table;
+
+  PetscScalar Gn(PetscScalar P, PetscScalar Tl)
+  {
+    return 1-0.89233/std::pow(0.41372+P*std::pow(Tl/T300/me_over_m0,0.28227),0.19778)+0.005978/std::pow(P*std::pow(T300/Tl*me_over_m0,0.72169),1.80618);
+  }
+
+
+  PetscScalar Gp(PetscScalar P, PetscScalar Tl)
+  {
+    return 1-0.89233/std::pow(0.41372+P*std::pow(Tl/T300/mh_over_m0,0.28227),0.19778)+0.005978/std::pow(P*std::pow(T300/Tl*mh_over_m0,0.72169),1.80618);
+  }
+
+  PetscScalar Pn_Limiter_Init(PetscScalar Tl)
+  {
+    PetscScalar Pmin=0.01, Pmax=1.0;
+    do
+    {
+      PetscScalar length = (Pmax-Pmin);
+      PetscScalar P1=Pmin + 0.33*length;
+      PetscScalar P2=Pmax - 0.33*length;
+      if( Gn(P1, Tl) < Gn(P2, Tl) )
+      {
+        Pmax = P2;
+      }
+      else
+      {
+        Pmin = P1;
+      }
+    }
+    while(Pmax-Pmin>1e-3);
+
+    return 0.5*(Pmin + Pmax);
+  }
+
+  PetscScalar Pp_Limiter_Init(PetscScalar Tl)
+  {
+    PetscScalar Pmin=0.01, Pmax=1.0;
+    do
+    {
+      PetscScalar length = (Pmax-Pmin);
+      PetscScalar P1=Pmin + 0.33*length;
+      PetscScalar P2=Pmax - 0.33*length;
+      if( Gp(P1, Tl) < Gp(P2, Tl) )
+      {
+        Pmax = P2;
+      }
+      else
+      {
+        Pmin = P1;
+      }
+    }
+    while(Pmax-Pmin>1e-3);
+
+    return 0.5*(Pmin + Pmax);
+  }
+
+
+  PetscScalar Pn_Limiter(PetscScalar Tl) const
+  {
+    int index = static_cast<int>(Tl/(10*K))-1;
+    if(index<0) index=0;
+    if(index>Pn_temperature_table.size()-1) index=Pn_temperature_table.size()-1;
+    return Pn_temperature_table[index];
+  }
+
+  PetscScalar Pp_Limiter(PetscScalar Tl) const
+  {
+    int index = static_cast<int>(Tl/(10*K))-1;
+    if(index<0) index=0;
+    if(index>Pp_temperature_table.size()-1) index=Pp_temperature_table.size()-1;
+    return Pp_temperature_table[index];
+  }
+
+
   // temperature
   PetscScalar T300;
+  // 1V/cm
+  PetscScalar E1;
+  // 1 cm^-3
+  PetscScalar N1;
+
   // parameters for transvers field modification
   PetscScalar AN_LUC;
   PetscScalar AP_LUC;
@@ -57,8 +140,8 @@ private:
   PetscScalar BP_LUC;
   PetscScalar CN_LUC;
   PetscScalar CP_LUC;
-  //PetscScalar DN_LUC;
-  //PetscScalar DP_LUC;
+  PetscScalar DN_LUC;
+  PetscScalar DP_LUC;
   PetscScalar FN_LUC;
   PetscScalar FP_LUC;
   PetscScalar KN_LUC;
@@ -98,7 +181,15 @@ private:
     me_over_m0 = 1.0;
     mh_over_m0 = 1.258;
     me_over_mh = 1.0/1.258;
-    T300    = 300.0*K;
+    T300       = 300.0*K;
+    E1         = 1.0*V/cm;
+    N1         = 1e0*std::pow(cm,-3);
+
+    for(PetscScalar T=10*K; T<1000*K; T+=10*K)
+    {
+      Pn_temperature_table.push_back(Pn_Limiter_Init(T));
+      Pp_temperature_table.push_back(Pp_Limiter_Init(T));
+    }
 
     EXN4_LUC = 2.330000E-02;
     EXP4_LUC = 1.190000E-02;
@@ -110,8 +201,8 @@ private:
     BP_LUC   = 1.510000E+07*cm/s;
     CN_LUC   = 1.700000E+04*cm*cm/V/s*std::pow(V/cm,PetscScalar(1.0/3.0))*std::pow(cm,3*EXN4_LUC);
     CP_LUC   = 4.180000E+03*cm*cm/V/s*std::pow(V/cm,PetscScalar(1.0/3.0))*std::pow(cm,3*EXP4_LUC);
-    //DN_LUC=3.580000E+18*cm*cm/V/s*std::pow(V/cm,rn);
-    //DP_LUC=4.100000E+15*cm*cm/V/s*std::pow(V/cm,rp);
+    DN_LUC   = 3.580000E+18*cm*cm/V/s;
+    DP_LUC   = 4.100000E+15*cm*cm/V/s;
     FN_LUC   = 6.850000E-21*std::pow(cm,3*(1-EXN9_LUC));
     FP_LUC   = 7.820000E-21*std::pow(cm,3*(1-EXP9_LUC));
     KN_LUC   = 1.700000E+00;
@@ -168,23 +259,25 @@ private:
 
   }
   //---------------------------------------------------------------------------
-  // Electron low field bulk mobility
+  // Electron low field mobility
   PetscScalar ElecMobPhilips(const PetscScalar &p,const PetscScalar &n,const PetscScalar &Tl) const
   {
     PetscScalar mu_lattice = MMXN_UM*std::pow(Tl/T300,-TETN_UM);
     PetscScalar mu1 = MMXN_UM*MMXN_UM/(MMXN_UM-MMNN_UM)*std::pow(Tl/T300,3*ALPN_UM-1.5);
     PetscScalar mu2 = MMXN_UM*MMNN_UM/(MMXN_UM-MMNN_UM)*sqrt(T300/Tl);
-    PetscScalar Na  = ReadDopingNa()+1e0*std::pow(cm,-3);
-    PetscScalar Nd  = ReadDopingNd()+1e0*std::pow(cm,-3);
+    PetscScalar Na  = ReadDopingNa()+N1;
+    PetscScalar Nd  = ReadDopingNd()+N1;
     PetscScalar Nds = Nd*(1.0+1.0/(CRFD_UM+(NRFD_UM/Nd)*(NRFD_UM/Nd)));
     PetscScalar Nas = Na*(1.0+1.0/(CRFA_UM+(NRFA_UM/Na)*(NRFA_UM/Na)));
     PetscScalar Nsc = Nds+Nas+fabs(p);
 
-    PetscScalar P   = 1.0/(2.459/(NSC_REF/std::pow(Nsc,PetscScalar(2.0/3.0)))+3.828/(CAR_REF/fabs(n+p)*me_over_m0))*(Tl/T300)*(Tl/T300);
+    PetscScalar P   = 1.0/(2.459/(NSC_REF/std::pow(Nsc,PetscScalar(2.0/3.0)))+3.828*fabs(n+p)/(CAR_REF*me_over_m0))*(Tl/T300)*(Tl/T300);
     PetscScalar pp1 = std::pow(P,PetscScalar(0.6478));
     PetscScalar F   = (0.7643*pp1+2.2999+6.5502*me_over_mh)/(pp1+2.3670-0.8552*me_over_mh);
-    //PetscScalar G   = 1-0.89233/std::pow(0.41372+P*std::pow(Tl/T300/me_over_m0,PetscScalar(0.28227)),PetscScalar(0.19778))+0.005978/std::pow(P*std::pow(Tl/T300/me_over_m0,PetscScalar(0.72169)),PetscScalar(1.80618));
-    PetscScalar G   = 1-4.41804/std::pow(39.9014+P*std::pow(Tl/T300/me_over_m0,PetscScalar(0.0001)),PetscScalar(0.38297))+0.52896/std::pow(P*std::pow(T300/Tl*me_over_m0,PetscScalar(1.595787)),PetscScalar(0.25948));
+    PetscScalar Pl  = Pn_Limiter(Tl);
+    PetscScalar PG  = std::max(P, Pl);
+    PetscScalar G   = 1-0.89233/std::pow(0.41372+PG*std::pow(Tl/T300/me_over_m0,0.28227),0.19778)+0.005978/std::pow(PG*std::pow(T300/Tl*me_over_m0, 0.72169),1.80618);
+    //PetscScalar G   = 1-4.41804/std::pow(39.9014+P*std::pow(Tl/T300/me_over_m0,PetscScalar(0.0001)),PetscScalar(0.38297))+0.52896/std::pow(P*std::pow(T300/Tl*me_over_m0,PetscScalar(1.595787)),PetscScalar(0.25948));
     PetscScalar Nsce = Nds+Nas*G+fabs(p)/F;
     PetscScalar mu_scatt = mu1*(Nsc/Nsce)*std::pow(NRFN_UM/Nsc,ALPN_UM)+mu2*(fabs(n+p)/Nsce);
     return 1.0/(1.0/mu_lattice+1.0/mu_scatt);
@@ -194,40 +287,44 @@ private:
     AutoDScalar mu_lattice = MMXN_UM*adtl::pow(Tl/T300,-TETN_UM);
     AutoDScalar mu1 = MMXN_UM*MMXN_UM/(MMXN_UM-MMNN_UM)*adtl::pow(Tl/T300,3*ALPN_UM-1.5);
     AutoDScalar mu2 = MMXN_UM*MMNN_UM/(MMXN_UM-MMNN_UM)*sqrt(T300/Tl);
-    PetscScalar Na  = ReadDopingNa()+1e0*std::pow(cm,-3);
-    PetscScalar Nd  = ReadDopingNd()+1e0*std::pow(cm,-3);
+    PetscScalar Na  = ReadDopingNa()+N1;
+    PetscScalar Nd  = ReadDopingNd()+N1;
     PetscScalar Nds = Nd*(1.0+1.0/(CRFD_UM+(NRFD_UM/Nd)*(NRFD_UM/Nd)));
     PetscScalar Nas = Na*(1.0+1.0/(CRFA_UM+(NRFA_UM/Na)*(NRFA_UM/Na)));
     AutoDScalar Nsc = Nds+Nas+fabs(p);
 
-    AutoDScalar P   = 1.0/(2.459/(NSC_REF/adtl::pow(Nsc,PetscScalar(2.0/3.0)))+3.828/(CAR_REF/fabs(n+p)*me_over_m0))*(Tl/T300)*(Tl/T300);
+    AutoDScalar P   = 1.0/(2.459/(NSC_REF/adtl::pow(Nsc,PetscScalar(2.0/3.0)))+3.828*fabs(n+p)/(CAR_REF*me_over_m0))*(Tl/T300)*(Tl/T300);
     AutoDScalar pp1 = adtl::pow(P,PetscScalar(0.6478));
     AutoDScalar F   = (0.7643*pp1+2.2999+6.5502*me_over_mh)/(pp1+2.3670-0.8552*me_over_mh);
-    //PetscScalar G   = 1-0.89233/std::pow(0.41372+P*std::pow(Tl/T300/me_over_m0,0.28227),0.19778)+0.005978/std::pow(P*std::pow(Tl/T300/me_over_m0,0.72169),1.80618);
-    AutoDScalar G   = 1-4.41804/adtl::pow(39.9014+P*adtl::pow(Tl/T300/me_over_m0,PetscScalar(0.0001)),PetscScalar(0.38297))+0.52896/adtl::pow(P*adtl::pow(T300/Tl*me_over_m0,PetscScalar(1.595787)),PetscScalar(0.25948));
+    PetscScalar Pl  = Pn_Limiter(Tl.getValue());
+    AutoDScalar PG  = P.getValue() < Pl ? AutoDScalar(Pl) : P;
+    AutoDScalar G   = 1-0.89233/adtl::pow(0.41372+PG*adtl::pow(Tl/T300/me_over_m0,0.28227),0.19778)+0.005978/adtl::pow(PG*adtl::pow(T300/Tl*me_over_m0,0.72169),1.80618);
+    //AutoDScalar G   = 1-4.41804/adtl::pow(39.9014+P*adtl::pow(Tl/T300/me_over_m0,PetscScalar(0.0001)),PetscScalar(0.38297))+0.52896/adtl::pow(P*adtl::pow(T300/Tl*me_over_m0,PetscScalar(1.595787)),PetscScalar(0.25948));
     AutoDScalar Nsce = Nds+Nas*G+fabs(p)/F;
     AutoDScalar mu_scatt = mu1*(Nsc/Nsce)*adtl::pow(NRFN_UM/Nsc,ALPN_UM)+mu2*(fabs(n+p)/Nsce);
     return 1.0/(1.0/mu_lattice+1.0/mu_scatt);
   }
 
   //---------------------------------------------------------------------------
-  // Hole low field bulk mobility
+  // Hole low field mobility
   PetscScalar HoleMobPhilips(const PetscScalar &p,const PetscScalar &n,const PetscScalar &Tl) const
   {
     PetscScalar mu_lattice = MMXP_UM*std::pow(Tl/T300,-TETP_UM);
     PetscScalar mu1 = MMXP_UM*MMXP_UM/(MMXP_UM-MMNP_UM)*std::pow(Tl/T300,3*ALPP_UM-1.5);
     PetscScalar mu2 = MMXP_UM*MMNP_UM/(MMXP_UM-MMNP_UM)*sqrt(T300/Tl);
-    PetscScalar Na  = ReadDopingNa()+1e0*std::pow(cm,-3);
-    PetscScalar Nd  = ReadDopingNd()+1e0*std::pow(cm,-3);
+    PetscScalar Na  = ReadDopingNa()+N1;
+    PetscScalar Nd  = ReadDopingNd()+N1;
     PetscScalar Nds = Nd*(1.0+1.0/(CRFD_UM+(NRFD_UM/Nd)*(NRFD_UM/Nd)));
     PetscScalar Nas = Na*(1.0+1.0/(CRFA_UM+(NRFA_UM/Na)*(NRFA_UM/Na)));
     PetscScalar Nsc = Nds+Nas+fabs(n);
 
-    PetscScalar P   = 1.0/(2.459/(NSC_REF/std::pow(Nsc,PetscScalar(2.0/3.0)))+3.828/(CAR_REF/fabs(n+p)*mh_over_m0))*(Tl/T300)*(Tl/T300);
+    PetscScalar P   = 1.0/(2.459/(NSC_REF/std::pow(Nsc,PetscScalar(2.0/3.0)))+3.828*fabs(n+p)/(CAR_REF*mh_over_m0))*(Tl/T300)*(Tl/T300);
     PetscScalar pp1 = std::pow(P,PetscScalar(0.6478));
     PetscScalar F   = (0.7643*pp1+2.2999+6.5502/me_over_mh)/(pp1+2.3670-0.8552/me_over_mh);
-    //PetscScalar G   = 1-0.89233/std::pow(0.41372+P*std::pow(Tl/T300/mh_over_m0,0.28227),0.19778)+0.005978/std::pow(P*std::pow(Tl/T300/mh_over_m0,0.72169),1.80618);
-    PetscScalar G   = 1-4.41804/std::pow(39.9014+P*std::pow(Tl/T300/mh_over_m0,PetscScalar(0.0001)),PetscScalar(0.38297))+0.52896/std::pow(P*std::pow(T300/Tl*mh_over_m0,PetscScalar(1.595787)),PetscScalar(0.25948));
+    PetscScalar Pl  = Pp_Limiter(Tl);
+    PetscScalar PG  = std::max(P, Pl);
+    PetscScalar G = 1-0.89233/std::pow(0.41372+PG*std::pow(Tl/T300/mh_over_m0,0.28227),0.19778)+0.005978/std::pow(PG*std::pow(T300/Tl*mh_over_m0,0.72169),1.80618);
+    //PetscScalar G   = 1-4.41804/std::pow(39.9014+P*std::pow(Tl/T300/mh_over_m0,PetscScalar(0.0001)),PetscScalar(0.38297))+0.52896/std::pow(P*std::pow(T300/Tl*mh_over_m0,PetscScalar(1.595787)),PetscScalar(0.25948));
     PetscScalar Nsce = Nas+Nds*G+fabs(n)/F;
     PetscScalar mu_scatt = mu1*(Nsc/Nsce)*std::pow(NRFP_UM/Nsc,ALPP_UM)+mu2*(fabs(n+p)/Nsce);
     return 1.0/(1.0/mu_lattice+1.0/mu_scatt);
@@ -237,17 +334,19 @@ private:
     AutoDScalar mu_lattice = MMXP_UM*adtl::pow(Tl/T300,-TETP_UM);
     AutoDScalar mu1 = MMXP_UM*MMXP_UM/(MMXP_UM-MMNP_UM)*adtl::pow(Tl/T300,3*ALPP_UM-1.5);
     AutoDScalar mu2 = MMXP_UM*MMNP_UM/(MMXP_UM-MMNP_UM)*sqrt(T300/Tl);
-    PetscScalar Na  = ReadDopingNa()+1e0*std::pow(cm,-3);
-    PetscScalar Nd  = ReadDopingNd()+1e0*std::pow(cm,-3);
+    PetscScalar Na  = ReadDopingNa()+N1;
+    PetscScalar Nd  = ReadDopingNd()+N1;
     PetscScalar Nds = Nd*(1.0+1.0/(CRFD_UM+(NRFD_UM/Nd)*(NRFD_UM/Nd)));
     PetscScalar Nas = Na*(1.0+1.0/(CRFA_UM+(NRFA_UM/Na)*(NRFA_UM/Na)));
     AutoDScalar Nsc = Nds+Nas+fabs(n);
 
-    AutoDScalar P   = 1.0/(2.459/(NSC_REF/adtl::pow(Nsc,PetscScalar(2.0/3.0)))+3.828/(CAR_REF/fabs(n+p)*mh_over_m0))*(Tl/T300)*(Tl/T300);
+    AutoDScalar P   = 1.0/(2.459/(NSC_REF/adtl::pow(Nsc,PetscScalar(2.0/3.0)))+3.828*fabs(n+p)/(CAR_REF*mh_over_m0))*(Tl/T300)*(Tl/T300);
     AutoDScalar pp1 = adtl::pow(P,PetscScalar(0.6478));
     AutoDScalar F   = (0.7643*pp1+2.2999+6.5502/me_over_mh)/(pp1+2.3670-0.8552/me_over_mh);
-    //PetscScalar G = 1-0.89233/std::pow(0.41372+P*std::pow(Tl/T300/mh_over_m0,0.28227),0.19778)+0.005978/std::pow(P*std::pow(Tl/T300/mh_over_m0,0.72169),1.80618);
-    AutoDScalar G   = 1-4.41804/adtl::pow(39.9014+P*adtl::pow(Tl/T300/mh_over_m0,PetscScalar(0.0001)),PetscScalar(0.38297))+0.52896/adtl::pow(P*adtl::pow(T300/Tl*mh_over_m0,PetscScalar(1.595787)),PetscScalar(0.25948));
+    PetscScalar Pl  = Pp_Limiter(Tl.getValue());
+    AutoDScalar PG  = P.getValue() < Pl ? AutoDScalar(Pl) : P;
+    AutoDScalar G = 1-0.89233/adtl::pow(0.41372+PG*adtl::pow(Tl/T300/mh_over_m0,0.28227),0.19778)+0.005978/adtl::pow(PG*adtl::pow(T300/Tl*mh_over_m0,0.72169),1.80618);
+    //AutoDScalar G   = 1-4.41804/adtl::pow(39.9014+P*adtl::pow(Tl/T300/mh_over_m0,PetscScalar(0.0001)),PetscScalar(0.38297))+0.52896/adtl::pow(P*adtl::pow(T300/Tl*mh_over_m0,PetscScalar(1.595787)),PetscScalar(0.25948));
     AutoDScalar Nsce = Nas+Nds*G+fabs(n)/F;
     AutoDScalar mu_scatt = mu1*(Nsc/Nsce)*adtl::pow(NRFP_UM/Nsc,ALPP_UM)+mu2*(fabs(n+p)/Nsce);
     return 1.0/(1.0/mu_lattice+1.0/mu_scatt);
@@ -259,24 +358,24 @@ private:
   {
     PetscScalar Na = ReadDopingNa();
     PetscScalar Nd = ReadDopingNd();
-    PetscScalar N_total = Na+Nd+1e0*std::pow(cm,-3);
-    PetscScalar ET = Et+1.0*V/cm;
+    PetscScalar N_total = Na+Nd+N1;
+    PetscScalar ET = fabs(Et)+E1;
     PetscScalar mu_ac = BN_LUC/ET + CN_LUC*std::pow(N_total,EXN4_LUC)*std::pow(Tl/T300,-KN_LUC)*std::pow(ET,PetscScalar(-1.0/3.0));
     PetscScalar r = AN_LUC + FN_LUC*fabs(n+p)/std::pow(N_total,EXN9_LUC);
-    PetscScalar DN_LUC=3.580000E+18*cm*cm/V/s*std::pow(V/cm,r);
-    PetscScalar mu_sr = DN_LUC*std::pow(ET,-r);
+    if(r > 2.62) r = 2.62;
+    PetscScalar mu_sr = DN_LUC*std::pow(ET/E1,-r);
     return 1.0/(1.0/mu_ac+1.0/mu_sr);
   }
   AutoDScalar ElecMobLombardi(const AutoDScalar &p,const AutoDScalar &n,const AutoDScalar &Tl,const AutoDScalar &Et) const
   {
     PetscScalar Na = ReadDopingNa();
     PetscScalar Nd = ReadDopingNd();
-    PetscScalar N_total = Na+Nd+1e0*std::pow(cm,-3);
-    AutoDScalar ET = Et+1.0*V/cm;
+    PetscScalar N_total = Na+Nd+N1;
+    AutoDScalar ET = fabs(Et)+E1;
     AutoDScalar mu_ac = BN_LUC/ET + CN_LUC*std::pow(N_total,EXN4_LUC)*adtl::pow(Tl/T300,-KN_LUC)*adtl::pow(ET,PetscScalar(-1.0/3.0));
     AutoDScalar r = AN_LUC + FN_LUC*fabs(n+p)/std::pow(N_total,EXN9_LUC);
-    AutoDScalar DN_LUC=3.580000E+18*cm*cm/V/s*adtl::pow(V/cm,r);
-    AutoDScalar mu_sr = DN_LUC*adtl::pow(ET,-r);
+    if(r > 2.62) r = 2.62;
+    AutoDScalar mu_sr = DN_LUC*adtl::pow(ET/E1,-r);
     return 1.0/(1.0/mu_ac+1.0/mu_sr);
   }
 
@@ -286,24 +385,22 @@ private:
   {
     PetscScalar Na = ReadDopingNa();
     PetscScalar Nd = ReadDopingNd();
-    PetscScalar N_total = Na+Nd+1e0*std::pow(cm,-3);
-    PetscScalar ET = Et+1.0*V/cm;
+    PetscScalar N_total = Na+Nd+N1;
+    PetscScalar ET = fabs(Et)+E1;
     PetscScalar mu_ac = BP_LUC/ET + CP_LUC*std::pow(N_total,EXP4_LUC)*std::pow(Tl/T300,-KP_LUC)*std::pow(ET,PetscScalar(-1.0/3.0));
     PetscScalar r = AP_LUC + FP_LUC*fabs(n+p)/std::pow(N_total,EXP9_LUC);
-    PetscScalar DP_LUC=4.100000E+15*cm*cm/V/s*std::pow(V/cm,r);
-    PetscScalar mu_sr = DP_LUC*std::pow(ET,-r);
+    PetscScalar mu_sr = DP_LUC*std::pow(ET/E1,-r);
     return 1.0/(1.0/mu_ac+1.0/mu_sr);
   }
   AutoDScalar HoleMobLombardi(const AutoDScalar &p,const AutoDScalar &n,const AutoDScalar &Tl,const AutoDScalar &Et) const
   {
     PetscScalar Na = ReadDopingNa();
     PetscScalar Nd = ReadDopingNd();
-    PetscScalar N_total = Na+Nd+1e0*std::pow(cm,-3);
-    AutoDScalar ET = Et+1.0*V/cm;
+    PetscScalar N_total = Na+Nd+N1;
+    AutoDScalar ET = fabs(Et)+E1;
     AutoDScalar mu_ac = BP_LUC/ET + CP_LUC*std::pow(N_total,EXP4_LUC)*adtl::pow(Tl/T300,-KP_LUC)*adtl::pow(ET,PetscScalar(-1.0/3.0));
     AutoDScalar r = AP_LUC + FP_LUC*fabs(n+p)/std::pow(N_total,EXP9_LUC);
-    AutoDScalar DP_LUC=4.100000E+15*cm*cm/V/s*adtl::pow(V/cm,r);
-    AutoDScalar mu_sr = DP_LUC*adtl::pow(ET,-r);
+    AutoDScalar mu_sr = DP_LUC*adtl::pow(ET/E1,-r);
     return 1.0/(1.0/mu_ac+1.0/mu_sr);
   }
 
@@ -347,16 +444,14 @@ public:
   {
     PetscScalar vsat = VSATN0/(1+VSATN_A*exp(Tl/(2*T300)));
     PetscScalar mu0  = 1.0/(1.0/ElecMobPhilips(p,n,Tl)+1.0/ElecMobLombardi(p,n,Tl,Et));
-    PetscScalar mu = 2*mu0/(1+std::pow(1+std::pow(2*mu0*fabs(Ep)/vsat,BETAN),1.0/BETAN));
-    return mu;
+    return 2*mu0/(1+std::pow(1+std::pow(2*mu0*fabs(Ep)/vsat,BETAN),1.0/BETAN));
   }
   AutoDScalar ElecMob(const AutoDScalar &p, const AutoDScalar &n, const AutoDScalar &Tl,
                       const AutoDScalar &Ep, const AutoDScalar &Et, const AutoDScalar &Tn) const
   {
     AutoDScalar vsat = VSATN0/(1+VSATN_A*exp(Tl/(2*T300)));
     AutoDScalar mu0  = 1.0/(1.0/ElecMobPhilips(p,n,Tl)+1.0/ElecMobLombardi(p,n,Tl,Et));
-    AutoDScalar mu = 2*mu0/(1+adtl::pow(1+adtl::pow(2*mu0*fabs(Ep)/vsat,BETAN),1.0/BETAN));
-    return mu;
+    return 2*mu0/(1+adtl::pow(1+adtl::pow(2*mu0*fabs(Ep)/vsat,BETAN),1.0/BETAN));
   }
 
   //---------------------------------------------------------------------------
@@ -366,16 +461,14 @@ public:
   {
     PetscScalar vsat = VSATP0/(1+VSATP_A*exp(Tl/(2*T300)));
     PetscScalar mu0  = 1.0/(1.0/HoleMobPhilips(p,n,Tl)+1.0/HoleMobLombardi(p,n,Tl,Et));
-    PetscScalar mu = 2*mu0/(1+std::pow(1+std::pow(2*mu0*fabs(Ep)/vsat,BETAP),1.0/BETAP));
-    return mu;
+    return 2*mu0/(1+std::pow(1+std::pow(2*mu0*fabs(Ep)/vsat,BETAP),1.0/BETAP));
   }
   AutoDScalar HoleMob(const AutoDScalar &p, const AutoDScalar &n, const AutoDScalar &Tl,
                       const AutoDScalar &Ep, const AutoDScalar &Et, const AutoDScalar &Tp) const
   {
     AutoDScalar vsat = VSATP0/(1+VSATP_A*exp(Tl/(2*T300)));
     AutoDScalar mu0  = 1.0/(1.0/HoleMobPhilips(p,n,Tl)+1.0/HoleMobLombardi(p,n,Tl,Et));
-    AutoDScalar mu = 2*mu0/(1+adtl::pow(1+adtl::pow(2*mu0*fabs(Ep)/vsat,BETAP),1.0/BETAP));
-    return mu;
+    return 2*mu0/(1+adtl::pow(1+adtl::pow(2*mu0*fabs(Ep)/vsat,BETAP),1.0/BETAP));
   }
 
 

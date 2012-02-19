@@ -1,10 +1,14 @@
 def build(bld):
   hooks = '''shell_hook rawfile_hook gnuplot_hook data_hook cv_hook
-             probe_hook vtk_hook cgns_hook monitor_hook eigenvalue_hook
+             probe_hook vtk_hook cgns_hook mob_monitor_hook ddm_monitor_hook eigenvalue_hook
+             singularvalue_hook lsmonitor_hook spice_monitor_hook
+             particle_monitor_hook gummel_monitor_hook
              threshold_hook'''.split()
 
   common_src = ['dlhook.cc']
   if bld.env.PLATFORM == 'Windows':
+    for h in hooks: common_src.append('%s.cc' % h)
+  if bld.env.PLATFORM == 'AIX':
     for h in hooks: common_src.append('%s.cc' % h)
 
   bld.objects( source = common_src,
@@ -14,7 +18,7 @@ def build(bld):
                target = 'hook_common',
              )
 
-  if not bld.env.PLATFORM == 'Windows': # windows platform does not support hook dll
+  if bld.env.PLATFORM == 'Linux': # linux platform support hook dll
     for h in hooks:
       fout = bld.path.find_or_declare(bld.env.cxxshlib_PATTERN % h)
 
@@ -24,4 +28,3 @@ def build(bld):
                  use       = 'opt hook_common PETSC CGNS VTK',
                  target    = fout,
                )
-

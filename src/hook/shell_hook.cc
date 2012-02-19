@@ -102,7 +102,7 @@ void ShellHook::on_close()
 
 
 
-#ifndef CYGWIN
+#ifdef DLLHOOK
 
 // dll interface
 extern "C"

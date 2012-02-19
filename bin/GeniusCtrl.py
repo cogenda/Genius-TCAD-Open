@@ -297,11 +297,14 @@ class GeniusCtrlClass:
                 flagsave = sys.getdlopenflags()
                 if sys.platform=='linux2':
                     import DLFCN
-                    sys.setdlopenflags(DLFCN.RTLD_NOW|DLFCN.RTLD_GLOBAL)
+                    if hasattr(DLFCN, 'RTLD_DEEPBIND'):
+                      sys.setdlopenflags(DLFCN.RTLD_NOW|DLFCN.RTLD_GLOBAL|DLFCN.RTLD_DEEPBIND)
+                    else:
+                      sys.setdlopenflags(DLFCN.RTLD_NOW|DLFCN.RTLD_GLOBAL|0x00008)
                 import genius
                 sys.setdlopenflags(flagsave)
-        except ImportError:
-            raise GeniusError('Failed loading Genius binaries.')
+        except ImportError, e:
+            raise GeniusError('Failed loading Genius binaries. %s' % str(e))
     
         self.baseDir = GeniusDir
         genius.Genius.set_genius_dir(GeniusDir)

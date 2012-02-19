@@ -27,13 +27,14 @@
 
 #include <string>
 #include <vector>
+#include <map>
 #include <deque>
 #include <string>
 
 #include "enum_petsc_type.h"
 #include "enum_solver_specify.h"
 
-#include "key.h"
+#include "parser_parameter.h"
 
 
 /**
@@ -61,6 +62,11 @@ namespace SolverSpecify
    * the prefix string for output file
    */
   extern std::string      out_prefix;
+
+  /**
+   * the append model for output file
+   */
+  extern bool      out_append;
 
   /**
    * hooks to be installed, \<id \<hook_name, hook_parameters\> \>
@@ -94,6 +100,57 @@ namespace SolverSpecify
 
 
   //--------------------------------------------
+  // half implicit method
+  //--------------------------------------------
+
+  /**
+   * linear solver scheme: LU, BCGS, GMRES ... for carrier continuity equation
+   */
+  extern LinearSolverType        LS_CARRIER;
+
+  /**
+   * linear solver scheme: LU, BCGS, GMRES ... for full current equation
+   */
+  extern LinearSolverType        LS_CURRENT;
+
+  /**
+   * linear solver scheme: LU, BCGS, GMRES ... for poisson correction equation
+   */
+  extern LinearSolverType        LS_POISSON;
+
+  /**
+   * preconditioner scheme: ASM ILU ... for carrier continuity equation
+   */
+  extern PreconditionerType      PC_CARRIER;
+
+  /**
+   * preconditioner scheme: ASM ILU ... for full current equation
+   */
+  extern PreconditionerType      PC_CURRENT;
+
+  /**
+   * preconditioner scheme: ASM ILU ... for poisson correction equation
+   */
+  extern PreconditionerType      PC_POISSON;
+
+  /**
+   * linearize error threshold of half implicit method
+   */
+  extern double    LinearizeErrorThreshold;
+
+  /**
+   * solve carrier distribution again after poisson correction in half implicit method
+   */
+  extern bool      ReSolveCarrier;
+
+  /**
+   * allow artificial carrier generation,
+   * which makes poisson's equation self-consistant
+   */
+  extern bool      ArtificialCarrier;
+
+
+  //--------------------------------------------
   // linear solver convergence criteria
   //--------------------------------------------
 
@@ -113,6 +170,11 @@ namespace SolverSpecify
    */
   extern double   ksp_atol_fnorm;
 
+
+  /**
+   * consider the system is singular
+   */
+  extern bool     ksp_singular;
 
   //--------------------------------------------
   // nonlinear solver convergence criteria
@@ -194,6 +256,11 @@ namespace SolverSpecify
    */
   extern double      electrode_abs_toler;
 
+  /**
+   * The absolute converged criteria for the spice circuit.
+   */
+  extern double      spice_abs_toler;
+
   //--------------------------------------------
   // TS (transient solver)
   //--------------------------------------------
@@ -220,6 +287,11 @@ namespace SolverSpecify
   extern double    TStep;
 
   /**
+   * the minimal time step. TStep will not exceed this value
+   */
+  extern double    TStepMin;
+
+  /**
    * the maximum time step. TStep will not exceed this value
    */
   extern double    TStepMax;
@@ -233,6 +305,11 @@ namespace SolverSpecify
    * indicate if auto step control should be used
    */
   extern bool      AutoStep;
+
+  /**
+   * reject time steps that LTE not satisfied
+   */
+  extern bool      RejectStep;
 
   /**
    * indicate if predict of next solution value should be used
@@ -252,7 +329,7 @@ namespace SolverSpecify
   /**
    * indicate BDF2 can be started.
    */
-  extern bool      BDF2_restart;
+  extern bool      BDF2_LowerOrder;
 
   /**
    * use initial condition, only for mixA solver
@@ -350,6 +427,12 @@ namespace SolverSpecify
    */
   extern int       DC_Cycles;
 
+
+  /**
+   * use node set, only for mixA solver
+   */
+  extern bool      NodeSet;
+
   /**
    * ramp up the voltage/current sources in circuit, only for mixA solver
    */
@@ -375,14 +458,11 @@ namespace SolverSpecify
    */
   extern double    Gmin;
 
-  //------------------------------------------------------
-  // parameters for MIX simulation
-  //------------------------------------------------------
-
   /**
-   * TCP port number
+   * drive the system to steadystate
    */
-  extern unsigned short int ServerPort;
+  extern bool OpToSteady;
+
 
   //------------------------------------------------------
   // parameters for AC simulation
@@ -417,6 +497,85 @@ namespace SolverSpecify
    */
   extern double    Freq;
 
+  //------------------------------------------------------
+  // parameters for pseudo time stepping method
+  //------------------------------------------------------
+
+  /**
+   * if pseudo time stepping method enabled
+   */
+  extern bool PseudoTimeMethod;
+
+  /**
+   * if pseudo time method for CMOS enabled
+   * in this mode, sigma of metal region will be modified
+   */
+  extern bool PseudoTimeCMOS;
+
+  /**
+   * characteristic length of CMOS device, default value is 0.1um
+   */
+  extern double PseudoTimeCMOSLambda;
+
+  /**
+   * characteristic resistance of CMOS device, default value is 1K
+   */
+  extern double PseudoTimeCMOSRes;
+
+  /**
+   * characteristic capatance of CMOS device, default value is 1f
+   */
+  extern double PseudoTimeCMOSCap;
+
+  /**
+   * characteristic time of CMOS device, default value is 0.1ns
+   */
+  extern double PseudoTimeCMOSTime;
+
+  /**
+   * pseudo time step for carrier in semiconductor region
+   */
+  extern double PseudoTimeStepCarrier;
+
+  /**
+   * pseudo time step for potential in semiconductor region
+   */
+  extern double PseudoTimeStepPotential;
+
+  /**
+   * pseudo time step for metal region
+   */
+  extern double PseudoTimeStepMetal;
+
+  /**
+   * maximum pseudo time step
+   */
+  extern double PseudoTimeStepMax;
+
+  /**
+   * relative X convergence criteria in pseudo time step mode
+   */
+  extern double PseudoTimeMethodRXTol;
+
+  /**
+   * relative function convergence criteria in pseudo time step mode
+   */
+  extern double PseudoTimeMethodRFTol;
+
+  /**
+   * convergence relax to absolute tol in pseudo time step mode
+   */
+  extern double PseudoTimeTolRelax;
+
+  /**
+   * max pseudo time step
+   */
+  extern int PseudoTimeSteps;
+
+  //------------------------------------------------------
+  // parameters for optical / particle effect
+  //------------------------------------------------------
+
   /**
    * when OptG is true,
    * the optical carrier generation is considered in the simulation
@@ -428,6 +587,16 @@ namespace SolverSpecify
    * the particle carrier generation is considered in the simulation
    */
   extern bool      PatG;
+
+
+  /**
+   * coupled source effect
+   */
+  extern bool      SourceCoupled;
+
+  //------------------------------------------------------
+  // initial parameters
+  //------------------------------------------------------
 
   /**
    * constructor, set default values

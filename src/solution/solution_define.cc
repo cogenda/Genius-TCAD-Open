@@ -28,7 +28,56 @@
 using namespace PhysicalUnit;
 
 
-std::map<const std::string, SolutionVariable> solution_string_to_enum_map;
+std::map<std::string, std::string> variable_name_conversion;
+
+static void init_variable_name_conversion_map()
+{
+  if ( variable_name_conversion.empty() )
+  {
+    variable_name_conversion["potential"   ] = "potential";
+    variable_name_conversion["e.field"     ] = "efield";
+    variable_name_conversion["electron"    ] = "electron";
+    variable_name_conversion["hole"        ] = "hole";
+    variable_name_conversion["temperature" ] = "temperature";
+    variable_name_conversion["e.temp"      ] = "elec_temperature";
+    variable_name_conversion["h.temp"      ] = "hole_temperature";
+    variable_name_conversion["qfn"         ] = "qfn";
+    variable_name_conversion["qfp"         ] = "qfp";
+
+    variable_name_conversion["doping.na"   ] = "na";
+    variable_name_conversion["doping.nd"   ] = "nd";
+
+    variable_name_conversion["recomb"      ] = "recombination";
+    variable_name_conversion["recomb.dir"  ] = "recombination_dir";
+    variable_name_conversion["recomb.shr"  ] = "recombination_srh";
+    variable_name_conversion["recomb.auger"] = "recombination_auger";
+
+    variable_name_conversion["mole.x"      ] = "mole_x";
+    variable_name_conversion["mole.y"      ] = "mole_y";
+
+    variable_name_conversion["ii.gen"             ] = "impact_ionization";
+    variable_name_conversion["optical.gen"        ] = "optical_generation";
+    variable_name_conversion["particle.gen"       ] = "particle_generation";
+  }
+}
+
+
+
+std::string FormatVariableString(const std::string & var_name)
+{
+  init_variable_name_conversion_map();
+
+  if( variable_name_conversion.find(var_name) != variable_name_conversion.end() )
+    return variable_name_conversion.find(var_name)->second;
+  return var_name;
+}
+
+
+
+//-------------------------------------------------------------------------
+
+
+std::map<std::string, SolutionVariable> solution_string_to_enum_map;
 
 
 static void init_solution_string_to_enum_map()
@@ -37,33 +86,32 @@ static void init_solution_string_to_enum_map()
   if ( solution_string_to_enum_map.empty() )
   {
     solution_string_to_enum_map["potential"   ] = POTENTIAL;
-    solution_string_to_enum_map["e.field"     ] = E_FIELD;
+    solution_string_to_enum_map["efield"      ] = E_FIELD;
     solution_string_to_enum_map["electron"    ] = ELECTRON;
     solution_string_to_enum_map["hole"        ] = HOLE;
     solution_string_to_enum_map["temperature" ] = TEMPERATURE;
-    solution_string_to_enum_map["e.temp"      ] = E_TEMP;
-    solution_string_to_enum_map["h.temp"      ] = H_TEMP;
-    solution_string_to_enum_map["qfn"         ] = QFN;
-    solution_string_to_enum_map["qfp"         ] = QFP;
+    solution_string_to_enum_map["elec_temperature"   ] = E_TEMP;
+    solution_string_to_enum_map["hole_temperature"   ] = H_TEMP;
+    solution_string_to_enum_map["qfn"                ] = QFN;
+    solution_string_to_enum_map["qfp"                ] = QFP;
 
-    solution_string_to_enum_map["doping"      ] = DOPING;
-    solution_string_to_enum_map["doping.na"   ] = DOPING_Na;
-    solution_string_to_enum_map["doping.nd"   ] = DOPING_Nd;
-    solution_string_to_enum_map["min.carrier" ] = MIN_CARRIER;
-    solution_string_to_enum_map["net.carrier" ] = NET_CARRIER;
-    solution_string_to_enum_map["net.charge"  ] = NET_CHARGE;
+    solution_string_to_enum_map["doping"             ] = DOPING;
+    solution_string_to_enum_map["na"                 ] = DOPING_Na;
+    solution_string_to_enum_map["nd"                 ] = DOPING_Nd;
+    solution_string_to_enum_map["min.carrier"        ] = MIN_CARRIER;
+    solution_string_to_enum_map["net.carrier"        ] = NET_CARRIER;
+    solution_string_to_enum_map["net.charge"         ] = NET_CHARGE;
+    solution_string_to_enum_map["recombination"      ] = RECOMBINATION;
+    solution_string_to_enum_map["recombination_dir"  ] = RECOMB_DIR;
+    solution_string_to_enum_map["recombination_srh"  ] = RECOMB_SHR;
+    solution_string_to_enum_map["recombination_auger"] = RECOMB_AUGER;
 
-    solution_string_to_enum_map["recomb"      ] = RECOMBINATION;
-    solution_string_to_enum_map["recomb.dir"  ] = RECOMB_DIR;
-    solution_string_to_enum_map["recomb.shr"  ] = RECOMB_SHR;
-    solution_string_to_enum_map["recomb.auger"] = RECOMB_AUGER;
+    solution_string_to_enum_map["mole_x"      ] = MOLE_X;
+    solution_string_to_enum_map["mole_y"      ] = MOLE_Y;
 
-    solution_string_to_enum_map["mole.x"      ] = MOLE_X;
-    solution_string_to_enum_map["mole.y"      ] = MOLE_Y;
-
-    solution_string_to_enum_map["ii.gen"      ] = II_GEN;
-    solution_string_to_enum_map["optical.gen" ] = OPTICAL_GEN;
-    solution_string_to_enum_map["particle.gen"] = PARTICLE_GEN;
+    solution_string_to_enum_map["impact_ionization"  ] = II_GEN;
+    solution_string_to_enum_map["optical_generation" ] = OPTICAL_GEN;
+    solution_string_to_enum_map["particle_generation"] = PARTICLE_GEN;
   }
 
 }

@@ -39,7 +39,7 @@ class ElectrodeSimulationRegion :  public SimulationRegion
 {
 public:
 
-  ElectrodeSimulationRegion(const std::string &name, const std::string &material, const PetscScalar T);
+  ElectrodeSimulationRegion(const std::string &name, const std::string &material, const double T, const double z);
 
   virtual ~ElectrodeSimulationRegion()
   { delete mt; }
@@ -114,6 +114,11 @@ public:
    */
   virtual double get_affinity(PetscScalar T) const
   { return mt->basic->Affinity(T); }
+
+  /**
+   * virtual function for set different model, calibrate parameters to PMI
+   */
+  virtual void set_pmi(const std::string &type, const std::string &model_name, std::vector<Parser::Parameter> & pmi_parameters);
 
   /**
    * get atom fraction of region material
@@ -418,6 +423,22 @@ public:
    */
   virtual void DDMAC_Update_Solution(PetscScalar *lxx);
 
+
+#ifdef COGENDA_COMMERCIAL_PRODUCT
+  //////////////////////////////////////////////////////////////////////////////////
+  //----------------- functions for Gummel DDML1 solver --------------------------//
+  //////////////////////////////////////////////////////////////////////////////////
+
+  /**
+   * function for build RHS and matrix for half implicit current continuity equation.
+   */
+  virtual void DDM1_Half_Implicit_Current(PetscScalar * x, Mat A, Vec r, InsertMode &add_value_flag);
+
+  /**
+   * function for build RHS and matrix for half implicit current poisson correction equation.
+   */
+  virtual void DDM1_Half_Implicit_Poisson_Correction(PetscScalar * x, Mat A, Vec r, InsertMode &add_value_flag);
+#endif
 
 
   //////////////////////////////////////////////////////////////////////////////////

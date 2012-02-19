@@ -32,6 +32,9 @@
 #include "vector_value.h"
 #include "tensor_value.h"
 
+namespace Parser{
+  class InputParser;
+}
 class SimulationSystem;
 class Waveform;
 
@@ -52,9 +55,16 @@ public:
   virtual ~Light_Source() {}
 
   /**
+   * @return the type if light source
+   */
+  virtual std::string light_source_type() = 0;
+
+
+  /**
    * virtual function to update OptG
    */
   virtual void update_system() {}
+
 
 protected:
 
@@ -88,10 +98,13 @@ public:
   virtual ~Light_Source_From_File() {}
 
 
-  //virtual double carrier_generation(double );
+  /**
+   * @return the type if light source
+   */
+  virtual std::string light_source_type() { return "light_source_from_file"; }
 
   /**
-   *
+   * update OptG
    */
   virtual void update_system();
 
@@ -130,6 +143,71 @@ private:
 };
 
 
+/**
+ * set the carrier generation of Light by RayTracing
+ */
+class Light_Source_RayTracing : public Light_Source
+{
+  public:
+
+    Light_Source_RayTracing(SimulationSystem &system, const Parser::Card &c)
+    :Light_Source(system),_card(c)
+    {}
+
+    /**
+     * virtual destructor
+     */
+    virtual ~Light_Source_RayTracing() {}
+
+
+   /**
+    * @return the type if light source
+    */
+    virtual std::string light_source_type() { return "light_source_raytracing"; }
+
+    /**
+     * update OptG
+     */
+    virtual void update_system();
+
+  private:
+
+    const Parser::Card _card;
+
+};
+
+
+/**
+ * set the carrier generation of Light by EMFEM2D
+ */
+class Light_Source_EMFEM2D : public Light_Source
+{
+  public:
+
+    Light_Source_EMFEM2D(SimulationSystem &system, const Parser::Card &c)
+    :Light_Source(system),_card(c)
+    {}
+
+    /**
+     * virtual destructor
+     */
+    virtual ~Light_Source_EMFEM2D() {}
+
+    /**
+     * @return the type if light source
+     */
+    virtual std::string light_source_type() { return "light_source_emfem2d"; }
+
+    /**
+     * update OptG
+     */
+    virtual void update_system();
+
+  private:
+
+    const Parser::Card _card;
+
+};
 
 
 #endif

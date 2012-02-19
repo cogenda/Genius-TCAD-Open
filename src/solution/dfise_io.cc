@@ -408,31 +408,54 @@ void DFISEIO::_set_boundary(const DFISE::INFO & grid_info)
     std::vector<short int>          boundary_il;
     mesh.boundary_info->build_side_list (boundary_el, boundary_sl, boundary_il);
 
-    // <bd-index, <region_index, elem-side> >
-    std::map<short int, std::map<unsigned int, std::vector<std::pair<unsigned int, unsigned int> > > > boundary_regions;
+    // <bd-index, <region_index, region_index>, elem-side> >
+    typedef std::map<short int, std::map<std::pair<unsigned int, unsigned int>, std::vector<std::pair<unsigned int, unsigned int> > > > BoundaryRegions;
+    BoundaryRegions boundary_regions;
     for(unsigned int n=0; n<boundary_el.size(); n++)
     {
       const Elem * elem = mesh.elem(boundary_el[n]);
-      boundary_regions[boundary_il[n]][elem->subdomain_id()].push_back(std::make_pair(boundary_el[n], boundary_sl[n]));
+      unsigned int region_1 = elem->subdomain_id();
+      unsigned int region_2 = invalid_uint;
+      if(elem->neighbor(boundary_sl[n]))
+      {
+        region_2 = elem->neighbor(boundary_sl[n])->subdomain_id();
+        if(region_1 > region_2) std::swap(region_1, region_2);
+      }
+      std::pair<unsigned int, unsigned int> region_pair(region_1, region_2);
+      boundary_regions[boundary_il[n]][region_pair].push_back(std::make_pair(boundary_el[n], boundary_sl[n]));
     }
 
-    std::map<short int, std::map<unsigned int, std::vector<std::pair<unsigned int, unsigned int> > > >::const_iterator it = boundary_regions.begin();
+    BoundaryRegions::const_iterator it = boundary_regions.begin();
     for( ; it != boundary_regions.end(); ++it)
     {
-      // this boundary only conver one region, that is right
+      // this boundary only conver one region (pair), that is right
       if(it->second.size() == 1 ) continue;
 
       // we should split this boundary by regions
       std::string boundary_label = inverse_bd_map[it->first];
       bd_map.erase(boundary_label);
 
-      const std::map<unsigned int, std::vector<std::pair<unsigned int, unsigned int> > > & region_boundary_elems = it->second;
-      std::map<unsigned int, std::vector<std::pair<unsigned int, unsigned int> > >::const_iterator region_boundary_elems_it = region_boundary_elems.begin();
+      const std::map<std::pair<unsigned int, unsigned int>, std::vector<std::pair<unsigned int, unsigned int> > > & region_boundary_elems = it->second;
+      std::map<std::pair<unsigned int, unsigned int>, std::vector<std::pair<unsigned int, unsigned int> > >::const_iterator region_boundary_elems_it = region_boundary_elems.begin();
       for(; region_boundary_elems_it != region_boundary_elems.end(); ++region_boundary_elems_it)
       {
-        std::string new_boundary_label = boundary_label + '_' + mesh.subdomain_label_by_id( region_boundary_elems_it->first );
+        unsigned int region_1 = region_boundary_elems_it->first.first;
+        unsigned int region_2 = region_boundary_elems_it->first.second;
+
+        std::string new_boundary_label;
+        if(region_2 == invalid_uint)
+          new_boundary_label = boundary_label + '_' + mesh.subdomain_label_by_id(region_1);
+        else
+        {
+          if(mesh.subdomain_label_by_id(region_1) < mesh.subdomain_label_by_id(region_2))
+            new_boundary_label = boundary_label + '_' + mesh.subdomain_label_by_id(region_1) + "_to_" + mesh.subdomain_label_by_id(region_2);
+          else
+            new_boundary_label = boundary_label + '_' + mesh.subdomain_label_by_id(region_2) + "_to_" + mesh.subdomain_label_by_id(region_1);
+        }
+
         short int new_bd_id = new_bd_id_begin++;
         bd_map[new_boundary_label] = new_bd_id;
+
         const std::vector<std::pair<unsigned int, unsigned int> > & boundary_elems = region_boundary_elems_it->second;
         for(unsigned int n=0; n<boundary_elems.size(); ++n)
         {
@@ -443,12 +466,14 @@ void DFISEIO::_set_boundary(const DFISE::INFO & grid_info)
         }
       }
     }
+
   }
 
 
 
   //NOTE: we havn't process all the interface and region external boundaries, do it here
 
+  std::set<short int> dummy_bds;
   for (MeshBase::element_iterator el = mesh.elements_begin(); el != el_end; ++el)
   {
     const Elem* elem = *el;
@@ -468,6 +493,7 @@ void DFISEIO::_set_boundary(const DFISE::INFO & grid_info)
         {
           bd_id = new_bd_id_begin++;
           bd_map[bd_label] = bd_id;
+          dummy_bds.insert(bd_id);
         }
         mesh.boundary_info->add_side(elem, ms, bd_id);
       }
@@ -498,6 +524,7 @@ void DFISEIO::_set_boundary(const DFISE::INFO & grid_info)
         {
           bd_id = new_bd_id_begin++;
           bd_map[bd_label] = bd_id;
+          dummy_bds.insert(bd_id);
         }
         mesh.boundary_info->add_side(elem, ms, bd_id);
       }
@@ -512,10 +539,13 @@ void DFISEIO::_set_boundary(const DFISE::INFO & grid_info)
   Bd_It bd_it = bd_map.begin();
   for(; bd_it != bd_map.end(); ++bd_it)
   {
-    mesh.boundary_info->set_label_to_id( (*bd_it).second, (*bd_it).first );
+    short int bd_id = bd_it->second;
+    bool user_defined = (dummy_bds.find(bd_id) == dummy_bds.end() );
+    mesh.boundary_info->set_label_to_id( bd_it->second, bd_it->first, user_defined );
   }
 
 }
+
 
 void DFISEIO::_set_region()
 {
@@ -586,8 +616,8 @@ void DFISEIO::_set_region()
               Boron = ise_reader->get_scaler_value("BoronConcentration", r, dfise_node_index)* doping_scale;
 
 
-            // don't have DopingConcentration
-            if(! has_net_doping_concentration)
+            // Have species doping concentration and don't have DopingConcentration
+            if(species_doping_concentration && !has_net_doping_concentration)
             {
               node_data->data<Real>(Phosphorus_index) = Phosphorus;
               node_data->data<Real>(Arsenic_index)    = Arsenic;
@@ -608,7 +638,7 @@ void DFISEIO::_set_region()
 
             // check if species_doping_concentration match net_doping_concentration
 
-            if( std::abs((Phosphorus + Arsenic + Antimony) - Boron - NetConcentration) < 1e-2*std::abs(NetConcentration) )
+            if(species_doping_concentration && std::abs((Phosphorus + Arsenic + Antimony) - Boron - NetConcentration) < 1e-2*std::abs(NetConcentration) )
             {
               node_data->data<Real>(Phosphorus_index) = Phosphorus;
               node_data->data<Real>(Arsenic_index)    = Arsenic;
@@ -654,6 +684,8 @@ void DFISEIO::_set_region()
         default: genius_error();
     }
   }
+
+  system.init_region_post_process();
 }
 
 
@@ -781,21 +813,21 @@ void DFISEIO::write (const std::string& filename)
       for(unsigned int n=0; n<_elems.size(); ++n)
       {
         const Elem * elem = _elems[n];
-        DFISE::Element Elem;
-        Elem.elem_code = _elem_code(elem->type());
+        DFISE::Element DFISE_Elem;
+        DFISE_Elem.elem_code = _elem_code(elem->type());
 
         switch( Elem::dim(elem->type()) )
         {
             case 1 :
             {
-              Elem.faces.push_back(elem->get_node(0)->id());
-              Elem.faces.push_back(elem->get_node(1)->id());
+              DFISE_Elem.faces.push_back(elem->get_node(0)->id());
+              DFISE_Elem.faces.push_back(elem->get_node(1)->id());
               break;
             }
-            case 2 :  Elem.faces = _edge_index(elem); break;
-            case 3 :  Elem.faces = _face_index(elem); break;
+            case 2 :  DFISE_Elem.faces = _edge_index(elem); break;
+            case 3 :  DFISE_Elem.faces = _face_index(elem); break;
         }
-        grid.Elements.push_back(Elem);
+        grid.Elements.push_back(DFISE_Elem);
       }
 
       // regions

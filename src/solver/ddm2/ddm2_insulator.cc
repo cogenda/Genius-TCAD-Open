@@ -304,7 +304,7 @@ void InsulatorSimulationRegion::DDM2_Time_Dependent_Function(PetscScalar * x, Ve
     iy.push_back(fvm_node->global_offset()+1);                                // save index in the buffer
 
     //second order
-    if(SolverSpecify::TS_type==SolverSpecify::BDF2 && SolverSpecify::BDF2_restart==false)
+    if(SolverSpecify::TS_type==SolverSpecify::BDF2 && SolverSpecify::BDF2_LowerOrder==false)
     {
       PetscScalar r = SolverSpecify::dt_last/(SolverSpecify::dt_last + SolverSpecify::dt);
       PetscScalar TT = -((2-r)/(1-r)*T - 1.0/(r*(1-r))*node_data->T() + (1-r)/r*node_data->T_last())*node_data->density()*HeatCapacity
@@ -366,7 +366,7 @@ void InsulatorSimulationRegion::DDM2_Time_Dependent_Jacobian(PetscScalar * x, Ma
     // process \partial t
 
     //second order
-    if(SolverSpecify::TS_type==SolverSpecify::BDF2 && SolverSpecify::BDF2_restart==false)
+    if(SolverSpecify::TS_type==SolverSpecify::BDF2 && SolverSpecify::BDF2_LowerOrder==false)
     {
       PetscScalar r = SolverSpecify::dt_last/(SolverSpecify::dt_last + SolverSpecify::dt);
       AutoDScalar TT = -((2-r)/(1-r)*T - 1.0/(r*(1-r))*node_data->T() + (1-r)/r*node_data->T_last())*node_data->density()*HeatCapacity

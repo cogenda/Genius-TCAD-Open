@@ -46,7 +46,6 @@ def options(opt):
   opt.add_option('--with-slepc', action='store_true', default=False, dest='slepc_enabled', help='Build with Slepc')
   opt.add_option('--with-slepc-dir',  action='store', default='/usr/local/slepc', dest='slepc_dir', help='Directory to Slepc.')
 
-
 def configure(conf):
   guess = config_guess()
   platform = guess['platform']
@@ -68,9 +67,10 @@ def configure(conf):
   conf.load('compiler_c compiler_cxx compiler_fc')
 
   conf.env.PLATFORM = platform # Windows Linux Darwin ...
-  if   platform=='Linux':    conf.define('LINUX', 1)
-  elif platform=='Windows':  conf.define('WINDOWS', 1); conf.define('CYGWIN',1); conf.define('WIN32',1)
+  if   platform=='Linux':    conf.define('LINUX', 1); conf.define('DLLHOOK',1)
+  elif platform=='Windows':  conf.define('WINDOWS', 1); conf.define('WIN32',1)
   elif platform=='Darwin':   conf.define('DARWIN', 1)
+  elif platform=='AIX':      conf.define('AIX', 1)
 
   # try to locate git
   if conf.options.GIT:
@@ -102,25 +102,42 @@ def configure(conf):
   if platform=='Linux':
     if conf.env['COMPILER_CC'] in ['gcc', 'icc']:
       ccflags_common.extend(['-fPIC'])
+      cxxflags_common.extend(['-fPIC'])
       fcflags_common.extend(['-fPIC'])
 
+    ldflags_common.extend(['-ldl', '-Wl,--export-dynamic'])
+    if conf.env['COMPILER_CC'] in ['icc']:
+      ldflags_common.extend(['-static-intel'])
 
-      ldflags_common.extend(['-Wl,--export-dynamic'])
-
-      conf.env['cxxshlib_PATTERN'] = '%s.so'
+    conf.env['cxxshlib_PATTERN'] = '%s.so'
 
   elif platform=='Windows':
     if conf.env['COMPILER_CC'] in ['msvc', 'icc']:
-      ccflags_common.extend(['/EHsc'])
+      cxxflags_common.extend(['/EHsc'])
       if conf.options.crt_version=='MT':
         ccflags_common.extend(conf.env.CFLAGS_CRT_MULTITHREADED)
+        cxxflags_common.extend(conf.env.CFLAGS_CRT_MULTITHREADED)
       else:
         ccflags_common.extend(conf.env.CFLAGS_CRT_MULTITHREADED_DLL)
+        cxxflags_common.extend(conf.env.CFLAGS_CRT_MULTITHREADED_DLL)
         ldflags_common.append('/NODEFAULTLIB:LIBCMT')
+
+  elif platform=='AIX':
+    # AIX only support 64bit
+    if conf.env['COMPILER_CC'] in ['xlc']:
+      ccflags_common.extend(['-q64','-qpic'])
+      cxxflags_common.extend(['-q64','-qpic','-qrtti=all'])
+
+    if conf.env['COMPILER_FC'] in ['xlf90']:
+      fcflags_common.extend(['-q64','-qpic'])
+
+    ldflags_common.extend(['-q64'])
+    ldflags_common.extend(['-bexpall'])
+    conf.env['cxxshlib_PATTERN'] = '%s.so'
 
 
   conf.env.append_value('CFLAGS', ccflags_common)
-  conf.env.append_value('CXXFLAGS', ccflags_common)
+  conf.env.append_value('CXXFLAGS', cxxflags_common)
   conf.env.append_value('FCFLAGS', fcflags_common)
 
   conf.env.append_value('LINKFLAGS', ldflags_common)
@@ -156,7 +173,9 @@ def configure(conf):
     f.close()
 
     cmd = []
-    cmd.extend(cc)
+    if isinstance(cc, str): cmd.append(cc)
+    else:                   cmd.extend(cc)
+
     if isinstance(opt, list): cmd.extend(opt)
     else:                     cmd.extend(str(opt).split())
     cmd.append(fname)
@@ -173,6 +192,160 @@ def configure(conf):
       return True
     except Exception, e:
       return False
+  # }}}
+
+  # {{{ simplifyLinkerOptions()
+  def simplifyLinkerOptions(opts):
+    # append -Bdynamic at the end to reset to default behaviour
+    opts = list(opts)
+    opts.append('-Wl,-Bdynamic')
+
+    # {{{ 1: -Bstatic/dynamic immediately following each other
+    dups = ['-Wl,-Bstatic', '-Wl,-Bdynamic']
+    nopts = [ opts[0] ]
+    for o in opts[1:]:
+      if o in dups and nopts[-1] in dups:
+        nopts.pop()
+      nopts.append(o)
+    opts = nopts
+    # }}}
+
+    # {{{ 2: --start-group immediately followed by --end-group
+    nopts =[ opts[0] ]
+    for o in opts[1:]:
+      if o=='-Wl,--end-group' and nopts[-1]=='-Wl,--start-group':
+        nopts.pop()
+      else:
+        nopts.append(o)
+    opts = nopts
+    # }}}
+
+    return opts
+  # }}}
+
+  # {{{ _fromCygpath()
+  def _fromCygpath(cygpath):
+    if not cygpath.startswith('/cygdrive'):
+      return cygpath
+    parts=cygpath.split('/')
+    newparts=['%s:' % parts[2], '\\']
+    newparts.extend(parts[3:])
+    return os.path.join(*newparts)
+  # }}}
+
+  # {{{ parse_lib_str
+  def parse_lib_str(str):
+    toks = re.split('(?<!\\\\)\s+', str)
+
+    flags = []
+    for tok in toks:
+      # {{{ -l<lib>
+      res = re.match('-l(.*)', tok)
+      if res:
+        flags.append(conf.env.LIB_ST % res.group(1))
+        # TODO: on windows, stlib and shlib has
+        # different name convension!
+        continue
+      # }}}
+
+      # {{{ -L<LIBPATH>
+      res = re.match('-L(.*)', tok)
+      if res:
+        if platform=='Windows' :
+          lib_dir = _fromCygpath(res.group(1))
+        else:
+          lib_dir = res.group(1)
+        flags.append(conf.env.LIBPATH_ST % lib_dir)
+        continue
+      # }}}
+
+      # {{{ xyz.lib  or xyz.a
+      res = re.match('.*\.(?:lib|a)$', tok)
+      if res:
+        if platform=='Windows':
+          f = _fromCygpath(res.group(0))
+        else:
+          f = res.group(0)
+        flags.append(f)
+        continue
+      # }}}
+
+      # {{{ options
+      allow_lnk_opts = ['-Bstatic', '-Bdynamic', '--start-group', '--end-group']
+      if tok in allow_lnk_opts:
+        flags.append('-Wl,%s' % tok)
+        continue
+      if tok in ['-Wl,%s'%x for x in allow_lnk_opts]:
+        flags.append(tok)
+        continue
+      # }}}
+
+    return flags
+  # }}}
+
+  # {{{ parse_inc_str
+  def parse_inc_str(str):
+    toks = re.split('(?<!\\\\)\s+', str)
+    inc_dirs=[]
+    for tok in toks:
+      res = re.match('-I(.*)', tok)
+      if res:
+        if platform=='Windows':
+          inc_dirs.append(_fromCygpath(res.group(1)))
+        else:
+          inc_dirs.append(res.group(1))
+
+    return inc_dirs
+  # }}}
+
+  # {{{ test_imp_lib()
+  def test_imp_lib(lang='c'):
+    tmpdir = tempfile.mkdtemp()
+
+    if lang=='c':
+      fname='test.c'
+      cc=conf.env['CC']
+      code = 'int main(void){return 0;}'
+    elif lang=='cxx':
+      fname='test.cc'
+      cc=conf.env['CXX']
+      code = 'int main(void){return 0;}'
+    elif lang=='f':
+      fname='test.f90'
+      cc=conf.env['FC']
+      code = '''
+PROGRAM  TEST
+ IMPLICIT  NONE
+ INTEGER            :: n
+END PROGRAM  TEST
+'''
+    else:
+      raise ValueError
+
+    f=open(os.path.join(tmpdir,fname), 'w')
+    f.write(code)
+    f.close()
+
+    cmd = []
+    if isinstance(cc, str): cmd.append(cc)
+    else:                   cmd.extend(cc)
+    cmd.extend(['-v', fname])
+    out, err = conf.cmd_and_log(cmd, cwd=tmpdir, output=waflib.Context.BOTH)
+
+    lines = err.split(os.linesep)
+    for line in lines:
+      cmd = line.split()
+      if cmd==None or len(cmd)==0:
+        continue
+
+      cmd = os.path.basename(cmd[0])
+      if not string.lower(cmd) in ['ld', 'link', 'xlink', 'collect2']:
+        continue
+
+      # link line
+      return parse_lib_str(line)
+    return []
+
   # }}}
 
   # {{{ test_optimize()
@@ -224,7 +397,23 @@ def configure(conf):
                  '/O2']
         if conf.options.cc_opt:
           oopts.insert(0, conf.options.cc_opt)
-        for opt in opts:
+        for oopt in oopts:
+          if test_opt(oopt): break
+        conf.end_msg(oopt)
+        conf.env.append_value('CFLAGS_opt', oopt.split())
+        conf.env.append_value('CXXFLAGS_opt', conf.env.CFLAGS_opt)
+        conf.env.append_value('FCFLAGS_opt', conf.env.CFLAGS_opt)
+
+    elif platform=='AIX':
+      if conf.env['COMPILER_CC'] in ['xlc']:
+        conf.start_msg('Detecting optimization options')
+        oopts = ['-O5 -qmaxmem=-1 -qipa -qstrict -qarch=auto -qtune=auto',
+                 '-O4 -qmaxmem=-1 -qipa -qstrict -qarch=auto -qtune=auto',
+                 '-O3 -qmaxmem=-1 -qipa -qstrict -qarch=auto -qtune=auto',
+                 '-O2 -qmaxmem=-1 -qipa -qarch=auto -qtune=auto']
+        if conf.options.cc_opt:
+          oopts.insert(0, conf.options.cc_opt)
+        for oopt in oopts:
           if test_opt(oopt): break
         conf.end_msg(oopt)
         conf.env.append_value('CFLAGS_opt', oopt.split())
@@ -244,6 +433,11 @@ def configure(conf):
         conf.check_cc(cflags='/Zi', msg='Checking for debugging support')
         conf.env.append_value('CFLAGS', '/Zi')
         conf.env.append_value('CXXFLAGS', '/Zi')
+    elif platform=='AIX':
+      if conf.env['COMPILER_CC'] in ['xlc']:
+        conf.check_cc(cflags='-g', msg='Checking for debugging support')
+        conf.env.append_value('CFLAGS', '-g')
+        conf.env.append_value('CXXFLAGS', '-g')
   # }}}
 
   if conf.options.debug:
@@ -335,59 +529,6 @@ stringstream message; message << "Hello"; return 0;
 
   # {{{ Petsc
 
-  # {{{ _fromCygpath()
-  def _fromCygpath(cygpath):
-    if not cygpath.startswith('/cygdrive'):
-      return cygpath
-    parts=cygpath.split('/')
-    newparts=['%s:' % parts[2], '\\']
-    newparts.extend(parts[3:])
-    return os.path.join(*newparts)
-  # }}}
-
-  # {{{ parse_lib_str
-  def parse_lib_str(str):
-    toks = re.split('(?<!\\\\)\s+', str)
-    libs=[]
-    lib_dirs=[]
-    for tok in toks:
-      res = re.match('-l(.*)', tok)
-      if res:
-        libs.append(res.group(1))
-        continue
-
-      res = re.match('-L(.*)', tok)
-      if res:
-        if platform=='Windows':
-          lib_dirs.append(_fromCygpath(res.group(1)))
-        else:
-          lib_dirs.append(res.group(1))
-        continue
-
-      if platform=='Windows':
-        res = re.match('(.*)\.lib', tok)
-        if res:
-          libs.append(_fromCygpath(res.group(1)))
-          continue
-
-    return (lib_dirs, libs)
-  # }}}
-
-  # {{{ parse_inc_str
-  def parse_inc_str(str):
-    toks = re.split('(?<!\\\\)\s+', str)
-    inc_dirs=[]
-    for tok in toks:
-      res = re.match('-I(.*)', tok)
-      if res:
-        if platform=='Windows':
-          inc_dirs.append(_fromCygpath(res.group(1)))
-        else:
-          inc_dirs.append(res.group(1))
-
-    return inc_dirs
-  # }}}
-
   def config_petsc():
     found = False
     base_dir = conf.options.petsc_dir
@@ -417,30 +558,18 @@ stringstream message; message << "Hello"; return 0;
     inc_dirs.append(os.path.join(base_dir, 'include'))
     inc_dirs.append(os.path.join(arch_dir, 'include'))
 
-    conf.check_cxx(header_name='petsc.h',
+    conf.check_cxx(header_name='petscversion.h',
                    cxxflags=[conf.env.CPPPATH_ST % d for d in inc_dirs],
                    uselib_store='PETSC', define_name='HAVE_PETSC')
 
     lib_dirs, libs = [],[]
-    for v in ['PETSC_WITH_EXTERNAL_LIB', 'PETSC_LIB_BASIC', 'PACKAGES_LIBS', 'PCC_LINKER_LIBS']:
+
+    linkflags = []
+    for v in ['PETSC_WITH_EXTERNAL_LIB', 'PETSC_LIB_BASIC', 'PACKAGES_LIBS']:
       if not petsc_vars.has_key(v): continue
-      t1, t2 = parse_lib_str(petsc_vars[v])
-      lib_dirs.extend(t1)
-      libs.extend(t2)
-    lib_dirs.append(os.path.join(arch_dir, 'lib'))
-    if not 'petsc' in libs:
-      for l in '''petsccontrib petscts petscsnes petscksp
-                  petscdm petscmat petscvec petsc'''.split():
-        try:
-          conf.check_cxx(lib=l,
-                         linkflags=[conf.env.LIBPATH_ST % d for d in lib_dirs],
-                         uselib_store='PETSC', msg='Checking for library %s of Petsc'%l)
-        except: pass
-    conf.check_cxx(lib=libs,
-                   linkflags=[conf.env.LIBPATH_ST % d for d in lib_dirs],
-                   uselib_store='PETSC', msg='Checking for library Petsc')
+      linkflags.extend( parse_lib_str(petsc_vars[v]) )
 
-
+    # MPI
     conf.start_msg('Checking for MPI')
     inc_mpi = petsc_vars.get('MPI_INCLUDE', 'mpiuni').strip()
     if inc_mpi.split(os.path.sep)[-1] == 'mpiuni':
@@ -448,6 +577,51 @@ stringstream message; message << "Hello"; return 0;
     else:
         conf.end_msg('yes')
         conf.define('HAVE_MPI', 1)
+
+        if platform=='Linux':
+          # MPI libraries
+          conf.start_msg('Checking MPI library')
+          cmd = [petsc_vars['PCC'],
+                 '-cc=%s'%conf.env['COMPILER_CC'],
+                 '-show',
+                ]
+          out, err = conf.cmd_and_log(cmd, output=waflib.Context.BOTH)
+          linkflags.extend( parse_lib_str(out) )
+          conf.end_msg('ok')
+
+        # AIX with PE, shoule use -binitfini:poe_remote_main as link flag
+        if platform=='AIX':
+          linkflags.append('-binitfini:poe_remote_main')
+
+    if not platform=='Windows':
+      # Fortran library needed when using C++ linker
+      conf.start_msg('Checking Fortran library')
+      cxx_flags = test_imp_lib(lang='cxx')
+      f_flags = test_imp_lib(lang='f')
+      flags = []
+      for f in f_flags:
+        if f.startswith('-L') or \
+           f.startswith('-l') or \
+           f.endswith('.a') or \
+           f.endswith('.lib'):
+          if f in cxx_flags: continue
+
+        if platform=='Linux' and f=='-lifcore':
+          # ICC 11.1 mistakenly uses libifcore.a instead of libifcore_pic.a
+          flags.append('-lifcore_pic')
+        else:
+          flags.append(f)  # append to list only if the flag not present for CXX
+
+      linkflags.extend(simplifyLinkerOptions(flags))
+      conf.end_msg('ok')
+    else:
+      # some default windows libs
+      flags = parse_lib_str(petsc_vars['PCC_LINKER_LIBS'])
+      linkflags.extend(flags)
+
+    conf.check_cxx(linkflags=linkflags,
+                   uselib_store='PETSC', msg='Checking for library Petsc')
+    conf.env.append_value('LINKFLAGS_PETSC', linkflags)
 
   # }}}
   config_petsc()
@@ -469,6 +643,7 @@ stringstream message; message << "Hello"; return 0;
     print 'Using Slepc version %s' % version
 
     inc_dirs = [os.path.join(base_dir, 'include')]
+    inc_dirs.append(os.path.join(arch_dir, 'include'))
     conf.check_cxx(header_name='slepc.h',
                    cxxflags=[conf.env.CPPPATH_ST % d for d in inc_dirs],
                    use='PETSC',
@@ -591,7 +766,7 @@ stringstream message; message << "Hello"; return 0;
   conf.load('myflex mybison', tooldir='./build')
 
   conf.write_config_header('config.h')
-  print conf.env
+  #print conf.env
 
 def build(bld):
   #print bld.env
@@ -606,9 +781,13 @@ def build(bld):
 
   bld.install_files('${PREFIX}/bin',
                     ['bin/GeniusCtrl.py',
-                     'bin/geniusd.py',
                      'bin/GeniusLib.py',
                      'bin/HTTPFE.py']
+                   )
+
+  bld.install_files('${PREFIX}/bin',
+                     ['bin/geniusd.py'],
+                     chmod=Utils.O755
                    )
 
   bld.install_files('${PREFIX}', bld.path.ant_glob('examples/**'), relative_trick=True)

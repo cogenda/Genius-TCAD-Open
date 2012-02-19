@@ -4,7 +4,7 @@
 #include <string>
 #include "mxml.h"
 
-#if defined(CYGWIN) || defined(WIN32)
+#if defined(WINDOWS) || defined(WIN32)
 inline int strncasecmp(const char* s1, const char* s2, size_t n)
 {
   return _strnicmp(s1, s2, n);

@@ -41,7 +41,7 @@ public:
   /**
    * constructor
    */
-  VacuumSimulationRegion(const std::string &name, const std::string &material, const PetscScalar T);
+  VacuumSimulationRegion(const std::string &name, const std::string &material, const double T, const double z);
 
   /**
    * destructor

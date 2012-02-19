@@ -53,6 +53,7 @@ struct AdvancedModel
     Mob_Force = ModelSpecify::ESimple;
 
     HotCarrierInjection = false;
+    FNTunneling = false;
     BandBandTunneling = false;
 
     ImpactIonization = false;
@@ -124,6 +125,16 @@ struct AdvancedModel
    * specify if hot carrier injection should be supported
    */
   bool HotCarrierInjection;
+
+
+  //-----------------------------------------------------------
+  // parameters for Fowler-Nordheim tunneling
+  //-----------------------------------------------------------
+
+  /**
+   * specify if Fowler-Nordheim tunneling should be supported
+   */
+  bool    FNTunneling;
 
 
   //-----------------------------------------------------------

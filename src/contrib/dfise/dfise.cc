@@ -30,7 +30,7 @@
 #include "dfise.h"
 
 #include "config.h"
-#ifdef CYGWIN
+#ifdef WINDOWS
   #include <io.h>      // for windows _access function
 #else
   #include <unistd.h>  // for POSIX access function
@@ -46,7 +46,7 @@ namespace DFISE
 
   // avoid isatty() problem of Bison 2.3
 #define YY_NEVER_INTERACTIVE 1
-#ifdef CYGWIN
+#ifdef WINDOWS
   #define YY_NO_UNISTD_H 1
 #endif
 
@@ -59,7 +59,7 @@ namespace DFISE
     std::string data_file = file + ".dat";
 
     //check if we can fild the grd file
-#ifdef CYGWIN
+#ifdef WINDOWS
     if ( _access( (char *)grid_file.c_str(),  04 ) == -1 )
 #else
     if (  access( grid_file.c_str(),  R_OK ) == -1 )
@@ -72,7 +72,7 @@ namespace DFISE
 
 
     //check if we can fild the data file
-#ifdef CYGWIN
+#ifdef WINDOWS
     if ( _access( (char *)data_file.c_str(),  04 ) == -1 )
 #else
     if (  access( data_file.c_str(),  R_OK ) == -1 )

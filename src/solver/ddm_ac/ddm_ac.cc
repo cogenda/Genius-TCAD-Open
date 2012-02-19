@@ -33,6 +33,15 @@ using PhysicalUnit::K;
 
 
 
+/**
+ * free all the contex
+ */
+DDMACSolver::~DDMACSolver()
+{
+  FVM_Node::set_solver_index(0);
+  BoundaryCondition::set_solver_index(0);
+}
+
 
 /*------------------------------------------------------------------
  * create linear solver contex and adjust some parameters
@@ -44,8 +53,20 @@ int DDMACSolver::create_solver()
   MESSAGE<< '\n' << "AC Small Signal Solver init..." << std::endl;
   RECORD();
 
+
+  if( SolverSpecify::Electrode_ACScan.empty() )
+  {
+    MESSAGE<<"ERROR: You must specify one electrode for AC scan."<<std::endl; RECORD();
+    genius_error();
+  }
+
   // set ac variables for each region
   set_variables();
+
+  set_solver_index(3);
+
+  set_linear_solver_type    ( SolverSpecify::LS );
+  set_preconditioner_type   ( SolverSpecify::PC );
 
   // must setup linear contex here!
   setup_linear_data();
@@ -112,7 +133,7 @@ int DDMACSolver::create_solver()
   // extra vector for store T*b
   VecDuplicate ( b, &b_ );
 
-  MESSAGE<< '\n' << "AC Small Signal Solver init ok..." << std::endl;
+  MESSAGE<< "AC Small Signal Solver init ok..." << std::endl;
   RECORD();
 
   return FVM_LinearSolver::create_solver();
@@ -247,10 +268,11 @@ int DDMACSolver::pre_solve_process ( bool /*load_solution*/ )
  */
 int DDMACSolver::solve()
 {
-  START_LOG ( "ACSolver()", "KSP_Solver" );
+  START_LOG ( "solve()", "DDMACSolver" );
+
+  set_solver_index(3);
 
   this->pre_solve_process();
-
 
   for ( SolverSpecify::Freq = SolverSpecify::FStart; SolverSpecify::Freq <= SolverSpecify::FStop;  )
   {
@@ -288,7 +310,7 @@ int DDMACSolver::solve()
   }
 
 
-  STOP_LOG ( "ACSolver()", "KSP_Solver" );
+  STOP_LOG ( "solve()", "DDMACSolver" );
 
   return 0;
 }
@@ -347,20 +369,20 @@ int DDMACSolver::destroy_solver()
   clear_linear_data();
 
   // destroy the Vec and Mat we defined in class DDMACSolver
-  ierr = VecDestroy ( s );
+  ierr = VecDestroy ( PetscDestroyObject(s) );
   genius_assert ( !ierr );
-  ierr = VecDestroy ( ls );
+  ierr = VecDestroy ( PetscDestroyObject(ls) );
   genius_assert ( !ierr );
-  ierr = MatDestroy ( J_ );
+  ierr = MatDestroy ( PetscDestroyObject(J_) );
   genius_assert ( !ierr );
-  ierr = MatDestroy ( A_ );
+  ierr = MatDestroy ( PetscDestroyObject(A_) );
   genius_assert ( !ierr );
-  ierr = MatDestroy ( T_ );
+  ierr = MatDestroy ( PetscDestroyObject(T_) );
   genius_assert ( !ierr );
-  ierr = VecDestroy ( b_ );
+  ierr = VecDestroy ( PetscDestroyObject(b_) );
   genius_assert ( !ierr );
 
-  if ( !_first_create ) MatDestroy ( C_ );
+  if ( !_first_create ) MatDestroy ( PetscDestroyObject(C_) );
 
   return FVM_LinearSolver::destroy_solver();
 }
@@ -385,6 +407,9 @@ int DDMACSolver::destroy_solver()
  */
 void DDMACSolver::build_ddm_ac ( double omega )
 {
+
+  START_LOG ( "build_ddm_ac()", "DDMACSolver" );
+
   // flag for indicate ADD_VALUES operator.
   InsertMode add_value_flag = NOT_SET_VALUES;
 
@@ -456,6 +481,8 @@ void DDMACSolver::build_ddm_ac ( double omega )
 
   //MatView(A, PETSC_VIEWER_DRAW_WORLD);
   //getchar();
+
+  STOP_LOG ( "build_ddm_ac()", "DDMACSolver" );
 
 }
 

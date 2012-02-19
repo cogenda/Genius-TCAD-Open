@@ -80,7 +80,7 @@ void ResistanceResistanceBC::Poissin_Fill_Value(Vec , Vec L)
 /*---------------------------------------------------------------------
  * do pre-process to function for poisson solver
  */
-void ResistanceResistanceBC::Poissin_Function_Preprocess(Vec f, std::vector<PetscInt> &src_row,
+void ResistanceResistanceBC::Poissin_Function_Preprocess(PetscScalar *, Vec f, std::vector<PetscInt> &src_row,
     std::vector<PetscInt> &dst_row, std::vector<PetscInt> &clear_row)
 {
   const SimulationRegion * _r1 = bc_regions().first;
@@ -173,7 +173,7 @@ void ResistanceResistanceBC::Poissin_Function(PetscScalar * x, Vec f, InsertMode
 
     // the psi of this node is equal to corresponding psi of  node in the first resistance region
     // since psi should be continuous for the interface
-    PetscScalar f_psi_metal = (V_resistance_1 + affinite_resistance_1) - (V_resistance_2 + affinite_resistance_2);
+    PetscScalar f_psi_metal = (e*V_resistance_1 + affinite_resistance_1) - (e*V_resistance_2 + affinite_resistance_2);
     iy.push_back(resistance_fvm_node_2->global_offset());
     y_new.push_back(f_psi_metal);
 
@@ -191,7 +191,7 @@ void ResistanceResistanceBC::Poissin_Function(PetscScalar * x, Vec f, InsertMode
         const FVM_NodeData * insulator_fvm_node_data = insulator_fvm_node->node_data();
         const PetscScalar V_insulator  = x[insulator_fvm_node->local_offset()];
 
-        PetscScalar f_psi_insulator =  V_insulator - V_resistance_1;
+        PetscScalar f_psi_insulator =  V_insulator - 0.5*(V_resistance_1+V_resistance_2);
         iy.push_back(insulator_fvm_node->global_offset());
         y_new.push_back(f_psi_insulator);
 
@@ -283,7 +283,7 @@ void ResistanceResistanceBC::Poissin_Jacobian_Reserve(Mat *jac, InsertMode &add_
 /*---------------------------------------------------------------------
  * do pre-process to jacobian matrix for poisson solver
  */
-void ResistanceResistanceBC::Poissin_Jacobian_Preprocess(Mat *jac, std::vector<PetscInt> &src_row,
+void ResistanceResistanceBC::Poissin_Jacobian_Preprocess(PetscScalar *, Mat *jac, std::vector<PetscInt> &src_row,
     std::vector<PetscInt> &dst_row, std::vector<PetscInt> &clear_row)
 {
   const SimulationRegion * _r1 = bc_regions().first;
@@ -343,8 +343,8 @@ void ResistanceResistanceBC::Poissin_Jacobian(PetscScalar * x, Mat *jac, InsertM
   const SimulationRegion * _r1 = bc_regions().first;
   const SimulationRegion * _r2 = bc_regions().second;
 
-  //the indepedent variable number, we need 2 here.
-  adtl::AutoDScalar::numdir=2;
+  //the indepedent variable number, we need 3 here.
+  adtl::AutoDScalar::numdir=3;
 
   // after that, set values to source rows
   BoundaryCondition::const_node_iterator node_it = nodes_begin();
@@ -376,7 +376,7 @@ void ResistanceResistanceBC::Poissin_Jacobian(PetscScalar * x, Mat *jac, InsertM
 
     // the psi of this node is equal to corresponding psi of  node in the first resistance region
     // since psi should be continuous for the interface
-    AutoDScalar f_psi_metal = (V_resistance_1 + affinite_resistance_1) - (V_resistance_2 + affinite_resistance_2);
+    AutoDScalar f_psi_metal = (e*V_resistance_1 + affinite_resistance_1) - (e*V_resistance_2 + affinite_resistance_2);
 
     // set Jacobian of governing equation f_psi
     MatSetValue(*jac, resistance_fvm_node_2->global_offset(), resistance_fvm_node_1->global_offset(), f_psi_metal.getADValue(0), ADD_VALUES);
@@ -395,15 +395,16 @@ void ResistanceResistanceBC::Poissin_Jacobian(PetscScalar * x, Mat *jac, InsertM
 
         const FVM_Node * insulator_fvm_node = (*rnode_it).second.second;
         const FVM_NodeData * insulator_fvm_node_data = insulator_fvm_node->node_data();
-        AutoDScalar V_insulator  = x[insulator_fvm_node->local_offset()]; V_insulator.setADValue(1, 1.0);
+        AutoDScalar V_insulator  = x[insulator_fvm_node->local_offset()]; V_insulator.setADValue(2, 1.0);
 
         // the psi of this node is equal to corresponding psi of  node in the first resistance region
         // since psi should be continuous for the interface
-        AutoDScalar f_psi_insulator = V_insulator - V_resistance_1;
+        AutoDScalar f_psi_insulator = V_insulator - - 0.5*(V_resistance_1+V_resistance_2);
 
-        // set Jacobian of governing equation ff
+        // set Jacobian of governing equation f_psi_insulator
         MatSetValue(*jac, insulator_fvm_node->global_offset(), resistance_fvm_node_1->global_offset(), f_psi_insulator.getADValue(0), ADD_VALUES);
-        MatSetValue(*jac, insulator_fvm_node->global_offset(), insulator_fvm_node->global_offset(), f_psi_insulator.getADValue(1), ADD_VALUES);
+        MatSetValue(*jac, insulator_fvm_node->global_offset(), resistance_fvm_node_2->global_offset(), f_psi_insulator.getADValue(1), ADD_VALUES);
+        MatSetValue(*jac, insulator_fvm_node->global_offset(), insulator_fvm_node->global_offset(), f_psi_insulator.getADValue(2), ADD_VALUES);
       }
     }
   }

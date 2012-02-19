@@ -3,7 +3,7 @@
 namespace Parser
 {
 %TypeHeaderCode
-#include "key.h"
+#include "parser_card.h"
 %End
   enum  ElemType {BOOL, INTEGER, REAL, STRING, ENUM, INVALID};
 
@@ -18,7 +18,7 @@ namespace Parser
       Parameter(const std::string &name, const int    v /Constrained/ );
       Parameter(const std::string &name, const double v /Constrained/ );
       Parameter(const std::string &name, const char * v /Constrained/ );
-    
+
       void set_name (const std::string &name);
       const std::string name() const;
 
@@ -32,12 +32,12 @@ namespace Parser
       int    set_enum(const std::string & s);
 
       void clear ();
-       
+
       bool    get_bool()   const;
       int     get_int()    const;
       double  get_real()   const;
       std::string  get_string() const;
-    
+
       bool   is_user_defined();
   };
   // }}}
@@ -122,7 +122,7 @@ namespace Parser
 // }}}
 
 // {{{ class SolverControl
-class SolverControl  /DelayDtor/ 
+class SolverControl  /DelayDtor/
 {
 %TypeHeaderCode
 #include "control.h"
@@ -131,7 +131,7 @@ class SolverControl  /DelayDtor/
 public:
   SolverControl();
 
-  SimulationSystem& system() const;
+  const SimulationSystem& system() const;
 
 
   void setDecks(Parser::InputParser* p /Transfer/);
@@ -149,8 +149,6 @@ public:
   int do_solve   ( const Parser::Card & c ) /ReleaseGIL/;
   int do_export  ( const Parser::Card & c ) /ReleaseGIL/;
   int do_import  ( const Parser::Card & c ) /ReleaseGIL/;
-  int do_em_fem2d_solve ( const Parser::Card & c ) /ReleaseGIL/;
-  int do_ray_trace( const Parser::Card & c ) /ReleaseGIL/;
   int set_initial_node_voltage  ( const Parser::Card & c ) /ReleaseGIL/;
   int set_electrode_source  ( const Parser::Card & c ) /ReleaseGIL/;
   int set_physical_model  ( const Parser::Card & c ) /ReleaseGIL/;
@@ -161,7 +159,7 @@ public:
   int plot_mesh ( const Parser::Card & c ) /ReleaseGIL/;
 
   int get_dom_solution_count();
- 
+
   SIP_PYOBJECT get_dom_solution();
 %MethodCode
     sipRes = Py_None;
@@ -174,9 +172,9 @@ public:
       free(buf);
     }
 %End
- 
+
 private:
   SolverControl(const SolverControl&);
-  
+
 };
 // }}}

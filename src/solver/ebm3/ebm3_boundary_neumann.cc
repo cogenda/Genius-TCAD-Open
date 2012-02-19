@@ -45,9 +45,10 @@ using PhysicalUnit::e;
 void NeumannBC::EBM3_Function(PetscScalar * x, Vec f, InsertMode &add_value_flag)
 {
   // Neumann boundary condition is processed here
+  const PetscScalar Heat_Transfer = this->scalar("heat.transfer");
 
   // only consider heat exchange with external environment, if heat transfer rate is zero, do nothing
-  if( this->Heat_Transfer() == 0.0 ) return;
+  if( Heat_Transfer == 0.0 ) return;
 
   // note, we will use ADD_VALUES to set values of vec f
   // if the previous operator is not ADD_VALUES, we should assembly the vec
@@ -85,8 +86,7 @@ void NeumannBC::EBM3_Function(PetscScalar * x, Vec f, InsertMode &add_value_flag
 
           // add heat flux out of Neumann boundary to lattice temperature equatiuon
           PetscScalar S  = fvm_node->outside_boundary_surface_area();
-          PetscScalar h = this->Heat_Transfer();
-          PetscScalar fT = h*(T_external()-T)*S;
+          PetscScalar fT = Heat_Transfer*(T_external()-T)*S;
 
           VecSetValue(f, fvm_node->global_offset()+node_Tl_offset, fT, ADD_VALUES);
         }
@@ -117,9 +117,10 @@ void NeumannBC::EBM3_Function(PetscScalar * x, Vec f, InsertMode &add_value_flag
 void NeumannBC::EBM3_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_value_flag)
 {
   // Neumann boundary condition is processed here
+  const PetscScalar Heat_Transfer = this->scalar("heat.transfer");
 
   // only consider heat exchange with external environment, if heat transfer rate is zero, do nothing
-  if( this->Heat_Transfer() == 0.0 ) return;
+  if( Heat_Transfer == 0.0 ) return;
 
   // since we will use ADD_VALUES operat, check the matrix state.
   if( (add_value_flag != ADD_VALUES) && (add_value_flag != NOT_SET_VALUES) )
@@ -156,8 +157,7 @@ void NeumannBC::EBM3_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_value_f
 
           // add heat flux out of Neumann boundary to lattice temperature equatiuon
           PetscScalar S  = fvm_node->outside_boundary_surface_area();
-          PetscScalar h = this->Heat_Transfer();
-          AutoDScalar fT = h*(T_external()-T)*S;
+          AutoDScalar fT = Heat_Transfer*(T_external()-T)*S;
 
           MatSetValue(*jac, fvm_node->global_offset()+node_Tl_offset, fvm_node->global_offset()+node_Tl_offset, fT.getADValue(0),  ADD_VALUES);
         }

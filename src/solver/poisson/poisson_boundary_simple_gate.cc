@@ -87,11 +87,12 @@ void SimpleGateContactBC::Poissin_Function(PetscScalar * x, Vec f, InsertMode &a
     VecAssemblyEnd(f);
   }
 
-  PetscScalar q = e*this->Qf();            // surface change density
-  PetscScalar Thick = this->Thickness();   // the thickness of gate oxide
-  PetscScalar eps_ox = this->eps();        // the permittivity of gate material
+  const PetscScalar q = e*this->scalar("qf");            // surface change density
+  const PetscScalar Thick = this->scalar("thickness");   // the thickness of gate oxide
+  const PetscScalar eps_ox = this->scalar("eps");        // the permittivity of gate material
+  const PetscScalar Work_Function = this->scalar("workfunction");
 
-  BoundaryCondition::const_node_iterator node_it = nodes_begin();
+      BoundaryCondition::const_node_iterator node_it = nodes_begin();
   BoundaryCondition::const_node_iterator end_it = nodes_end();
   for(; node_it!=end_it; ++node_it )
   {
@@ -118,7 +119,7 @@ void SimpleGateContactBC::Poissin_Function(PetscScalar * x, Vec f, InsertMode &a
           // Vapp
           PetscScalar Vapp = this->ext_circuit()->Vapp();
           PetscScalar S = fvm_node->outside_boundary_surface_area();
-          PetscScalar dP = S*(eps_ox*(Vapp - this->Work_Function()-V)/Thick + q);
+          PetscScalar dP = S*(eps_ox*(Vapp - Work_Function-V)/Thick + q);
           // set governing equation to function vector
           VecSetValue(f, fvm_node->global_offset(), dP, ADD_VALUES);
           break;
@@ -151,9 +152,10 @@ void SimpleGateContactBC::Poissin_Jacobian(PetscScalar * x, Mat *jac, InsertMode
     MatAssemblyEnd(*jac, MAT_FLUSH_ASSEMBLY);
   }
 
-  PetscScalar q = e*this->Qf();            // surface change density
-  PetscScalar Thick = this->Thickness();   // the thickness of gate oxide
-  PetscScalar eps_ox = this->eps();        // the permittivity of gate material
+  const PetscScalar q = e*this->scalar("qf");            // surface change density
+  const PetscScalar Thick = this->scalar("thickness");   // the thickness of gate oxide
+  const PetscScalar eps_ox = this->scalar("eps");        // the permittivity of gate material
+  const PetscScalar Work_Function = this->scalar("workfunction");
 
   // we use AD again. no matter it is overkill here.
   //the indepedent variable number, we only need 1 here.
@@ -186,7 +188,7 @@ void SimpleGateContactBC::Poissin_Jacobian(PetscScalar * x, Mat *jac, InsertMode
           // Vapp
           PetscScalar Vapp = this->ext_circuit()->Vapp();
           PetscScalar S = fvm_node->outside_boundary_surface_area();
-          AutoDScalar dP = S*(eps_ox*(Vapp - this->Work_Function()-V)/Thick + q);
+          AutoDScalar dP = S*(eps_ox*(Vapp - Work_Function-V)/Thick + q);
           //governing equation
           MatSetValue(*jac, fvm_node->global_offset(), fvm_node->global_offset(), dP.getADValue(0), ADD_VALUES);
 

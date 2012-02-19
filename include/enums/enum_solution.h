@@ -82,6 +82,7 @@
     INVALID_Variable
   };
 
+extern std::string FormatVariableString(const std::string & var_name);
 extern SolutionVariable solution_string_to_enum(const std::string &);
 extern DataType variable_data_type(const SolutionVariable );
 extern std::string variable_unit_string(const SolutionVariable );

@@ -61,6 +61,20 @@ DataHook::DataHook ( SolverBase & solver, const std::string & name, void * param
           std::cerr<<"DataHook: Invalid given region "<< region  <<  ", ignored." << std::endl;
     }
 
+    if ( parm_it->name() == "regions" )
+    {
+      std::vector<std::string> regions = parm_it->get_array<std::string>();
+      for(unsigned int n=0; n<regions.size(); ++n)
+      {
+        std::string region = regions[n];
+        if(system.region ( region ))
+          _region.push_back( region );
+        else
+          if( Genius::is_first_processor() )
+            std::cerr<<"DataHook: Invalid given region "<< region  <<  ", ignored." << std::endl;
+      }
+    }
+
     if ( parm_it->name() == "output" )
     {
       _output_prefix = parm_it->get_string();
@@ -140,7 +154,7 @@ void DataHook::post_solve()
       _out << '#' <<'\t' << "cell_volumn" << " [um^3]"<< std::endl;
     for ( unsigned int n=0; n<_variable_name.size(); ++n )
     {
-      SolutionVariable variable = solution_string_to_enum ( _variable_name[n] );
+      SolutionVariable variable = solution_string_to_enum ( FormatVariableString(_variable_name[n]) );
       _out << '#' <<'\t' << _variable_name[n] << " [" << variable_unit_string ( variable ) << "]" <<std::endl;
     }
 
@@ -175,14 +189,15 @@ void DataHook::post_solve()
     for ( unsigned int n=0; n<_variable_name.size(); ++n )
     {
       SimulationVariable v;
-      region->get_variable(_variable_name[n], POINT_CENTER, v)  ;
+      bool find = region->get_variable(FormatVariableString(_variable_name[n]), POINT_CENTER, v)  ;
+      if(!find) continue;
 
       switch ( v.variable_data_type )
       {
         case  SCALAR :
         {
           std::vector<Real> value;
-          region->get_variable_data<Real>( _variable_name[n], POINT_CENTER, value );
+          region->get_variable_data<Real>( FormatVariableString(_variable_name[n]), POINT_CENTER, value );
           values.push_back ( value );
           break;
         }
@@ -240,7 +255,7 @@ void DataHook::on_close()
 {}
 
 
-#ifndef CYGWIN
+#ifdef DLLHOOK
 
 // dll interface
 extern "C"

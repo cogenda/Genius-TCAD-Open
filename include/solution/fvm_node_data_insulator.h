@@ -90,9 +90,24 @@ class FVM_Insulator_NodeData : public FVM_NodeData
       _mu_,
 
       /**
+       * energy deposite of incident wave
+       */
+      _OptE_,
+
+      /**
+       * energy deposite of high energy particle
+       */
+      _PatE_,
+
+      /**
        * electrostatic potential at previous time step
        */
       _psi_last_,
+
+      /**
+       * old electrostatic potential
+       */
+      _psi_old_,
 
       /**
        * lattice temperature at previous time step
@@ -318,6 +333,19 @@ class FVM_Insulator_NodeData : public FVM_NodeData
 
 
     /**
+     * @return the optical energy
+     */
+    virtual Real         OptE()          const
+    { return _data_storage->scalar ( _OptE_, _offset ); }
+
+    /**
+     * @return the writable optical energy
+     */
+    virtual Real &       OptE()
+    { return _data_storage->scalar ( _OptE_, _offset ); }
+
+
+    /**
      * @return the statistic potential
      */
     virtual std::complex<Real>         psi_ac()          const
@@ -377,6 +405,19 @@ class FVM_Insulator_NodeData : public FVM_NodeData
      */
     virtual Real &       psi_last()
     { return _data_storage->scalar ( _psi_last_, _offset ); }
+
+
+    /**
+     * @return the old statistic potential
+     */
+    virtual Real         psi_old()          const
+    { return _data_storage->scalar ( _psi_old_, _offset ); }
+
+    /**
+     * @return the writable reference to old statistic potential
+     */
+    virtual Real &       psi_old()
+    { return _data_storage->scalar ( _psi_old_, _offset ); }
 
 
 

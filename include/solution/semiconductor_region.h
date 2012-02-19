@@ -52,7 +52,7 @@ public:
   /**
    * constructor
    */
-  SemiconductorSimulationRegion(const std::string &name, const std::string &material, const PetscScalar T);
+  SemiconductorSimulationRegion(const std::string &name, const std::string &material, const double T, const double z);
 
   /**
    * destructor
@@ -146,6 +146,11 @@ public:
     { return mt->basic->Affinity(T); }
 
   /**
+   * virtual function for set different model, calibrate parameters to PMI
+   */
+  virtual void set_pmi(const std::string &type, const std::string &model_name, std::vector<Parser::Parameter> & pmi_parameters);
+
+  /**
    * get atom fraction of region material
    */
   virtual void atom_fraction(std::vector<std::string> &atoms, std::vector<double> & fraction) const
@@ -181,11 +186,18 @@ private:
    */
   void find_elem_on_insulator_interface();
 
+#if defined(HAVE_UNORDERED_SET)
+  typedef std::unordered_set<const Elem *> _elem_in_mos_channel_type;
+#elif defined(HAVE_TR1_UNORDERED_SET) || defined(HAVE_TR1_UNORDERED_SET_WITH_STD_HEADER)
+  typedef std::tr1::unordered_set<const Elem *> _elem_in_mos_channel_type;
+#else
+  typedef std::set<const Elem *>  _elem_in_mos_channel_type;
+#endif
 
   /**
    * record elem in the mos channel. they have a location close enough to the insulator region, and has a gate region at opposite side of insulator region
    */
-  std::set<const Elem *> _elem_in_mos_channel;
+  _elem_in_mos_channel_type _elem_in_mos_channel;
 
   // these bc will fill _elem_in_mos_channel
   friend class GateContactBC;
@@ -202,6 +214,16 @@ private:
    * function to fill _nearest_interface_normal
    */
   void find_nearest_interface_normal();
+
+  /**
+   * record element has side/edge/node on boundary
+   */
+  std::set<const Elem *> _elem_touch_boundary;
+
+  /**
+   * function to fill _elem_touch_boundary
+   */
+  void find_elem_touch_boundary();
 
   /**
    * function to set node current to zero
@@ -227,6 +249,17 @@ public:
   bool is_elem_in_mos_channel(const Elem * elem) const
   { return _elem_in_mos_channel.find(elem) != _elem_in_mos_channel.end(); }
 
+  /**
+   * @return true if elem touch the boundary (has side, edge or node on boundary)
+   */
+  bool is_elem_touch_boundary(const Elem * elem) const
+  { return _elem_touch_boundary.find(elem) != _elem_touch_boundary.end(); }
+
+  /**
+   * @return true if each fvm_node has at least two connection to other fvm_node
+   */
+  bool check_fvm_cell() const;
+
 private:
 
   /**
@@ -237,8 +270,21 @@ private:
 
 private:
 
+  /**
+   * @return true when highfield mobility enabled
+   */
   bool highfield_mobility() const;
 
+  /**
+   * @return truncated partial area associated with edge ne of elem
+   */
+  Real truncated_partial_area(const Elem * elem, unsigned int ne) const;
+
+private:
+
+  void DDM1_Gummel_Carrier_Electron(PetscScalar * x, Mat A, Vec r, InsertMode &add_value_flag);
+
+  void DDM1_Gummel_Carrier_Hole(PetscScalar * x, Mat A, Vec r, InsertMode &add_value_flag);
 
 public:
 
@@ -305,6 +351,21 @@ public:
    * build time derivative term and its jacobian for L1 DDM
    */
   virtual void DDM1_Time_Dependent_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_value_flag);
+
+  /**
+   * function for evaluating pseudo time step of level 1 DDM equation.
+   */
+  virtual void DDM1_Pseudo_Time_Step_Function(PetscScalar * x, Vec f, InsertMode &add_value_flag);
+
+  /**
+   * function for evaluating Jacobian of pseudo time step of level 1 DDM equation.
+   */
+  virtual void DDM1_Pseudo_Time_Step_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_value_flag);
+
+  /**
+   * function for convergence test of pseudo time step of level 1 DDM equation.
+   */
+  virtual int DDM1_Pseudo_Time_Step_Convergence_Test(PetscScalar * x);
 
   /**
    * process function and its jacobian at hanging node for L1 DDM (experimental)
@@ -396,6 +457,21 @@ public:
    * build time derivative term and its jacobian for L2 DDM
    */
   virtual void DDM2_Time_Dependent_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_value_flag);
+
+  /**
+   * function for evaluating pseudo time step for L2 DDM
+   */
+  virtual void DDM2_Pseudo_Time_Step_Function(PetscScalar * x, Vec f, InsertMode &add_value_flag);
+
+  /**
+   * function for evaluating Jacobian of pseudo time step for L2 DDM
+   */
+  virtual void DDM2_Pseudo_Time_Step_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_value_flag);
+
+  /**
+   * function for convergence test of pseudo time step for L2 DDM
+   */
+  virtual int DDM2_Pseudo_Time_Step_Convergence_Test(PetscScalar * x);
 
   /**
    * process function and its jacobian at hanging node for L2 DDM (experimental)
@@ -521,7 +597,41 @@ public:
    */
   virtual void DDMAC_Update_Solution(PetscScalar *lxx);
 
+#ifdef COGENDA_COMMERCIAL_PRODUCT
+  //////////////////////////////////////////////////////////////////////////////////
+  //----------------- functions for Gummel DDML1 solver --------------------------//
+  //////////////////////////////////////////////////////////////////////////////////
 
+  /**
+   * function for build RHS and matrix for gummel equation.
+   */
+  virtual void DDM1_Gummel_Carrier(const std::string & carrier, PetscScalar * x, Mat A, Vec r, InsertMode &add_value_flag);
+
+  /**
+   * function for build RHS and matrix for gummel carrier equation.
+   */
+  virtual void DDM1_Implicit_Gummel_Carrier_Function(PetscScalar * x, Vec f, InsertMode &add_value_flag);
+
+  /**
+   * function for evaluating Jacobian for gummel carrier equation.
+   */
+  virtual void DDM1_Implicit_Gummel_Carrier_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_value_flag);
+
+  /**
+   * function for build RHS and matrix for half implicit current continuity equation.
+   */
+  virtual void DDM1_Half_Implicit_Current(PetscScalar * x, Mat A, Vec r, InsertMode &add_value_flag);
+
+  /**
+   * function for build RHS and matrix for half implicit poisson correction equation.
+   */
+  virtual void DDM1_Half_Implicit_Poisson_Correction(PetscScalar * x, Mat A, Vec r, InsertMode &add_value_flag);
+
+  /**
+   * function for build RHS and matrix for half implicit poisson correction with Polsky's method.
+   */
+  virtual void DDM1_Half_Implicit_Poisson_Correction_Polsky(PetscScalar * x, Mat A, Vec r, InsertMode &add_value_flag);
+#endif
 
   //////////////////////////////////////////////////////////////////////////////////
   //----------------- functions for Fast Hydrodynamic solver  --------------------//
@@ -568,6 +678,22 @@ public:
    * function for update solution value of linear poisson's equation.
    */
   virtual void LinearPoissin_Update_Solution(const PetscScalar * x);
+
+
+  //////////////////////////////////////////////////////////////////////////////////
+  //-----------------  functions for mobility evaluation     ---------------------//
+  //////////////////////////////////////////////////////////////////////////////////
+
+  /**
+   * function for evaluating mobility of edge.
+   *
+   * the moblity is ordered as region's edge, and weighted by partial area of the edge
+   *
+   */
+  virtual void Mob_Evaluation( std::vector< std::pair<unsigned int, unsigned int> > &edge,
+                               std::vector< std::pair<double, double> > & mob,
+                               std::vector< double > & weight) const;
+
 };
 
 

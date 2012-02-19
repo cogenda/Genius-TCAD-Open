@@ -48,7 +48,7 @@ using PhysicalUnit::e;
 /*---------------------------------------------------------------------
  * do pre-process to function for Mixed DDML1 solver
  */
-void GateContactBC::MixA_DDM1_Function_Preprocess(Vec f, std::vector<PetscInt> &src_row,
+void GateContactBC::MixA_DDM1_Function_Preprocess(PetscScalar *, Vec f, std::vector<PetscInt> &src_row,
     std::vector<PetscInt> &dst_row, std::vector<PetscInt> &clear_row)
 {
   BoundaryCondition::const_node_iterator node_it = nodes_begin();
@@ -97,8 +97,10 @@ void GateContactBC::MixA_DDM1_Function(PetscScalar * x, Vec f, InsertMode &add_v
   // for 2D mesh, z_width() is the device dimension in Z direction; for 3D mesh, z_width() is 1.0
   PetscScalar current_scale = this->z_width()/A;
 
+  const PetscScalar Work_Function = this->scalar("workfunction");
+
   // the electrode potential in current iteration
-  PetscScalar Ve = x[ckt->local_offset(spice_node_index)];
+  PetscScalar Ve = x[ckt->local_offset_x(spice_node_index)];
 
   BoundaryCondition::const_node_iterator node_it = nodes_begin();
   BoundaryCondition::const_node_iterator end_it = nodes_end();
@@ -132,7 +134,7 @@ void GateContactBC::MixA_DDM1_Function(PetscScalar * x, Vec f, InsertMode &add_v
             PetscScalar V = x[fvm_nodes[i]->local_offset()];
 
             // the governing equation
-            PetscScalar ff = V + Work_Function() - Ve;
+            PetscScalar ff = V + Work_Function - Ve;
 
             // set governing equation to function vector
             VecSetValue(f, fvm_nodes[i]->global_offset(), ff, ADD_VALUES);
@@ -154,7 +156,7 @@ void GateContactBC::MixA_DDM1_Function(PetscScalar * x, Vec f, InsertMode &add_v
                 // area of out surface of control volume related with neighbor node
                 PetscScalar cv_boundary = fvm_nodes[i]->cv_surface_area(nb_node->root_node());
                 PetscScalar dEdt;
-                if(SolverSpecify::TS_type==SolverSpecify::BDF2 && SolverSpecify::BDF2_restart==false) //second order
+                if(SolverSpecify::TS_type==SolverSpecify::BDF2 && SolverSpecify::BDF2_LowerOrder==false) //second order
                 {
                   PetscScalar r = SolverSpecify::dt_last/(SolverSpecify::dt_last + SolverSpecify::dt);
                   dEdt = ( (2-r)/(1-r)*(V-V_nb)
@@ -264,7 +266,7 @@ void GateContactBC::MixA_DDM1_Jacobian_Reserve(Mat *jac, InsertMode &add_value_f
           case InsulatorRegion:
           {
             // reserve for electrode potential item
-            MatSetValue(*jac, fvm_nodes[i]->global_offset()+0, ckt->global_offset(spice_node_index), 0, ADD_VALUES);
+            MatSetValue(*jac, fvm_nodes[i]->global_offset()+0, this->global_offset(), 0, ADD_VALUES);
 
             break;
           }
@@ -289,19 +291,27 @@ void GateContactBC::MixA_DDM1_Jacobian_Reserve(Mat *jac, InsertMode &add_value_f
     std::vector<PetscInt> bc_node_reserve;
     for(node_it = nodes_begin(); node_it!=end_it; ++node_it )
     {
-      // get the derivative of electrode current to ohmic node
-      const FVM_Node *  fvm_node = get_region_fvm_node(*node_it, InsulatorRegion);
-      if(fvm_node->on_processor())
+      // get the derivative of electrode current to gate node
+      BoundaryCondition::region_node_iterator  rnode_it     = region_node_begin(*node_it);
+      BoundaryCondition::region_node_iterator  end_rnode_it = region_node_end(*node_it);
+      for(unsigned int i=0 ; rnode_it!=end_rnode_it; ++i, ++rnode_it  )
       {
-        bc_node_reserve.push_back(fvm_node->global_offset()+0);
+        const SimulationRegion * region = ( (*rnode_it).second.first );
+        if(region->type() != InsulatorRegion) continue;
 
-        // get the derivative of electrode current to neighbors of bc node
-        FVM_Node::fvm_neighbor_node_iterator nb_it = fvm_node->neighbor_node_begin();
-        FVM_Node::fvm_neighbor_node_iterator nb_it_end = fvm_node->neighbor_node_end();
-        for(; nb_it != nb_it_end; ++nb_it)
+        const FVM_Node * fvm_node = (*rnode_it).second.second;
+        if(fvm_node->on_processor())
         {
-          const FVM_Node *  fvm_nb_node = (*nb_it).second;
-          bc_node_reserve.push_back(fvm_nb_node->global_offset()+0);
+          bc_node_reserve.push_back(fvm_node->global_offset());
+
+          // get the derivative of electrode current to neighbors of bc node
+          FVM_Node::fvm_neighbor_node_iterator nb_it = fvm_node->neighbor_node_begin();
+          FVM_Node::fvm_neighbor_node_iterator nb_it_end = fvm_node->neighbor_node_end();
+          for(; nb_it != nb_it_end; ++nb_it)
+          {
+            const FVM_Node *  fvm_nb_node = (*nb_it).second;
+            bc_node_reserve.push_back(fvm_nb_node->global_offset());
+          }
         }
       }
     }
@@ -311,7 +321,7 @@ void GateContactBC::MixA_DDM1_Jacobian_Reserve(Mat *jac, InsertMode &add_value_f
     {
       PetscInt bc_global_offset = this->global_offset();
 
-      MatSetValue(*jac, bc_global_offset, ckt->global_offset(spice_node_index), 0, ADD_VALUES);
+      MatSetValue(*jac, bc_global_offset, this->global_offset(), 0, ADD_VALUES);
 
       if(bc_node_reserve.size())
       {
@@ -333,7 +343,7 @@ void GateContactBC::MixA_DDM1_Jacobian_Reserve(Mat *jac, InsertMode &add_value_f
 /*---------------------------------------------------------------------
  * do pre-process to jacobian matrix for  Mixed DDML1 solver
  */
-void GateContactBC::MixA_DDM1_Jacobian_Preprocess(Mat *jac, std::vector<PetscInt> &src_row,
+void GateContactBC::MixA_DDM1_Jacobian_Preprocess(PetscScalar *, Mat *jac, std::vector<PetscInt> &src_row,
     std::vector<PetscInt> &dst_row, std::vector<PetscInt> &clear_row)
 {
 
@@ -379,6 +389,7 @@ void GateContactBC::MixA_DDM1_Jacobian(PetscScalar * x, Mat *jac, InsertMode &ad
   // for 2D mesh, z_width() is the device dimension in Z direction; for 3D mesh, z_width() is 1.0
   PetscScalar current_scale = this->z_width()/A;
 
+  const PetscScalar Work_Function = this->scalar("workfunction");
 
   // loop again
   BoundaryCondition::const_node_iterator node_it = nodes_begin();
@@ -416,16 +427,16 @@ void GateContactBC::MixA_DDM1_Jacobian(PetscScalar * x, Mat *jac, InsertMode &ad
             AutoDScalar  V = x[fvm_nodes[i]->local_offset()]; V.setADValue(0, 1.0);
 
             // the electrode potential in current iteration
-            AutoDScalar Ve = x[ckt->local_offset(spice_node_index)];         Ve.setADValue(1, 1.0);
+            AutoDScalar Ve = x[ckt->local_offset_x(spice_node_index)];         Ve.setADValue(1, 1.0);
 
             // the governing equation of gate electrode
-            AutoDScalar ff = V + Work_Function() - Ve;
+            AutoDScalar ff = V + Work_Function - Ve;
 
             // the insert position
             std::vector<PetscInt> row, col;
             row.push_back(fvm_nodes[i]->global_offset());
             col = row;
-            col.push_back(ckt->global_offset(spice_node_index)); // the position of electrode equation
+            col.push_back(this->global_offset()); // the position of electrode equation
 
             // set Jacobian of governing equation ff
             MatSetValues(*jac, 1, &row[0], col.size(), &col[0], ff.getADValue(), ADD_VALUES);
@@ -459,7 +470,7 @@ void GateContactBC::MixA_DDM1_Jacobian(PetscScalar * x, Mat *jac, InsertMode &ad
                 // area of out surface of control volume related with neighbor node
                 PetscScalar cv_boundary = fvm_nodes[i]->cv_surface_area(nb_node->root_node());
                 AutoDScalar dEdt;
-                if(SolverSpecify::TS_type==SolverSpecify::BDF2 && SolverSpecify::BDF2_restart==false) //second order
+                if(SolverSpecify::TS_type==SolverSpecify::BDF2 && SolverSpecify::BDF2_LowerOrder==false) //second order
                 {
                   PetscScalar r = SolverSpecify::dt_last/(SolverSpecify::dt_last + SolverSpecify::dt);
                   dEdt = ( (2-r)/(1-r)*(V-V_nb)

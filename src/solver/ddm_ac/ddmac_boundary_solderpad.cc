@@ -31,7 +31,7 @@
 #include "parallel.h"
 #include "petsc_utils.h"
 
-
+using PhysicalUnit::e;
 
 void SolderPadBC::DDMAC_Fill_Matrix_Vector( Mat A, Vec b, const Mat J, const double omega, InsertMode & add_value_flag )
 {
@@ -49,6 +49,8 @@ void SolderPadBC::DDMAC_Fill_Matrix_Vector( Mat A, Vec b, const Mat J, const dou
   PetscScalar C = ext_circuit()->C();             // capacitance
   PetscScalar L = ext_circuit()->L();             // inductance
 
+  const PetscScalar Heat_Transfer = this->scalar("heat.transfer");
+
   // impedance at frequency omega
   std::complex <PetscScalar> Z1(R, omega*L);
   std::complex <PetscScalar> Y2(0.0, omega*C);
@@ -57,10 +59,16 @@ void SolderPadBC::DDMAC_Fill_Matrix_Vector( Mat A, Vec b, const Mat J, const dou
   // for 2D mesh, z_width() is the device dimension in Z direction; for 3D mesh, z_width() is 1.0
   PetscScalar current_scale = this->z_width();
 
-  const SimulationRegion * region = bc_regions().first; genius_assert(region);
-  const MetalSimulationRegion * resistance_region = dynamic_cast<const MetalSimulationRegion *>(region);
-  const PetscScalar workfunction = resistance_region->material()->basic->Affinity(T_external());
-  const PetscScalar sigma = resistance_region->material()->basic->Conductance();
+  const SimulationRegion * _r1 = bc_regions().first;
+  const SimulationRegion * _r2 = bc_regions().second;
+
+  const MetalSimulationRegion * resistance_region = 0;
+  if( _r1 && _r1->type() == MetalRegion ) resistance_region = dynamic_cast<const MetalSimulationRegion *>(_r1);
+  if( _r2 && _r2->type() == MetalRegion ) resistance_region = dynamic_cast<const MetalSimulationRegion *>(_r2);
+  genius_assert(resistance_region);
+
+  const double workfunction = resistance_region->material()->basic->Affinity(T_external());
+  const double sigma = resistance_region->material()->basic->Conductance();
 
   // loop again
   BoundaryCondition::const_node_iterator node_it = nodes_begin();
@@ -105,7 +113,7 @@ void SolderPadBC::DDMAC_Fill_Matrix_Vector( Mat A, Vec b, const Mat J, const dou
             AutoDScalar Ve = this->ext_circuit()->Vac();     Ve.setADValue(1, 1.0);
 
             // the governing equation of potential
-            AutoDScalar ff = V + workfunction - Ve;
+            AutoDScalar ff = V + node_data->affinity()/e - Ve;
 
             // the insert position
             PetscInt row_re  = fvm_nodes[i]->global_offset() + node_psi_offset;
@@ -124,9 +132,8 @@ void SolderPadBC::DDMAC_Fill_Matrix_Vector( Mat A, Vec b, const Mat J, const dou
             regions[i]->DDMAC_Fill_Nodal_Matrix_Vector(fvm_nodes[i], TEMPERATURE, A, b, J, omega, add_value_flag);
 
             AutoDScalar T = node_data->T();         T.setADValue(0, 1.0); // T of this node
-            PetscScalar h = this->Heat_Transfer();
             PetscScalar S  = fvm_nodes[i]->outside_boundary_surface_area();
-            AutoDScalar fT = h*(T_external()-T)*S;
+            AutoDScalar fT = Heat_Transfer*(T_external()-T)*S;
 
             PetscInt index_re = fvm_nodes[i]->global_offset() + node_Tl_offset;
             PetscInt col_re   = index_re;
@@ -164,7 +171,7 @@ void SolderPadBC::DDMAC_Fill_Matrix_Vector( Mat A, Vec b, const Mat J, const dou
             AutoDScalar Ve = this->ext_circuit()->Vac();     Ve.setADValue(1, 1.0);
 
             // the governing equation of potential
-            AutoDScalar ff = V + Work_Function() - Ve;
+            AutoDScalar ff = V + workfunction/e - Ve;
 
             // the insert position
             PetscInt row_re  = fvm_nodes[i]->global_offset() + node_psi_offset;
@@ -236,18 +243,23 @@ void SolderPadBC::DDMAC_Fill_Matrix_Vector( Mat A, Vec b, const Mat J, const dou
  */
 void SolderPadBC::DDMAC_Update_Solution(const PetscScalar * lxx, const Mat, const double omega)
 {
-  // get the workfunction and sigma
-  const SimulationRegion * region = bc_regions().first; genius_assert(region);
-  const MetalSimulationRegion * resistance_region = dynamic_cast<const MetalSimulationRegion *>(region); genius_assert(resistance_region);
-  const PetscScalar workfunction = resistance_region->material()->basic->Affinity(T_external());
-  const PetscScalar sigma = resistance_region->material()->basic->Conductance();
-
   std::complex<PetscScalar> Vac(lxx[this->local_offset()], lxx[this->local_offset()+1]);
   std::complex<PetscScalar> Iac(0.0, 0.0);
   std::complex<PetscScalar> j(0.0, 1.0);
 
   // for 2D mesh, system().z_width() is the device dimension in Z direction; for 3D mesh, system().z_width() is 1.0
   PetscScalar current_scale = system().z_width();
+
+  const SimulationRegion * _r1 = bc_regions().first;
+  const SimulationRegion * _r2 = bc_regions().second;
+
+  const MetalSimulationRegion * resistance_region = 0;
+  if( _r1 && _r1->type() == MetalRegion ) resistance_region = dynamic_cast<const MetalSimulationRegion *>(_r1);
+  if( _r2 && _r2->type() == MetalRegion ) resistance_region = dynamic_cast<const MetalSimulationRegion *>(_r2);
+  genius_assert(resistance_region);
+
+  const double workfunction = resistance_region->material()->basic->Affinity(T_external());
+  const double sigma = resistance_region->material()->basic->Conductance();
 
   BoundaryCondition::const_node_iterator node_it;
   BoundaryCondition::const_node_iterator end_it = nodes_end();

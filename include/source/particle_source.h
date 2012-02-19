@@ -25,10 +25,13 @@
 #define __particle_source_h__
 
 #include "auto_ptr.h"
-#include "parser.h"
 #include "point.h"
 #include "interpolation_base.h"
 
+namespace Parser{
+  class InputParser;
+  class Card;
+}
 class SimulationSystem;
 
 /**
@@ -50,17 +53,17 @@ public:
   /**
    * calculate carrier generation at time t
    */
-  virtual double carrier_generation(double t) const
-  {
-    if( t>= _t0 && (t-_t_max)*(t-_t_max)/(_t_char*_t_char)<30)
-      return exp(-(t-_t_max)*(t-_t_max)/(_t_char*_t_char));
-    return 0;
-  }
+  virtual double carrier_generation(double t) const;
 
   /**
    * assign PatG to mesh node
    */
   virtual void update_system()=0;
+
+  /**
+   * virtual function for limit the time step
+   */
+  virtual double limit_dt(double time, double dt) const;
 
 protected:
 
@@ -201,12 +204,15 @@ public:
 
 private:
 
+  int _version;
+
   /// track struct
   struct track_t
   {
-    Point start;
-    Point end;
-    double energy;
+    Point        start;
+    Point        end;
+    std::string  material;
+    double       energy;
   };
 
   std::vector<track_t> _tracks;

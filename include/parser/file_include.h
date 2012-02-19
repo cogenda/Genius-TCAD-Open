@@ -22,10 +22,6 @@
 #ifndef _FILE_INCLUDE_H_
 #define _FILE_INCLUDE_H_
 
-#include <cstring>
-#include <iostream>
-#include <fstream>
-#include <sstream>
 #include <string>
 
 namespace Parser

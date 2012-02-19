@@ -46,6 +46,8 @@ void NeumannBC::DDMAC_Fill_Matrix_Vector( Mat A, Vec b, const Mat J, const doubl
     MatAssemblyEnd(A, MAT_FLUSH_ASSEMBLY);
   }
 
+  const PetscScalar Heat_Transfer = this->scalar("heat.transfer");
+
   BoundaryCondition::const_node_iterator node_it = nodes_begin();
   BoundaryCondition::const_node_iterator end_it = nodes_end();
   for(; node_it!=end_it; ++node_it )
@@ -69,8 +71,7 @@ void NeumannBC::DDMAC_Fill_Matrix_Vector( Mat A, Vec b, const Mat J, const doubl
 
       // add heat flux out of Neumann boundary to lattice temperature equatiuon
       PetscScalar S  = fvm_node->outside_boundary_surface_area();
-      PetscScalar h = this->Heat_Transfer();
-      AutoDScalar fT = h*(T_external()-T)*S;
+      AutoDScalar fT = Heat_Transfer*(T_external()-T)*S;
       PetscInt real_row = fvm_node->global_offset() + region->ebm_variable_offset(TEMPERATURE);
       PetscInt imag_row = fvm_node->global_offset() + region->ebm_n_variables() + region->ebm_variable_offset(TEMPERATURE) ;
 

@@ -133,19 +133,25 @@ public:
    * @return the partial (length/area/volume) of the geometric element by local index.
    */
   virtual Real partial_volume (unsigned int i) const
-  { genius_assert( i<n_nodes() ); return v[i]; }
+  { return v[i]; }
+
+  /**
+   * @return the partial (length/area/volume) of the geometric element by local index.
+   */
+  virtual Real partial_volume_truncated (unsigned int i) const
+  { return v[i]; }
 
   /**
    * @return the edge associated partial (length/area) of the geometric element with local edge index.
    */
   virtual Real partial_area_with_edge(unsigned int e) const
-    { genius_assert( e<n_edges() ); return d[e]; }
+  { return d[e]; }
 
   /**
    * @return the edge associated partial (area/volume) of the geometric element with local edge index.
    */
   virtual Real partial_volume_with_edge(unsigned int e) const
-  { return 0.5 * partial_area_with_edge(e) * l[e]; }
+  { return 0.5 * d[e] * l[e]; }
 
   /**
    * calculate geom information for fvm usage

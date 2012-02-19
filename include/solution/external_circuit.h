@@ -45,7 +45,8 @@ public:
   ExternalCircuit()
   : _res(0), _cap(0), _ind(0), _Vapp(0), _Iapp(0),
     _potential(0), _current(0), _current_displacement(0),
-    _current_conductance(0), _cap_current(0),
+    _current_conductance(0), _current_electron(0), _current_hole(0),
+    _cap_current(0),
     _Vac(0.0026),
     _drv(VDRIVEN)
   {}
@@ -174,6 +175,7 @@ public:
   virtual PetscScalar & current_displacement()
   { return _current_displacement;}
 
+
   /**
    * @return the conductance current.
    */
@@ -185,6 +187,30 @@ public:
    */
   virtual PetscScalar & current_conductance()
   { return _current_conductance;}
+
+  /**
+   * @return the electron current.
+   */
+  virtual PetscScalar current_electron() const
+  { return _current_electron;}
+
+  /**
+   * @return writable reference to electron current.
+   */
+  virtual PetscScalar & current_electron()
+  { return _current_electron;}
+
+  /**
+   * @return the hole current.
+   */
+  virtual PetscScalar current_hole() const
+  { return _current_hole;}
+
+  /**
+   * @return writable reference to hole current.
+   */
+  virtual PetscScalar & current_hole()
+  { return _current_hole;}
 
 
   /**
@@ -259,9 +285,20 @@ public:
     _current_old = _current;
     _current = _current_itering;
 
+    _cap_current_old = _cap_current;
     _cap_current = _cap*(_potential-_potential_old)/SolverSpecify::dt;
   }
 
+
+  /**
+   * roll back to previous solution
+   */
+  void rollback()
+  {
+    _potential = _potential_old;
+    _current = _current_old;
+    _cap_current = _cap_current_old;
+  }
 
 
   /**
@@ -309,6 +346,11 @@ public:
   bool is_float() const
   { return _drv == FLOAT; }
 
+  /**
+   * @return the driven state of electrode
+   */
+  DRIVEN driven_state() const
+  { return _drv; }
 
 private:
 
@@ -369,6 +411,16 @@ private:
   PetscScalar      _current_conductance;
 
   /**
+   * the electron current flow out of this electrode
+   */
+  PetscScalar      _current_electron;
+
+  /**
+   * the hole current flow out of this electrode
+   */
+  PetscScalar      _current_hole;
+
+  /**
    * the current for this iterative cycle
    */
   PetscScalar      _current_itering;
@@ -382,6 +434,11 @@ private:
    * the current which flow through lumped capacitance to ground
    */
   PetscScalar      _cap_current;
+
+  /**
+   * the current which flow through lumped capacitance to ground for last step
+   */
+  PetscScalar      _cap_current_old;
 
   /**
    * the application voltage for AC sweep.

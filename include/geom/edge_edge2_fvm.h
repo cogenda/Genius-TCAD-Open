@@ -117,6 +117,12 @@ public:
     { return 0.5*vol; }
 
   /**
+   * @return the partial (length/area/volume) of the geometric element by local index.
+   */
+  virtual Real partial_volume_truncated (unsigned int) const
+  { return 0.5*vol; }
+
+  /**
    * @return the edge associated partial (length/area) of the geometric element with local edge index.
    * for an 1D element, return 0 here.
    */

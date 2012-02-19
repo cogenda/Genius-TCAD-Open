@@ -52,8 +52,8 @@ public:
 
   void atom_fraction(std::vector<std::string> &atoms, std::vector<double> & fraction) const
   {
-    atoms.push_back("Gallium");
-    atoms.push_back("Arsenic");
+    atoms.push_back("Ga");//Gallium
+    atoms.push_back("As");//Arsenic
     fraction.push_back(1.0);
     fraction.push_back(1.0);
   }

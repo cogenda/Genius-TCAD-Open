@@ -32,6 +32,7 @@ private:
   PetscScalar PERMEABI;      // The relative megnetic permeability.
   PetscScalar AFFINITY;      // The electron affinity for the material.
   PetscScalar DENSITY;       // Specific mass density for the material.
+  PetscScalar IONDENSITY;    // Specific ion (free electron) density for the material.
   PetscScalar CONDUCTANCE;   // Specific conductance for the material.
 
   void   Basic_Init()
@@ -40,29 +41,33 @@ private:
     PERMEABI = 1.0;//---not magnetism material,assigned its permeability equals 1.
     AFFINITY = 4.170000e+00*eV;
     DENSITY  = 2.320000e-03*kg*std::pow(cm,-3);
-    CONDUCTANCE = 1.0/(2.874e-6*V/A*cm); //FIXME, use Conductance for Al here
+    IONDENSITY  = 1.000000e+21*std::pow(cm,-3);
+    CONDUCTANCE = 1.0/(5.0e-3*V/A*cm); //FIXME, not so accurate
 
 #ifdef __CALIBRATE__
     parameter_map.insert(para_item("PERMITTI",    PARA("PERMITTI",    "The relative dielectric permittivity", "-", 1.0, &PERMITTI)) );
     parameter_map.insert(para_item("PERMEABI",  PARA("PERMEABI",  "The relative megnetic permeability", "-", 1.0, &PERMEABI)) );
     parameter_map.insert(para_item("AFFINITY", PARA("AFFINITY", "The electron affinity for the material", "eV", eV, &AFFINITY)) );
     parameter_map.insert(para_item("DENSITY", PARA("DENSITY", "Specific mass density for the material", "kg*cm^-3", kg*std::pow(cm,-3), &DENSITY)) );
+    parameter_map.insert(para_item("IONDENSITY", PARA("IONDENSITY", "Specific ion density for the material", "cm^-3", std::pow(cm,-3), &IONDENSITY)) );
     parameter_map.insert(para_item("CONDUCTANCE", PARA("CONDUCTANCE", "Specific conductance for the material", "(ohmic*m)^-1", A/V/m, &CONDUCTANCE)) );
 #endif
   }
 public:
 
   PetscScalar Density       (const PetscScalar &Tl) const { return DENSITY;     }
+  PetscScalar IonDensity    (const PetscScalar &Tl) const { return IONDENSITY;  }
   PetscScalar Permittivity  ()                      const { return PERMITTI;    }
   PetscScalar Permeability  ()                      const { return PERMEABI;    }
   PetscScalar Affinity      (const PetscScalar &Tl) const { return AFFINITY;    }
   PetscScalar Conductance   ()                      const { return CONDUCTANCE; }
+  PetscScalar ThermalVn     (const PetscScalar &Tl) const { return 1e6*cm/s;    }
 
   void atom_fraction(std::vector<std::string> &atoms, std::vector<double> & fraction) const
   {
-    atoms.push_back("Silicon");
+    atoms.push_back("Si");//Silicon
     fraction.push_back(0.999);
-    atoms.push_back("Phosphorus");
+    atoms.push_back("P");//Phosphorus
     fraction.push_back(0.001);
   }
 

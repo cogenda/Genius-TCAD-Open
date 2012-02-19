@@ -5,8 +5,8 @@
 
 
 
+#include "config.h"
 
-#define HAVE_SSTREAM 
 
 #ifdef HAVE_SSTREAM
 
@@ -24,7 +24,7 @@
 /*
  * Some compilers, at least HP \p aCC do not even
  * accept empty classes derived from \p std::ostringstream.
- * Therefore, resort to preprocessor definitions. 
+ * Therefore, resort to preprocessor definitions.
  */
 
 #ifndef BROKEN_IOSTREAM
@@ -36,13 +36,13 @@
 # include <iomanip>
 
  /*
-  * Outputs \p std::string \p d with width 
+  * Outputs \p std::string \p d with width
   * \p v left-formatted to stream \p o.
   */
 # define OSSStringleft(o,v,d)       (o).width(v);  (o) << std::left << (d)
 
  /*
-  * Outputs \p std::string \p d with width 
+  * Outputs \p std::string \p d with width
   * \p v right-formatted to stream \p o.
   */
 # define OSSStringright(o,v,d)      (o).width(v);  (o) << std::right << (d)
@@ -56,7 +56,7 @@
 
  /*
   * Outputs \p Real \p d with width \p v and
-  * precision \p p to stream \p o (padded with 
+  * precision \p p to stream \p o (padded with
   * zeros).
   */
 # define OSSRealzeroleft(o,v,p,d)   (o).width(v); (o).precision(p); (o).fill('0'); (o) << std::showpoint << std::left << (d)
@@ -73,7 +73,7 @@
   * precision \p p to stream \p o (padded with
   * zeros).
   */
-# define OSSRealzeroright(o,v,p,d)   (o).width(v);  (o).precision(p); (o).fill('0'); (o) << std::right << (d) 
+# define OSSRealzeroright(o,v,p,d)   (o).width(v);  (o).precision(p); (o).fill('0'); (o) << std::right << (d)
 
  /*
   * Outputs \p Real \p d with width \p v
@@ -82,7 +82,7 @@
 # define OSSRealscientific(o,v,d)   (o) << std::setw(v) << std::scientific << (d)
 
  /*
-  * Outputs \p int \p d with width 
+  * Outputs \p int \p d with width
   * \p v to stream \p o.
   */
 # define OSSInt(o,v,d)              (o).width(v);  (o) << (d)
@@ -105,13 +105,13 @@
 # include <cstdio>
 
  /*
-  * Outputs \p std::string \p d with width 
+  * Outputs \p std::string \p d with width
   * \p v left-formatted to stream \p o.
   */
 # define OSSStringleft(o,v,d)       (o).left( (v), (d) )
 
  /*
-  * Outputs \p std::string \p d with width 
+  * Outputs \p std::string \p d with width
   * \p v right-formatted to stream \p o.
   */
 # define OSSStringright(o,v,d)      (o).right( (v), (d) )
@@ -135,14 +135,14 @@
   * precision \p p to stream \p o (padded with
   * whitespaces).
   */
-# define OSSRealright(o,v,p,d)      (o).right( (v), (p), (d) ,' ') 
+# define OSSRealright(o,v,p,d)      (o).right( (v), (p), (d) ,' ')
 
  /*
   * Outputs \p Real \p d with width \p v and
   * precision \p p to stream \p o (padded with
   * zeros).
   */
-# define OSSRealzeroright(o,v,p,d)      (o).right( (v), (p), (d) ,'0') 
+# define OSSRealzeroright(o,v,p,d)      (o).right( (v), (p), (d) ,'0')
 
  /*
   * Outputs \p Real \p d with width \p v
@@ -151,7 +151,7 @@
 # define OSSRealscientific(o,v,d)   (o).scientific( (v), (d) )
 
  /*
-  * Outputs \p int \p d with width 
+  * Outputs \p int \p d with width
   * \p v to stream \p o.
   */
 # define OSSInt(o,v,d)              (o).left( (v), (d) )
@@ -247,7 +247,7 @@
 
  protected:
   /**
-   * Appends \p n chars (defaults to whitespaces) 
+   * Appends \p n chars (defaults to whitespaces)
    * to the string \p s.
    */
   void print_ws (const sizetype n,
@@ -276,7 +276,7 @@
 			   const char c)
  {
    assert (w < 30);
-   char buf[30];  
+   char buf[30];
    char format[8];
    // form the format for r
    // ALTERNATIVE: sprintf (format, "%%%d.%df", int((w-prec)/2), prec);
@@ -295,7 +295,7 @@
 			   const int n)
  {
    assert (w < 30);
-   char buf[30];  
+   char buf[30];
    // form string as desired
    sprintf (buf, "%d", n);
    *this << buf;
@@ -321,7 +321,7 @@
 			    const char c)
  {
    assert (w < 30);
-   char buf[30];  
+   char buf[30];
    char format[8];
    // form the format for r
    sprintf (format, "%%.%df", prec);
@@ -339,7 +339,7 @@
 				 const Real r)
  {
    assert (w < 30);
-   char buf[30];  
+   char buf[30];
    char format[8];
    // form the format for r
    sprintf (format, "%%%de", w);

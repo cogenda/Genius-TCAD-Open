@@ -80,7 +80,7 @@ void IF_Metal_SchottkyBC::DDM1_Fill_Value(Vec , Vec L)
 /*---------------------------------------------------------------------
  * do pre-process to function for DDML1 solver
  */
-void IF_Metal_SchottkyBC::DDM1_Function_Preprocess(Vec f, std::vector<PetscInt> &src_row,
+void IF_Metal_SchottkyBC::DDM1_Function_Preprocess(PetscScalar *, Vec f, std::vector<PetscInt> &src_row,
     std::vector<PetscInt> &dst_row, std::vector<PetscInt> &clear_row)
 {
 
@@ -205,7 +205,7 @@ void IF_Metal_SchottkyBC::DDM1_Function(PetscScalar * x, Vec f, InsertMode &add_
     if(SolverSpecify::TimeDependent == true)
     {
       //second order
-      if(SolverSpecify::TS_type==SolverSpecify::BDF2 && SolverSpecify::BDF2_restart==false)
+      if(SolverSpecify::TS_type==SolverSpecify::BDF2 && SolverSpecify::BDF2_LowerOrder==false)
       {
         PetscScalar r = SolverSpecify::dt_last/(SolverSpecify::dt_last + SolverSpecify::dt);
         PetscScalar Tn = -((2-r)/(1-r)*n - 1.0/(r*(1-r))*semiconductor_node_data->n() + (1-r)/r*semiconductor_node_data->n_last())
@@ -240,7 +240,7 @@ void IF_Metal_SchottkyBC::DDM1_Function(PetscScalar * x, Vec f, InsertMode &add_
         // area of out surface of control volume related with neighbor node
         PetscScalar cv_boundary = semiconductor_node->cv_surface_area ( nb_node->root_node() );
         PetscScalar dEdt;
-        if ( SolverSpecify::TS_type==SolverSpecify::BDF2 && SolverSpecify::BDF2_restart==false ) //second order
+        if ( SolverSpecify::TS_type==SolverSpecify::BDF2 && SolverSpecify::BDF2_LowerOrder==false ) //second order
         {
           PetscScalar r = SolverSpecify::dt_last/ ( SolverSpecify::dt_last + SolverSpecify::dt );
           dEdt = ( ( 2-r ) / ( 1-r ) * ( V_semiconductor-V_nb )
@@ -366,7 +366,7 @@ void IF_Metal_SchottkyBC::DDM1_Jacobian_Reserve(Mat *jac, InsertMode &add_value_
 /*---------------------------------------------------------------------
  * do pre-process to jacobian matrix for DDML1 solver
  */
-void IF_Metal_SchottkyBC::DDM1_Jacobian_Preprocess(Mat *jac, std::vector<PetscInt> &src_row,
+void IF_Metal_SchottkyBC::DDM1_Jacobian_Preprocess(PetscScalar *, Mat *jac, std::vector<PetscInt> &src_row,
     std::vector<PetscInt> &dst_row, std::vector<PetscInt> &clear_row)
 {
 
@@ -478,7 +478,7 @@ void IF_Metal_SchottkyBC::DDM1_Jacobian(PetscScalar * x, Mat *jac, InsertMode &a
     if(SolverSpecify::TimeDependent == true)
     {
       //second order
-      if(SolverSpecify::TS_type==SolverSpecify::BDF2 && SolverSpecify::BDF2_restart==false)
+      if(SolverSpecify::TS_type==SolverSpecify::BDF2 && SolverSpecify::BDF2_LowerOrder==false)
       {
         PetscScalar r = SolverSpecify::dt_last/(SolverSpecify::dt_last + SolverSpecify::dt);
         AutoDScalar Tn = -((2-r)/(1-r)*n - 1.0/(r*(1-r))*semiconductor_node_data->n() + (1-r)/r*semiconductor_node_data->n_last())
@@ -516,7 +516,7 @@ void IF_Metal_SchottkyBC::DDM1_Jacobian(PetscScalar * x, Mat *jac, InsertMode &a
         // area of out surface of control volume related with neighbor node
         PetscScalar cv_boundary = semiconductor_node->cv_surface_area ( nb_node->root_node() );
         AutoDScalar dEdt;
-        if ( SolverSpecify::TS_type==SolverSpecify::BDF2 && SolverSpecify::BDF2_restart==false ) //second order
+        if ( SolverSpecify::TS_type==SolverSpecify::BDF2 && SolverSpecify::BDF2_LowerOrder==false ) //second order
         {
           PetscScalar r = SolverSpecify::dt_last/ ( SolverSpecify::dt_last + SolverSpecify::dt );
           dEdt = ( ( 2-r ) / ( 1-r ) * ( V_semiconductor-V_nb )

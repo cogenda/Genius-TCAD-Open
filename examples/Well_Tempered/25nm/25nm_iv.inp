@@ -17,7 +17,7 @@ boundary  Type = OhmicContact        ID = drain  Res=0 Cap=0 Ind=0
 boundary  Type = OhmicContact        ID = gate   Res=0 Cap=0 Ind=0
 boundary  Type = OhmicContact        ID = bulk   Res=0 Cap=0 Ind=0
 
-IMPORT   TIF="25nm.tif"
+IMPORT   TIFFILE="25nm.tif"
 
 # set gate voltage to 0.1V
 ATTACH   Electrode=drain             VApp=VCC
@@ -30,6 +30,6 @@ SOLVE    Type=STEADYSTATE
 EXPORT   CGNSFile=t1.cgns
 
 METHOD   Type=EBML3 NS=Basic LS=LU
-SOLVE    Type=DCSWEEP VScan=gate  out=iv1  VStart=0 VStep=0.025 VStop=1.0
+SOLVE    Type=DCSWEEP VScan=gate  out.prefix=iv1  VStart=0 VStep=0.025 VStop=1.0
 
 END

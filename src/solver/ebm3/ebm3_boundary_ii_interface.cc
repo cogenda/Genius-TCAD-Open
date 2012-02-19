@@ -38,7 +38,7 @@ using PhysicalUnit::e;
 /*---------------------------------------------------------------------
  * do pre-process to function for EBM3 solver
  */
-void InsulatorInsulatorInterfaceBC::EBM3_Function_Preprocess(Vec f, std::vector<PetscInt> &src_row,
+void InsulatorInsulatorInterfaceBC::EBM3_Function_Preprocess(PetscScalar *,Vec f, std::vector<PetscInt> &src_row,
     std::vector<PetscInt> &dst_row, std::vector<PetscInt> &clear_row)
 {
   // search for all the node with this boundary type
@@ -276,7 +276,7 @@ void InsulatorInsulatorInterfaceBC::EBM3_Jacobian_Reserve(Mat *jac, InsertMode &
 /*---------------------------------------------------------------------
  * do pre-process to jacobian matrix for EBM3 solver
  */
-void InsulatorInsulatorInterfaceBC::EBM3_Jacobian_Preprocess(Mat *jac, std::vector<PetscInt> &src_row,
+void InsulatorInsulatorInterfaceBC::EBM3_Jacobian_Preprocess(PetscScalar * ,Mat *jac, std::vector<PetscInt> &src_row,
     std::vector<PetscInt> &dst_row, std::vector<PetscInt> &clear_row)
 {
   // search for all the node with this boundary type

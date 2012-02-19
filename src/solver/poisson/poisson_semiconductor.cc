@@ -653,7 +653,7 @@ void SemiconductorSimulationRegion::Poissin_Update_Solution(PetscScalar *lxx)
 
       // intrinsic Fermi potential.
       PetscScalar V_i = V
-                        + node_data->affinity()
+                        + node_data->affinity()/e
                         + node_data->Eg()/(2*e)
                         + kb*T*log(node_data->Nc()/node_data->Nv())/(2*e);
       // electron density

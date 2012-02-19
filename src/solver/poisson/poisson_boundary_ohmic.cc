@@ -88,7 +88,7 @@ void OhmicContactBC::Poissin_Fill_Value(Vec , Vec L)
 /*---------------------------------------------------------------------
  * do pre-process to function for poisson solver
  */
-void OhmicContactBC::Poissin_Function_Preprocess(Vec f, std::vector<PetscInt> &src_row,
+void OhmicContactBC::Poissin_Function_Preprocess(PetscScalar *, Vec f, std::vector<PetscInt> &src_row,
     std::vector<PetscInt> &dst_row, std::vector<PetscInt> &clear_row)
 {
   BoundaryCondition::const_node_iterator node_it = nodes_begin();
@@ -175,8 +175,6 @@ void OhmicContactBC::Poissin_Function(PetscScalar * x, Vec f, InsertMode &add_va
           case SemiconductorRegion:
           {
             // semiconductor region should be the first region
-            genius_assert(i==0);
-
             const SemiconductorSimulationRegion * semi_region = dynamic_cast<const SemiconductorSimulationRegion *>(regions[i]);
             // psi of this node
             PetscScalar V = x[fvm_nodes[i]->local_offset()];
@@ -189,7 +187,7 @@ void OhmicContactBC::Poissin_Function(PetscScalar * x, Vec f, InsertMode &add_va
             PetscScalar Nv  = node_data->Nv();
             PetscScalar Eg  = semi_region->material()->band->Eg(T);
             // intrinsic Fermi potential.
-            PetscScalar V_i =  V + node_data->affinity() + Eg/(2*e) + kb*T*log(Nc/Nv)/(2*e);
+            PetscScalar V_i =  V + node_data->affinity()/e + Eg/(2*e) + kb*T*log(Nc/Nv)/(2*e);
             // electron density
             PetscScalar n    =  ni*exp(e/(kb*T)*V_i);
             // hole density
@@ -202,7 +200,7 @@ void OhmicContactBC::Poissin_Function(PetscScalar * x, Vec f, InsertMode &add_va
             PetscScalar ff = V - kb*T/e*boost::math::asinh(node_data->Net_doping()/(2*nie))
                              + Eg/(2*e)
                              + kb*T*log(Nc/Nv)/(2*e)
-                             + node_data->affinity()
+                             + node_data->affinity()/e
                              - ext_circuit()->Vapp();
 
             // set governing equation to function vector
@@ -346,7 +344,7 @@ void OhmicContactBC::Poissin_Jacobian_Reserve(Mat *jac, InsertMode &add_value_fl
 /*---------------------------------------------------------------------
  * do pre-process to jacobian matrix for poisson solver
  */
-void OhmicContactBC::Poissin_Jacobian_Preprocess(Mat *jac, std::vector<PetscInt> &src_row,
+void OhmicContactBC::Poissin_Jacobian_Preprocess(PetscScalar *, Mat *jac, std::vector<PetscInt> &src_row,
     std::vector<PetscInt> &dst_row, std::vector<PetscInt> &clear_row)
 {
   BoundaryCondition::const_node_iterator node_it = nodes_begin();
@@ -433,7 +431,6 @@ void OhmicContactBC::Poissin_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add
           case SemiconductorRegion:
           {
             // semiconductor region should be the first region
-            genius_assert(i==0);
 
             //the indepedent variable number, we only need 1 here.
             adtl::AutoDScalar::numdir=1;
@@ -451,7 +448,7 @@ void OhmicContactBC::Poissin_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add
             PetscScalar Eg  = semi_region->material()->band->Eg(T);
 
             // intrinsic Fermi potential.
-            AutoDScalar V_i =  V + node_data->affinity() + Eg/(2*e) + kb*T*log(Nc/Nv)/(2*e);
+            AutoDScalar V_i =  V + node_data->affinity()/e + Eg/(2*e) + kb*T*log(Nc/Nv)/(2*e);
             // electron density
             AutoDScalar n    =  ni*exp(e/(kb*T)*V_i);
             // hole density
@@ -464,7 +461,7 @@ void OhmicContactBC::Poissin_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add
             AutoDScalar ff = V - kb*T/e*asinh(node_data->Net_doping()/(2*nie))
                              + Eg/(2*e)
                              + kb*T*log(Nc/Nv)/(2*e)
-                             + node_data->affinity()
+                             + node_data->affinity()/e
                              - ext_circuit()->Vapp();
 
             // set Jacobian of governing equation ff

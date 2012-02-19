@@ -65,7 +65,7 @@ public:
    * dump jacobian matrix in petsc format to external file
    * for more detailed analysis of the properties of jacobian matrix
    */
-  void dump_jacobian_matrix_petsc(const std::string &file) const;
+  virtual void dump_matrix_petsc(const Mat mat, const std::string &file) const;
 
   /**
    * dump jacobian matrix in Harwell-Boeing format to external file
@@ -76,10 +76,22 @@ public:
   //void dump_jacobian_matrix_hb(const std::string &file, bool rhs=false) const;
 
   /**
+   * dump jacobian matrix in asc format to external file
+   * for more detailed analysis of the properties of jacobian matrix
+   */
+  virtual void dump_matrix_asc(const Mat mat, const std::string &file) const;
+
+   /**
+   * dump jacobian matrix in triplet format to external file
+   * for more detailed analysis of the properties of jacobian matrix
+    */
+  virtual void dump_matrix_triplet(const Mat mat, const std::string &file) const;
+
+  /**
    * dump function to external file
    * for more detailed analysis of the properties
    */
-  void dump_function_vector_petsc(const std::string &file) const;
+  virtual void dump_vector_petsc(const Vec vec, const std::string &file) const;
 
   /**
    * @return the condition number of jacobian matrix
@@ -87,24 +99,35 @@ public:
   double condition_number_of_jacobian_matrix();
 
   /**
-   * calculate eigen value of jacobian matrix
+   * calculate the n largest and smallest eigen value of jacobian matrix
+   * optinally get the ith smallest vec and jth largest vec
    */
-  void eigen_value_of_jacobian_matrix();
+  void eigen_value_of_jacobian_matrix(int n=1, int i=0, Vec = PETSC_NULL, int j=0, Vec = PETSC_NULL);
 
   /**
    * @return the jacobian_matrix
    */
-  Mat & jacobian_matrix()  { return J; }
+  Mat jacobian_matrix() const  { return J; }
 
   /**
    * @return the rhs vector
    */
-  Vec & rhs_vector()  { return f; }
+  Vec rhs_vector() const { return f; }
 
   /**
    * @return the solution vector
    */
-  Vec & solution_vector()  { return x; }
+  Vec solution_vector() const { return x; }
+
+  /**
+   * create a new vector with (compatable parallel) pattern
+   */
+  void create_vector(Vec &);
+
+  /**
+   * destroy a vector
+   */
+  void destroy_vector(Vec &);
 
   /**
    * do snes solve!
@@ -116,15 +139,27 @@ public:
    */
   void clear_nonlinear_data();
 
+
   /**
-   * Returns the type of solver to use.
+   * Sets the type of nonlinear solver to use.
+   */
+  void set_nonlinear_solver_type (const SolverSpecify::NonLinearSolverType nst)
+  {  _nonlinear_solver_type = nst; }
+
+  /**
+   * Returns the type of nonlinear solver to use.
+   */
+  SolverSpecify::NonLinearSolverType nonlinear_solver_type () const { return _nonlinear_solver_type; }
+
+  /**
+   * Returns the type of linear solver to use.
    */
   SolverSpecify::LinearSolverType linear_solver_type () const { return _linear_solver_type; }
 
   /**
    * Sets the type of solver to use.
    */
-  void set_solver_type (const SolverSpecify::LinearSolverType st)
+  void set_linear_solver_type (const SolverSpecify::LinearSolverType st)
   { _linear_solver_type = st; }
 
   /**
@@ -175,6 +210,11 @@ public:
    */
   virtual void sens_line_search_post_check(Vec x, Vec y, Vec w, PetscBool *changed_y, PetscBool *changed_w);
 
+  /**
+   * virtual function, write solver intermediate data into system
+   * It can be used to monitor the field data evolution during solve action
+   */
+  virtual void flush_system(Vec ) {}
 
 protected:
 
@@ -187,17 +227,17 @@ protected:
   /**
    * which type of nonlinear solver to use.
    */
-  void set_petsc_nonelinear_solver_type(SolverSpecify::NonLinearSolverType t);
+  void set_petsc_nonelinear_solver_type();
 
   /**
    * which type of linear solver to use.
    */
-  void set_petsc_linear_solver_type(SolverSpecify::LinearSolverType t);
+  void set_petsc_linear_solver_type();
 
   /**
    * which type of proconditioner to use.
    */
-  void set_petsc_preconditioner_type(SolverSpecify::PreconditionerType t);
+  void set_petsc_preconditioner_type();
 
   /**
    * the global solution vector

@@ -126,20 +126,6 @@ void TIF3DIO::read (const std::string& filename)
       // process tet side
       for(unsigned int n=0; n<4; ++n)
       {
-        /*
-        int neighbor_region;
-        switch(n)
-        {
-            case 0 : neighbor_region = tif_tets[tet.c4].region; break;
-            case 1 : neighbor_region = tif_tets[tet.c3].region; break;
-            case 2 : neighbor_region = tif_tets[tet.c1].region; break;
-            case 3 : neighbor_region = tif_tets[tet.c2].region; break;
-            default : break;
-        }
-
-        if( neighbor_region == tet.region ) continue;
-        */
-
         TIF3D::Face_t f;
         f.point1 = elem->get_node(elem->side_node(n, 0))->id();
         f.point2 = elem->get_node(elem->side_node(n, 1))->id();
@@ -153,8 +139,8 @@ void TIF3DIO::read (const std::string& filename)
     }
 
     // map bc_index to bc label
-    std::map<const std::string, short int> bd_map;
-    typedef std::map<const std::string, short int>::iterator Bd_It;
+    std::map<std::string, std::pair<short int, bool> > bd_map;
+    typedef std::map<std::string, std::pair<short int, bool> >::iterator Bd_It;
 
 
 
@@ -184,15 +170,9 @@ void TIF3DIO::read (const std::string& filename)
         mesh.boundary_info->remove(elem, sides[nbd]);
         std::string bd_label = tif3d_reader.face_label(bd_index);
 
-        // if the label already exist
-        if( bd_map.find(bd_label) != bd_map.end() )
-          bd_index = (*bd_map.find(bd_label)).second;
-        else
-        {
-          //else, increase bd_index, insert it into bd_map
-          bd_index = bd_map.size() + 1;
-          bd_map.insert(std::pair<const std::string, short int>(bd_label,bd_index));
-        }
+        // if the label not exist
+        if( bd_map.find(bd_label) == bd_map.end() )
+          bd_map[bd_label] = std::make_pair(bd_index, true);
 
         // add pair-element to boundary with new bd_index
         mesh.boundary_info->add_side(elem, sides[nbd], bd_index);
@@ -234,12 +214,12 @@ void TIF3DIO::read (const std::string& filename)
 
         // if the label already exist
         if( bd_map.find(bd_label) != bd_map.end() )
-          bd_index = (*bd_map.find(bd_label)).second;
+          bd_index = (*bd_map.find(bd_label)).second.first;
         else
         {
           //else, increase bd_index, insert it into bd_map
           bd_index = bd_map.size() + 1;
-          bd_map.insert(std::pair<const std::string, short int>(bd_label,bd_index));
+          bd_map[bd_label] = std::make_pair(bd_index, false);
         }
 
         // add pair-element to boundary with new bd_index
@@ -257,12 +237,12 @@ void TIF3DIO::read (const std::string& filename)
 
         // if the label already exist
         if( bd_map.find(bd_label) != bd_map.end() )
-          bd_index = (*bd_map.find(bd_label)).second;
+          bd_index = (*bd_map.find(bd_label)).second.first;
         else
         {
           //else, increase bd_index, insert it into bd_map
           bd_index = bd_map.size() + 1;
-          bd_map.insert(std::pair<const std::string, short int>(bd_label,bd_index));
+          bd_map[bd_label] = std::make_pair(bd_index, false);
         }
 
         // add pair-element to boundary with new bd_index
@@ -278,7 +258,7 @@ void TIF3DIO::read (const std::string& filename)
     Bd_It bd_it = bd_map.begin();
     for(; bd_it != bd_map.end(); ++bd_it)
     {
-      mesh.boundary_info->set_label_to_id( (*bd_it).second, (*bd_it).first );
+      mesh.boundary_info->set_label_to_id( (*bd_it).second.first, (*bd_it).first, (*bd_it).second.second);
     }
 
     // magic number, for 3D mesh, should > 2008
@@ -286,6 +266,7 @@ void TIF3DIO::read (const std::string& filename)
 
   }
 
+  Parallel::barrier();
 
   /*
    * set mesh structure for all processors, and build simulation system
@@ -299,6 +280,7 @@ void TIF3DIO::read (const std::string& filename)
   // build simulation system
   system.build_simulation_system();
   system.sync_print_info();
+
 
   /*
    * after that, set doping infomation here. this should be done for all the processors
@@ -325,22 +307,50 @@ void TIF3DIO::read (const std::string& filename)
     Parallel::broadcast(tif3d_reader.sol_head().sol_name_array[n]);
 
   //broadcast SolData to all processors
-  unsigned int n_solution = tif3d_reader.sol_data_array().size();
-  Parallel::broadcast(n_solution, 0);
-  if(Genius::processor_id() != 0)
-    tif3d_reader.sol_data_array().resize(n_solution);
-  for(unsigned int n=0; n < n_solution; ++n)
   {
-    Parallel::broadcast(tif3d_reader.sol_data(n).index);
-    Parallel::broadcast(tif3d_reader.sol_data(n).region_index);
-    Parallel::broadcast(tif3d_reader.sol_data(n).data_array);
+    unsigned int n_solution = tif3d_reader.sol_data_array().size();
+    Parallel::broadcast(n_solution);
+
+    std::vector<int> solution_index;
+    std::vector<int> solution_region;
+    std::vector<double> solution_array;
+    if(Genius::processor_id() == 0)
+    {
+      for(unsigned int n=0; n < n_solution; ++n)
+      {
+        const TIF3D::SolData_t & data = tif3d_reader.sol_data(n);
+        solution_index.push_back(data.index);
+        solution_region.push_back(data.region_index);
+        solution_array.insert(solution_array.end(), data.data_array.begin(), data.data_array.end());
+      }
+    }
+    Parallel::broadcast(solution_index );
+    Parallel::broadcast(solution_region );
+    Parallel::broadcast(solution_array );
+
+    if(Genius::processor_id() != 0)
+    {
+      int sol = tif3d_reader.sol_head().sol_num;
+      for(unsigned int n=0; n < n_solution; ++n)
+      {
+        TIF3D::SolData_t data;
+        data.index = solution_index[n];
+        data.region_index = solution_region[n];
+        for(int s=0; s<sol; s++)
+          data.data_array.push_back(solution_array[n*sol+s]);
+        tif3d_reader.add_sol_data(data);
+      }
+    }
   }
 
   // ok, we had got enough informations for set up each simulation region
-  std::multimap<int,  TIF3D::SolData_t> solution_map;
-  typedef std::multimap<int,  TIF3D::SolData_t>::iterator Solution_It;
-  for(unsigned int n=0; n<n_solution; ++n)
-    solution_map.insert(std::pair<int,  TIF3D::SolData_t>(tif3d_reader.sol_data(n).index, tif3d_reader.sol_data(n)));
+  std::map<std::pair<int, int>, unsigned int> solution_map; // map <node_index, region_index> to data_index
+  typedef std::map<std::pair<int, int>, unsigned int>::iterator Solution_It;
+  for(unsigned int n=0; n<tif3d_reader.sol_data_array().size(); ++n)
+  {
+    std::pair<int, int> key = std::make_pair(tif3d_reader.sol_data(n).index, tif3d_reader.sol_data(n).region_index);
+    solution_map.insert(std::make_pair(key, n));
+  }
 
   unsigned int donor        = tif3d_reader.sol_head().solution_index("Donor");
   unsigned int acceptor     = tif3d_reader.sol_head().solution_index("Acceptor");
@@ -362,21 +372,15 @@ void TIF3DIO::read (const std::string& filename)
 
             // tif_node_index is the index in TIF file that this FVM node has
             int tif_node_index = node_id_to_tif_index_map[fvm_node->root_node()->id()];
-            // however, one TIF node may has several solution data when it lies on region interface, we should find corrent
-            // solution data for this region which has the same region label.
-            std::pair<Solution_It, Solution_It> sol_it_pair = solution_map.equal_range(tif_node_index);
-            Solution_It sol_it = sol_it_pair.first;
-            for(; sol_it!=sol_it_pair.second; ++sol_it)
-              if((*sol_it).second.region_index == r) break;
+            int region_index = r;
+            std::pair<int, int> key = std::make_pair(tif_node_index, region_index);
+            unsigned int data_index = solution_map.find(key)->second;
 
-            if( sol_it != sol_it_pair.second && sol_it != solution_map.end())
+            // doping
+            if(donor!=invalid_uint && acceptor!=invalid_uint)
             {
-              // doping
-              if(donor!=invalid_uint && acceptor!=invalid_uint)
-              {
-                node_data->Na()   = (*sol_it).second.data_array[acceptor] * pow(cm, -3);
-                node_data->Nd()   = (*sol_it).second.data_array[donor   ] * pow(cm, -3);
-              }
+              node_data->Na()   = tif3d_reader.sol_data(data_index).data_array[acceptor] * pow(cm, -3);
+              node_data->Nd()   = tif3d_reader.sol_data(data_index).data_array[donor   ] * pow(cm, -3);
             }
           }
           region->init(system.T_external());
@@ -410,6 +414,9 @@ void TIF3DIO::read (const std::string& filename)
         default: genius_error();
     }
   }
+
+
+  system.init_region_post_process();
 
 }
 

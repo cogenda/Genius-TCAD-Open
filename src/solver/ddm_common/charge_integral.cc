@@ -55,7 +55,7 @@ void ChargeIntegralBC::charge_integral_function(PetscScalar *x , Vec f, InsertMo
   if(Genius::processor_id() == Genius::n_processors() -1)
   {
     // add to ChargeIntegralBC
-    VecSetValue(f, this->global_offset(), this->Qf(), ADD_VALUES);
+    VecSetValue(f, this->global_offset(), this->scalar("qf"), ADD_VALUES);
   }
 }
 

@@ -152,6 +152,16 @@ private:
   std::map< short int, double > electrode_potential;
 
   /**
+   * electrode vapp
+   */
+  std::map< short int, double > electrode_vapp;
+
+  /**
+   * electrode iapp
+   */
+  std::map< short int, double > electrode_iapp;
+
+  /**
    * aux function to sort x by increase order of id
    */
   std::vector<double> & _sort_it (std::vector<double> & x, const std::vector<unsigned int > &id);

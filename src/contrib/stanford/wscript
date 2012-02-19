@@ -1,0 +1,14 @@
+def build(bld):
+  includes = []
+  includes.append(bld.path.find_or_declare('.'))
+  includes.append(bld.path.find_or_declare('../../..'))
+  includes.extend(bld.genius_includes)
+
+  bld.objects( source    = bld.path.ant_glob('*.cc'),
+                includes  = includes,
+                features  = 'cxx',
+                use       = 'opt PETSC',
+                target    = 'stanford_objs',
+             )
+  bld.contrib_objs.append('stanford_objs')
+

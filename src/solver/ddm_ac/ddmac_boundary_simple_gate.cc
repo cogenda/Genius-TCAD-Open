@@ -44,9 +44,13 @@ void SimpleGateContactBC::DDMAC_Fill_Matrix_Vector ( Mat A, Vec b, const Mat J, 
 
   PetscInt bc_global_offset_re = this->global_offset();
   PetscInt bc_global_offset_im = this->global_offset() +1;
-  PetscScalar q                = e*this->Qf();              // surface change density
-  PetscScalar Thick            = this->Thickness();         // the thickness of gate oxide
-  PetscScalar eps_ox           = this->eps();               // the permittivity of gate material
+
+  const PetscScalar q = e*this->scalar("qf");            // surface change density
+  const PetscScalar Thick = this->scalar("thickness");   // the thickness of gate oxide
+  const PetscScalar eps_ox = this->scalar("eps");        // the permittivity of gate material
+  const PetscScalar Work_Function = this->scalar("workfunction");
+  const PetscScalar Heat_Transfer = this->scalar("heat.transfer");
+
   PetscScalar R                = this->ext_circuit()->R();  // resistance
   PetscScalar C                = this->ext_circuit()->C();  // capacitance
   PetscScalar L                = this->ext_circuit()->L();  // inductance
@@ -99,7 +103,7 @@ void SimpleGateContactBC::DDMAC_Fill_Matrix_Vector ( Mat A, Vec b, const Mat J, 
     PetscScalar S = fvm_node->outside_boundary_surface_area();
 
     {
-      AutoDScalar dP = S* ( eps_ox* ( Ve - this->Work_Function()-V ) /Thick + q );
+      AutoDScalar dP = S* ( eps_ox* ( Ve - Work_Function-V ) /Thick + q );
 
       //governing equation of psi
 
@@ -121,8 +125,7 @@ void SimpleGateContactBC::DDMAC_Fill_Matrix_Vector ( Mat A, Vec b, const Mat J, 
 
       AutoDScalar T = node_data->T();
       T.setADValue ( 0, 1.0 ); // T of this node
-      PetscScalar h = this->Heat_Transfer();
-      AutoDScalar fT = h* ( T_external()-T ) *S;
+      AutoDScalar fT = Heat_Transfer* ( T_external()-T ) *S;
 
       PetscInt index_re = fvm_node->global_offset() + region->ebm_variable_offset ( TEMPERATURE );
       PetscInt col_re   = index_re;
@@ -206,8 +209,10 @@ void SimpleGateContactBC::DDMAC_Update_Solution ( const PetscScalar * lxx, const
 
   // for 2D mesh, system().z_width() is the device dimension in Z direction; for 3D mesh, system().z_width() is 1.0
   PetscScalar current_scale = system().z_width();
-  PetscScalar Thick            = this->Thickness();         // the thickness of gate oxide
-  PetscScalar eps_ox           = this->eps();               // the permittivity of gate material
+
+  const PetscScalar Thick = this->scalar("thickness");   // the thickness of gate oxide
+  const PetscScalar eps_ox = this->scalar("eps");        // the permittivity of gate material
+
   std::complex<PetscScalar> Ve ( lxx[this->local_offset() ], lxx[this->local_offset() +1] );
 
 

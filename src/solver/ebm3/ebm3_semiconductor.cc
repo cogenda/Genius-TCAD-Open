@@ -47,14 +47,14 @@ unsigned int SemiconductorSimulationRegion::ebm_n_variables() const
 {
   switch(get_advanced_model()->EB_Level)
   {
-  case ModelSpecify::NONE : return 3; // 3 basic dofs, psi, n and p
-  case ModelSpecify::Tl   :
-  case ModelSpecify::Tn   :
-  case ModelSpecify::Tp   : return 4; // 4 dofs for one of the extra Tl, Tn and Tp equation
-  case ModelSpecify::TnTp :
-  case ModelSpecify::TnTl :
-  case ModelSpecify::TpTl : return 5; // 5 dofs for Tn/Tp, Tn/Tl or Tp/Tl pair
-  case ModelSpecify::ALL  : return 6; // 6 dofs for all of the extra Tl, Tn and Tp equations
+      case ModelSpecify::NONE : return 3; // 3 basic dofs, psi, n and p
+      case ModelSpecify::Tl   :
+      case ModelSpecify::Tn   :
+      case ModelSpecify::Tp   : return 4; // 4 dofs for one of the extra Tl, Tn and Tp equation
+      case ModelSpecify::TnTp :
+      case ModelSpecify::TnTl :
+      case ModelSpecify::TpTl : return 5; // 5 dofs for Tn/Tp, Tn/Tl or Tp/Tl pair
+      case ModelSpecify::ALL  : return 6; // 6 dofs for all of the extra Tl, Tn and Tp equations
   }
   return 0; // prevent compiler warning.
 }
@@ -67,48 +67,48 @@ unsigned int SemiconductorSimulationRegion::ebm_variable_offset(SolutionVariable
 {
   switch(var)
   {
-  case POTENTIAL     : return 0; // psi is always at offset 0
-  case ELECTRON      : return 1; // followed by electron density
-  case HOLE          : return 2; // and hole density
-  case TEMPERATURE   :           // if lattice temperature is required?
-    switch(get_advanced_model()->EB_Level)
-    {
-    case ModelSpecify::NONE :
-    case ModelSpecify::Tn   :
-    case ModelSpecify::Tp   :
-    case ModelSpecify::TnTp : return invalid_uint; // no lattice temperature
+      case POTENTIAL     : return 0; // psi is always at offset 0
+      case ELECTRON      : return 1; // followed by electron density
+      case HOLE          : return 2; // and hole density
+      case TEMPERATURE   :           // if lattice temperature is required?
+      switch(get_advanced_model()->EB_Level)
+      {
+          case ModelSpecify::NONE :
+          case ModelSpecify::Tn   :
+          case ModelSpecify::Tp   :
+          case ModelSpecify::TnTp : return invalid_uint; // no lattice temperature
 
-    case ModelSpecify::Tl   :
-    case ModelSpecify::TnTl :
-    case ModelSpecify::TpTl :
-    case ModelSpecify::ALL  : return 3;            // lattice temperature at offset 3
-    }
-  case E_TEMP :                  // if electron temperature is required?
-    switch(get_advanced_model()->EB_Level)
-    {
-    case ModelSpecify::NONE :
-    case ModelSpecify::Tl   :
-    case ModelSpecify::Tp   :
-    case ModelSpecify::TpTl : return invalid_uint; // no electron temperature
-    case ModelSpecify::TnTp :
-    case ModelSpecify::Tn   : return 3;            // electron temperature at offset 3
-    case ModelSpecify::TnTl :
-    case ModelSpecify::ALL  : return 4;            // electron temperature at offset 4
-    }
-  case H_TEMP :                  // if hole temperature is required?
-    switch(get_advanced_model()->EB_Level)
-    {
-    case ModelSpecify::NONE :
-    case ModelSpecify::Tl   :
-    case ModelSpecify::Tn   :
-    case ModelSpecify::TnTl : return invalid_uint; // no hole temperature
+          case ModelSpecify::Tl   :
+          case ModelSpecify::TnTl :
+          case ModelSpecify::TpTl :
+          case ModelSpecify::ALL  : return 3;            // lattice temperature at offset 3
+      }
+      case E_TEMP :                  // if electron temperature is required?
+      switch(get_advanced_model()->EB_Level)
+      {
+          case ModelSpecify::NONE :
+          case ModelSpecify::Tl   :
+          case ModelSpecify::Tp   :
+          case ModelSpecify::TpTl : return invalid_uint; // no electron temperature
+          case ModelSpecify::TnTp :
+          case ModelSpecify::Tn   : return 3;            // electron temperature at offset 3
+          case ModelSpecify::TnTl :
+          case ModelSpecify::ALL  : return 4;            // electron temperature at offset 4
+      }
+      case H_TEMP :                  // if hole temperature is required?
+      switch(get_advanced_model()->EB_Level)
+      {
+          case ModelSpecify::NONE :
+          case ModelSpecify::Tl   :
+          case ModelSpecify::Tn   :
+          case ModelSpecify::TnTl : return invalid_uint; // no hole temperature
 
-    case ModelSpecify::Tp   : return 3;            // hole temperature at offset 3
-    case ModelSpecify::TnTp :
-    case ModelSpecify::TpTl : return 4;            // hole temperature at offset 4
-    case ModelSpecify::ALL  : return 5;            // hole temperature at offset 5
-    }
-  default : return invalid_uint;
+          case ModelSpecify::Tp   : return 3;            // hole temperature at offset 3
+          case ModelSpecify::TnTp :
+          case ModelSpecify::TpTl : return 4;            // hole temperature at offset 4
+          case ModelSpecify::ALL  : return 5;            // hole temperature at offset 5
+      }
+      default : return invalid_uint;
   }
 }
 
@@ -254,7 +254,7 @@ void SemiconductorSimulationRegion::EBM3_Function(PetscScalar * x, Vec f, Insert
     bool insulator_interface_elem = is_elem_on_insulator_interface(elem);
     bool mos_channel_elem = is_elem_in_mos_channel(elem);
     bool truncation =  SolverSpecify::VoronoiTruncation == SolverSpecify::VoronoiTruncationAlways ||
-        (SolverSpecify::VoronoiTruncation == SolverSpecify::VoronoiTruncationBoundary && (elem->on_boundary() || elem->on_interface())) ;
+                       (SolverSpecify::VoronoiTruncation == SolverSpecify::VoronoiTruncationBoundary && (elem->on_boundary() || elem->on_interface())) ;
 
     // build the gradient of psi and fermi potential in this cell.
     // which are the vector of electric field and current density.
@@ -415,16 +415,6 @@ void SemiconductorSimulationRegion::EBM3_Function(PetscScalar * x, Vec f, Insert
 
       // the length of this edge
       const double length = elem->edge_length(ne);
-      double partial_area = elem->partial_area_with_edge(ne);  // partial area associated with this edge
-      double partial_volume = elem->partial_volume_with_edge(ne); // partial volume associated with this edge
-
-      double truncated_partial_area =  partial_area;
-      double truncated_partial_volume =  partial_volume;
-      if(truncation)
-      {
-        truncated_partial_area =  elem->partial_area_with_edge_truncated(ne);
-        truncated_partial_volume =  elem->partial_volume_with_edge_truncated(ne);
-      }
 
       // fvm_node of node1
       const FVM_Node * fvm_n1 = elem->get_fvm_node(edge_nodes.first);
@@ -433,6 +423,17 @@ void SemiconductorSimulationRegion::EBM3_Function(PetscScalar * x, Vec f, Insert
 
       const FVM_NodeData * n1_data = fvm_n1->node_data();  genius_assert(n1_data);            // fvm_node_data of node1
       const FVM_NodeData * n2_data = fvm_n2->node_data();  genius_assert(n2_data);            // fvm_node_data of node2
+
+      double partial_area = elem->partial_area_with_edge(ne);        // partial area associated with this edge
+      double partial_volume = elem->partial_volume_with_edge(ne);    // partial volume associated with this edge
+      double truncated_partial_area =  partial_area;
+      double truncated_partial_volume =  partial_volume;
+      if(truncation)
+      {
+        // use truncated partial area to avoid negative area due to bad mesh elem
+        truncated_partial_area =  this->truncated_partial_area(elem, ne);
+        truncated_partial_volume =  elem->partial_volume_with_edge_truncated(ne);
+      }
 
       unsigned int n1_local_offset = fvm_n1->local_offset();
       unsigned int n2_local_offset = fvm_n2->local_offset();
@@ -573,31 +574,31 @@ void SemiconductorSimulationRegion::EBM3_Function(PetscScalar * x, Vec f, Insert
         PetscScalar Jn, Jp, Sn=0, Sp=0;
         switch(Jn_level)
         {
-        case 1:
-          Jn =  mun*In_dd(kb*T1/e, (Ec2-Ec1)/e, n1, n2, length);
-          break;
-        case 2:
-          Jn =  mun*In_lt(kb, e, (Ec1-Ec2)/e, n1, n2, 0.5*(T1+T2), T2-T1, length);
-          break;
-        case 3:
-          Jn =  mun*In_eb(kb, e, -Ec1/e, -Ec2/e, n1, n2, Tn1, Tn2, length);
-          Sn =  mun*Sn_eb(kb, e, -Ec1/e, -Ec2/e, n1, n2, Tn1, Tn2, length);
-          break;
+            case 1:
+            Jn =  mun*In_dd(kb*T1/e, (Ec2-Ec1)/e, n1, n2, length);
+            break;
+            case 2:
+            Jn =  mun*In_lt(kb, e, (Ec1-Ec2)/e, n1, n2, 0.5*(T1+T2), T2-T1, length);
+            break;
+            case 3:
+            Jn =  mun*In_eb(kb, e, -Ec1/e, -Ec2/e, n1, n2, Tn1, Tn2, length);
+            Sn =  mun*Sn_eb(kb, e, -Ec1/e, -Ec2/e, n1, n2, Tn1, Tn2, length);
+            break;
         }
 
 
         switch(Jp_level)
         {
-        case 1:
-          Jp =  mup*Ip_dd(kb*T2/e, (Ev2-Ev1)/e, p1, p2, length);
-          break;
-        case 2:
-          Jp =  mup*Ip_lt(kb, e, (Ev1-Ev2)/e, p1, p2, 0.5*(T1+T2), T2-T1, length);
-          break;
-        case 3:
-          Jp =  mup*Ip_eb(kb, e, -Ev1/e, -Ev2/e, p1, p2, Tp1, Tp2, length);
-          Sp =  mup*Sp_eb(kb, e, -Ev1/e, -Ev2/e, p1, p2, Tp1, Tp2, length);
-          break;
+            case 1:
+            Jp =  mup*Ip_dd(kb*T2/e, (Ev2-Ev1)/e, p1, p2, length);
+            break;
+            case 2:
+            Jp =  mup*Ip_lt(kb, e, (Ev1-Ev2)/e, p1, p2, 0.5*(T1+T2), T2-T1, length);
+            break;
+            case 3:
+            Jp =  mup*Ip_eb(kb, e, -Ev1/e, -Ev2/e, p1, p2, Tp1, Tp2, length);
+            Sp =  mup*Sp_eb(kb, e, -Ev1/e, -Ev2/e, p1, p2, Tp1, Tp2, length);
+            break;
         }
 
 
@@ -606,15 +607,15 @@ void SemiconductorSimulationRegion::EBM3_Function(PetscScalar * x, Vec f, Insert
 
         switch(Hn_level)
         {
-        case  0  : break;                         // no heat equation
-        case  1  : H += 0.5*(V1-V2)*(Jn); break;  // use JdotE as heating source to lattice
-        case  2  : Hn = 0.5*(V1-V2)*(Jn); break;  // use JdotE as heating source to electron system
+            case  0  : break;                         // no heat equation
+            case  1  : H += 0.5*(V1-V2)*(Jn); break;  // use JdotE as heating source to lattice
+            case  2  : Hn = 0.5*(V1-V2)*(Jn); break;  // use JdotE as heating source to electron system
         }
         switch(Hp_level)
         {
-        case  0  : break;                         // no heat equation
-        case  1  : H += 0.5*(V1-V2)*(Jp); break;  // use JdotE as heating source to lattice
-        case  2  : Hp = 0.5*(V1-V2)*(Jp); break;  // use JdotE as heating source to hole system
+            case  0  : break;                         // no heat equation
+            case  1  : H += 0.5*(V1-V2)*(Jp); break;  // use JdotE as heating source to lattice
+            case  2  : Hp = 0.5*(V1-V2)*(Jp); break;  // use JdotE as heating source to hole system
         }
 
         Jn_edge.push_back(Jn);
@@ -753,33 +754,33 @@ void SemiconductorSimulationRegion::EBM3_Function(PetscScalar * x, Vec f, Insert
 
           switch (get_advanced_model()->II_Force)
           {
-            case ModelSpecify::IIForce_EdotJ:
+              case ModelSpecify::IIForce_EdotJ:
               Epn = std::max(E.dot(Jnv.unit(true)), 0.0);
               Epp = std::max(E.dot(Jpv.unit(true)), 0.0);
               IIn = mt->gen->ElecGenRate(T,Epn,Eg);
               IIp = mt->gen->HoleGenRate(T,Epp,Eg);
               break;
-            case ModelSpecify::EVector:
+              case ModelSpecify::EVector:
               IIn = mt->gen->ElecGenRate(T,E.size(),Eg);
               IIp = mt->gen->HoleGenRate(T,E.size(),Eg);
               break;
-            case ModelSpecify::ESide:
+              case ModelSpecify::ESide:
               IIn = mt->gen->ElecGenRate(T,fabs(Ec2-Ec1)/e/length,Eg);
               IIp = mt->gen->HoleGenRate(T,fabs(Ev2-Ev1)/e/length,Eg);
               break;
-            case ModelSpecify::GradQf:
+              case ModelSpecify::GradQf:
               IIn = mt->gen->ElecGenRate(T,Jnv.size(),Eg);
               IIp = mt->gen->HoleGenRate(T,Jpv.size(),Eg);
               break;
-            case ModelSpecify::TempII:
+              case ModelSpecify::TempII:
               IIn = mt->gen->ElecGenRateEBM (Tn,T,Eg);
               IIp = mt->gen->HoleGenRateEBM (Tp,T,Eg);
               break;
-        default:
-         {
-           MESSAGE<<"ERROR: Unsupported Impact Ionization Type."<<std::endl; RECORD();
-           genius_error();
-         }
+              default:
+              {
+                MESSAGE<<"ERROR: Unsupported Impact Ionization Type."<<std::endl; RECORD();
+                genius_error();
+              }
           }
           GIIn = IIn * fabs(Jn)/e;
           GIIp = IIp * fabs(Jp)/e;
@@ -834,9 +835,9 @@ void SemiconductorSimulationRegion::EBM3_Function(PetscScalar * x, Vec f, Insert
 
     }
 
-        // the average cell electron/hole current density vector
-     elem_data->Jn() = -elem->reconstruct_vector(Jn_edge);
-     elem_data->Jp() =  elem->reconstruct_vector(Jp_edge);
+    // the average cell electron/hole current density vector
+    elem_data->Jn() = -elem->reconstruct_vector(Jn_edge);
+    elem_data->Jp() =  elem->reconstruct_vector(Jp_edge);
 
   }
 
@@ -1007,4 +1008,161 @@ void SemiconductorSimulationRegion::EBM3_Function(PetscScalar * x, Vec f, Insert
 }
 
 
+
+void SemiconductorSimulationRegion::EBM3_Time_Dependent_Function(PetscScalar * x, Vec f, InsertMode &add_value_flag)
+{
+
+  // find the node variable offset
+  unsigned int node_n_offset   = ebm_variable_offset(ELECTRON);
+  unsigned int node_p_offset   = ebm_variable_offset(HOLE);
+  unsigned int node_Tl_offset  = ebm_variable_offset(TEMPERATURE);
+  unsigned int node_Tn_offset  = ebm_variable_offset(E_TEMP);
+  unsigned int node_Tp_offset  = ebm_variable_offset(H_TEMP);
+
+  // note, we will use ADD_VALUES to set values of vec f
+  // if the previous operator is not ADD_VALUES, we should assembly the vec first!
+  if( (add_value_flag != ADD_VALUES) && (add_value_flag != NOT_SET_VALUES) )
+  {
+    VecAssemblyBegin(f);
+    VecAssemblyEnd(f);
+  }
+
+  // set local buf here
+  std::vector<int>          iy;
+  std::vector<PetscScalar>  y;
+
+  const double r = SolverSpecify::dt_last/(SolverSpecify::dt_last + SolverSpecify::dt);
+
+  // process node related terms
+  // including \rho of poisson's equation and recombination term of continuation equation
+  const_processor_node_iterator node_it = on_processor_nodes_begin();
+  const_processor_node_iterator node_it_end = on_processor_nodes_end();
+  for(; node_it!=node_it_end; ++node_it)
+  {
+    const FVM_Node * fvm_node = *node_it;
+    const FVM_NodeData * node_data = fvm_node->node_data();
+
+    mt->mapping(fvm_node->root_node(), node_data, SolverSpecify::clock);
+
+    // process \partial t
+
+    //second order
+    if(SolverSpecify::TS_type==SolverSpecify::BDF2 && SolverSpecify::BDF2_LowerOrder==false)
+    {
+      // electron density
+      PetscScalar n         =  x[fvm_node->local_offset()+node_n_offset];
+      PetscScalar dndt_BDF2 = -((2-r)/(1-r)*n - 1.0/(r*(1-r))*node_data->n() + (1-r)/r*node_data->n_last())
+                              / (SolverSpecify::dt_last+SolverSpecify::dt) * fvm_node->volume();
+      iy.push_back(fvm_node->global_offset()+node_n_offset);                     // save index in the buffer
+      y.push_back( dndt_BDF2 );
+
+
+      // hole density
+      PetscScalar p         =  x[fvm_node->local_offset()+node_p_offset];
+
+      PetscScalar dpdt_BDF2 = -((2-r)/(1-r)*p - 1.0/(r*(1-r))*node_data->p() + (1-r)/r*node_data->p_last())
+                              / (SolverSpecify::dt_last+SolverSpecify::dt) * fvm_node->volume();
+      iy.push_back(fvm_node->global_offset()+node_p_offset);
+      y.push_back( dpdt_BDF2 );
+
+
+      // lattice temperature if required
+      if(get_advanced_model()->enable_Tl())
+      {
+        PetscScalar Tl           =  x[fvm_node->local_offset()+node_Tl_offset];
+        PetscScalar HeatCapacity =  mt->thermal->HeatCapacity(Tl);
+
+        PetscScalar dTldt_BDF2   = -((2-r)/(1-r)*Tl - 1.0/(r*(1-r))*node_data->T() + (1-r)/r*node_data->T_last())*node_data->density()*HeatCapacity
+                                   / (SolverSpecify::dt_last+SolverSpecify::dt) * fvm_node->volume();
+        iy.push_back(fvm_node->global_offset()+node_Tl_offset);
+        y.push_back( dTldt_BDF2 );
+      }
+
+      // electron temperature if required
+      if(get_advanced_model()->enable_Tn())
+      {
+        PetscScalar n          =  x[fvm_node->local_offset()+node_n_offset];
+        PetscScalar Tn         =  x[fvm_node->local_offset()+node_Tn_offset]/n;
+
+        PetscScalar dWndt_BDF2 = -((2-r)/(1-r)*1.5*n*kb*Tn - 1.0/(r*(1-r))*1.5*node_data->n()*kb*node_data->Tn() + (1-r)/r*1.5*node_data->n_last()*kb*node_data->Tn_last())
+                                 / (SolverSpecify::dt_last+SolverSpecify::dt) * fvm_node->volume();
+        iy.push_back(fvm_node->global_offset()+node_Tn_offset);
+        y.push_back( dWndt_BDF2 );
+      }
+
+      // hole temperature if required
+      if(get_advanced_model()->enable_Tp())
+      {
+        PetscScalar p          =  x[fvm_node->local_offset()+node_p_offset];
+        PetscScalar Tp         =  x[fvm_node->local_offset()+node_Tp_offset]/p;
+
+        PetscScalar dWpdt_BDF2 = -((2-r)/(1-r)*1.5*p*kb*Tp - 1.0/(r*(1-r))*1.5*node_data->p()*kb*node_data->Tp() + (1-r)/r*1.5*node_data->p_last()*kb*node_data->Tp_last())
+                                 / (SolverSpecify::dt_last+SolverSpecify::dt) * fvm_node->volume();
+        iy.push_back(fvm_node->global_offset()+node_Tp_offset);
+        y.push_back( dWpdt_BDF2 );
+      }
+    }
+    else //first order
+    {
+      // electron density
+      PetscScalar n         =  x[fvm_node->local_offset()+node_n_offset];
+      PetscScalar dndt_BDF1 = -(n - node_data->n())/SolverSpecify::dt*fvm_node->volume();
+      iy.push_back(fvm_node->global_offset()+node_n_offset);                     // save index in the buffer
+      y.push_back( dndt_BDF1 );
+
+
+      // hole density
+      PetscScalar p         =  x[fvm_node->local_offset()+node_p_offset];
+      PetscScalar dpdt_BDF1 = -(p - node_data->p())/SolverSpecify::dt*fvm_node->volume();
+      iy.push_back(fvm_node->global_offset()+node_p_offset);
+      y.push_back( dpdt_BDF1 );
+
+
+      // lattice temperature if required
+      if(get_advanced_model()->enable_Tl())
+      {
+        PetscScalar Tl           =  x[fvm_node->local_offset()+node_Tl_offset];
+        PetscScalar HeatCapacity =  mt->thermal->HeatCapacity(Tl);
+        PetscScalar dTldt_BDF1   = -(Tl - node_data->T())*node_data->density()*HeatCapacity/SolverSpecify::dt*fvm_node->volume();
+        iy.push_back(fvm_node->global_offset()+node_Tl_offset);
+        y.push_back( dTldt_BDF1 );
+      }
+
+      // electron temperature if required
+      if(get_advanced_model()->enable_Tn())
+      {
+        PetscScalar n          =  x[fvm_node->local_offset()+node_n_offset];
+        PetscScalar Tn         =  x[fvm_node->local_offset()+node_Tn_offset]/n;
+
+        PetscScalar dWndt_BDF1 = -(1.5*n*kb*Tn - 1.5*node_data->n()*kb*node_data->Tn())/SolverSpecify::dt*fvm_node->volume();
+        iy.push_back(fvm_node->global_offset()+node_Tn_offset);
+        y.push_back( dWndt_BDF1 );
+      }
+
+      // hole temperature if required
+      if(get_advanced_model()->enable_Tp())
+      {
+        PetscScalar p          =  x[fvm_node->local_offset()+node_p_offset];
+        PetscScalar Tp         =  x[fvm_node->local_offset()+node_Tp_offset]/p;
+
+        PetscScalar dWpdt_BDF1 = -(1.5*p*kb*Tp - 1.5*node_data->p()*kb*node_data->Tp())/SolverSpecify::dt*fvm_node->volume();
+        iy.push_back(fvm_node->global_offset()+node_Tp_offset);
+        y.push_back( dWpdt_BDF1 );
+      }
+    }
+  }
+
+
+  // add into petsc vector, we should prevent zero length vector add here.
+  if(iy.size())  VecSetValues(f, iy.size(), &iy[0], &y[0], ADD_VALUES);
+
+  // the last operator is ADD_VALUES
+  add_value_flag = ADD_VALUES;
+
+
+#if defined(HAVE_FENV_H) && defined(DEBUG)
+  genius_assert( !fetestexcept(FE_INVALID) );
+#endif
+
+}
 

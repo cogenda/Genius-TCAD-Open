@@ -74,7 +74,8 @@ public:
 
 private:
   ANNSession _ann;
-  std::vector<double> _field;
+
+  std::map<int, std::vector<double> > _field;
 
 };
 

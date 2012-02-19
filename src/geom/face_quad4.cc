@@ -524,65 +524,71 @@ void Quad4::ray_hit(const Point &p , const Point &d , IntersectionResult &result
   // the ray and the quad is co-plane
   if (std::abs((this->point(1) - this->point(0)).dot(d.cross(this->point(2) - this->point(0))))<1e-10)
   {
-    IntersectionResult edge_intersections;
-
-    for(unsigned int s=0; s<this->n_sides(); ++s)
+    IntersectionResult edge_intersections[4];
+    for ( unsigned int s=0; s<this->n_sides(); ++s )
     {
-      AutoPtr<Elem> edge = this->build_side(s);
-      edge->ray_hit(p, d, edge_intersections);
-
-      if(edge_intersections.state==Missed)
-        continue;
-
-      if(edge_intersections.state==Intersect_Body)
-      {
-        if(dim==2)
-          result.state=Intersect_Body;
-        else
-          result.state=On_Face;
-
-        Hit_Point & hit_point = edge_intersections.hit_points[0];
-        if(hit_point.point_location == on_edge)
-        {
-          //for 2D mesh, on edge equals to on side
-          if(dim==2) hit_point.point_location = on_side;
-          hit_point.mark = s;
-          if(!result.is_point_overlap_exist(hit_point))
-            result.hit_points.push_back(hit_point);
-        }
-        else if(hit_point.point_location == on_vertex)
-        {
-          hit_point.mark = this->side_nodes_map[s][hit_point.mark];
-          if(!result.is_mark_exist(on_vertex, hit_point.mark) && !result.is_point_overlap_exist(hit_point))
-            result.hit_points.push_back(hit_point);
-        }
-      }
-
-      if(edge_intersections.state==Overlap_Edge)
-      {
-        // collect result
-        result = edge_intersections;
-        result.mark = s;
-        result.hit_points[0].mark = this->side_nodes_map[s][result.hit_points[0].mark];
-        result.hit_points[1].mark = this->side_nodes_map[s][result.hit_points[1].mark];
-        return;
-      }
+      AutoPtr<Elem> edge = this->build_side ( s );
+      edge->ray_hit ( p, d, edge_intersections[s] );
     }
 
-    if(result.hit_points.size()==0)
+    // miss?
+    if ( edge_intersections[0].state==Missed &&
+         edge_intersections[1].state==Missed &&
+         edge_intersections[2].state==Missed &&
+         edge_intersections[3].state==Missed)
     {
       result.state = Missed;
       return;
     }
 
-    if(result.hit_points.size()==1)
+    // has any overlap edge?
+    for ( unsigned int s=0; s<this->n_sides(); ++s )
+      if ( edge_intersections[s].state==Overlap_Edge )
     {
+        // collect result
+      result = edge_intersections[s];
+      result.mark = s;
+      result.hit_points[0].mark = this->side_nodes_map[s][result.hit_points[0].mark];
+      result.hit_points[1].mark = this->side_nodes_map[s][result.hit_points[1].mark];
       return;
     }
 
-    genius_assert(result.hit_points.size()==2);
-    if(result.hit_points[0].t > result.hit_points[1].t)
-      std::swap(result.hit_points[0], result.hit_points[1]);
+    // ok, must be intersect
+    std::set<Hit_Point, Hit_Point> hit_points; // use for reorder the intersection point
+    for ( unsigned int s=0; s<this->n_sides(); ++s )
+    {
+      if ( edge_intersections[s].state==Intersect_Body )
+      {
+        if ( dim==2 )
+          result.state=Intersect_Body;
+        else
+          result.state=On_Face;
+
+        Hit_Point & hit_point = edge_intersections[s].hit_points[0];
+        if ( hit_point.point_location == on_edge )
+        {
+          //for 2D mesh, on edge equals to on side
+          if ( dim==2 ) hit_point.point_location = on_side;
+          hit_point.mark = s;
+        }
+        else if ( hit_point.point_location == on_vertex )
+        {
+          hit_point.mark = this->side_nodes_map[s][hit_point.mark];
+        }
+
+        hit_points.insert ( hit_point );
+      }
+    }
+    std::set<Hit_Point, Hit_Point>::const_iterator it_first = hit_points.begin();
+    if ( it_first!=hit_points.end() )
+      result.hit_points.push_back ( *it_first );
+
+    std::set<Hit_Point, Hit_Point>::const_iterator it_last = --hit_points.end();
+    if ( it_last!=it_first && it_last!=hit_points.end() )
+    {
+      if ( !result.is_point_overlap_exist ( *it_last ) )
+        result.hit_points.push_back ( *it_last );
+    }
 
     return;
   }

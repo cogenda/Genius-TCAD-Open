@@ -128,7 +128,7 @@ public:
   /**
    * preprocess Jacobian function for poisson solver
    */
-  virtual void Poissin_Function_Preprocess(Vec, std::vector<PetscInt>&, std::vector<PetscInt>&, std::vector<PetscInt>&);
+  virtual void Poissin_Function_Preprocess(PetscScalar *, Vec, std::vector<PetscInt>&, std::vector<PetscInt>&, std::vector<PetscInt>&);
 
   /**
   * build function and its jacobian for poisson solver, nothing to do
@@ -143,7 +143,7 @@ public:
   /**
    * preprocess Jacobian Matrix for poisson solver
    */
-  virtual void Poissin_Jacobian_Preprocess(Mat *, std::vector<PetscInt>&, std::vector<PetscInt>&, std::vector<PetscInt>&);
+  virtual void Poissin_Jacobian_Preprocess(PetscScalar *, Mat *, std::vector<PetscInt>&, std::vector<PetscInt>&, std::vector<PetscInt>&);
 
   /**
    * build function and its jacobian for poisson solver, nothing to do
@@ -168,7 +168,7 @@ public:
   /**
    * preprocess function for level 1 DDM solver
    */
-  virtual void DDM1_Function_Preprocess(Vec, std::vector<PetscInt>&, std::vector<PetscInt>&, std::vector<PetscInt>&);
+  virtual void DDM1_Function_Preprocess(PetscScalar *, Vec, std::vector<PetscInt>&, std::vector<PetscInt>&, std::vector<PetscInt>&);
 
   /**
    * build function and its jacobian for DDML1 solver
@@ -183,7 +183,7 @@ public:
   /**
    * preprocess Jacobian Matrix of level 1 DDM equation.
    */
-  virtual void DDM1_Jacobian_Preprocess(Mat *, std::vector<PetscInt>&, std::vector<PetscInt>&, std::vector<PetscInt>&);
+  virtual void DDM1_Jacobian_Preprocess(PetscScalar *, Mat *, std::vector<PetscInt>&, std::vector<PetscInt>&, std::vector<PetscInt>&);
 
   /**
    * build function and its jacobian for DDML1 solver
@@ -197,13 +197,53 @@ public:
 
 
   //////////////////////////////////////////////////////////////////////////////////
+  //--------------Function and Jacobian evaluate for new L1 DDM-------------------//
+  //////////////////////////////////////////////////////////////////////////////////
+
+  /**
+   * fill solution data and scaling constant into petsc vector
+   */
+  virtual void DDM1R_Fill_Value(Vec x, Vec L);
+
+  /**
+   * preprocess function for level 1 DDM solver
+   */
+  virtual void DDM1R_Function_Preprocess(PetscScalar *, Vec, std::vector<PetscInt>&, std::vector<PetscInt>&, std::vector<PetscInt>&);
+
+  /**
+   * build function and its jacobian for DDML1 solver
+   */
+  virtual void DDM1R_Function(PetscScalar * , Vec , InsertMode &);
+
+  /**
+   * reserve none zero pattern in petsc matrix.
+   */
+  virtual void DDM1R_Jacobian_Reserve(Mat *jac, InsertMode &add_value_flag);
+
+  /**
+   * preprocess Jacobian Matrix of level 1 DDM equation.
+   */
+  virtual void DDM1R_Jacobian_Preprocess(PetscScalar *, Mat *, std::vector<PetscInt>&, std::vector<PetscInt>&, std::vector<PetscInt>&);
+
+  /**
+   * build function and its jacobian for DDML1 solver
+   */
+  virtual void DDM1R_Jacobian(PetscScalar * , Mat *, InsertMode &);
+
+  /**
+   * update solution data of DDML1 solver.
+   */
+  virtual void DDM1R_Update_Solution(PetscScalar *);
+
+
+  //////////////////////////////////////////////////////////////////////////////////
   //----------------Function and Jacobian evaluate for L2 DDM---------------------//
   //////////////////////////////////////////////////////////////////////////////////
 
   /**
    * preprocess function for level 2 DDM solver
    */
-  virtual void DDM2_Function_Preprocess(Vec, std::vector<PetscInt>&, std::vector<PetscInt>&, std::vector<PetscInt>&);
+  virtual void DDM2_Function_Preprocess(PetscScalar * ,Vec, std::vector<PetscInt>&, std::vector<PetscInt>&, std::vector<PetscInt>&);
 
   /**
    * build function and its jacobian for DDML2 solver
@@ -218,7 +258,7 @@ public:
   /**
    * preprocess Jacobian Matrix of level 2 DDM equation.
    */
-  virtual void DDM2_Jacobian_Preprocess(Mat *, std::vector<PetscInt>&, std::vector<PetscInt>&, std::vector<PetscInt>&);
+  virtual void DDM2_Jacobian_Preprocess(PetscScalar *,Mat *, std::vector<PetscInt>&, std::vector<PetscInt>&, std::vector<PetscInt>&);
 
   /**
    * build function and its jacobian for DDML2 solver
@@ -233,7 +273,7 @@ public:
   /**
    * preprocess function for level 3 EBM solver
    */
-  virtual void EBM3_Function_Preprocess(Vec, std::vector<PetscInt>&, std::vector<PetscInt>&, std::vector<PetscInt>&);
+  virtual void EBM3_Function_Preprocess(PetscScalar *,Vec, std::vector<PetscInt>&, std::vector<PetscInt>&, std::vector<PetscInt>&);
 
   /**
    * build function and its jacobian for level 3 EBM solver
@@ -248,7 +288,7 @@ public:
   /**
    * preprocess Jacobian Matrix of level 3 EBM equation.
    */
-  virtual void EBM3_Jacobian_Preprocess(Mat *, std::vector<PetscInt>&, std::vector<PetscInt>&, std::vector<PetscInt>&);
+  virtual void EBM3_Jacobian_Preprocess(PetscScalar * ,Mat *, std::vector<PetscInt>&, std::vector<PetscInt>&, std::vector<PetscInt>&);
 
   /**
    * build function and its jacobian for level 3 EBM solver
@@ -271,33 +311,6 @@ public:
    */
   virtual void DDMAC_Update_Solution(const PetscScalar * lxx , const Mat, const double omega){}
 
-  //////////////////////////////////////////////////////////////////////////////////
-  //----------------- functions for Fast Hydrodynamic solver  --------------------//
-  //////////////////////////////////////////////////////////////////////////////////
-
-  /**
-   * function for evaluating boundary for HDM method
-   */
-  virtual void HDM_Boundary( const PetscScalar * , Vec /*x*/, InsertMode &  ){}
-
-  //////////////////////////////////////////////////////////////////////////////////
-  //-----------------  functions for Linear Poissin solver   ---------------------//
-  //////////////////////////////////////////////////////////////////////////////////
-
-  /**
-   * function for reserve none zero pattern in petsc matrix.
-   */
-  virtual void LinearPoissin_Reserve(Mat A, InsertMode &){}
-
-  /**
-   * function for build matrix of linear poisson's equation.
-   */
-  virtual void LinearPoissin_Matrix(Mat A, InsertMode &){}
-
-  /**
-   * function for build RHS vector of linear poisson's equation.
-   */
-  virtual void LinearPoissin_RHS(Vec b, InsertMode &){}
 
 };
 

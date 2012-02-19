@@ -31,7 +31,7 @@
 namespace SolverSpecify
 {
 
-  std::map<const std::string, NonLinearSolverType> NonLinearSolverName_to_NonLinearSolverType;
+  std::map<std::string, NonLinearSolverType> NonLinearSolverName_to_NonLinearSolverType;
 
   void init_NonLinearSolverName_to_NonLinearSolverType()
   {
@@ -54,7 +54,7 @@ namespace SolverSpecify
 
   //-------------------------------------------------------------------------------------
 
-  std::map<const std::string, LinearSolverType>    LinearSolverName_to_LinearSolverType;
+  std::map<std::string, LinearSolverType>    LinearSolverName_to_LinearSolverType;
 
   void init_LinearSolverName_to_LinearSolverType()
   {
@@ -68,12 +68,13 @@ namespace SolverSpecify
       LinearSolverName_to_LinearSolverType["tcqmr"       ]  = TCQMR;
       LinearSolverName_to_LinearSolverType["tfqmr"       ]  = TFQMR;
       LinearSolverName_to_LinearSolverType["bicg"        ]  = BICG;
-      LinearSolverName_to_LinearSolverType["bcgs"        ]  = BCGSL;//BICGSTAB; BCGSL is more stable
-      LinearSolverName_to_LinearSolverType["bicgstab"    ]  = BCGSL;//BICGSTAB;
+      LinearSolverName_to_LinearSolverType["bcgs"        ]  = BCGSL;//BCGSL is more stable
+      LinearSolverName_to_LinearSolverType["bicgstable"  ]  = BICGSTAB;
       LinearSolverName_to_LinearSolverType["bcgsl"       ]  = BCGSL;
 
       LinearSolverName_to_LinearSolverType["minres"      ]  = MINRES;
       LinearSolverName_to_LinearSolverType["gmres"       ]  = GMRES;
+      LinearSolverName_to_LinearSolverType["dgmres"      ]  = DGMRES;
       LinearSolverName_to_LinearSolverType["fgmres"      ]  = FGMRES;
       LinearSolverName_to_LinearSolverType["lsqr"        ]  = LSQR;
 
@@ -104,7 +105,7 @@ namespace SolverSpecify
 
   //-------------------------------------------------------------------------------------
 
-  std::map<const std::string, PreconditionerType>  PreconditionerName_to_PreconditionerType;
+  std::map<std::string, PreconditionerType>  PreconditionerName_to_PreconditionerType;
 
   void init_PreconditionerName_to_PreconditionerType()
   {
@@ -116,15 +117,20 @@ namespace SolverSpecify
       PreconditionerName_to_PreconditionerType["sor"         ]  = SOR_PRECOND;
       PreconditionerName_to_PreconditionerType["ssor"        ]  = SSOR_PRECOND;
       PreconditionerName_to_PreconditionerType["asm"         ]  = ASM_PRECOND;
+      PreconditionerName_to_PreconditionerType["asmilu0"     ]  = ASMILU0_PRECOND;
+      PreconditionerName_to_PreconditionerType["asmilu1"     ]  = ASMILU1_PRECOND;
+      PreconditionerName_to_PreconditionerType["asmilu2"     ]  = ASMILU2_PRECOND;
+      PreconditionerName_to_PreconditionerType["asmilu3"     ]  = ASMILU3_PRECOND;
+      PreconditionerName_to_PreconditionerType["asmlu"       ]  = ASMLU_PRECOND;
       PreconditionerName_to_PreconditionerType["amg"         ]  = BOOMERAMG_PRECOND;
       PreconditionerName_to_PreconditionerType["bjacobian"   ]  = CHOLESKY_PRECOND;
-      PreconditionerName_to_PreconditionerType["sor"         ]  = ICC_PRECOND;
+      PreconditionerName_to_PreconditionerType["eisenstat"   ]  = EISENSTAT_PRECOND;
+      PreconditionerName_to_PreconditionerType["icc"         ]  = ICC_PRECOND;
       PreconditionerName_to_PreconditionerType["ilu"         ]  = ILU_PRECOND;
       PreconditionerName_to_PreconditionerType["ilut"        ]  = ILUT_PRECOND;
       PreconditionerName_to_PreconditionerType["lu"          ]  = LU_PRECOND;
       PreconditionerName_to_PreconditionerType["parms"       ]  = PARMS_PRECOND;
     }
-
   }
 
   PreconditionerType preconditioner_type(const std::string & pc)
@@ -152,6 +158,7 @@ namespace SolverSpecify
       case BCGSL        :
       case MINRES       :
       case GMRES        :
+      case DGMRES       :
       case FGMRES       :
       case LSQR         :
       case JACOBI       :

@@ -19,15 +19,14 @@
 /*                                                                              */
 /********************************************************************************/
 
-#include <cstring>
 #include <iostream>
 #include <fstream>
 #include <sstream>
 #include <string>
 
 
-#include "genius_env.h"
 #include "genius_common.h"
+#include "genius_env.h"
 #include "file_include.h"
 
 using namespace Parser;
@@ -87,11 +86,11 @@ void FilePreProcess::file_include( const char * filename  )
       std::string file_line_info(ss.str());
 
       //remove comment begin with '#'
-      if(str.rfind("#") < str.length() )
+      while(str.rfind("#") < str.length() )
         str = str.substr(0, str.rfind("#"));
 
       //remove comment begin with '//'
-      if(str.rfind("//") < str.length() )
+      while(str.rfind("//") < str.length() )
         str = str.substr(0, str.rfind("//"));
 
       // process continue line

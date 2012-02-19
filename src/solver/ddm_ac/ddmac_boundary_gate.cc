@@ -49,6 +49,9 @@ void GateContactBC::DDMAC_Fill_Matrix_Vector( Mat A, Vec b, const Mat J, const d
   PetscScalar C = ext_circuit()->C();             // capacitance
   PetscScalar L = ext_circuit()->L();             // inductance
 
+  const PetscScalar Work_Function = this->scalar("workfunction");
+  const PetscScalar Heat_Transfer = this->scalar("heat.transfer");
+
   // impedance at frequency omega
   std::complex <PetscScalar> Z1(R, omega*L);
   std::complex <PetscScalar> Y2(0.0, omega*C);
@@ -100,7 +103,7 @@ void GateContactBC::DDMAC_Fill_Matrix_Vector( Mat A, Vec b, const Mat J, const d
             AutoDScalar Ve = this->ext_circuit()->Vac();     Ve.setADValue(1, 1.0);
 
             // the governing equation of potential
-            AutoDScalar ff = V + Work_Function() - Ve;
+            AutoDScalar ff = V + Work_Function - Ve;
 
             // the insert position
             PetscInt row_re  = fvm_nodes[i]->global_offset() + node_psi_offset;
@@ -119,9 +122,8 @@ void GateContactBC::DDMAC_Fill_Matrix_Vector( Mat A, Vec b, const Mat J, const d
             regions[i]->DDMAC_Fill_Nodal_Matrix_Vector(fvm_nodes[i], TEMPERATURE, A, b, J, omega, add_value_flag);
 
             AutoDScalar T = node_data->T();         T.setADValue(0, 1.0); // T of this node
-            PetscScalar h = this->Heat_Transfer();
             PetscScalar S  = fvm_nodes[i]->outside_boundary_surface_area();
-            AutoDScalar fT = h*(T_external()-T)*S;
+            AutoDScalar fT = Heat_Transfer*(T_external()-T)*S;
 
             PetscInt index_re = fvm_nodes[i]->global_offset() + node_Tl_offset;
             PetscInt col_re   = index_re;

@@ -30,7 +30,7 @@
 
 // avoid isatty() problem of Bison 2.3
 #define YY_NEVER_INTERACTIVE 1
-#ifdef CYGWIN
+#ifdef WINDOWS
   #define YY_NO_UNISTD_H 1
 extern "C"
 {

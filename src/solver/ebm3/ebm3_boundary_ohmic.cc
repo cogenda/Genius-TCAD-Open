@@ -81,7 +81,7 @@ void OhmicContactBC::EBM3_Fill_Value(Vec x, Vec L)
 /*---------------------------------------------------------------------
  * do pre-process to function for EBM solver
  */
-void OhmicContactBC::EBM3_Function_Preprocess(Vec f, std::vector<PetscInt> &src_row,
+void OhmicContactBC::EBM3_Function_Preprocess(PetscScalar *,Vec f, std::vector<PetscInt> &src_row,
     std::vector<PetscInt> &dst_row, std::vector<PetscInt> &clear_row)
 {
 
@@ -192,6 +192,7 @@ void OhmicContactBC::EBM3_Function(PetscScalar * x, Vec f, InsertMode &add_value
   // for 2D mesh, z_width() is the device dimension in Z direction; for 3D mesh, z_width() is 1.0
   PetscScalar current_scale = this->z_width();
 
+  const PetscScalar Heat_Transfer = this->scalar("heat.transfer");
 
   // the electrode potential in current iteration
   genius_assert( local_offset()!=invalid_uint );
@@ -227,7 +228,6 @@ void OhmicContactBC::EBM3_Function(PetscScalar * x, Vec f, InsertMode &add_value
           case SemiconductorRegion:
           {
             // semiconductor region should be the first region
-            genius_assert(i==0);
 
             const SemiconductorSimulationRegion * semi_region = dynamic_cast<const SemiconductorSimulationRegion *>(regions[i]);
 
@@ -278,7 +278,7 @@ void OhmicContactBC::EBM3_Function(PetscScalar * x, Vec f, InsertMode &add_value
               y.push_back  ( V - kb*T/e*boost::math::asinh(node_data->Net_doping()/(2*nie))
                              + Eg/(2*e)
                              + kb*T*log(Nc/Nv)/(2*e)
-                             + node_data->affinity()
+                             + node_data->affinity()/e
                              - Ve
                            );                        //governing equation for psi
 
@@ -311,9 +311,8 @@ void OhmicContactBC::EBM3_Function(PetscScalar * x, Vec f, InsertMode &add_value
             {
               PetscInt    iT = fvm_nodes[i]->global_offset()+node_Tl_offset;
               // add heat flux out of ohmic boundary to lattice temperature equatiuon
-              PetscScalar h = this->Heat_Transfer();
               PetscScalar S  = fvm_nodes[i]->outside_boundary_surface_area();
-              y.push_back( h*(T_external()-T)*S );
+              y.push_back( Heat_Transfer*(T_external()-T)*S );
               iy.push_back(iT);
             }
 
@@ -350,7 +349,7 @@ void OhmicContactBC::EBM3_Function(PetscScalar * x, Vec f, InsertMode &add_value
                 // area of out surface of control volume related with neighbor node
                 PetscScalar cv_boundary = fvm_nodes[i]->cv_surface_area(nb_node->root_node());
                 PetscScalar dEdt;
-                if(SolverSpecify::TS_type==SolverSpecify::BDF2 && SolverSpecify::BDF2_restart==false) //second order
+                if(SolverSpecify::TS_type==SolverSpecify::BDF2 && SolverSpecify::BDF2_LowerOrder==false) //second order
                 {
                   PetscScalar r = SolverSpecify::dt_last/(SolverSpecify::dt_last + SolverSpecify::dt);
                   dEdt = ( (2-r)/(1-r)*(V-V_nb)
@@ -569,7 +568,6 @@ void OhmicContactBC::EBM3_Jacobian_Reserve(Mat *jac, InsertMode &add_value_flag)
 
           case SemiconductorRegion:
           {
-            genius_assert(i==0);
             // insert none zero pattern
             // none zero pattern includes bd node and their neighbors!
             unsigned int n_node_var  = regions[i]->ebm_n_variables();
@@ -634,22 +632,32 @@ void OhmicContactBC::EBM3_Jacobian_Reserve(Mat *jac, InsertMode &add_value_flag)
     std::vector<PetscInt> bc_node_reserve;
     for(node_it = nodes_begin(); node_it!=end_it; ++node_it )
     {
-      // reserve for displacement current
-      const FVM_Node *  fvm_node = get_region_fvm_node(*node_it, SemiconductorRegion);
-      const SimulationRegion * region = get_fvm_node_region(*node_it, SemiconductorRegion);
+      // get the derivative of electrode current to ohmic node
+      // skip node not belongs to this processor
+      if( (*node_it)->processor_id()!=Genius::processor_id() ) continue;
 
-      if(fvm_node->on_processor())
+      // search all the fvm_node which has *node_it as root node, these fvm_nodes have the same location in geometry,
+      // but belong to different regions in logic.
+      BoundaryCondition::region_node_iterator  rnode_it     = region_node_begin(*node_it);
+      BoundaryCondition::region_node_iterator  end_rnode_it = region_node_end(*node_it);
+      for(; rnode_it!=end_rnode_it; ++rnode_it  )
       {
-        for(unsigned int nv=0; nv<region->ebm_n_variables(); ++nv)
-          bc_node_reserve.push_back(fvm_node->global_offset()+nv);
+        const SimulationRegion * region = (*rnode_it).second.first;
+        const FVM_Node *  fvm_node = (*rnode_it).second.second;
 
-        FVM_Node::fvm_neighbor_node_iterator nb_it     =  fvm_node->neighbor_node_begin();
-        FVM_Node::fvm_neighbor_node_iterator nb_it_end =  fvm_node->neighbor_node_end();
-        for(; nb_it!=nb_it_end; ++nb_it)
+        if ( region->type() == SemiconductorRegion)
         {
-          const FVM_Node *  fvm_nb_node = (*nb_it).second;
           for(unsigned int nv=0; nv<region->ebm_n_variables(); ++nv)
-            bc_node_reserve.push_back(fvm_nb_node->global_offset()+nv);
+            bc_node_reserve.push_back(fvm_node->global_offset()+nv);
+
+          FVM_Node::fvm_neighbor_node_iterator nb_it     =  fvm_node->neighbor_node_begin();
+          FVM_Node::fvm_neighbor_node_iterator nb_it_end =  fvm_node->neighbor_node_end();
+          for(; nb_it!=nb_it_end; ++nb_it)
+          {
+            const FVM_Node *  fvm_nb_node = (*nb_it).second;
+            for(unsigned int nv=0; nv<region->ebm_n_variables(); ++nv)
+              bc_node_reserve.push_back(fvm_nb_node->global_offset()+nv);
+          }
         }
       }
     }
@@ -683,7 +691,7 @@ void OhmicContactBC::EBM3_Jacobian_Reserve(Mat *jac, InsertMode &add_value_flag)
 /*---------------------------------------------------------------------
  * do pre-process to jacobian matrix for EBM3 solver
  */
-void OhmicContactBC::EBM3_Jacobian_Preprocess(Mat *jac, std::vector<PetscInt> &src_row,  std::vector<PetscInt> &dst_row, std::vector<PetscInt> &clear_row)
+void OhmicContactBC::EBM3_Jacobian_Preprocess(PetscScalar * ,Mat *jac, std::vector<PetscInt> &src_row,  std::vector<PetscInt> &dst_row, std::vector<PetscInt> &clear_row)
 {
 
   _buffer_cols.clear();
@@ -704,95 +712,65 @@ void OhmicContactBC::EBM3_Jacobian_Preprocess(Mat *jac, std::vector<PetscInt> &s
     // only process nodes belong to this processor
     if( (*node_it)->processor_id() != Genius::processor_id() ) continue;
 
-    // get the derivative of electrode current to ohmic node
-    const FVM_Node *  fvm_node = get_region_fvm_node(*node_it, SemiconductorRegion);
-    const FVM_NodeData * node_data = fvm_node->node_data();
-
-    const SimulationRegion * region = get_fvm_node_region(*node_it, SemiconductorRegion);
-    unsigned int n_node_var  = region->ebm_n_variables();
-    unsigned int node_n_offset = region->ebm_variable_offset(ELECTRON);
-    unsigned int node_p_offset = region->ebm_variable_offset(HOLE);
-
-    std::vector<PetscScalar> A1(n_node_var), A2(n_node_var), JM(n_node_var), JN(n_node_var);
-    std::vector<PetscInt>    row(n_node_var);
-    for(unsigned int nv=0; nv<n_node_var; ++nv)
-      row[nv] = fvm_node->global_offset()+nv;
-
-    MatGetValues(*jac, 1, &row[node_n_offset], n_node_var, &row[0], &A1[0]);
-    MatGetValues(*jac, 1, &row[node_p_offset], n_node_var, &row[0], &A2[0]);
-
-    //for inter connect electrode
-    if(this->is_inter_connect_bc())
+    // search all the fvm_node which has *node_it as root node, these fvm_nodes have the same location in geometry,
+    // but belong to different regions in logic.
+    BoundaryCondition::region_node_iterator  rnode_it     = region_node_begin(*node_it);
+    BoundaryCondition::region_node_iterator  end_rnode_it = region_node_end(*node_it);
+    for(; rnode_it!=end_rnode_it; ++rnode_it  )
     {
-      for(unsigned int nv=0; nv<n_node_var; ++nv)
-        JM[nv] = R*(A1[nv]-A2[nv])*current_scale;
-    }
-    // for stand alone electrode
-    else
-    {
-      if(ext_circuit()->is_voltage_driven())
+      const SimulationRegion * region = (*rnode_it).second.first;
+      const FVM_Node *  fvm_node = (*rnode_it).second.second;
+
+      if ( region->type() == SemiconductorRegion)
       {
+        const FVM_NodeData * node_data = fvm_node->node_data();
+
+        unsigned int n_node_var  = region->ebm_n_variables();
+        unsigned int node_n_offset = region->ebm_variable_offset(ELECTRON);
+        unsigned int node_p_offset = region->ebm_variable_offset(HOLE);
+
+        std::vector<PetscScalar> A1(n_node_var), A2(n_node_var), JM(n_node_var), JN(n_node_var);
+        std::vector<PetscInt>    row(n_node_var);
         for(unsigned int nv=0; nv<n_node_var; ++nv)
-          JM[nv] = (L/dt+R)*(A1[nv]-A2[nv])*current_scale;
-      }
+          row[nv] = fvm_node->global_offset()+nv;
 
-      if(ext_circuit()->is_current_driven())
-      {
+        MatGetValues(*jac, 1, &row[node_n_offset], n_node_var, &row[0], &A1[0]);
+        MatGetValues(*jac, 1, &row[node_p_offset], n_node_var, &row[0], &A2[0]);
+
         for(unsigned int nv=0; nv<n_node_var; ++nv)
-          JM[nv] = (A1[nv]-A2[nv])*current_scale;
-      }
-    }
+          JM[nv] = (A1[nv]-A2[nv]);
 
-    // get the derivative of electrode current to neighbors of ohmic node
-    // NOTE neighbors and ohmic bc node may on different processor!
-    FVM_Node::fvm_neighbor_node_iterator nb_it = fvm_node->neighbor_node_begin();
-    FVM_Node::fvm_neighbor_node_iterator nb_it_end = fvm_node->neighbor_node_end();
-    for(; nb_it != nb_it_end; ++nb_it)
-    {
-      const FVM_Node *  fvm_nb_node = (*nb_it).second;
-
-      // distance from nb node to this node
-      PetscScalar distance = (*(fvm_node->root_node()) - *(fvm_nb_node->root_node())).size();
-      // area of out surface of control volume related with neighbor node
-      PetscScalar cv_boundary = fvm_node->cv_surface_area(fvm_nb_node->root_node());
-
-      std::vector<PetscInt>    col(n_node_var);
-      for(unsigned int i=0; i<n_node_var; ++i)
-        col[i] = fvm_nb_node->global_offset()+i;
-
-      MatGetValues(*jac, 1, &row[node_n_offset], n_node_var, &col[0], &A1[0]);
-      MatGetValues(*jac, 1, &row[node_p_offset], n_node_var, &col[0], &A2[0]);
-
-      //for inter connect electrode
-      if(this->is_inter_connect_bc())
-      {
-        for(unsigned int nv=0; nv<n_node_var; ++nv)
-          JN[nv] = R*(A1[nv]-A2[nv])*current_scale;
-
-      }
-      // for stand alone electrode
-      else
-      {
-        if(ext_circuit()->is_voltage_driven())
+        // get the derivative of electrode current to neighbors of ohmic node
+        // NOTE neighbors and ohmic bc node may on different processor!
+        FVM_Node::fvm_neighbor_node_iterator nb_it = fvm_node->neighbor_node_begin();
+        FVM_Node::fvm_neighbor_node_iterator nb_it_end = fvm_node->neighbor_node_end();
+        for(; nb_it != nb_it_end; ++nb_it)
         {
-          for(unsigned int nv=0; nv<n_node_var; ++nv)
-            JN[nv] = (L/dt+R)*(A1[nv]-A2[nv])*current_scale;
+          const FVM_Node *  fvm_nb_node = (*nb_it).second;
 
+          // distance from nb node to this node
+          PetscScalar distance = (*(fvm_node->root_node()) - *(fvm_nb_node->root_node())).size();
+          // area of out surface of control volume related with neighbor node
+          PetscScalar cv_boundary = fvm_node->cv_surface_area(fvm_nb_node->root_node());
+
+          std::vector<PetscInt>    col(n_node_var);
+          for(unsigned int i=0; i<n_node_var; ++i)
+            col[i] = fvm_nb_node->global_offset()+i;
+
+          MatGetValues(*jac, 1, &row[node_n_offset], n_node_var, &col[0], &A1[0]);
+          MatGetValues(*jac, 1, &row[node_p_offset], n_node_var, &col[0], &A2[0]);
+
+          for(unsigned int nv=0; nv<n_node_var; ++nv)
+            JN[nv] = (A1[nv]-A2[nv]);
+
+          _buffer_cols.push_back(col);
+          _buffer_jacobian_entries.push_back(JN);
         }
 
-        if(ext_circuit()->is_current_driven())
-        {
-          for(unsigned int nv=0; nv<n_node_var; ++nv)
-            JN[nv] = (A1[nv]-A2[nv])*current_scale;
-
-        }
+        _buffer_cols.push_back(row);
+        _buffer_jacobian_entries.push_back(JM);
       }
-      _buffer_cols.push_back(col);
-      _buffer_jacobian_entries.push_back(JN);
     }
-
-    _buffer_cols.push_back(row);
-    _buffer_jacobian_entries.push_back(JM);
   }
 
   for(node_it = nodes_begin(); node_it!=end_it; ++node_it )
@@ -879,10 +857,28 @@ void OhmicContactBC::EBM3_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_va
   PetscScalar L = ext_circuit()->L();             // inductance
   PetscScalar dt = SolverSpecify::dt;
 
+  const PetscScalar Heat_Transfer = this->scalar("heat.transfer");
+
   // d(current)/d(independent variables of bd node and its neighbors)
-  for(unsigned int n=0; n<_buffer_cols.size(); ++n)
   {
-    MatSetValues(*jac, 1, &bc_global_offset, _buffer_cols[n].size(), &(_buffer_cols[n])[0], &(_buffer_jacobian_entries[n])[0], ADD_VALUES);
+    PetscScalar bc_current_scale = 1.0;
+    if(this->is_inter_connect_bc())
+      bc_current_scale *= R*current_scale;
+    // for stand alone electrode
+    else
+    {
+      if(ext_circuit()->is_voltage_driven())
+        bc_current_scale *= (L/dt+R)*current_scale;
+      if(ext_circuit()->is_current_driven())
+        bc_current_scale *= current_scale;
+    }
+    for(unsigned int n=0; n<_buffer_cols.size(); ++n)
+    {
+      std::vector<PetscScalar> bc_current_jacobian = _buffer_jacobian_entries[n];
+      for(unsigned int k=0; k<bc_current_jacobian.size(); ++k)
+        bc_current_jacobian[k] *= bc_current_scale;
+      MatSetValues(*jac, 1, &bc_global_offset, _buffer_cols[n].size(), &(_buffer_cols[n])[0], &(bc_current_jacobian)[0], ADD_VALUES);
+    }
   }
 
   // after that, we set Jacobian entries for ohmic boundary condition
@@ -912,7 +908,6 @@ void OhmicContactBC::EBM3_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_va
           case SemiconductorRegion:
           {
             // semiconductor region should be the first region
-            genius_assert(i==0);
 
             const SemiconductorSimulationRegion * semi_region = dynamic_cast<const SemiconductorSimulationRegion *>(regions[i]);
 
@@ -1004,7 +999,7 @@ void OhmicContactBC::EBM3_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_va
               ff1 = V - kb*T/e*adtl::asinh(node_data->Net_doping()/(2*nie))
                     + Eg/(2*e)
                     + kb*T*log(Nc/Nv)/(2*e)
-                    + node_data->affinity()
+                    + node_data->affinity()/e
                     - Ve;
 
               AutoDScalar  electron_density;
@@ -1034,9 +1029,8 @@ void OhmicContactBC::EBM3_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_va
             //governing equation of T, if this ohmic bc is external boundary, set heat flux here
             if(regions[i]->get_advanced_model()->enable_Tl() && (node_on_boundary(*node_it) || has_associated_region(*node_it, VacuumRegion)) )
             {
-              PetscScalar h = this->Heat_Transfer();
               PetscScalar S  = fvm_nodes[i]->outside_boundary_surface_area();
-              AutoDScalar fT = h*(T_external()-T)*S;
+              AutoDScalar fT = Heat_Transfer*(T_external()-T)*S;
               MatSetValues(*jac, 1, &row[node_Tl_offset], col.size(), &col[0], fT.getADValue(),  ADD_VALUES);
             }
 
@@ -1070,12 +1064,12 @@ void OhmicContactBC::EBM3_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_va
                 PetscScalar cv_boundary = fvm_nodes[i]->cv_surface_area(nb_node->root_node());
 
                 AutoDScalar dEdt;
-                if(SolverSpecify::TS_type==SolverSpecify::BDF2 && SolverSpecify::BDF2_restart==false) //second order
+                if(SolverSpecify::TS_type==SolverSpecify::BDF2 && SolverSpecify::BDF2_LowerOrder==false) //second order
                 {
                   PetscScalar r = SolverSpecify::dt_last/(SolverSpecify::dt_last + SolverSpecify::dt);
                   dEdt = ( (2-r)/(1-r)*(V-V_nb)
-                      - 1.0/(r*(1-r))*(node_data->psi()-nb_node_data->psi())
-                      + (1-r)/r*(node_data->psi_last()-nb_node_data->psi_last()))/distance/(SolverSpecify::dt_last+SolverSpecify::dt);
+                           - 1.0/(r*(1-r))*(node_data->psi()-nb_node_data->psi())
+                           + (1-r)/r*(node_data->psi_last()-nb_node_data->psi_last()))/distance/(SolverSpecify::dt_last+SolverSpecify::dt);
                 }
                 else//first order
                 {
@@ -1229,6 +1223,13 @@ void OhmicContactBC::EBM3_Electrode_Trace(Vec, Mat *jac, Vec pdI_pdx, Vec pdF_pd
 
   // for 2D mesh, z_width() is the device dimension in Z direction; for 3D mesh, z_width() is 1.0
   PetscScalar current_scale = this->z_width();
+  for(unsigned int n=0; n<_buffer_cols.size(); ++n)
+  {
+    std::vector<PetscScalar> bc_current_jacobian = _buffer_jacobian_entries[n];
+    for(unsigned int k=0; k<bc_current_jacobian.size(); ++k)
+      bc_current_jacobian[k] *= current_scale;
+    VecSetValues(pdI_pdx, _buffer_cols[n].size(), &(_buffer_cols[n])[0], &(bc_current_jacobian)[0], ADD_VALUES);
+  }
 
 
   BoundaryCondition::const_node_iterator node_it;
@@ -1242,73 +1243,7 @@ void OhmicContactBC::EBM3_Electrode_Trace(Vec, Mat *jac, Vec pdI_pdx, Vec pdF_pd
     const FVM_Node *  fvm_node = get_region_fvm_node(*node_it, SemiconductorRegion);
     const FVM_NodeData * node_data = fvm_node->node_data();
 
-    // displacement current
-    PetscScalar disp_t;
-    if(SolverSpecify::TS_type==SolverSpecify::BDF2 && SolverSpecify::BDF2_restart==false) //second order
-    {
-      PetscScalar r = SolverSpecify::dt_last/(SolverSpecify::dt_last + SolverSpecify::dt);
-      disp_t =  (2-r)/(1-r)/(SolverSpecify::dt_last+SolverSpecify::dt);
-    }
-    else//first order
-    {
-      disp_t = 1.0/SolverSpecify::dt;
-    }
-
-    const SimulationRegion * region  = get_fvm_node_region(*node_it, SemiconductorRegion);
-
-    unsigned int n_node_var      = region->ebm_n_variables();
-    unsigned int node_n_offset   = region->ebm_variable_offset(ELECTRON);
-    unsigned int node_p_offset   = region->ebm_variable_offset(HOLE);
-
-    std::vector<PetscScalar> A1(n_node_var), A2(n_node_var), JM(n_node_var), JN(n_node_var);
-    std::vector<PetscInt>    row(n_node_var);
-
-    for(unsigned int var=0; var<n_node_var; ++var)
-      row[var] = fvm_node->global_offset()+var;
-
-    MatGetValues(*jac, 1, &row[node_n_offset], n_node_var, &row[0], &A1[0]);
-    MatGetValues(*jac, 1, &row[node_p_offset], n_node_var, &row[0], &A2[0]);
-
-    for(unsigned int var=0; var<n_node_var; ++var)
-      JM[var] = (A1[var]-A2[var])*current_scale;
-
-
-    // get the derivative of electrode current to neighbors of ohmic node
-
-    FVM_Node::fvm_neighbor_node_iterator nb_it = fvm_node->neighbor_node_begin();
-    FVM_Node::fvm_neighbor_node_iterator nb_it_end = fvm_node->neighbor_node_end();
-    for(; nb_it != nb_it_end; ++nb_it)
-    {
-      const FVM_Node *  fvm_nb_node = (*nb_it).second;
-      // distance from nb node to this node
-      PetscScalar distance = (*(fvm_node->root_node()) - *(fvm_nb_node->root_node())).size();
-      // area of out surface of control volume related with neighbor node
-      PetscScalar cv_boundary = fvm_node->cv_surface_area(fvm_nb_node->root_node());
-
-      std::vector<PetscInt>    col(n_node_var);
-
-      for(unsigned int var=0; var<n_node_var; ++var)
-        col[var] = fvm_nb_node->global_offset()+var;
-
-      MatGetValues(*jac, 1, &row[node_n_offset], n_node_var, &col[0], &A1[0]);
-      MatGetValues(*jac, 1, &row[node_p_offset], n_node_var, &col[0], &A2[0]);
-
-      for(unsigned int var=0; var<n_node_var; ++var)
-        JN[var] = (A1[var]-A2[var])*current_scale;
-
-      // displacement current
-      JM[0]+= cv_boundary*node_data->eps()/distance*disp_t*current_scale;
-      JN[0]-= cv_boundary*node_data->eps()/distance*disp_t*current_scale;
-
-      VecSetValues( pdI_pdx, col.size(), &col[0], &JN[0], ADD_VALUES);
-    }
-
-    VecSetValues( pdI_pdx, row.size(), &row[0], &JM[0], ADD_VALUES);
-
-    {
-      VecSetValue( pdF_pdV, row[0], 1.0, ADD_VALUES);
-    }
-
+    VecSetValue( pdF_pdV, fvm_node->global_offset(), 1.0, ADD_VALUES);
   }
 
   VecAssemblyBegin(pdI_pdx);

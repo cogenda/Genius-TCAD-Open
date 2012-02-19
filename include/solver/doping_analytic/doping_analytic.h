@@ -25,8 +25,9 @@
 #define __doping_analytic_h__
 
 #include "point_solver.h"
-#include "doping_fun.h"
 #include "parser.h"
+
+class DopingFunction;
 
 /**
  * this solver compute doping profile by anaytic expression inputted by user
@@ -38,26 +39,12 @@ public:
   /**
    *  constructor, do nothing
    */
-  DopingAnalytic(SimulationSystem & system, Parser::InputParser & decks)
-  : PointSolver(system), _decks(decks)
-  {system.record_active_solver(this->solver_type());}
+  DopingAnalytic(SimulationSystem & system, Parser::InputParser & decks);
 
   /**
    * destructor, free the doping functions
    */
-  ~DopingAnalytic()
-  {
-    for(size_t n=0; n<_doping_funs.size(); n++)
-      delete _doping_funs[n];
-    _doping_funs.clear();
-    for(size_t n=0; n<_doping_data.size(); n++)
-      delete _doping_data[n].second;
-    _doping_data.clear();
-    for(std::map<std::string,DopingFunction *>::iterator it=_custom_profile_funs.begin();
-        it!=_custom_profile_funs.end(); it++)
-      delete it->second;
-    _custom_profile_funs.clear();
-  }
+  ~DopingAnalytic();
 
   /**
    * @return the solver type
@@ -109,6 +96,18 @@ private:
   */
  void set_doping_function_analytic(const Parser::Card & c);
 
+ /**
+  * parse PROFILE card with analytic2 doping (rectangle mask), build analytic doping function and
+  * push into _doping_funs.
+  */
+ void set_doping_function_analytic2_rec_mask(const Parser::Card & c);
+
+ /**
+  * parse PROFILE card with analytic2 doping (poly mask) , build analytic doping function and
+  * push into _doping_funs.
+  */
+ void set_doping_function_analytic2_poly_mask(const Parser::Card & c);
+
 
  enum Profile_Data_Axes {AXES_X, AXES_Y, AXES_Z, AXES_XY, AXES_XZ, AXES_YZ, AXES_XYZ};
 
@@ -117,6 +116,7 @@ private:
   * push into _doping_data.
   */
  void set_doping_function_file(const Parser::Card & c);
+
 
  double _do_doping_interp(int i, const Node *node, const std::string &msg=std::string());
 

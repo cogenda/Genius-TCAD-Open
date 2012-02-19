@@ -76,7 +76,7 @@ public:
    * virtual function, write solver intermediate data into system
    * It can be used to monitor the field data evolution during solve action
    */
-  virtual void flush_system();
+  virtual void flush_system(Vec );
 
   /**
    * load previous state into solution vector
@@ -133,7 +133,7 @@ public:
       case SimpleGateContact :
       case GateContact       :
       case SolderPad         :
-      case ChargedContact    :
+      case ChargeIntegral    :
       case InterConnect      : return 1; // the above bcs has one extra equation
       // others, no extra bc equation
       default: return 0;
@@ -167,7 +167,7 @@ public:
     switch (bc->bc_type())
     {
       case OhmicContact      : return 6; // ohmic electrode current
-      case SchottkyContact   : return 1; // displacement current
+      case SchottkyContact   : return 3; // displacement current
       case SimpleGateContact : return 1; // displacement current
       case GateContact       : return 1; // displacement current
       case SolderPad         : return 1; // conductance current
@@ -226,9 +226,14 @@ public:
   }
 
   /**
+   * test if BDF2 can be used for next time step
+   */
+  virtual bool BDF2_positive_defined() const;
+
+  /**
    * compute the norm of local truncate error (LTE)
    */
-  virtual PetscScalar LTE_norm();
+  virtual PetscReal LTE_norm();
 
   /**
    * check carrier density after projection
@@ -239,6 +244,11 @@ public:
    * compute the abs and relative error norm of the solution
    */
   virtual void error_norm();
+
+  /**
+   * function for convergence test of pseudo time step method
+   */
+  virtual bool pseudo_time_step_convergence_test() { return true; }
 
 private:
 

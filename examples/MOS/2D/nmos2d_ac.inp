@@ -1,6 +1,6 @@
 #==============================================================================
 # GSS example: 1.5 Micron N-Channel MOSFET
-# We fix the gate and source bias voltage as 3V.
+# We fix the gate and source bias voltage as 5V.
 # and do AC sweep for the gate.
 #==============================================================================
 
@@ -27,13 +27,12 @@ IMPORT   CGNSFile=nmos_iv.cgns        #import data computed by step2
 
 #------------------------------------------------------------------------------
 # specify physical model.
-PMI       Region=NSilicon Type=Mobility Model=HP
-Model     Region=NSilicon H.Mob=true Mob.force=EQF
+PMI       Region=NSilicon Type=Mobility Model=Lucent
 
 ATTACH   Electrode=GATE    Vapp=VGATE
 ATTACH   Electrode=NDrain   Vapp=VCC
 
-METHOD   Type = DDML1  NS=LineSearch LS=LU
+METHOD   Type = DDML1  NS=Newton LS=LU
 SOLVE    Type=STEADYSTATE
 
 METHOD   Type = DDMAC   LS=GMRES

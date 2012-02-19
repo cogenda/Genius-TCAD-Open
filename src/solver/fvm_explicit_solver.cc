@@ -67,7 +67,7 @@ void FVM_ExplicitSolver::setup_explicit_data()
   ierr = VecDuplicate(lx, &lt);genius_assert(!ierr);
 
   // create the index for vector statter
-#ifdef PETSC_VERSION_DEV
+#if PETSC_VERSION_GE(3,2,0)
   ierr = ISCreateGeneral(PETSC_COMM_WORLD, global_index_array.size(), &global_index_array[0] , PETSC_COPY_VALUES, &gis); genius_assert(!ierr);
   ierr = ISCreateGeneral(PETSC_COMM_SELF,  local_index_array.size(),  &local_index_array[0] ,  PETSC_COPY_VALUES, &lis); genius_assert(!ierr);
 #else
@@ -90,16 +90,16 @@ void FVM_ExplicitSolver::clear_explicit_data()
 {
   PetscErrorCode ierr;
   // free everything
-  ierr = VecDestroy(x);              genius_assert(!ierr);
-  ierr = VecDestroy(x_prev);         genius_assert(!ierr);
-  ierr = VecDestroy(lx);             genius_assert(!ierr);
-  ierr = VecDestroy(lt);             genius_assert(!ierr);
-  ierr = VecDestroy(vol);            genius_assert(!ierr);
-  ierr = VecDestroy(f);              genius_assert(!ierr);
-  ierr = VecDestroy(t);              genius_assert(!ierr);
-  ierr = VecDestroy(w);              genius_assert(!ierr);
-  ierr = ISDestroy(gis);             genius_assert(!ierr);
-  ierr = ISDestroy(lis);             genius_assert(!ierr);
-  ierr = VecScatterDestroy(scatter); genius_assert(!ierr);
+  ierr = VecDestroy(PetscDestroyObject(x));              genius_assert(!ierr);
+  ierr = VecDestroy(PetscDestroyObject(x_prev));         genius_assert(!ierr);
+  ierr = VecDestroy(PetscDestroyObject(lx));             genius_assert(!ierr);
+  ierr = VecDestroy(PetscDestroyObject(lt));             genius_assert(!ierr);
+  ierr = VecDestroy(PetscDestroyObject(vol));            genius_assert(!ierr);
+  ierr = VecDestroy(PetscDestroyObject(f));              genius_assert(!ierr);
+  ierr = VecDestroy(PetscDestroyObject(t));              genius_assert(!ierr);
+  ierr = VecDestroy(PetscDestroyObject(w));              genius_assert(!ierr);
+  ierr = ISDestroy(PetscDestroyObject(gis));             genius_assert(!ierr);
+  ierr = ISDestroy(PetscDestroyObject(lis));             genius_assert(!ierr);
+  ierr = VecScatterDestroy(PetscDestroyObject(scatter)); genius_assert(!ierr);
 }
 

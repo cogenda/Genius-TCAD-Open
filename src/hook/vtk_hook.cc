@@ -128,7 +128,7 @@ void VTKHook::post_solve()
     if ( _mixA )
     {
       SPICE_CKT * spice_ckt = _solver.get_system().get_circuit();
-      Vscan = spice_ckt->get_voltage_from ( SolverSpecify::Electrode_VScan[0] );
+      Vscan = spice_ckt->get_voltage_from_sync ( SolverSpecify::Electrode_VScan[0] );
     }
 
 
@@ -146,12 +146,22 @@ void VTKHook::post_solve()
 
   if ( SolverSpecify::Type==SolverSpecify::DCSWEEP && SolverSpecify::Electrode_IScan.size() )
   {
-    // DDM solver only
-    assert ( _ddm );
+    double Iscan = 0;
 
-    const BoundaryConditionCollector * bcs = _solver.get_system().get_bcs();
-    const BoundaryCondition * bc = bcs->get_bc ( SolverSpecify::Electrode_IScan[0] );
-    double Iscan = bc->ext_circuit()->Iapp();
+    // DDM solver
+    if ( _ddm )
+    {
+      const BoundaryConditionCollector * bcs = _solver.get_system().get_bcs();
+      const BoundaryCondition * bc = bcs->get_bc ( SolverSpecify::Electrode_IScan[0] );
+      Iscan = bc->ext_circuit()->Iapp();
+    }
+
+    // MIXA solver
+    if ( _mixA )
+    {
+      SPICE_CKT * spice_ckt = _solver.get_system().get_circuit();
+      Iscan = spice_ckt->get_current_from_sync ( SolverSpecify::Electrode_IScan[0] );
+    }
 
     if ( std::fabs ( Iscan - this->_i_last ) >= this->_i_step )
     {
@@ -165,6 +175,22 @@ void VTKHook::post_solve()
     }
   }
 
+
+  if ( SolverSpecify::Type==SolverSpecify::OP )
+  {
+    const SimulationSystem &system = get_solver().get_system();
+
+    vtk_filename << _vtk_prefix << ( this->count++ ) << ".vtu";
+    system.export_vtk ( vtk_filename.str(), false );
+  }
+
+  if ( SolverSpecify::Type==SolverSpecify::TRACE )
+  {
+    const SimulationSystem &system = get_solver().get_system();
+
+    vtk_filename << _vtk_prefix << ( this->count++ ) << ".vtu";
+    system.export_vtk ( vtk_filename.str(), false );
+  }
 
   if ( SolverSpecify::Type==SolverSpecify::TRANSIENT )
   {
@@ -256,7 +282,7 @@ void VTKHook::on_close()
 }
 
 
-#ifndef CYGWIN
+#ifdef DLLHOOK
 
 // dll interface
 extern "C"

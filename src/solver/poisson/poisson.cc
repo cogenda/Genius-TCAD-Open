@@ -43,6 +43,10 @@ int PoissonSolver::create_solver()
   MESSAGE<< "\nPoisson Solver init..." << std::endl;
   RECORD();
 
+  set_nonlinear_solver_type ( SolverSpecify::NS );
+  set_linear_solver_type    ( SolverSpecify::LS );
+  set_preconditioner_type   ( SolverSpecify::PC );
+
   // must set nonlinear matrix/vector here!
   setup_nonlinear_data();
 
@@ -61,7 +65,7 @@ int PoissonSolver::create_solver()
   // init (user defined) hook functions here
 
 
-  return 0;
+  return FVM_NonlinearSolver::create_solver();
 
 }
 
@@ -105,16 +109,16 @@ int PoissonSolver::pre_solve_process(bool /*load_solution*/)
 int PoissonSolver::solve()
 {
 
-  START_LOG("PoissonSolver_SNES()", "PoissonSolver");
+  START_LOG("solve()", "PoissonSolver");
 
   // set each electrode with external stimulate. transient 0 value is used here
-  _system.get_sources()->update(0);
+  _system.get_electrical_source()->update(0);
 
   // call pre_solve_process
   pre_solve_process();
 
   // here call Petsc to solve the nonlinear Poisson's equation
-  SNESSolve (snes, PETSC_NULL, x);
+  sens_solve();
 
   // get the converged reason
   SNESConvergedReason reason;
@@ -133,7 +137,7 @@ int PoissonSolver::solve()
 
   //dump_jacobian_matrix_petsc("poisson.mat");
 
-  STOP_LOG("PoissonSolver_SNES()", "PoissonSolver");
+  STOP_LOG("solve()", "PoissonSolver");
 
   return 0;
 }
@@ -246,7 +250,7 @@ void PoissonSolver::build_petsc_sens_residual(Vec x, Vec r)
   for(unsigned int b=0; b<_system.get_bcs()->n_bcs(); b++)
   {
     BoundaryCondition * bc = _system.get_bcs()->get_bc(b);
-    bc->Poissin_Function_Preprocess(r, src_row, dst_row, clear_row);
+    bc->Poissin_Function_Preprocess(lxx, r, src_row, dst_row, clear_row);
   }
   //add source rows to destination rows, and clear rows
   PetscUtils::VecAddClearRow(r, src_row, dst_row, clear_row);
@@ -271,18 +275,7 @@ void PoissonSolver::build_petsc_sens_residual(Vec x, Vec r)
   VecAssemblyEnd(r);
 
   // scale the function vec
-  PetscScalar *ff,*scale;
-  // get function array and scale array.
-  VecGetArray(r, &ff);
-  // L is the scaling vector, the Jacobian evaluate function may dynamically update it.
-  VecGetArray(L, &scale);
-  // scale it!
-  for(unsigned int n=0; n<n_local_dofs; ++n)
-    ff[n]*=scale[n];
-
-  // restore back
-  VecRestoreArray(r, &ff);
-  VecRestoreArray(L, &scale);
+  VecPointwiseMult(r, r, L);
 
   STOP_LOG("PoissonSolver_Residual()", "PoissonSolver");
 
@@ -357,7 +350,7 @@ void PoissonSolver::build_petsc_sens_jacobian(Vec x, Mat *, Mat *)
   for(unsigned int b=0; b<_system.get_bcs()->n_bcs(); b++)
   {
     BoundaryCondition * bc = _system.get_bcs()->get_bc(b);
-    bc->Poissin_Jacobian_Preprocess(&J, src_row, dst_row, clear_row);
+    bc->Poissin_Jacobian_Preprocess(lxx, &J, src_row, dst_row, clear_row);
   }
   //add source rows to destination rows
   PetscUtils::MatAddRowToRow(J, src_row, dst_row);

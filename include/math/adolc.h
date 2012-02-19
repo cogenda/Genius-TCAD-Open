@@ -47,22 +47,23 @@
 
 
 #include <cassert>
-#include <iostream>
+#include <vector>
 #include <cmath>
 #include <limits>
+#include <iostream>
 
 #include "asinh.hpp" // for asinh
 #include "acosh.hpp" // for acosh
 #include "atanh.hpp" // for atanh
 
-#include "genius_common.h"
+#include "genius_dll.h"
 
 // the max number of independent variable may be used by Genius
 // for EBM solver on Hex8 element, there are 6*8=48 independent variables
 // with 8 more independent variables for reserve purpose
 // this is not a flexible method,
-// However, using std::vector instead of fxied length array makes system performance greatly slow done.
-#define NUMBER_DIRECTIONS 56
+// However, using std::vector (or even new adval array) instead of fxied length array makes system performance greatly slow done.
+#define ADTL_NUMBER_DIRECTIONS 56
 
 
 extern "C"
@@ -73,28 +74,11 @@ extern "C"
   DLL_EXPORT_DECLARE  void  set_ad_number(const unsigned int p);
 }
 
+typedef double PetscScalar;
+
 
 namespace adtl
 {
-
-  inline PetscScalar fmin( const PetscScalar &x, const PetscScalar &y )
-  {
-    return x<y? x:y;
-  }
-
-  inline PetscScalar fmax( const PetscScalar &x, const PetscScalar &y )
-  {
-    return x>y? x:y;
-  }
-
-  inline PetscScalar fsign(const PetscScalar &x)
-  {return x>0.0? 1.0:-1.0;}
-
-
-  inline PetscScalar makeNaN()
-  {
-    return std::numeric_limits<PetscScalar>::quiet_NaN();
-  }
 
   class AutoDScalar
   {
@@ -180,7 +164,7 @@ namespace adtl
     inline friend const AutoDScalar ldexp (const AutoDScalar &a, const PetscScalar v);
     inline friend const AutoDScalar ldexp (const PetscScalar v, const AutoDScalar &a);
     inline friend       PetscScalar frexp (const AutoDScalar &a, int* v);
-#ifndef CYGWIN
+#ifndef WINDOWS
     inline friend const AutoDScalar erf (const AutoDScalar &a);
 #endif
 
@@ -238,8 +222,9 @@ namespace adtl
     inline PetscScalar getValue() const;
     inline void setValue(const PetscScalar v);
     inline const PetscScalar * getADValue() const;
+    inline std::vector<PetscScalar> getADValueVector() const;
     inline void setADValue(const PetscScalar * v);
-#if defined(NUMBER_DIRECTIONS)
+#if defined(ADTL_NUMBER_DIRECTIONS)
     inline PetscScalar getADValue(const unsigned int p) const;
     inline void setADValue(const unsigned int p, const PetscScalar v);
 #endif
@@ -250,7 +235,7 @@ namespace adtl
     static unsigned int numdir;
     static void setNumDir(const unsigned int p)
     {
-      if (p>NUMBER_DIRECTIONS) numdir=NUMBER_DIRECTIONS;
+      if (p>ADTL_NUMBER_DIRECTIONS) numdir=ADTL_NUMBER_DIRECTIONS;
       else numdir=p;
     }
 
@@ -258,23 +243,23 @@ namespace adtl
     // internal variables
 
     PetscScalar val;
-    PetscScalar adval[NUMBER_DIRECTIONS];
+    PetscScalar adval[ADTL_NUMBER_DIRECTIONS];
   };
 
   /*******************************  ctors  ************************************/
   AutoDScalar::AutoDScalar(): val(0)
   {
-    memset(adval, 0, sizeof(PetscScalar)*NUMBER_DIRECTIONS);
+    memset(adval, 0, sizeof(PetscScalar)*ADTL_NUMBER_DIRECTIONS);
   }
 
   AutoDScalar::AutoDScalar(const PetscScalar v) : val(v)
   {
-    memset(adval, 0, sizeof(PetscScalar)*NUMBER_DIRECTIONS);
+    memset(adval, 0, sizeof(PetscScalar)*ADTL_NUMBER_DIRECTIONS);
   }
 
   AutoDScalar::AutoDScalar(const PetscScalar v, const PetscScalar * adv) : val(v)
   {
-    memset(adval, 0, sizeof(PetscScalar)*NUMBER_DIRECTIONS);
+    memset(adval, 0, sizeof(PetscScalar)*ADTL_NUMBER_DIRECTIONS);
 
     for (unsigned int _i=0; _i<numdir; ++_i)
       adval[_i]=adv[_i];
@@ -282,7 +267,7 @@ namespace adtl
 
   AutoDScalar::AutoDScalar(const PetscScalar v, const PetscScalar * adv, unsigned int n) : val(v)
   {
-    memset(adval, 0, sizeof(PetscScalar)*NUMBER_DIRECTIONS);
+    memset(adval, 0, sizeof(PetscScalar)*ADTL_NUMBER_DIRECTIONS);
 
     for (unsigned int _i=0; _i<n; ++_i)
       adval[_i]=adv[_i];
@@ -290,7 +275,7 @@ namespace adtl
 
   AutoDScalar::AutoDScalar(const AutoDScalar& a) : val(a.val)
   {
-    memset(adval, 0, sizeof(PetscScalar)*NUMBER_DIRECTIONS);
+    memset(adval, 0, sizeof(PetscScalar)*ADTL_NUMBER_DIRECTIONS);
 
     for (unsigned int _i=0; _i<numdir; ++_i)
       adval[_i]=a.adval[_i];
@@ -298,7 +283,7 @@ namespace adtl
 
   AutoDScalar::AutoDScalar(const AutoDScalar& a, unsigned int *order, unsigned int n) : val(a.val)
   {
-    memset(adval, 0, sizeof(PetscScalar)*NUMBER_DIRECTIONS);
+    memset(adval, 0, sizeof(PetscScalar)*ADTL_NUMBER_DIRECTIONS);
 
     for (unsigned int _i=0; _i<n; ++_i)
       adval[order[_i]]=a.adval[_i];
@@ -481,7 +466,7 @@ namespace adtl
     tmp.val=::log(a.val);
     for (unsigned int _i=0; _i<AutoDScalar::numdir; ++_i)
       if (a.val>0 || (a.val==0 && a.adval[_i]>=0)) tmp.adval[_i]=a.adval[_i]/a.val;
-      else tmp.adval[_i]=makeNaN();
+      else tmp.adval[_i]=std::numeric_limits<PetscScalar>::quiet_NaN();
     return tmp;
   }
 
@@ -496,7 +481,7 @@ namespace adtl
       else if (a.val==0 && a.adval[_i]==0)
         tmp.adval[_i]=0;
       else
-        tmp.adval[_i]=makeNaN();
+        tmp.adval[_i]=std::numeric_limits<PetscScalar>::quiet_NaN();
     }
     return tmp;
   }
@@ -917,7 +902,7 @@ namespace adtl
     return ::frexp(a.val, v);
   }
 
-#ifndef CYGWIN
+#ifndef WINDOWS
   const AutoDScalar erf (const AutoDScalar &a)
   {
     AutoDScalar tmp;
@@ -1105,6 +1090,14 @@ namespace adtl
     val=v;
   }
 
+  std::vector<PetscScalar> AutoDScalar::getADValueVector() const
+  {
+    std::vector<PetscScalar> ad_vec(numdir);
+    for (unsigned int _i=0; _i<numdir; ++_i)
+      ad_vec[_i]=adval[_i];
+    return ad_vec;
+  }
+
   const PetscScalar * AutoDScalar::getADValue() const
   {
     return adval;
@@ -1116,16 +1109,14 @@ namespace adtl
       adval[_i]=v[_i];
   }
 
-#  if defined(NUMBER_DIRECTIONS)
+#  if defined(ADTL_NUMBER_DIRECTIONS)
   PetscScalar AutoDScalar::getADValue(const unsigned int p) const
   {
-    genius_assert(p<NUMBER_DIRECTIONS);
     return adval[p];
   }
 
   void AutoDScalar::setADValue(const unsigned int p, const PetscScalar v)
   {
-    genius_assert(p<NUMBER_DIRECTIONS);
     adval[p]=v;
   }
 #  endif
@@ -1134,7 +1125,7 @@ namespace adtl
   std::ostream& operator << ( std::ostream& out, const AutoDScalar& a)
   {
     out << "Value: " << a.val;
-#if !defined(NUMBER_DIRECTIONS)
+#if !defined(ADTL_NUMBER_DIRECTIONS)
     out << " ADValue: ";
 #else
     out << " ADValues (" << AutoDScalar::numdir << "): ";
@@ -1154,7 +1145,7 @@ namespace adtl
     }
     while (c!=':' && !in.eof());
     in >> a.val;
-#if !defined(NUMBER_DIRECTIONS)
+#if !defined(ADTL_NUMBER_DIRECTIONS)
     do in >> c;
     while (c!=':' && !in.eof());
 #else
@@ -1162,7 +1153,7 @@ namespace adtl
     do in >> c;
     while (c!='(' && !in.eof());
     in >> num;
-    if (num>NUMBER_DIRECTIONS)
+    if (num>ADTL_NUMBER_DIRECTIONS)
     {
       std::cout << "ADOL-C error: to many directions in input\n";
       exit(-1);

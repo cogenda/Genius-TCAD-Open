@@ -178,13 +178,14 @@ bool Sphere::below_surface (const Point& p) const
 bool Sphere::on_surface (const Point& p) const
 {
   assert (this->radius() > 0.);
+  const Real eps = 1e-8*this->radius();
 
   // Create a vector from the center to the point.
   const Point w = p - this->center();
 
   // if the size of that vector is the same as the radius() then
   // the point is on the surface.
-  if (std::abs(w.size() - this->radius()) < 1.e-10)
+  if (std::abs(w.size() - this->radius()) < eps)
     return true;
 
   return false;

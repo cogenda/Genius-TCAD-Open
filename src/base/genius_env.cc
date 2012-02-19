@@ -19,8 +19,9 @@
 /*                                                                              */
 /********************************************************************************/
 
-#include "genius_env.h"
+
 #include "genius_common.h"
+#include "genius_env.h"
 
 #ifdef HAVE_SLEPC
   #include "slepcsys.h"
@@ -30,8 +31,16 @@
 // Genius::GeniusPrivateData data initialization
 int  Genius::GeniusPrivateData::_n_processors = 1;
 int  Genius::GeniusPrivateData::_processor_id = 0;
+
+#ifdef HAVE_MPI
+MPI_Comm Genius::GeniusPrivateData::_comm_world;
+MPI_Comm Genius::GeniusPrivateData::_comm_self;
+#endif
+
 std::string Genius::GeniusPrivateData::_input_file;
 std::string Genius::GeniusPrivateData::_genius_dir;
+
+bool Genius::GeniusPrivateData::_experiment_code=true;
 
 bool Genius::init_processors(int *argc, char *** args)
 {
@@ -43,20 +52,34 @@ bool Genius::init_processors(int *argc, char *** args)
   PetscInitialize(argc, args, PETSC_NULL, PETSC_NULL);
 #endif
 
+#ifdef HAVE_MPI
   // the actual process number
-  MPI_Comm_rank (PETSC_COMM_WORLD, &Genius::GeniusPrivateData::_processor_id);
   MPI_Comm_size (PETSC_COMM_WORLD, &Genius::GeniusPrivateData::_n_processors);
+  MPI_Comm_rank (PETSC_COMM_WORLD, &Genius::GeniusPrivateData::_processor_id);
+
+  // duplicate an other MPI_Comm for Genius parallel communication
+  MPI_Comm_dup( PETSC_COMM_WORLD, &Genius::GeniusPrivateData::_comm_world );
+  MPI_Comm_dup( PETSC_COMM_SELF, &Genius::GeniusPrivateData::_comm_self );
+#endif
 
   return true;
 }
 
 bool Genius::clean_processors()
 {
+
+#ifdef HAVE_MPI
+  MPI_Comm_free(&Genius::GeniusPrivateData::_comm_world);
+  MPI_Comm_free(&Genius::GeniusPrivateData::_comm_self);
+#endif
+
   // end PETSC
 #ifdef  HAVE_SLEPC
   SlepcFinalize();
 #else
   PetscFinalize();
 #endif
+
+
   return true;
 }

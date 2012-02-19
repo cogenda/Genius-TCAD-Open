@@ -35,7 +35,7 @@
 
 #include "mxml.h"
 
-#ifndef CYGWIN
+#ifndef WINDOWS
   #include "dlhook.h"
 #endif
 
@@ -81,12 +81,6 @@ public:
    * virtual function, do the solve process
    */
   virtual int solve()=0;
-
-  /**
-   * virtual function, write solver intermediate data into system
-   * It can be used to monitor the field data evolution during solve action
-   */
-  virtual void flush_system() {}
 
   /**
    * virtual function, destroy the solver

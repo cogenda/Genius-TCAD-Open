@@ -30,12 +30,14 @@
 #include "config.h"
 
 //for windows dll support
-#ifdef CYGWIN
+#ifdef WINDOWS
   class HINSTANCE__; // Forward or never
   typedef HINSTANCE__* HINSTANCE;
 #endif
 
 class BoundaryCondition;
+typedef struct sCKTnode CKTnode;
+
 
 /**
  * mixed type simulation with ngspice
@@ -61,8 +63,6 @@ public:
     _init_dctran = 0;
     _rotate_state_vectors = 0;
     _circuit_load = 0;
-
-    matrix_reorder = false;
   }
 
   /**
@@ -107,6 +107,12 @@ public:
   {  _bc_to_spice_node_map[bc] = n; }
 
   /**
+   * @return the number of electrodes
+   */
+  unsigned int n_electrode() const
+  { return  _bc_to_spice_node_map.size(); }
+
+  /**
    * @return the spice node index by bc
    */
   unsigned int get_spice_node_by_bc(const BoundaryCondition * bc) const
@@ -137,8 +143,12 @@ public:
   /**
    * @return the nonzero pattern for a row
    */
-  unsigned int n_nonzero(unsigned int row) const
-    { return _matrix_nonzero_pattern[row].first.size(); }
+  unsigned int n_nonzero(unsigned int row) const;
+
+  /**
+   * @return the max nonzeros in row of the spice matrix
+   */
+  unsigned int max_row_nonzeros() const;
 
   /**
    * set the offset, then we can map spice matrix to petsc global matrix
@@ -169,37 +179,49 @@ public:
   { return _spice_index_offset_to_array_index; }
 
   /**
-   * @return the global offset of a spice node
+   * @return the global offset of spice solution
    */
-  unsigned int global_offset(unsigned int n) const
-  { return _spice_index_offset_to_global_index + _spice_order_to_matrix_order.find(static_cast<int>(n))->second; }
+  unsigned int global_offset_x(unsigned int n) const;
 
   /**
-   * @return the local offset of a spice node
+   * @return the local offset of spice solution
    */
-  unsigned int local_offset(unsigned int n) const
-  { return _spice_index_offset_to_local_index  + _spice_order_to_matrix_order.find(static_cast<int>(n))->second; }
+  unsigned int local_offset_x(unsigned int n) const;
 
   /**
    * @return the index in array which get from global vec by VecGetArray
    */
-  unsigned int array_offset(unsigned int n) const
-  { return _spice_index_offset_to_array_index  + _spice_order_to_matrix_order.find(static_cast<int>(n))->second; }
+  unsigned int array_offset_x(unsigned int n) const;
 
   /**
-   * give a spice row number (begin with 0), get the global cols (for petsc matrix) and their values
+   * @return the global offset of spice function
+   */
+  unsigned int global_offset_f(unsigned int n) const;
+
+  /**
+   * @return the local offset of spice function
+   */
+  unsigned int local_offset_f(unsigned int n) const;
+
+  /**
+   * @return the index in array which get from global vec by VecGetArray
+   */
+  unsigned int array_offset_f(unsigned int n) const;
+
+  /**
+   * give a spice row number (begin with 0), get the global row index, global cols (for petsc matrix) and their values
    */
   void ckt_matrix_row(unsigned int row, int &global_row, std::vector<int> & global_col, std::vector<double> & values) const;
+
+  /**
+   * give a spice row number (begin with 0), get the local cols (begin with 0) and their values
+   */
+  void ckt_matrix_row(unsigned int row, std::vector<int> & col, std::vector<double> & values) const;
 
   /**
    * get spice rhs
    */
   double rhs(unsigned int n) const;
-
-  /**
-   * write to spice rhs
-   */
-  double & rhs(unsigned int n);
 
   /**
    * get spice rhs_old
@@ -209,7 +231,7 @@ public:
   /**
    * write to spice rhs_old
    */
-  double & rhs_old(unsigned int n);
+  void update_rhs_old(const std::vector<double> &rhs);
 
   /**
    * save rhs_old to _previous_solution
@@ -230,9 +252,9 @@ public:
   { return _solution[n]; }
 
   /**
-   * get the residual with global index (for petsc matrix) and their values
+   * give a spice row number (begin with 0), get the residual with global index (for petsc matrix) and its value
    */
-  void ckt_residual(std::vector<int> & global_index, std::vector<double> & values) const;
+  void ckt_residual(unsigned int n, int & global_index, double & value) const;
 
   /**
    * @return the 2-norm of residual
@@ -249,6 +271,11 @@ public:
    * set circuit mode
    */
   void set_ckt_mode(long mode, bool reset=true);
+
+  /**
+   * print current ckt mode, debug only
+   */
+  void print_ckt_mode() const;
 
   /**
    * change the CKTMode during iteration
@@ -345,6 +372,28 @@ public:
   //---------------------------------------------------------------
 
   /**
+   * @return true when voltage source can be found in ckt, parallel version
+   */
+  bool is_ckt_voltage_source_exist_sync(const std::string & component);
+
+  /**
+   * @return true when current source can be found in ckt, parallel version
+   */
+  bool is_ckt_current_source_exist_sync(const std::string & component);
+
+  /**
+   * get dc voltage by all the processor
+   */
+  double get_voltage_from_sync(const std::string & component);
+
+  /**
+   * get dc current by all the processor
+   */
+  double get_current_from_sync(const std::string & component);
+
+  //---------------------------------------------------------------
+
+  /**
    * transient
    */
   int init_dctran(long TRANmode)
@@ -408,22 +457,26 @@ public:
   void rotate_state_vectors()
   { _rotate_state_vectors(); }
 
- /**
-  * load circuit, and reorder the matrix
-  */
-  int circuit_load()
-  {
-    return _circuit_load();
-  }
-
-  bool is_reordered() const
-  { return matrix_reorder; }
+  /**
+   * get the ith state vector
+   */
+  void get_state_vector(int i, std::vector<double> &) const;
 
   /**
-   * reorder the matrix, must call it in parallel
+   * load circuit, and reorder the matrix
    */
-  int smp_preorder();
+  int circuit_load()
+  { return _circuit_load(); }
 
+  /**
+   * load nodeset as initial guess
+   */
+  void do_node_set(bool);
+
+  /**
+   * load ic as initial guess
+   */
+  void do_ic(bool);
 
   //---------------------------------------------------------------
 
@@ -438,6 +491,14 @@ public:
    */
   void ckt_set_gmin(double );
 
+  //---------------------------------------------------------------
+
+  /**
+   * print spice node location in spice matrix, debug only
+   */
+  void print_spice_node_location_in_matrix() const;
+
+
 private:
 
   /**
@@ -448,7 +509,7 @@ private:
   /**
    * pointer to dynamic loaded library file
    */
-#ifdef CYGWIN
+#ifdef WINDOWS
   HINSTANCE                   dll_file;
 #else
   void                      * dll_file;
@@ -469,6 +530,14 @@ private:
     int  type;
     /// true if this node connect to device electrode
     int  is_electrode;
+    /// value of the initial condition
+    double ic;
+    /// value of the .nodeset option
+    double nodeset;
+    /// flag ic given
+    bool ic_given;
+    /// flag nodeset given
+    bool nodeset_given;
     /// global offset in genius matrix
     unsigned int global_dof;
     /// local offset in genius matrix
@@ -479,6 +548,11 @@ private:
    * save node information
    */
   std::vector<SPICE_NODE> _node_info_array;
+
+  /**
+   * spice node pointer
+   */
+  std::vector<CKTnode *> _node_ptrs;
 
   /**
    * genius electrode name -> spice node
@@ -497,21 +571,12 @@ private:
   std::vector< std::pair< std::vector<int>, std::vector<double *> > > _matrix_nonzero_pattern;
 
   /**
-   * a flag to show if spice matrix is reordered
-   */
-  bool matrix_reorder;
-
-  /**
    * we will use reorder routine to remove zero value in matrix diagonal to prevent a zero pivot
-   * this map saves spice index to reordered matrix index
+   * here saves row index to reordered row index map
    */
-  std::map<int, int> _spice_order_to_matrix_order;
+  std::vector<int> _row_to_matrix_row;
 
-  /**
-   * set _spice_order_to_matrix_order map
-   */
-  void _reset_spice_to_genius_mapping();
-
+  std::vector<int> _col_to_matrix_col;
 
   /**
    * converged solution
@@ -548,8 +613,10 @@ private:
    */
   unsigned int _spice_index_offset_to_array_index;
 
-
-  std::map<const std::string, void *>  _ckt_components;
+  /**
+   * map to ckt component (voltage sources, current sources, resistors, etc)
+   */
+  std::map<std::string, void *>  _ckt_components;
 
   /**
    * init D.C. Operating point analysis

@@ -24,14 +24,19 @@
 #ifndef __electrical_source_h__
 #define __electrical_source_h__
 
+#include <map>
+
 #include "genius_common.h"
-#include "parser.h"
 #include "physical_unit.h"
 #include "vsource.h"
 #include "isource.h"
 
 
 //pre define
+namespace Parser{
+  class InputParser;
+  class Card;
+}
 class BoundaryConditionCollector;
 
 
@@ -57,6 +62,15 @@ public:
   void link_to_bcs(BoundaryConditionCollector * bcs);
 
   /**
+   * attach one source to a electrode bc.
+   * delete any source(s) previously attached to this bc
+   * @note this function does not set the vapp or iapp
+   * for each electrode, user should call update(time)
+   * to do it
+   */
+  void attach_source_to_electrode(const std::string & electrode_label, const std::string & source_list );
+
+  /**
    * attach one or more sources to a electrode bc.
    * delete any source(s) previously attached to this bc
    * @note this function does not set the vapp or iapp
@@ -67,17 +81,15 @@ public:
 
 
   /**
-   * attach voltage to a electrode bc. delete any source(s) previously attached to this bc
-   * the voltage takes effect at once
+   * create VDC with given vconst and attach it to a electrode bc.
    */
-  void attach_voltage_to_electrode(const std::string & electrode_label, PetscScalar vconst );
+  void attach_voltage_to_electrode(const std::string & electrode_label, double vconst );
 
 
   /**
-   * attach current to a electrode bc. delete any source(s) previously attached to this bc
-   * the current takes effect at once
+   * create IDC with given iconst and attach current to a electrode bc.
    */
-  void attach_current_to_electrode(const std::string & electrode_label, PetscScalar iconst );
+  void attach_current_to_electrode(const std::string & electrode_label, double iconst );
 
 
   /**
@@ -101,37 +113,65 @@ public:
   /**
    * @return limited time step by max allowd voltage/current change
    */
-  PetscScalar limit_dt(PetscScalar time, PetscScalar dt, PetscScalar v_change, PetscScalar i_change) const;
+  double limit_dt(double time, double dt, double v_change, double i_change) const;
 
   /**
    * update Vapp or Iapp for all the electrode bcs to new time step
    * @note the default vapp/iapp is 0 for all the electrode
    */
-  void update(PetscScalar time);
+  void update(double time);
+
+  /**
+   * @return steps for ramping up sources by given voltage and current limiter
+   * @param time   gives the intensity of sources
+   */
+  unsigned int steps_by_limiter(double v_change, double i_change, double time=0.0) const;
+
+  /**
+   * ramp up Vapp or Iapp for all the electrode bcs to a*A(time)
+   * @param time   gives the intensity of sources
+   */
+  void rampup(double a, double time=0.0);
 
   /**
    * force the voltage of electrode to be vapp
    * useful for DC sweep
    */
-  void assign_voltage_to(const std::string & electrode_label, PetscScalar vapp);
+  void assign_voltage_to(const std::string & electrode_label, double vapp);
 
   /**
    * force the voltage of some electrodes to be vapp
    * useful for DC sweep
    */
-  void assign_voltage_to(const std::vector<std::string> & electrode_labels, PetscScalar vapp);
+  void assign_voltage_to(const std::vector<std::string> & electrode_labels, double vapp);
 
   /**
    * force the current of electrode to be iapp
    * useful for DC sweep
    */
-  void assign_current_to(const std::string & electrode_label, PetscScalar iapp);
+  void assign_current_to(const std::string & electrode_label, double iapp);
 
   /**
    * force the current of some electrodes to be iapp
    * useful for DC sweep
    */
-  void assign_current_to(const std::vector<std::string> & electrode_labels, PetscScalar iapp);
+  void assign_current_to(const std::vector<std::string> & electrode_labels, double iapp);
+
+  /**
+   * @return the vapp of given bc at time
+   */
+  double vapp(const std::string &bc, double time) const;
+
+  /**
+   * @return the iapp of given bc at time
+   */
+  double iapp(const std::string &bc, double time) const;
+
+  /**
+   * save the source state of each bc
+   */
+  void save_bc_source_state();
+
 
   /**
    * clear the bc information this class holds.
@@ -148,28 +188,45 @@ private:
  BoundaryConditionCollector * _bcs;
 
  /**
+  * counter for implicit defined source
+  */
+ unsigned int _counter;
+
+ /**
   * all the voltage sources exist
   */
- std::map<const std::string, VSource * >  _vsource_list;
+ std::map<std::string, VSource * >  _vsource_list;
 
  /**
   * all the current sources exist
   */
- std::map<const std::string, ISource * >  _isource_list;
+ std::map<std::string, ISource * >  _isource_list;
 
 
  /**
   * the map of electrode bc label to the sources it owns
   */
- std::map<const std::string, std::pair<std::vector<VSource *>, std::vector<ISource *> > > _bc_source_map;
+ std::map<std::string, std::pair<std::vector<VSource *>, std::vector<ISource *> > > _bc_source_map;
 
- typedef std::map<const std::string, std::pair<std::vector<VSource *>, std::vector<ISource *> > >::iterator BIt;
+ typedef std::map<std::string, std::pair<std::vector<VSource *>, std::vector<ISource *> > >::iterator BIt;
 
- typedef std::map<const std::string, std::pair<std::vector<VSource *>, std::vector<ISource *> > >::const_iterator CBIt;
+ typedef std::map<std::string, std::pair<std::vector<VSource *>, std::vector<ISource *> > >::const_iterator CBIt;
 
- PetscScalar _vapp(const std::string &bc, PetscScalar time) const;
+ /** std::string -- the bc label
+  * int          -- cast to ExternalCircuit::DRIVEN
+  * double       -- the value of driven force
+  */
+ std::map<std::string, std::pair<int, double> > _bc_source_state;
 
- PetscScalar _iapp(const std::string &bc, PetscScalar time) const;
+ /**
+  * @return the vapp state of given bc in _bc_source_state
+  */
+ double _bc_state_vapp(const std::string &bc) const;
+
+ /**
+  * @return the iapp state of given bc in _bc_source_state
+  */
+ double _bc_state_iapp(const std::string &bc) const;
 
  /**
   * private functions for setting each source

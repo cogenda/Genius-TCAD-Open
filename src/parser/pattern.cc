@@ -148,7 +148,7 @@ namespace Parser
       Parameter q; //empty
 
       // for user defined parameter, we should not check it
-      if(p.do_not_check_me==true) continue;
+      if(p.is_user_defined()==true) continue;
 
       // get pattern parameter from pattern card
       if ( (*it).second.find_parameter(p.name(),q) )
@@ -210,7 +210,7 @@ namespace Parser
 
 // avoid isatty() problem of Bison 2.3
 #define YY_NEVER_INTERACTIVE 1
-#ifdef CYGWIN
+#ifdef WINDOWS
   #define YY_NO_UNISTD_H 1
 extern "C"
 {

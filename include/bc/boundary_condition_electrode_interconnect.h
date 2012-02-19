@@ -114,6 +114,38 @@ private:
   void inter_connect_update_solution(PetscScalar *x);
 
 
+
+  /**
+   * fill initial value to inter-connect node in mix mode
+   */
+  void mix_inter_connect_fill_value(Vec x, Vec L);
+
+  /**
+   * set governing equation for inter-connect node. use nodal analysis method in mix mode
+   */
+  void mix_inter_connect_function(PetscScalar *x , Vec f, InsertMode &add_value_flag);
+
+  /**
+   * reserve matrix entries in mix mode
+   */
+  void mix_inter_connect_reserve(Mat *jac, InsertMode &add_value_flag);
+
+  /**
+   * set jacobian matrix entries in mix mode
+   */
+  void mix_inter_connect_jacobian(PetscScalar *x , Mat *jac, InsertMode &add_value_flag);
+
+
+  void half_implicit_inter_connect_fill_value(Vec x);
+
+  void half_implicit_inter_connect(PetscScalar * x, Mat A, Vec f, InsertMode &add_value_flag);
+
+  void half_implicit_inter_connect_reserve(Mat A, InsertMode &add_value_flag);
+
+  void half_implicit_inter_connect_update_solution(PetscScalar *x);
+
+  void half_implicit_inter_connect_dummy(PetscScalar * x, Mat A, Vec f, InsertMode &add_value_flag);
+
 public:
   //////////////////////////////////////////////////////////////////////////////////////////////
   //----------------Function and Jacobian evaluate for Poisson's Equation---------------------//
@@ -166,6 +198,35 @@ public:
   virtual void DDM1_Update_Solution(PetscScalar *x)
   { inter_connect_update_solution(x); }
 
+
+  //////////////////////////////////////////////////////////////////////////////////
+  //----------Function and Jacobian evaluate for Advanced Mixed DDML1-------------//
+  //////////////////////////////////////////////////////////////////////////////////
+
+  /**
+   * fill solution data into petsc vector of level 1 DDM equation.
+   */
+  virtual void MixA_DDM1_Fill_Value(Vec x, Vec L)
+  { mix_inter_connect_fill_value(x, L); }
+
+  /**
+   * build function and its jacobian for Advanced Mixed DDML1 solver
+   */
+  virtual void MixA_DDM1_Function(PetscScalar * x, Vec f, InsertMode &add_value_flag)
+  { mix_inter_connect_function(x, f, add_value_flag); }
+
+  /**
+   * reserve none zero pattern in petsc matrix.
+   */
+  virtual void MixA_DDM1_Jacobian_Reserve(Mat *jac, InsertMode &add_value_flag)
+  { mix_inter_connect_reserve(jac, add_value_flag); }
+
+  /**
+   * build function and its jacobian for Advanced Mixed DDML1 solver
+   */
+  virtual void MixA_DDM1_Jacobian(PetscScalar *x , Mat *jac, InsertMode &add_value_flag)
+  { mix_inter_connect_jacobian(x, jac, add_value_flag); }
+
   //////////////////////////////////////////////////////////////////////////////////
   //----------------Function and Jacobian evaluate for L2 DDM---------------------//
   //////////////////////////////////////////////////////////////////////////////////
@@ -200,6 +261,35 @@ public:
   virtual void DDM2_Update_Solution(PetscScalar *x)
   { inter_connect_update_solution(x); }
 
+
+  //////////////////////////////////////////////////////////////////////////////////
+  //----------Function and Jacobian evaluate for Advanced Mixed DDML2-------------//
+  //////////////////////////////////////////////////////////////////////////////////
+
+  /**
+   * fill solution data into petsc vector of level 2 DDM equation.
+   */
+  virtual void MixA_DDM2_Fill_Value(Vec x, Vec L)
+  { mix_inter_connect_fill_value(x, L); }
+
+  /**
+   * build function and its jacobian for Advanced Mixed DDML2 solver
+   */
+  virtual void MixA_DDM2_Function(PetscScalar * x, Vec f, InsertMode &add_value_flag)
+  { mix_inter_connect_function(x, f, add_value_flag); }
+
+  /**
+   * reserve none zero pattern in petsc matrix.
+   */
+  virtual void MixA_DDM2_Jacobian_Reserve(Mat *jac, InsertMode &add_value_flag)
+  { mix_inter_connect_reserve(jac, add_value_flag); }
+
+  /**
+   * build function and its jacobian for Advanced Mixed DDML2 solver
+   */
+  virtual void MixA_DDM2_Jacobian(PetscScalar *x , Mat *jac, InsertMode &add_value_flag)
+  { mix_inter_connect_jacobian(x, jac, add_value_flag); }
+
   //////////////////////////////////////////////////////////////////////////////////
   //----------------Function and Jacobian evaluate for L3 EBM---------------------//
   //////////////////////////////////////////////////////////////////////////////////
@@ -233,6 +323,74 @@ public:
    */
   virtual void EBM3_Update_Solution(PetscScalar *x)
   { inter_connect_update_solution(x); }
+
+  //////////////////////////////////////////////////////////////////////////////////
+  //----------Function and Jacobian evaluate for Advanced Mixed EBM  -------------//
+  //////////////////////////////////////////////////////////////////////////////////
+
+  /**
+   * fill solution data into petsc vector of level 3 EBM equation.
+   */
+  virtual void MixA_EBM3_Fill_Value(Vec x, Vec L)
+  { mix_inter_connect_fill_value(x, L); }
+
+  /**
+   * build function and its jacobian for Advanced Mixed level 3 EBM solver
+   */
+  virtual void MixA_EBM3_Function(PetscScalar * x, Vec f, InsertMode &add_value_flag)
+  { mix_inter_connect_function(x, f, add_value_flag); }
+
+  /**
+   * reserve none zero pattern in petsc matrix.
+   */
+  virtual void MixA_EBM3_Jacobian_Reserve(Mat *jac, InsertMode &add_value_flag)
+  { mix_inter_connect_reserve(jac, add_value_flag); }
+
+  /**
+   * build function and its jacobian for Advanced Mixed level 3 EBM solver
+   */
+  virtual void MixA_EBM3_Jacobian(PetscScalar *x , Mat *jac, InsertMode &add_value_flag)
+  { mix_inter_connect_jacobian(x, jac, add_value_flag); }
+
+
+#ifdef COGENDA_COMMERCIAL_PRODUCT
+  //////////////////////////////////////////////////////////////////////////////////
+  //----------------- functions for Gummel DDML1 solver --------------------------//
+  //////////////////////////////////////////////////////////////////////////////////
+
+  /**
+   * function for fill vector for half implicit current continuity equation.
+   */
+  virtual void DDM1_Half_Implicit_Current_Fill_Value(Vec x)
+  { half_implicit_inter_connect_fill_value(x); }
+
+  /**
+   * function for reserve none zero pattern in petsc matrix.
+   */
+  virtual void DDM1_Half_Implicit_Current_Reserve(Mat A, InsertMode &add_value_flag)
+  { half_implicit_inter_connect_reserve(A, add_value_flag); }
+
+
+  /**
+   * function for build RHS and matrix for half implicit current continuity equation.
+   */
+  virtual void DDM1_Half_Implicit_Current(PetscScalar * x, Mat A, Vec r, InsertMode &add_value_flag)
+  { half_implicit_inter_connect(x, A, r, add_value_flag); }
+
+  /**
+   * function for update solution value for half implicit current continuity equation.
+   */
+  virtual void DDM1_Half_Implicit_Current_Update_Solution(PetscScalar *x)
+  { half_implicit_inter_connect_update_solution(x);  }
+
+
+  /**
+   * function for build RHS and matrix for half implicit poisson correction equation.
+   */
+  virtual void DDM1_Half_Implicit_Poisson_Correction(PetscScalar * x, Mat A, Vec r, InsertMode &add_value_flag)
+  { half_implicit_inter_connect_dummy(x, A, r, add_value_flag); }
+
+#endif
 
 };
 

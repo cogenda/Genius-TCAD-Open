@@ -137,7 +137,7 @@ void HDMSolver::solve_equ()
   // call pre_solve_process
   this->pre_solve_process(true);
     // set electrode with transient time 0 value of stimulate source(s)
-  _system.get_sources()->update ( 0 );
+  _system.get_electrical_source()->update ( 0 );
 
   // do local time advancing until convergence
   int steps=0;

@@ -57,6 +57,22 @@ AlAs
         color    = 0x0f5ea8ff
 }
 
+
+CIGS
+{
+# mole dependence: CuIn(1-x)GaxSe2
+        property = SingleCompoundSemiconductor
+        color    = 0xffff99ff
+}
+
+
+CdS
+{
+        property = Semiconductor
+        color    = 0xb95600ff
+}
+
+
 InGaAs
 {
 # mole dependence: In(1-x)Ga(x)As
@@ -226,6 +242,12 @@ AlInGaN
 }
 
 
+ZnO
+{
+        property = Semiconductor
+        color    = 0xdededeff
+}
+
 #-----------------------------------------------------
 # Conductor
 #-----------------------------------------------------
@@ -311,6 +333,7 @@ W
 {
         property = Resistance
         alias    = Tungsten
+        alias    = Wolfram
         color    = 0xd0d0f0ff
 }
 

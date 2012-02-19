@@ -25,7 +25,7 @@
 #include "genius_env.h"
 #include "genius_common.h"
 
-#ifdef CYGWIN
+#ifdef WINDOWS
   #include <Windows.h>
   #undef max
   #undef min
@@ -36,10 +36,10 @@
 #endif
 
 #include "log.h"
-#include "spice_ckt.h"
 #include "ngspice_interface.h"
 #include "spdefs.h"
 #include "spice_ckt_define.h"
+#include "spice_ckt.h"
 #include "parallel.h"
 
 
@@ -49,7 +49,7 @@ SPICE_CKT::SPICE_CKT(const std::string & ckt_file)
 {
   std::string filename =  Genius::genius_dir() + "/lib/spice.so";
 
-#ifdef CYGWIN
+#ifdef WINDOWS
   dll_file = LoadLibrary(filename.c_str());
 #else
   // NOTE: Because genius exports all its symbol with --export-dynamic flag
@@ -94,15 +94,20 @@ SPICE_CKT::SPICE_CKT(const std::string & ckt_file)
   void (*get_nodal_info)(CKTnode **);
   get_nodal_info = (void (*)(CKTnode **))LDFUN(dll_file,"ngspice_get_nodal_info");
   assert(get_nodal_info);
-  std::vector<CKTnode *> node_ptrs(_n_nodes);
-  get_nodal_info(&node_ptrs[0]);
+
+  _node_ptrs.resize(_n_nodes);
+  get_nodal_info(&_node_ptrs[0]);
   for(unsigned int n=0; n<_n_nodes; ++n)
   {
     SPICE_NODE node;
-    node.name   = node_ptrs[n]->name;
-    node.number = node_ptrs[n]->number;
-    node.type   = node_ptrs[n]->type;
-    node.is_electrode = 0;
+    node.name          = _node_ptrs[n]->name;
+    node.number        = _node_ptrs[n]->number;
+    node.type          = _node_ptrs[n]->type;
+    node.ic            = _node_ptrs[n]->ic;
+    node.nodeset       = _node_ptrs[n]->nodeset;
+    node.ic_given      = _node_ptrs[n]->icGiven;
+    node.nodeset_given = _node_ptrs[n]->nsGiven;
+    node.is_electrode  = 0;
     _node_info_array.push_back(node);
   }
   _solution.resize(_n_nodes, 0.0);
@@ -136,13 +141,23 @@ SPICE_CKT::SPICE_CKT(const std::string & ckt_file)
   get_matrix_entry = (double * (*)(int , int ))LDFUN(dll_file,"ngspice_get_matrix_entry");
   assert(get_matrix_entry);
 
-  // consider 0 node
+  // load spice matrix
+  _circuit_load = (int (*)())LDFUN(dll_file,"ngspice_circuit_load");
+  assert(_circuit_load);
+  _circuit_load();
+
+  // do matrix reorder
+  //_smp_preorder = (int (*)())LDFUN(dll_file,"ngspice_smp_preorder");
+  //assert(_smp_preorder);
+  //_smp_preorder();
+
+  // get matrix pattern
   assert(matrix_ptr->Size+1 == static_cast<int>(_n_nodes));
   _matrix_nonzero_pattern.resize(matrix_ptr->Size+1);
   _matrix_nonzero_pattern[0].first.push_back(0);
   _matrix_nonzero_pattern[0].second.push_back((double*)NULL);
-  _spice_order_to_matrix_order[0]=0;
-  //matrix pattern
+  _row_to_matrix_row.resize(matrix_ptr->Size+1, 0);
+  _col_to_matrix_col.resize(matrix_ptr->Size+1, 0);
   for(int col=1; col<=matrix_ptr->Size; ++col)
     for(ElementPtr elem_ptr=matrix_ptr->FirstInCol[col]; elem_ptr; elem_ptr = elem_ptr->NextInCol)
     {
@@ -154,7 +169,8 @@ SPICE_CKT::SPICE_CKT(const std::string & ckt_file)
       double * entity = get_matrix_entry(ext_row, ext_col);
       _matrix_nonzero_pattern[ext_row].first.push_back(ext_col);
       _matrix_nonzero_pattern[ext_row].second.push_back(entity);
-      _spice_order_to_matrix_order[ext_col] = col;
+      _row_to_matrix_row[ext_row] = row;
+      _col_to_matrix_col[ext_col] = col;
     }
 
   // get spice rhs
@@ -191,17 +207,11 @@ SPICE_CKT::SPICE_CKT(const std::string & ckt_file)
   _rotate_state_vectors = (void (*)())LDFUN(dll_file,"ngspice_rotate_state_vectors");
   assert(_rotate_state_vectors);
 
-  _circuit_load = (int (*)())LDFUN(dll_file,"ngspice_circuit_load");
-  assert(_circuit_load);
-
-  _smp_preorder = (int (*)())LDFUN(dll_file,"ngspice_smp_preorder");
-  assert(_smp_preorder);
 
   _spice_index_offset_to_global_index = invalid_uint;
   _spice_index_offset_to_local_index  = invalid_uint;
   _spice_index_offset_to_array_index  = invalid_uint;
 
-  matrix_reorder = false;
 }
 
 
@@ -216,7 +226,7 @@ SPICE_CKT::~SPICE_CKT()
     assert(destroy_ckt);
     destroy_ckt();
 
-#ifdef CYGWIN
+#ifdef WINDOWS
     FreeLibrary(dll_file);
 #else
     dlclose( dll_file );
@@ -238,6 +248,7 @@ void SPICE_CKT::sync()
   {
     _node_info_array.resize(_n_nodes);
     _matrix_nonzero_pattern.resize(_n_nodes);
+    _solution.resize(_n_nodes, 0.0);
   }
   for(unsigned int n=0; n<_n_nodes; ++n)
   {
@@ -275,17 +286,46 @@ void SPICE_CKT::sync()
   {
     Parallel::broadcast(_matrix_nonzero_pattern[n].first,  root_id);
   }
-  Parallel::broadcast(_spice_order_to_matrix_order,  root_id);
+  Parallel::broadcast(_row_to_matrix_row,  root_id);
+  Parallel::broadcast(_col_to_matrix_col,  root_id);
 }
 
 
 
 void SPICE_CKT::set_ckt_mode(long mode, bool reset)
 {
-  if(reset)
+  if(!reset)
     *_ckt_mode = (*_ckt_mode & MODEUIC) | mode;
   else
     *_ckt_mode = mode;
+}
+
+
+void SPICE_CKT::print_ckt_mode() const
+{
+  std::cout<<"CKTMode: ";
+  if(*_ckt_mode & MODETRAN) std::cout<< "MODETRAN ";
+  if(*_ckt_mode & MODEDC) std::cout<< "MODEDC ";
+
+
+  if(*_ckt_mode & MODETRANOP) std::cout<< "MODETRANOP ";
+
+  if(*_ckt_mode & MODEINITFLOAT) std::cout<< "MODEINITFLOAT ";
+  if(*_ckt_mode & MODEINITJCT) std::cout<< "MODEINITJCT ";
+  if(*_ckt_mode & MODEINITFIX) std::cout<< "MODEINITFIX ";
+  if(*_ckt_mode & MODEINITTRAN) std::cout<< "MODEINITTRAN ";
+
+  if(*_ckt_mode & MODEUIC) std::cout<< "MODEUIC ";
+
+  std::cout<<std::endl;
+}
+
+
+void SPICE_CKT::update_rhs_old(const std::vector<double> &rhs)
+{
+  assert(Genius::is_last_processor());
+  for(unsigned int n=0; n<rhs.size(); ++n)
+    (*_p_rhs_old)[n] = rhs[n];
 }
 
 
@@ -296,21 +336,7 @@ double SPICE_CKT::rhs(unsigned int n) const
 }
 
 
-double & SPICE_CKT::rhs(unsigned int n)
-{
-  assert(Genius::is_last_processor());
-  return  (*_p_rhs)[n];
-}
-
-
 double SPICE_CKT::rhs_old(unsigned int n) const
-{
-  assert(Genius::is_last_processor());
-  return  (*_p_rhs_old)[n];
-}
-
-
-double & SPICE_CKT::rhs_old(unsigned int n)
 {
   assert(Genius::is_last_processor());
   return  (*_p_rhs_old)[n];
@@ -489,6 +515,7 @@ double SPICE_CKT::get_voltage_from(const std::string & component)
 }
 
 
+
 void SPICE_CKT::set_voltage_to(const std::string & component, double v)
 {
   void (*set_voltage_source)(void *, double);
@@ -519,7 +546,6 @@ double SPICE_CKT::get_current_from(const std::string & component)
   return i;
 }
 
-
 void SPICE_CKT::set_current_to(const std::string & component, double i)
 {
   void (*set_current_source)(void *, double);
@@ -547,6 +573,53 @@ void SPICE_CKT::set_resistance_to(const std::string & component, double r)
   void * res = _ckt_components.find(component)->second;
   set_resistance(res, r);
 }
+
+
+
+
+bool SPICE_CKT::is_ckt_voltage_source_exist_sync(const std::string & component)
+{
+  int flag;
+  if(Genius::is_last_processor())
+    flag = is_ckt_voltage_source_exist(component);
+  Parallel::broadcast(flag, Genius::last_processor_id());
+  return static_cast<bool>(flag);
+}
+
+
+bool SPICE_CKT::is_ckt_current_source_exist_sync(const std::string & component)
+{
+  int flag;
+  if(Genius::is_last_processor())
+    flag = is_ckt_current_source_exist(component);
+  Parallel::broadcast(flag, Genius::last_processor_id());
+  return static_cast<bool>(flag);
+}
+
+
+
+double SPICE_CKT::get_current_from_sync(const std::string & component)
+{
+  parallel_only();
+  double i = 0;
+  if(Genius::is_last_processor())
+    i = get_current_from(component);
+  Parallel::broadcast(i, Genius::last_processor_id());
+  return i;
+}
+
+
+
+double SPICE_CKT::get_voltage_from_sync(const std::string & component)
+{
+  parallel_only();
+  double v = 0;
+  if(Genius::is_last_processor())
+    v = get_voltage_from(component);
+  Parallel::broadcast(v, Genius::last_processor_id());
+  return v;
+}
+
 
 
 
@@ -604,6 +677,24 @@ void SPICE_CKT::set_integrate_method(int method)
 }
 
 
+void SPICE_CKT::get_state_vector(int i, std::vector<double> &state) const
+{
+  unsigned int (*n_state)();
+  n_state = (unsigned int (*)())LDFUN(dll_file,"ngspice_n_state");
+  assert(n_state);
+
+  state.resize(n_state());
+
+  double ** (*get_state)(int);
+  get_state = (double ** (*)(int))LDFUN(dll_file,"ngspice_get_state");
+  assert(get_state);
+
+  double * state_array = *(get_state(i));
+  for(unsigned int n=0; n<state.size(); ++n)
+    state[n] = state_array[n];
+}
+
+
 
 void SPICE_CKT::prepare_ckt_state_first_time()
 {
@@ -615,101 +706,166 @@ void SPICE_CKT::prepare_ckt_state_first_time()
 }
 
 
-
-int SPICE_CKT::smp_preorder()
+void SPICE_CKT::do_node_set(bool flag)
 {
-  if(!matrix_reorder)
+  for(unsigned int n=0; n<_n_nodes; ++n)
   {
-    if(Genius::is_last_processor()) _smp_preorder();
-    _reset_spice_to_genius_mapping();
-    matrix_reorder = true;
-  }
-  return 0;
-}
-
-
-
-void SPICE_CKT::_reset_spice_to_genius_mapping()
-{
-  if(Genius::is_last_processor())
-  {
-
-    MatrixPtr (*get_matrix)();
-    get_matrix = (MatrixPtr (*)())LDFUN(dll_file,"ngspice_get_matrix");
-    assert(get_matrix);
-    MatrixPtr matrix_ptr = get_matrix();
-
-    // consider 0 node
-    _spice_order_to_matrix_order[0] = 0;
-
-    // matrix pattern
-    for(int col=1; col<=matrix_ptr->Size; ++col)
+    const SPICE_NODE & node = _node_info_array[n];
+    CKTnode * ckt_node = _node_ptrs[n];
+    if(flag)
     {
-      int ext_col = matrix_ptr->IntToExtColMap[col];
-      _spice_order_to_matrix_order[ext_col] = col;
+      ckt_node->nsGiven = node.nodeset_given ? 1:0;
+      if(node.nodeset_given)
+        (*_p_rhs_old)[n] = node.nodeset;
+    }
+    else
+    {
+      ckt_node->nsGiven = 0;
     }
   }
-
-  Parallel::broadcast(_spice_order_to_matrix_order,  Genius::last_processor_id());
-
 }
 
 
-void SPICE_CKT::ckt_matrix_row(unsigned int row, int &global_row, std::vector<int> & global_col, std::vector<double> & values) const
+void SPICE_CKT::do_ic(bool flag)
 {
-  global_row = row + _spice_index_offset_to_global_index;
+  for(unsigned int n=0; n<_n_nodes; ++n)
+  {
+    const SPICE_NODE & node = _node_info_array[n];
+    CKTnode * ckt_node = _node_ptrs[n];
+    if(flag)
+    {
+      ckt_node->icGiven = node.ic_given ? 1:0;
+      if(node.ic_given)
+        (*_p_rhs_old)[n] = node.ic;
+    }
+    else
+    {
+      ckt_node->icGiven = 0;
+    }
+  }
+}
 
-  if(row==0)
+
+
+unsigned int SPICE_CKT::global_offset_x(unsigned int n) const
+{ return _spice_index_offset_to_global_index + _col_to_matrix_col[n]; }
+
+
+unsigned int SPICE_CKT::local_offset_x(unsigned int n) const
+{ return _spice_index_offset_to_local_index  + _col_to_matrix_col[n]; }
+
+
+unsigned int SPICE_CKT::array_offset_x(unsigned int n) const
+{ return _spice_index_offset_to_array_index  + _col_to_matrix_col[n]; }
+
+
+unsigned int SPICE_CKT::global_offset_f(unsigned int n) const
+{ return _spice_index_offset_to_global_index + _row_to_matrix_row[n]; }
+
+
+unsigned int SPICE_CKT::local_offset_f(unsigned int n) const
+{ return _spice_index_offset_to_local_index  + _row_to_matrix_row[n]; }
+
+
+unsigned int SPICE_CKT::array_offset_f(unsigned int n) const
+{ return _spice_index_offset_to_array_index  + _row_to_matrix_row[n]; }
+
+
+unsigned int SPICE_CKT::n_nonzero(unsigned int row) const
+{ return _matrix_nonzero_pattern[row].first.size(); }
+
+
+unsigned int SPICE_CKT::max_row_nonzeros() const
+{
+  unsigned int n_nonzeros=0;
+  for(unsigned int n=0; n<_n_nodes; ++n)
+  {
+    n_nonzeros = std::max(n_nonzeros, n_nonzero(n));
+  }
+  return n_nonzeros;
+}
+
+
+void SPICE_CKT::ckt_matrix_row(unsigned int n, int &global_row, std::vector<int> & global_col, std::vector<double> & values) const
+{
+  global_row = this->global_offset_f(n);
+  if(n==0)
   {
     global_col.push_back(0+_spice_index_offset_to_global_index);
     values.push_back(1.0);
     return;
   }
 
-  const std::vector<int> & col = _matrix_nonzero_pattern[row].first;
-  const std::vector<double *> & col_value = _matrix_nonzero_pattern[row].second;
+  const std::vector<int> & col = _matrix_nonzero_pattern[n].first;
+  const std::vector<double *> & col_value = _matrix_nonzero_pattern[n].second;
 
-  for(unsigned int n=0; n<col.size(); ++n)
+  for(unsigned int c=0; c<col.size(); ++c)
   {
-    global_col.push_back(this->global_offset(col[n]));
-    values.push_back(*col_value[n]);
+    global_col.push_back(_col_to_matrix_col[col[c]] + _spice_index_offset_to_global_index);
+    values.push_back(*col_value[c]);
   }
 
-  // if we have diagonal item, that's all
-  for(unsigned int n=0; n<col.size(); ++n)
-  { if( int(this->global_offset(col[n])) == global_row) return; }
 
-  // else fill 1e-20 to diagonal to avoid zero pivot?
+  // if we have diagonal item, that's all
+  for(unsigned int c=0; c<global_col.size(); ++c)
+  { if(global_row==global_col[c]) return; }
+
+  //  fill 1e-20 to diagonal to avoid zero pivot?
   global_col.push_back(global_row);
   values.push_back(1e-20);
 
 }
 
 
-
-void SPICE_CKT::ckt_residual(std::vector<int> & global_index, std::vector<double> & values) const
+void SPICE_CKT::ckt_matrix_row(unsigned int row, std::vector<int> & col, std::vector<double> & values) const
 {
-  for(unsigned int n=0; n<_n_nodes; ++n)
+  if(row==0)
   {
-    global_index.push_back(n + _spice_index_offset_to_global_index);
+    col.push_back(0);
+    values.push_back(1.0);
+    return;
+  }
 
-    if(n==0)
-      values.push_back((*_p_rhs_old)[0]);
-    else
+  const std::vector<int> & matrix_col = _matrix_nonzero_pattern[row].first;
+  const std::vector<double *> & matrix_col_value = _matrix_nonzero_pattern[row].second;
+
+  for(unsigned int c=0; c<matrix_col.size(); ++c)
+  {
+    col.push_back(_col_to_matrix_col[matrix_col[c]]);
+    values.push_back(*matrix_col_value[c]);
+  }
+
+
+  // if we have diagonal item, that's all
+  for(unsigned int c=0; c<col.size(); ++c)
+  { if(row==col[c]) return; }
+
+  //  fill 1e-20 to diagonal to avoid zero pivot?
+  col.push_back(row);
+  values.push_back(1e-20);
+}
+
+
+void SPICE_CKT::ckt_residual(unsigned int n, int & global_index, double & value) const
+{
+  global_index = this->global_offset_f(n);
+
+  if(n==0)
+     value = (*_p_rhs_old)[0];
+  else
+  {
+    const std::vector<int> & col = _matrix_nonzero_pattern[n].first;
+    const std::vector<double *> & col_value = _matrix_nonzero_pattern[n].second;
+
+    double v = 0.0;
+    for(unsigned int i=0; i<col.size(); ++i)
     {
-      const std::vector<int> & col = _matrix_nonzero_pattern[n].first;
-      const std::vector<double *> & col_value = _matrix_nonzero_pattern[n].second;
-
-      double v = 0.0;
-      for(unsigned int i=0; i<col.size(); ++i)
-      {
-        unsigned int col_index = col[i];
-        v += (*col_value[i])*(*_p_rhs_old)[col_index];
-      }
-      v -= (*_p_rhs)[n];
-
-      values.push_back(v);
+      unsigned int col_index = col[i];
+      v += (*col_value[i])*(*_p_rhs_old)[col_index];
     }
+    v -= (*_p_rhs)[n];
+
+    value = v;
   }
 }
 

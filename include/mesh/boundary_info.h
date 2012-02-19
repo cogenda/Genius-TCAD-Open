@@ -279,6 +279,12 @@ public:
   const std::set<short int>& get_boundary_ids () const
   { return _boundary_ids; }
 
+  /**
+   * @returns the user-specified boundary ids.
+   */
+  std::set<short int>& get_boundary_ids ()
+  { return _boundary_ids; }
+
 
   /**
    * @return the subdomain id of this boundary side lies on.
@@ -319,7 +325,7 @@ public:
   /**
    * set the id with label
    */
-  void set_label_to_id(short int id, const std::string & label);
+  void set_label_to_id(short int id, const std::string & label, bool user_defined=true);
 
   /**
    * get the id by label
@@ -330,6 +336,11 @@ public:
    * get the label by id
    */
   std::string get_label_by_id(short int id) const;
+
+  /**
+   * @return ture when boundary id has user defind (not assigned by genius) label
+   */
+  bool boundary_id_has_user_defined_label(short int id) const;
 
   /**
    * @return all the boundary ids on interface of two subdomains
@@ -414,24 +425,24 @@ public:
   /**
    * data structure for convert label to index
    */
-  std::map<const std::string, const short int> _boundary_labels_to_ids;
+  std::map<std::string, const short int> _boundary_labels_to_ids;
 
   /**
    * data structure for convert index to label
    */
-  std::map<const short int, const std::string> _boundary_ids_to_labels;
+  std::map<short int, const std::string> _boundary_ids_to_labels;
 
   /**
    * sometimes, not all the boundary_id has user defined label.
    * genius will try to assign an uinque label to each boundary_id,
    * this flag indicate that the boundary_id has user defined label.
    */
-  //std::map<const short int, int> _boundary_ids_has_label_map;
+  std::set<short int> _boundary_id_has_user_defined_label;
 
   /**
    * data structure for boundary description
    */
-  std::map<const short int, const std::string> _boundary_ids_to_descriptions;
+  std::map<short int, const std::string> _boundary_ids_to_descriptions;
 
   /**
    * extra boundary descriptions

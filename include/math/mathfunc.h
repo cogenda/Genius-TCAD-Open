@@ -16,15 +16,15 @@
 using namespace adtl;
 
 /* define the constant */
-const Real PI     = 3.14159265358979323846;
-const Real SQRTPI = 1.772453850905516;
-const Real LOG10e = 0.434294481903251827651;
-const Real LOGe10 = 2.30258509299404568402;
-const Real VerySmallNumericValue = 1.0e-30;
-const Real VeryLargeNumericValue = 1.0e30;
-const Real MaximumExponent = 76.0;
-const Real MinimumLogarithmArgument = 1.0e-40;
-const Real MinimumExponent = 1.0e-5;
+const double PI     = 3.14159265358979323846;
+const double SQRTPI = 1.772453850905516;
+const double LOG10e = 0.434294481903251827651;
+const double LOGe10 = 2.30258509299404568402;
+const double VerySmallNumericValue = 1.0e-30;
+const double VeryLargeNumericValue = 1.0e30;
+const double MaximumExponent = 76.0;
+const double MinimumLogarithmArgument = 1.0e-40;
+const double MinimumExponent = 1.0e-5;
 
 
 inline double Erfc(double x)
@@ -75,9 +75,9 @@ inline double Erf(double x)
  *                                     e^x - 1
  *
  */
-inline Real bern ( Real x )
+inline double bern ( double x )
 {
-  Real y;
+  double y;
 
   if (x <= BP0_BERN)
   { return(-x); }
@@ -122,9 +122,9 @@ inline AutoDScalar bern ( const AutoDScalar &x )
  *                         --B(x) = -------------
  *                         dx        (e^x - 1)^2
  */
-inline Real pd1bern ( Real x )
+inline double pd1bern ( double x )
 {
-  Real y, z;
+  double y, z;
 
   if (x <= BP0_DBERN)
   { return(-1.0); }
@@ -152,9 +152,9 @@ inline Real pd1bern ( Real x )
  *                         Aux1(x) =  -------
  *                                    sinh(x)
  */
-inline Real aux1 ( Real x )
+inline double aux1 ( double x )
 {
-  Real y=x;
+  double y=x;
   if      (x < -BP0_MISC) y = -BP0_MISC;
   else if (x >  BP0_MISC) y =  BP0_MISC;
 
@@ -175,10 +175,10 @@ inline Real aux1 ( Real x )
  *		      --Aux1(x) = -------------------
  *		      dx	      (sinh(x))^2
  */
-inline Real pd1aux1 ( Real x )
+inline double pd1aux1 ( double x )
 {
-  Real y=x;
-  Real z;
+  double y=x;
+  double z;
   if      (x < -BP0_MISC) y = -BP0_MISC;
   else if (x >  BP0_MISC) y =  BP0_MISC;
 
@@ -204,7 +204,7 @@ inline Real pd1aux1 ( Real x )
 inline AutoDScalar aux1 ( const AutoDScalar &x )
 {
   AutoDScalar y;
-  Real td = pd1aux1(x.getValue());
+  double td = pd1aux1(x.getValue());
   y = td * x;
   y.setValue(aux1(x.getValue()));
   return y;
@@ -221,7 +221,7 @@ inline AutoDScalar aux1 ( const AutoDScalar &x )
  *                              Aux2(x) = -------
  *                                        1 + e^x
  */
-inline Real aux2 ( Real x )
+inline double aux2 ( double x )
 {
   if (x <= BP0_AUX2)
   { return(1.0); }
@@ -244,9 +244,9 @@ inline Real aux2 ( Real x )
  *                         --Aux2(x) = -----------
  *                         dx          (1 + e^x)^2
  */
-inline Real pd1aux2 ( Real x )
+inline double pd1aux2 ( double x )
 {
-  Real y,z;
+  double y,z;
 
   if (x <= BP0_DAUX2)
   { return(0.0); }
@@ -264,7 +264,7 @@ inline Real pd1aux2 ( Real x )
 inline AutoDScalar aux2 ( const AutoDScalar &x )
 {
   AutoDScalar y = x;
-  Real td = pd1aux2(x.getValue());
+  double td = pd1aux2(x.getValue());
   y = td * x;
   y.setValue(aux2(x.getValue()));
   return y;
@@ -275,7 +275,7 @@ inline AutoDScalar aux2 ( const AutoDScalar &x )
  * pd1erf:  This function returns the derivative of the error function with
  * respect to the first variable.
  */
-inline Real pd1erf ( Real x )
+inline double pd1erf ( double x )
 {
   return 2.0 / sqrt(PI) * exp(-x*x);
 }
@@ -284,10 +284,10 @@ inline Real pd1erf ( Real x )
 /* ----------------------------------------------------------------------------
  * fermi_half:  This function returns value of 1/2 order Fermi-Dirac Integral
  */
-inline Real fermi_half(Real x)
+inline double fermi_half(double x)
 {
 #ifdef HAVE_GSL
-  return Real(gsl_sf_fermi_dirac_half(double(x)));
+  return double(gsl_sf_fermi_dirac_half(double(x)));
 #else
   /* use an analytic expression. The result achieves within 0.4% error in all ranges.*/
   if(x<-4.5)
@@ -297,21 +297,21 @@ inline Real fermi_half(Real x)
   }
   else if(x<0.0)
   {
-    Real v = std::pow(x,4) + 50 + 33.6*x*(1-0.68*exp(-0.17*(x+1)*(x+1)));
-    Real p = 1.329340388179*std::pow(v,Real(-0.375));
+    double v = std::pow(x,4) + 50 + 33.6*x*(1-0.68*exp(-0.17*(x+1)*(x+1)));
+    double p = 1.329340388179*std::pow(v,double(-0.375));
     return 1.0/(exp(-x) + p);
   }
   else
   {
-    Real v = std::pow(x,4) + 50 + 33.6*x*(1-0.68*exp(-0.17*(x+1)*(x+1)));
-    Real p = 1.329340388179*std::pow(v,Real(-0.375));
+    double v = std::pow(x,4) + 50 + 33.6*x*(1-0.68*exp(-0.17*(x+1)*(x+1)));
+    double p = 1.329340388179*std::pow(v,double(-0.375));
     return 1.0/(1.0/exp(x) + p);
   }
 #endif
 }
 
 
-inline AutoDScalar fermi_half(AutoDScalar x)
+inline AutoDScalar fermi_half(const AutoDScalar &x)
 {
 #ifdef HAVE_GSL
   genius_error();
@@ -325,13 +325,13 @@ inline AutoDScalar fermi_half(AutoDScalar x)
   else if(x<0.0)
   {
     AutoDScalar v = adtl::pow(x,4) + 50 + 33.6*x*(1-0.68*exp(-0.17*(x+1)*(x+1)));
-    AutoDScalar p = 1.329340388179*adtl::pow(v,Real(-0.375));
+    AutoDScalar p = 1.329340388179*adtl::pow(v,double(-0.375));
     return 1.0/(exp(-x) + p);
   }
   else
   {
     AutoDScalar v = adtl::pow(x,4) + 50 + 33.6*x*(1-0.68*exp(-0.17*(x+1)*(x+1)));
-    AutoDScalar p = 1.329340388179*adtl::pow(v,Real(-0.375));
+    AutoDScalar p = 1.329340388179*adtl::pow(v,double(-0.375));
     return 1.0/(1.0/exp(x) + p);
   }
 #endif
@@ -343,10 +343,10 @@ inline AutoDScalar fermi_half(AutoDScalar x)
  *     fhfm evaluates the fermi-dirac integral of minus one-half order
  *     f-1/2(x) from x
  */
-inline Real fermi_mhalf(Real x)
+inline double fermi_mhalf(double x)
 {
 #ifdef HAVE_GSL
-  return Real(gsl_sf_fermi_dirac_mhalf(double(x)));
+  return double(gsl_sf_fermi_dirac_mhalf(double(x)));
 #else
 /*     the formulae used are after j.s. blakemore, ''semiconductor
  *     statistics,'' new york: pergamon press, appendix c, 1962, for
@@ -356,7 +356,7 @@ inline Real fermi_mhalf(Real x)
  *     fermi_half)
  *     the maximum relative error is about 1.2%
  */
-  Real a=3.53553e-1,b=4.95009e-3,c=1.48386e-4,d=4.42563e-6;
+  double a=3.53553e-1,b=4.95009e-3,c=1.48386e-4,d=4.42563e-6;
   if(x<-4.5)
   {
     //for small argument, fhfm1 and exp are almost identical.
@@ -366,11 +366,11 @@ inline Real fermi_mhalf(Real x)
   {
     if(x<5.5)
     {
-      Real f=fermi_half(x);
+      double f=fermi_half(x);
       return f/(1.0+f*(a+f*(-2.0*b+f*(3*c-4*d*f))));
     }
     else
-      return 2.0*x/(SQRTPI*std::pow((x*x+0.6),Real(0.25)));
+      return 2.0*x/(SQRTPI*std::pow((x*x+0.6),double(0.25)));
   }
 #endif
 }
@@ -404,15 +404,15 @@ inline AutoDScalar fermi_half(const AutoDScalar &x)
  *       f-1/2 = 2*eta/sqrt(pi)/(eta*eta+0.6)**(1/4)
  *     the maximum relative error is about 1.2%
  */
-inline Real fermi_mhalf_f(Real x)
+inline double fermi_mhalf_f(double x)
 {
-  Real a=3.53553e-1,b=4.95009e-3,c=1.48386e-4,d=4.42563e-6;
+  double a=3.53553e-1,b=4.95009e-3,c=1.48386e-4,d=4.42563e-6;
   if(x<1.0e1)
     return x/(1.e0+x*(a+x*(-2.e0*b+x*(3.e0*c-4.e0*d*x))));
   else
   {
-    Real eta=sqrt(std::pow(0.75e0*SQRTPI*x,Real(4.e0/3.e0))-PI*PI/6.e0);
-    return 2.e0*eta/(SQRTPI*std::pow(eta*eta+0.6e0,Real(0.25e0)));
+    double eta=sqrt(std::pow(0.75e0*SQRTPI*x,double(4.e0/3.e0))-PI*PI/6.e0);
+    return 2.e0*eta/(SQRTPI*std::pow(eta*eta+0.6e0,double(0.25e0)));
   }
 }
 
@@ -421,13 +421,13 @@ inline Real fermi_mhalf_f(Real x)
 /* ----------------------------------------------------------------------------
  * inv_fermi_half:  This function returns inverse value of Fermi-Dirac Integral
  */
-inline Real inv_fermi_half(Real x)
+inline double inv_fermi_half(double x)
 {
   if(x<8.463)
     return log(x) + x*(3.5355339059327379e-001 - x*(4.9500897298752622e-003
                        - x*(1.4838577128872821e-004 - x*4.4256301190009895e-006)));
   else
-    return sqrt(std::pow(0.75*SQRTPI*x,Real(4.0/3.0)) - PI*PI/6.0);
+    return sqrt(std::pow(0.75*SQRTPI*x,double(4.0/3.0)) - PI*PI/6.0);
 }
 
 
@@ -435,14 +435,14 @@ inline Real inv_fermi_half(Real x)
  *   GAMMA calculates f1/2(eta)/exp(eta) according to the approximate
  *   formula in casey's book,dummy arguement x=f1/2(eta).
  */
-inline  Real gamma_f(Real x)
+inline  double gamma_f(double x)
 {
-  const Real a=3.53553e-1,b=4.95009e-3,c=1.48386e-4;
-  const Real d=4.42563e-6,pi1=1.772453851e0,pi2=9.869604401e0;
-  Real temx;
+  const double a=3.53553e-1,b=4.95009e-3,c=1.48386e-4;
+  const double d=4.42563e-6,pi1=1.772453851e0,pi2=9.869604401e0;
+  double temx;
   if(x>1.0e1)
   {
-    temx=sqrt(std::pow(7.5e-1*pi1*x,Real(4.e0/3.e0))-pi2/6.e0);
+    temx=sqrt(std::pow(7.5e-1*pi1*x,double(4.e0/3.e0))-pi2/6.e0);
     if(x > MaximumExponent)
       return VerySmallNumericValue;
     else
@@ -460,12 +460,12 @@ inline  Real gamma_f(Real x)
 
 inline  AutoDScalar gamma_f(const AutoDScalar &x)
 {
-  const Real a=3.53553e-1,b=4.95009e-3,c=1.48386e-4;
-  const Real d=4.42563e-6,pi1=1.772453851e0,pi2=9.869604401e0;
+  const double a=3.53553e-1,b=4.95009e-3,c=1.48386e-4;
+  const double d=4.42563e-6,pi1=1.772453851e0,pi2=9.869604401e0;
   AutoDScalar temx;
   if(x>1.0e1)
   {
-    temx=sqrt(adtl::pow(7.5e-1*pi1*x,Real(4.e0/3.e0))-pi2/6.e0);
+    temx=sqrt(adtl::pow(7.5e-1*pi1*x,double(4.e0/3.e0))-pi2/6.e0);
     if(x > MaximumExponent)
       return VerySmallNumericValue;
     else

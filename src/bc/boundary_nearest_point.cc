@@ -26,6 +26,7 @@
 #include "boundary_condition_is.h"
 #include "surface_locator_hub.h"
 #include "boundary_condition_collector.h"
+#include "parallel.h"
 
 
 using PhysicalUnit::nm;
@@ -33,7 +34,7 @@ using PhysicalUnit::nm;
 // find the nearset point on gate/charge boundary
 void InsulatorSemiconductorInterfaceBC::_find_nearest_points_in_gate_region()
 {
-
+#if 1
   SimulationSystem  & system  = this->system();
   const MeshBase & mesh = system.mesh();
 
@@ -117,7 +118,7 @@ void InsulatorSemiconductorInterfaceBC::_find_nearest_points_in_gate_region()
 
 
   // set all target node not on this processor as local, create FVM_Node .
-  std::set<SimulationRegion *> modified_regions;
+  std::set<unsigned int> modified_regions;
   std::multimap<Node *, unsigned int>::iterator node_it = target_nodes.begin();
   for( ; node_it != target_nodes.end(); ++node_it)
   {
@@ -128,17 +129,22 @@ void InsulatorSemiconductorInterfaceBC::_find_nearest_points_in_gate_region()
 
     // update fvm_node in the region
     SimulationRegion * region = system.region(node_it->second);
-    region->insert_fvm_node(new FVM_Node( node ));
+    FVM_Node * fvm_node = new FVM_Node( node );
+    fvm_node->set_subdomain_id(region->subdomain_id());
+    region->insert_fvm_node(fvm_node);
 
     // mark regions need to be updated
-    modified_regions.insert(region);
+    modified_regions.insert(region->subdomain_id());
   }
+
+  Parallel::allgather(modified_regions);
 
   // rebuild region fvm node array
-  std::set<SimulationRegion *>::iterator region_it = modified_regions.begin();
+  std::set<unsigned int>::iterator region_it = modified_regions.begin();
   for( ; region_it != modified_regions.end(); ++region_it)
   {
-    (*region_it)->rebuild_region_fvm_node_list();
+    SimulationRegion * region = system.region(*region_it);
+    region->rebuild_region_fvm_node_list();
   }
-
+#endif
 }

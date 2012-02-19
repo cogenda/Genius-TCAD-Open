@@ -77,7 +77,7 @@ void GateContactBC::EBM3_Fill_Value(Vec x, Vec L)
 /*---------------------------------------------------------------------
  * do pre-process to function for EBM3 solver
  */
-void GateContactBC::EBM3_Function_Preprocess(Vec f, std::vector<PetscInt> &src_row,
+void GateContactBC::EBM3_Function_Preprocess(PetscScalar *,Vec f, std::vector<PetscInt> &src_row,
     std::vector<PetscInt> &dst_row, std::vector<PetscInt> &clear_row)
 {
   BoundaryCondition::const_node_iterator node_it = nodes_begin();
@@ -157,6 +157,9 @@ void GateContactBC::EBM3_Function(PetscScalar * x, Vec f, InsertMode &add_value_
   // for 2D mesh, z_width() is the device dimension in Z direction; for 3D mesh, z_width() is 1.0
   PetscScalar current_scale = this->z_width();
 
+  const PetscScalar Work_Function = this->scalar("workfunction");
+  const PetscScalar Heat_Transfer = this->scalar("heat.transfer");
+
   // the electrode potential in current iteration
   genius_assert( local_offset()!=invalid_uint );
   PetscScalar Ve = x[this->local_offset()];
@@ -192,7 +195,7 @@ void GateContactBC::EBM3_Function(PetscScalar * x, Vec f, InsertMode &add_value_
             // psi of this node
             PetscScalar V = x[fvm_nodes[i]->local_offset()+node_psi_offset];
             // the governing equation of potential
-            PetscScalar ff1 = V + Work_Function() - Ve;
+            PetscScalar ff1 = V + Work_Function - Ve;
             // set governing equation to function vector
             iy.push_back(fvm_nodes[i]->global_offset() + node_psi_offset);
             y.push_back( ff1 );
@@ -202,9 +205,8 @@ void GateContactBC::EBM3_Function(PetscScalar * x, Vec f, InsertMode &add_value_
             {
               // lattice temperature
               PetscScalar T = x[fvm_nodes[i]->local_offset() + node_Tl_offset];
-              PetscScalar h = this->Heat_Transfer();
               PetscScalar S  = fvm_nodes[i]->outside_boundary_surface_area();
-              PetscScalar fT = h*(T_external()-T)*S;
+              PetscScalar fT = Heat_Transfer*(T_external()-T)*S;
               VecSetValue(f, fvm_nodes[i]->global_offset()+node_Tl_offset, fT, ADD_VALUES);
             }
 
@@ -225,7 +227,7 @@ void GateContactBC::EBM3_Function(PetscScalar * x, Vec f, InsertMode &add_value_
                 // area of out surface of control volume related with neighbor node
                 PetscScalar cv_boundary = fvm_nodes[i]->cv_surface_area(nb_node->root_node());
                 PetscScalar dEdt;
-                if(SolverSpecify::TS_type==SolverSpecify::BDF2 && SolverSpecify::BDF2_restart==false) //second order
+                if(SolverSpecify::TS_type==SolverSpecify::BDF2 && SolverSpecify::BDF2_LowerOrder==false) //second order
                 {
                   PetscScalar r = SolverSpecify::dt_last/(SolverSpecify::dt_last + SolverSpecify::dt);
                   dEdt = ( (2-r)/(1-r)*(V-V_nb)
@@ -508,22 +510,29 @@ void GateContactBC::EBM3_Jacobian_Reserve(Mat *jac, InsertMode &add_value_flag)
     std::vector<PetscInt> bc_node_reserve;
     for(node_it = nodes_begin(); node_it!=end_it; ++node_it )
     {
-      // reserve for displacement current
-      const FVM_Node *  fvm_node = get_region_fvm_node(*node_it, InsulatorRegion);
-      const SimulationRegion * region = get_fvm_node_region(*node_it, InsulatorRegion);
-
-      if(fvm_node->on_processor())
+      // get the derivative of electrode current to gate node
+      BoundaryCondition::region_node_iterator  rnode_it     = region_node_begin(*node_it);
+      BoundaryCondition::region_node_iterator  end_rnode_it = region_node_end(*node_it);
+      for(unsigned int i=0 ; rnode_it!=end_rnode_it; ++i, ++rnode_it  )
       {
-        for(unsigned int nv=0; nv<region->ebm_n_variables(); ++nv)
-          bc_node_reserve.push_back(fvm_node->global_offset()+nv);
+        const SimulationRegion * region = ( (*rnode_it).second.first );
+        if(region->type() != InsulatorRegion) continue;
 
-        FVM_Node::fvm_neighbor_node_iterator nb_it     =  fvm_node->neighbor_node_begin();
-        FVM_Node::fvm_neighbor_node_iterator nb_it_end =  fvm_node->neighbor_node_end();
-        for(; nb_it!=nb_it_end; ++nb_it)
+        const FVM_Node * fvm_node = (*rnode_it).second.second;
+
+        if(fvm_node->on_processor())
         {
-          const FVM_Node *  fvm_nb_node = (*nb_it).second;
           for(unsigned int nv=0; nv<region->ebm_n_variables(); ++nv)
-            bc_node_reserve.push_back(fvm_nb_node->global_offset()+nv);
+            bc_node_reserve.push_back(fvm_node->global_offset()+nv);
+
+          FVM_Node::fvm_neighbor_node_iterator nb_it     =  fvm_node->neighbor_node_begin();
+          FVM_Node::fvm_neighbor_node_iterator nb_it_end =  fvm_node->neighbor_node_end();
+          for(; nb_it!=nb_it_end; ++nb_it)
+          {
+            const FVM_Node *  fvm_nb_node = (*nb_it).second;
+            for(unsigned int nv=0; nv<region->ebm_n_variables(); ++nv)
+              bc_node_reserve.push_back(fvm_nb_node->global_offset()+nv);
+          }
         }
       }
     }
@@ -558,7 +567,7 @@ void GateContactBC::EBM3_Jacobian_Reserve(Mat *jac, InsertMode &add_value_flag)
 /*---------------------------------------------------------------------
  * do pre-process to jacobian matrix for EBM3 solver
  */
-void GateContactBC::EBM3_Jacobian_Preprocess(Mat *jac, std::vector<PetscInt> &src_row,
+void GateContactBC::EBM3_Jacobian_Preprocess(PetscScalar * ,Mat *jac, std::vector<PetscInt> &src_row,
     std::vector<PetscInt> &dst_row, std::vector<PetscInt> &clear_row)
 {
   BoundaryCondition::const_node_iterator node_it = nodes_begin();
@@ -633,7 +642,8 @@ void GateContactBC::EBM3_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_val
   PetscScalar dt = SolverSpecify::dt;
 
 
-  // after that, we should do gate boundary process here
+  const PetscScalar Work_Function = this->scalar("workfunction");
+  const PetscScalar Heat_Transfer = this->scalar("heat.transfer");
 
   // for 2D mesh, z_width() is the device dimension in Z direction; for 3D mesh, z_width() is 1.0
   PetscScalar current_scale = this->z_width();
@@ -679,7 +689,7 @@ void GateContactBC::EBM3_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_val
             AutoDScalar Ve = x[this->local_offset()];                         Ve.setADValue(1, 1.0);
 
             // the governing equation of potential
-            AutoDScalar ff = V + Work_Function() - Ve;
+            AutoDScalar ff = V + Work_Function - Ve;
 
             // the insert position
             PetscInt row     = fvm_nodes[i]->global_offset()+node_psi_offset;
@@ -694,10 +704,8 @@ void GateContactBC::EBM3_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_val
               adtl::AutoDScalar::numdir=1;
 
               AutoDScalar T = x[fvm_nodes[i]->local_offset()+node_Tl_offset]; T.setADValue(0, 1.0); // psi of this node
-
-              PetscScalar h = this->Heat_Transfer();
               PetscScalar S  = fvm_nodes[i]->outside_boundary_surface_area();
-              AutoDScalar fT = h*(T_external()-T)*S;
+              AutoDScalar fT = Heat_Transfer*(T_external()-T)*S;
 
               PetscInt row = fvm_nodes[i]->global_offset()+node_Tl_offset;
               MatSetValue(*jac, row, row, fT.getADValue(0), ADD_VALUES);
@@ -732,7 +740,7 @@ void GateContactBC::EBM3_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_val
                 // area of out surface of control volume related with neighbor node
                 PetscScalar cv_boundary = fvm_nodes[i]->cv_surface_area(nb_node->root_node());
                 AutoDScalar dEdt;
-                if(SolverSpecify::TS_type==SolverSpecify::BDF2 && SolverSpecify::BDF2_restart==false) //second order
+                if(SolverSpecify::TS_type==SolverSpecify::BDF2 && SolverSpecify::BDF2_LowerOrder==false) //second order
                 {
                   PetscScalar r = SolverSpecify::dt_last/(SolverSpecify::dt_last + SolverSpecify::dt);
                   dEdt = ( (2-r)/(1-r)*(V-V_nb)

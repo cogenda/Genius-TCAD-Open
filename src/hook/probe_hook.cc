@@ -21,6 +21,7 @@
 
 #include <string>
 #include <cstdlib>
+#include <ctime>
 #include <iomanip>
 
 #include "solver_base.h"
@@ -48,6 +49,8 @@ ProbeHook::ProbeHook(SolverBase & solver, const std::string & name, void * param
       _pp(1)=parm_it->get_real() * PhysicalUnit::um;
     if(parm_it->name() == "z" && parm_it->type() == Parser::REAL)
       _pp(2)=parm_it->get_real() * PhysicalUnit::um;
+    if(parm_it->name() == "file" && parm_it->type() == Parser::STRING)
+      _probe_file = parm_it->get_string();
   }
 
 
@@ -78,8 +81,8 @@ void ProbeHook::on_init()
   {
     const SimulationRegion * region = _p_solver->get_system().region(r);
 
-    SimulationRegion::const_local_node_iterator node_it = region->on_local_nodes_begin();
-    SimulationRegion::const_local_node_iterator node_it_end = region->on_local_nodes_end();
+    SimulationRegion::const_processor_node_iterator node_it = region->on_processor_nodes_begin();
+    SimulationRegion::const_processor_node_iterator node_it_end = region->on_processor_nodes_end();
     for(; node_it!=node_it_end; ++node_it)
     {
       const FVM_Node * fvm_node = *node_it;
@@ -98,15 +101,18 @@ void ProbeHook::on_init()
   Parallel::min_loc(min_dis, _min_loc);
 
   double x,y,z;
+  std::string region;
   std::vector<std::string> var_name;
   int n_var;
 
   x = (*_p_fvm_node->root_node())(0);
   y = (*_p_fvm_node->root_node())(1);
   z = (*_p_fvm_node->root_node())(2);
+  region = _p_solver->get_system().region(_p_fvm_node->subdomain_id())->label();
   Parallel::broadcast(x, _min_loc);
   Parallel::broadcast(y, _min_loc);
   Parallel::broadcast(z, _min_loc);
+  Parallel::broadcast(region, _min_loc);
 
   if (Genius::processor_id() == _min_loc)
   {
@@ -115,14 +121,15 @@ void ProbeHook::on_init()
     {
       case FVM_NodeData::SemiconductorData:
         n_var = 3;
-        var_name.push_back("psi (V)");
-        var_name.push_back("n (cm^-3)");
-        var_name.push_back("p (cm^-3)");
+        var_name.push_back("psi [V]");
+        var_name.push_back("n [cm^-3]");
+        var_name.push_back("p [cm^-3]");
         break;
       case FVM_NodeData::InsulatorData:
       case FVM_NodeData::ConductorData:
+      case FVM_NodeData::ResistanceData:
         n_var = 1;
-        var_name.push_back("potenial (V)");
+        var_name.push_back("psi [V]");
         break;
       default:
         n_var = 0;
@@ -137,12 +144,39 @@ void ProbeHook::on_init()
 
   if ( !Genius::processor_id() )
   {
-    _out << "Nearest node is at  : ";
+    time_t          _time;
+    time(&_time);
+
+    _out << "# Title: Gnuplot File Created by Genius TCAD Simulation" << std::endl;
+    _out << "# Date: " << ctime(&_time) << std::endl;
+    _out << "# Plotname: Probe"  << std::endl;
+    _out << "# Node location (um): ";
     _out << "x=" << x/PhysicalUnit::um << "\ty=" << y/PhysicalUnit::um << "\tz=" << z/PhysicalUnit::um << std::endl;
+    _out << "# Node in region: " << region << std::endl;
+    _out << "# Variables: " << std::endl;
+    int cCnt=0;
+
+    // DC Sweep
+    if( SolverSpecify::Type==SolverSpecify::DCSWEEP || SolverSpecify::Type==SolverSpecify::TRACE)
+    {
+      if ( SolverSpecify::Electrode_VScan.size() )
+        for(unsigned int n=0; n<SolverSpecify::Electrode_VScan.size(); ++n)
+          _out << '#' << std::setw(10) << ++cCnt << std::setw(20) << SolverSpecify::Electrode_VScan[n]  << " [V]"<< std::endl;
+
+      if ( SolverSpecify::Electrode_IScan.size() )
+        for(unsigned int n=0; n<SolverSpecify::Electrode_IScan.size(); ++n)
+          _out << '#' << std::setw(10) << ++cCnt << std::setw(20) << SolverSpecify::Electrode_IScan[n]  << " [A]"<< std::endl;
+    }
+
+    // Transient
+    if(SolverSpecify::Type==SolverSpecify::TRANSIENT)
+    {
+      _out << '#' << std::setw(10) << ++cCnt << std::setw(20) << "Time [s]"  << std::endl;
+    }
 
     for(int i=0; i<n_var; i++)
     {
-      _out << std::setw(15) << var_name[i];
+      _out << '#' << std::setw(10) << ++cCnt << std::setw(20) << var_name[i]  << std::endl;
     }
     _out << std::endl;
   }
@@ -171,33 +205,60 @@ void ProbeHook::post_solve()
     {
       case FVM_NodeData::SemiconductorData:
         n_var = 3;
-        var.push_back(node_data->psi());
-        var.push_back(node_data->n());
-        var.push_back(node_data->p());
+        var.push_back(node_data->psi()/PhysicalUnit::V);
+        var.push_back(node_data->n()/std::pow(PhysicalUnit::cm, -3));
+        var.push_back(node_data->p()/std::pow(PhysicalUnit::cm, -3));
         break;
       case FVM_NodeData::InsulatorData:
       case FVM_NodeData::ConductorData:
+      case FVM_NodeData::ResistanceData:
         n_var = 1;
-        var.push_back(node_data->psi());
+        var.push_back(node_data->psi()/PhysicalUnit::V);
         break;
       default:
         n_var = 0;
     }
   }
 
-  var.resize(n_var);
   Parallel::broadcast(n_var,_min_loc);
+  if(n_var)
+    Parallel::broadcast(var,_min_loc);
 
   if ( !Genius::processor_id() )
   {
-
     // set the float number precision
     _out.precision(6);
 
     // set output width and format
     _out<< std::scientific << std::right;
 
-    //_out << std::setw(15) << SolverSpecify::clock;
+    _out<<' ';
+
+    // DC Sweep
+    if( SolverSpecify::Type==SolverSpecify::DCSWEEP || SolverSpecify::Type==SolverSpecify::TRACE )
+    {
+      const BoundaryConditionCollector * bcs = this->get_solver().get_system().get_bcs();
+
+      if ( SolverSpecify::Electrode_VScan.size() )
+        for(unsigned int n=0; n<SolverSpecify::Electrode_VScan.size(); ++n)
+      {
+        const BoundaryCondition * bc = bcs->get_bc(SolverSpecify::Electrode_VScan[n]);
+        _out << std::setw(20) << bc->ext_circuit()->Vapp()/PhysicalUnit::V;
+      }
+
+      if ( SolverSpecify::Electrode_IScan.size() )
+        for(unsigned int n=0; n<SolverSpecify::Electrode_IScan.size(); ++n)
+      {
+        const BoundaryCondition * bc = bcs->get_bc(SolverSpecify::Electrode_IScan[n]);
+        _out << std::setw(20) << bc->ext_circuit()->Iapp()/PhysicalUnit::A;
+      }
+    }
+
+    if(SolverSpecify::Type==SolverSpecify::TRANSIENT)
+    {
+      _out << std::setw(15) << SolverSpecify::clock/PhysicalUnit::s;
+    }
+
     for(unsigned int i=0; i<var.size(); i++)
       _out << std::setw(15) << var[i];
 
@@ -222,7 +283,7 @@ void ProbeHook::on_close()
 {}
 
 
-#ifndef CYGWIN
+#ifdef DLLHOOK
 
 // dll interface
 extern "C"

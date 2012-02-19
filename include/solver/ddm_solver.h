@@ -59,6 +59,11 @@ public:
   virtual int solve_dcsweep();
 
   /**
+   * do op
+   */
+  virtual int solve_op();
+
+  /**
    * do transient simulation
    */
   virtual int solve_transient();
@@ -67,6 +72,11 @@ public:
    * IV curve automatically trace
    */
   virtual int solve_iv_trace();
+
+  /**
+   * do nonlinear solve with pseudo time step
+   */
+  virtual int snes_solve_pseudo_time_step();
 
   /**
    * virtual function, create the solver
@@ -89,10 +99,25 @@ public:
   virtual int diverged_recovery()=0;
 
   /**
+   * test if BDF2 can be used for next time step
+   * NOTE: we should make sure carrier density always positive.
+   * consider model problem du/dt=-\lambda u
+   *
+   * BDF1 can be written as u^n - u^(n-1) =  -\lambda dt u^n
+   * that (1 + \lambda dt) u^n = u^(n-1)
+   * thus u^n is always positive if u^n-1 is positive
+   *
+   * BDF2 can be written as \alpha u^n - \beta u^(n-1) + \gamma u^(n-2) =  -\lambda u^n
+   * that (\alpha + \lambda)u^n = \beta u^(n-1) - \gamma u^(n-2)
+   * to force u^n>0, we need to ensure \beta u^(n-1) - \gamma u^(n-2) > 0
+   */
+  virtual bool BDF2_positive_defined() const=0;
+
+  /**
    * compute the norm of local truncate error (LTE)
    * each derived DDM solver should override it.
    */
-  virtual PetscScalar LTE_norm()=0;
+  virtual PetscReal LTE_norm()=0;
 
   /**
    * force carrier density to be positive during projection
@@ -104,6 +129,11 @@ public:
    * each derived DDM solver should override it.
    */
   virtual void error_norm()=0;
+
+  /**
+   * virtual function for convergence test of pseudo time step method
+   */
+  virtual bool pseudo_time_step_convergence_test()=0;
 
   /**
    * snes monitor, do nothing
@@ -266,6 +296,12 @@ protected:
    * nonlinear function norm
    */
   PetscScalar function_norm;
+
+  /**
+   * nonlinear norm of each functions
+   * listed as f(psi), f(n), f(p), f(T), f(ne), f(pe), f(bc)
+   */
+  std::vector<PetscReal> functions_norm;
 
   /**
    * nonlinear iteration

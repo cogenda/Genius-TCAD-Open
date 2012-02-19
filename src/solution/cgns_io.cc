@@ -39,6 +39,7 @@
 using PhysicalUnit::cm;
 using PhysicalUnit::um;
 using PhysicalUnit::V;
+using PhysicalUnit::A;
 using PhysicalUnit::K;
 using PhysicalUnit::eV;
 
@@ -489,8 +490,24 @@ void CGNSIO::read (const std::string& filename)
           double potential=0;
           if(!cg_gopath(fn, "extra_data_for_electrode"))
           {
-            genius_assert(!cg_array_read_as(1,RealDouble, &potential));
-            electrode_potential[bd_id] = potential;
+            int narray;
+            genius_assert(!cg_narrays(&narray));
+            for(int a=1; a<=narray; a++)
+            {
+              char array[32];
+              DataType_t type;
+              int dimension;
+              int vector;
+              double data;
+              genius_assert(!cg_array_info(a, array, &type, &dimension, &vector));
+              genius_assert(!cg_array_read_as(a, type, &data));
+              if( std::string(array) == "electrode_potential" )
+                electrode_potential[bd_id] = data;
+              if( std::string(array) == "electrode_vapp" )
+                electrode_vapp[bd_id] = data;
+              if( std::string(array) == "electrode_iapp" )
+                electrode_iapp[bd_id] = data;
+            }
             genius_assert(!cg_gopath(fn, ".."));
           }
         }
@@ -766,7 +783,6 @@ void CGNSIO::read (const std::string& filename)
         }
         case InsulatorRegion     :
         case ElectrodeRegion     :
-        case MetalRegion         :
         {
           for(std::map< std::pair<std::string, std::string>, std::vector<double> >::const_iterator var_it = solution.begin();
               var_it!=solution.end(); var_it++)
@@ -819,6 +835,63 @@ void CGNSIO::read (const std::string& filename)
           break;
         }
 
+        case MetalRegion         :
+        {
+          for(std::map< std::pair<std::string, std::string>, std::vector<double> >::const_iterator var_it = solution.begin();
+              var_it!=solution.end(); var_it++)
+          {
+            if(var_it->first.first == "Custom")
+            {
+              const std::string & variable = var_it->first.second;
+              const std::string & variable_unit = region_solution_units[variable+".unit"];
+              region->add_variable( SimulationVariable(variable, SCALAR, POINT_CENTER, variable_unit, invalid_uint, true, true)  );
+            }
+          }
+
+          for(unsigned int n=0; n<global_id.size(); n++)
+          {
+            unsigned int node_id = global_id_to_node_id.find(global_id[n])->second;
+            FVM_Node * fvm_node = region->region_fvm_node(node_id);
+            if( !fvm_node || !fvm_node->root_node()->on_local() ) continue;
+
+            FVM_NodeData * node_data = fvm_node->node_data();  genius_assert(node_data);
+
+            for(std::map< std::pair<std::string,std::string>, std::vector<double> >::const_iterator var_it = solution.begin();
+                var_it!=solution.end(); var_it++)
+            {
+              if(var_it->first.first == "Solution")
+              {
+                // field solution
+                if(var_it->first.second == "potential")
+                {
+                  node_data->psi() = var_it->second[n] * V;
+                  continue;
+                }
+                if(var_it->first.second == "electron" || var_it->first.second == "elec_density")
+                {
+                  node_data->n() = var_it->second[n] * pow(cm,-3);
+                  continue;
+                }
+                if(var_it->first.second == "temperature" || var_it->first.second == "lattice_temperature" )
+                {
+                  node_data->T() = var_it->second[n] * K;
+                  continue;
+                }
+              }
+
+              if(var_it->first.first == "Custom")
+              {
+                const SimulationVariable & variable = region->get_variable(var_it->first.second, POINT_CENTER);
+                node_data->data<Real>(variable.variable_index) = var_it->second[n]*variable.variable_unit;
+              }
+            }
+          }
+
+          // after import previous solutions, we re-init region here
+          region->reinit_after_import();
+
+          break;
+        }
         // no solution data in vacuum region?
         case VacuumRegion     :
         {
@@ -838,16 +911,37 @@ void CGNSIO::read (const std::string& filename)
     }
   }
 
-  // set potential of electrode
+  // set potential/Vapp/Iapp of electrode
+  std::map< short int, double >::iterator el_it;
+
   Parallel::broadcast(electrode_potential, 0);
-  std::map< short int, double >::iterator el_it = electrode_potential.begin();
-  for(; el_it!=electrode_potential.end(); ++el_it )
+  for(el_it = electrode_potential.begin(); el_it!=electrode_potential.end(); ++el_it )
   {
-    std::string bc_label= mesh.boundary_info->get_label_by_id((*el_it).first);
+    std::string bc_label= mesh.boundary_info->get_label_by_id(el_it->first);
     BoundaryCondition * bc = system.get_bcs()->get_bc(bc_label);
     if(bc && bc->is_electrode())
-      bc->ext_circuit()->potential() = (*el_it).second;
+      bc->ext_circuit()->potential() = el_it->second * V;
   }
+
+  Parallel::broadcast(electrode_vapp, 0);
+  for(el_it = electrode_vapp.begin(); el_it!=electrode_vapp.end(); ++el_it )
+  {
+    std::string bc_label= mesh.boundary_info->get_label_by_id(el_it->first);
+    BoundaryCondition * bc = system.get_bcs()->get_bc(bc_label);
+    if(bc && bc->is_electrode())
+      bc->ext_circuit()->Vapp() = el_it->second * V;
+  }
+
+  Parallel::broadcast(electrode_iapp, 0);
+  for(el_it = electrode_iapp.begin(); el_it!=electrode_iapp.end(); ++el_it )
+  {
+    std::string bc_label= mesh.boundary_info->get_label_by_id(el_it->first);
+    BoundaryCondition * bc = system.get_bcs()->get_bc(bc_label);
+    if(bc && bc->is_electrode())
+      bc->ext_circuit()->Iapp() = el_it->second * A;
+  }
+
+  system.init_region_post_process();
 }
 
 
@@ -858,6 +952,12 @@ void CGNSIO::write (const std::string& filename)
   const SimulationSystem & system = FieldOutput<SimulationSystem>::system();
   const BoundaryConditionCollector * bcs = system.get_bcs();
   const MeshBase & mesh = system.mesh();
+
+  if( Genius::processor_id() == 0)
+  {
+    // remove old file if exist
+    remove(filename.c_str());
+  }
 
   // classify node to region
   std::vector< std::vector<const Node *> > region_node_array(system.n_regions());
@@ -920,9 +1020,6 @@ void CGNSIO::write (const std::string& filename)
   // ok, create cgns here
   if( Genius::processor_id() == 0)
   {
-    // remove old file if exist
-    remove(filename.c_str());
-
     // open CGNS file for write
     genius_assert(!cg_open(filename.c_str(), MODE_WRITE, &fn));
 
@@ -1055,12 +1152,14 @@ void CGNSIO::write (const std::string& filename)
         {
             case TRI3        :
             case TRI3_FVM    :
+            case TRI3_CY_FVM :
             {
               elem_package.push_back( TRI_3 );
               break;
             }
             case QUAD4       :
             case QUAD4_FVM   :
+            case QUAD4_CY_FVM:
             {
               elem_package.push_back( QUAD_4 );
               break;
@@ -1188,13 +1287,16 @@ void CGNSIO::write (const std::string& filename)
         // write electrode potential
         if( bc->is_electrode() )
         {
-          double potential = bc->ext_circuit()->potential();
+          double potential = bc->ext_circuit()->potential()/V;
+          double vapp = bc->ext_circuit()->Vapp()/V;
+          double iapp = bc->ext_circuit()->Iapp()/A;
           int    DimensionVector = 1;
-
           assert(!cg_goto(fn, B, "Zone_t", Z, "ZoneBC_t", 1, "BC_t", BC, "end"));
           assert(!cg_user_data_write ("extra_data_for_electrode"));
           assert(!cg_goto(fn, B, "Zone_t", Z, "ZoneBC_t", 1, "BC_t", BC, "UserDefinedData_t", 2, "end"));
           assert(!cg_array_write("electrode_potential", RealDouble, 1, &DimensionVector, &potential));
+          assert(!cg_array_write("electrode_vapp", RealDouble, 1, &DimensionVector, &vapp));
+          assert(!cg_array_write("electrode_iapp", RealDouble, 1, &DimensionVector, &iapp));
         }
 
       }
@@ -1298,6 +1400,70 @@ void CGNSIO::write (const std::string& filename)
 
         case InsulatorRegion     :
         case ElectrodeRegion     :
+        {
+          std::vector<unsigned int> region_node_id;
+
+          std::multimap< std::string, std::pair<SimulationVariable, std::vector<double> > >  region_data;
+          typedef std::multimap< std::string, std::pair<SimulationVariable, std::vector<double> > > region_data_map;
+          region_data_map::iterator region_data_it;
+
+          region_data.insert( std::make_pair("Solution", std::make_pair(region->get_variable("potential", POINT_CENTER), std::vector<double>())) );
+          region_data.insert( std::make_pair("Solution", std::make_pair(region->get_variable("temperature", POINT_CENTER), std::vector<double>())) );
+
+
+          std::vector<SimulationVariable> custom_variable;
+          region->get_user_defined_variable(POINT_CENTER, SCALAR, custom_variable);
+          for(unsigned int n=0; n<custom_variable.size(); ++n)
+            region_data.insert( std::make_pair("Custom", std::make_pair(custom_variable[n], std::vector<double>())) );
+
+          SimulationRegion::const_processor_node_iterator node_it = region->on_processor_nodes_begin();
+          SimulationRegion::const_processor_node_iterator node_it_end = region->on_processor_nodes_end();
+          for(; node_it!=node_it_end; ++node_it)
+          {
+            const FVM_Node * fvm_node = (*node_it);
+            const FVM_NodeData * node_data = fvm_node->node_data();
+
+            region_node_id.push_back(fvm_node->root_node()->id());
+
+            for( region_data_it = region_data.begin(); region_data_it != region_data.end(); ++region_data_it)
+            {
+              const SimulationVariable & variable = region_data_it->second.first;
+              region_data_it->second.second.push_back( node_data->data<double>( variable.variable_index ) / variable.variable_unit );
+            }
+          }
+
+          // synchronization data with other processor
+          Parallel::gather(0, region_node_id);
+          for( region_data_it = region_data.begin(); region_data_it != region_data.end(); ++region_data_it)
+            Parallel::gather(0, region_data_it->second.second);
+
+          if( Genius::processor_id() == 0)
+          {
+            std::vector<unsigned int> region_node_local_id;
+            for(unsigned int n=0; n<region_node_id.size(); ++n)
+              region_node_local_id.push_back( node_id_to_region_node_id[region_node_id[n]]-1 );
+
+            for( region_data_it = region_data.begin(); region_data_it != region_data.end(); )
+            {
+              const std::string & sol =  region_data_it->first;
+              genius_assert(!cg_sol_write  (fn, B, Z, sol.c_str(), Vertex, &SOL));
+              std::string path = std::string("/") + base_name + "/" + zone_name + "/" + sol;
+              std::pair <region_data_map::iterator, region_data_map::iterator>  bounds = region_data.equal_range(sol);
+              while (bounds.first != bounds.second)
+              {
+                const std::string & variable =  bounds.first->second.first.variable_name;
+                std::string variable_unit = variable + ".unit";
+                std::string variable_unit_string = bounds.first->second.first.variable_unit_string;
+                genius_assert(!cg_field_write(fn, B, Z, SOL, RealDouble, variable.c_str(),  &(_sort_it(bounds.first->second.second, region_node_local_id)[0]),   &F));
+                genius_assert(!cg_gopath(fn, path.c_str()));
+                genius_assert(!cg_descriptor_write(variable_unit.c_str(), variable_unit_string.c_str()));
+                ++bounds.first;
+              }
+              region_data_it = bounds.second;
+            }
+          }
+          break;
+        }
         case MetalRegion         :
         {
           std::vector<unsigned int> region_node_id;
@@ -1307,6 +1473,7 @@ void CGNSIO::write (const std::string& filename)
           region_data_map::iterator region_data_it;
 
           region_data.insert( std::make_pair("Solution", std::make_pair(region->get_variable("potential", POINT_CENTER), std::vector<double>())) );
+          region_data.insert( std::make_pair("Solution", std::make_pair(region->get_variable("electron", POINT_CENTER), std::vector<double>())) );
           region_data.insert( std::make_pair("Solution", std::make_pair(region->get_variable("temperature", POINT_CENTER), std::vector<double>())) );
 
 

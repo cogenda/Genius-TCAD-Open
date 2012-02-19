@@ -103,6 +103,11 @@ public:
   void reinit_region_after_import();
 
   /**
+   * post process after init_region / reinit_region_after_import
+   */
+  void init_region_post_process();
+
+  /**
    * @brief build boundary condition array
    */
   void build_boundary_conditions();
@@ -111,6 +116,11 @@ public:
    * @return the number of region (subdomain)
    */
   unsigned int n_regions() const;
+
+  /**
+   * @return the cluster of region (subdomain) for partition
+   */
+  std::vector< std::vector<unsigned int > > build_subdomain_cluster();
 
   /**
    * the enveriment temperature
@@ -150,27 +160,27 @@ public:
 
 
   /**
-   * @brief the main saving mechanism, to cgns file
+   * @brief save complete system information to cgns file, which can be loaded again
    */
   void export_cgns(const std::string& filename) const;
 
   /**
-   * @brief the main saving mechanism, to df-ise file
+   * @brief save mesh and doping to df-ise file
    */
   void export_ise(const std::string& filename) const;
 
   /**
-   * @brief the main saving mechanism, to vtk file
+   * @brief export solution to vtk file
    */
   void export_vtk(const std::string& filename, bool ascii) const;
 
   /**
-   * @brief write geometry info to gdml file
+   * @brief write geometry and material info to gdml file
    */
   void export_gdml_surface(const std::string& filename) const;
 
   /**
-   * @brief write geometry info to gdml file
+   * @brief write geometry and material info to gdml file
    */
   void export_gdml_body(const std::string& filename) const;
 
@@ -178,6 +188,11 @@ public:
    * @brief save node location to file
    */
   void export_node_location(const std::string& filename, const PetscScalar unit, const bool number=true) const;
+
+  /**
+   * @return true if the system is empty
+   */
+  bool empty() const { return _simulation_regions.empty(); }
 
   /**
    * @return the pointer to nth region
@@ -237,14 +252,14 @@ public:
   /**
    * @return pointer to ElectricalSource
    */
-  ElectricalSource  * get_sources()
-  { return _sources;}
+  ElectricalSource  * get_electrical_source()
+  { return _electrical_source;}
 
   /**
    * @return const pointer to ElectricalSource
    */
-  const ElectricalSource  * get_sources() const
-  { return _sources;}
+  const ElectricalSource  * get_electrical_source() const
+  { return _electrical_source;}
 
   /**
    * @return pointer to FieldSource
@@ -287,10 +302,20 @@ public:
   void sync_print_info () const;
 
   /**
+   * @return flag indicate that we have global z.width parameter
+   */
+  bool global_z_width() const { return _global_z_width; }
+
+  /**
    * @return the dimension in Z direction.
    * @note only used for 2D mesh which lies on xy plane
    */
   double z_width() const;
+
+  /**
+   * @return ture when system is self consistent (semiconductor region satisfy poisson's equation)
+   */
+  bool self_consistent() const;
 
   /**
    * compute the error for each
@@ -336,6 +361,11 @@ private:
   MeshBase & _mesh;
 
   /**
+   * flag for cylindrically symmetric mesh
+   */
+  bool _cylindrical_mesh;
+
+  /**
    * the array for all the simulation region.
    * each region contains mesh and mesh data
    */
@@ -345,6 +375,11 @@ private:
    * create resistive metal regions instead of electrode region
    */
   bool _resistive_metal_mode;
+
+  /**
+   * partition resistive metal region into same block
+   */
+  bool _block_partition;
 
   /**
    * data structure for fvm solver
@@ -358,9 +393,9 @@ private:
   BoundaryConditionCollector    * _bcs;
 
   /**
-   * all the predefined electrical sources
+   * all the predefined electrical source
    */
-  ElectricalSource              * _sources;
+  ElectricalSource              * _electrical_source;
 
   /**
    * Field source: light or particle source
@@ -378,6 +413,11 @@ private:
    * mixed simulation with spice
    */
   SPICE_CKT                     * _spice_ckt;
+
+  /**
+   * flag to indicate that we have a global z.width
+   */
+  bool    _global_z_width;
 
   /**
    * when 2D mesh is used, we may need the dimension in z direction

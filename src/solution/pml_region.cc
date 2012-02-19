@@ -41,8 +41,8 @@ using PhysicalUnit::mu0;
 
 
 
-PMLSimulationRegion::PMLSimulationRegion(const std::string &name, const std::string &material, const PetscScalar T)
-:SimulationRegion(name, material, T)
+PMLSimulationRegion::PMLSimulationRegion(const std::string &name, const std::string &material, const double T, const double z)
+:SimulationRegion(name, material, T, z)
 {
   this->set_region_variables();
   mt = new Material::MaterialPML(this);
@@ -54,7 +54,7 @@ void PMLSimulationRegion::insert_cell (const Elem * e)
     // not a local element
   if( !e->on_local() ) return;
 
-    // insert into region element vector
+  // insert into region element vector
   _region_cell.push_back(e);
   _region_cell_data.push_back( new FVM_PML_CellData(&_cell_data_storage, _region_cell_variables) );
 }

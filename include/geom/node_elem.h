@@ -122,6 +122,12 @@ class NodeElem : public Elem
   { genius_error(); return 0; }
 
   /**
+   * The \p Elem::nodes_on_side() member makes no sense for nodes.
+   */
+  void nodes_on_side (const unsigned int i, std::vector<unsigned int> & nodes ) const
+  { genius_error(); return; }
+
+  /**
    * The \p Elem::side() member makes no sense for nodes.
    */
   AutoPtr<DofObject> side (const unsigned int) const

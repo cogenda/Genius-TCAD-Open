@@ -27,7 +27,7 @@
 #include <string>
 
 #include "point.h"
-#include "key.h"
+#include "parser_card.h"
 
 class SimulationSystem;
 
@@ -118,9 +118,9 @@ private:
   /**
    * map boundary label to boundary id
    */
-  std::map<const std::string, short int> bd_map;
+  std::map<std::string, std::pair<short int, bool> > bd_map;
 
-  typedef std::map<const std::string, short int>::iterator Bd_It;
+  typedef std::map<std::string, std::pair<short int, bool> >::iterator Bd_It;
 
 
   typedef std::map<unsigned int, double> variable_map;

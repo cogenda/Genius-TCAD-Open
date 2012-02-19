@@ -78,6 +78,7 @@ void Interpolation2D_NN::broadcast(unsigned int root)
     Parallel::broadcast(data.x, root);
     Parallel::broadcast(data.y, root);
     Parallel::broadcast(data.f, root);
+    data.n = data.f.size();
   }
 }
 

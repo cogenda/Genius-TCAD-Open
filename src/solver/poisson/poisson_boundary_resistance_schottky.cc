@@ -83,7 +83,7 @@ void IF_Metal_SchottkyBC::Poissin_Fill_Value(Vec , Vec L)
 /*---------------------------------------------------------------------
  * do pre-process to function for poisson solver
  */
-void IF_Metal_SchottkyBC::Poissin_Function_Preprocess(Vec f, std::vector<PetscInt> &src_row,
+void IF_Metal_SchottkyBC::Poissin_Function_Preprocess(PetscScalar *, Vec f, std::vector<PetscInt> &src_row,
     std::vector<PetscInt> &dst_row, std::vector<PetscInt> &clear_row)
 {
   BoundaryCondition::const_node_iterator node_it = nodes_begin();
@@ -248,7 +248,7 @@ void IF_Metal_SchottkyBC::Poissin_Jacobian_Reserve ( Mat *jac, InsertMode &add_v
 /*---------------------------------------------------------------------
  * do pre-process to jacobian matrix for poisson solver
  */
-void IF_Metal_SchottkyBC::Poissin_Jacobian_Preprocess(Mat *jac, std::vector<PetscInt> &src_row,
+void IF_Metal_SchottkyBC::Poissin_Jacobian_Preprocess(PetscScalar *, Mat *jac, std::vector<PetscInt> &src_row,
     std::vector<PetscInt> &dst_row, std::vector<PetscInt> &clear_row)
 {
     BoundaryCondition::const_node_iterator node_it = nodes_begin();
@@ -402,7 +402,7 @@ void IF_Metal_SchottkyBC::Poissin_Update_Solution ( PetscScalar * lxx )
 
       // intrinsic Fermi potential.
       PetscScalar V_i = V
-          + semiconductor_node_data->affinity()
+          + semiconductor_node_data->affinity()/e
           + semiconductor_node_data->Eg() / ( 2*e )
           + kb*T*log ( semiconductor_node_data->Nc() /semiconductor_node_data->Nv() ) / ( 2*e );
       // electron density

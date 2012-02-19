@@ -28,7 +28,7 @@
 #include <stack>
 #include <list>
 
-#include "key.h"
+#include "parser_card.h"
 #include "pattern.h"
 
 
@@ -129,20 +129,6 @@ namespace Parser
     void      delete_current_card()
     { it_card = _card_list.erase(it_card); }
 
-    /**
-     * output card information
-     */
-    void output()
-    {
-
-      std::list<Card>::iterator it;
-
-      for( it=_card_list.begin(); it!=_card_list.end(); it++ )
-      {
-        it->output();
-        std::cout<<std::endl;
-      }
-    }
 
     /**
      * @return true if card with card_name can be find, otherwise false
@@ -169,7 +155,7 @@ namespace Parser
     /**
      * when parser finished, the input cards are stored here as map for some special purpose
      */
-    std::multimap<const std::string, Card> _card_map;
+    std::multimap<std::string, Card> _card_map;
 
     /**
      * the const reference to syntax pattern structure
@@ -179,22 +165,22 @@ namespace Parser
     /**
      * map for bool variable defined in input file
      */
-    std::map<const std::string, bool>        bool_var;
+    std::map<std::string, bool>        bool_var;
 
     /**
      * map for int variable defined in input file
      */
-    std::map<const std::string, int>         int_var;
+    std::map<std::string, int>         int_var;
 
     /**
      * map for double variable defined in input file
      */
-    std::map<const std::string, double>      real_var;
+    std::map<std::string, double>      real_var;
 
     /**
      * map for string variable defined in input file
      */
-    std::map<const std::string, std::string> string_var;
+    std::map<std::string, std::string> string_var;
 
 
     /**

@@ -25,12 +25,12 @@
 #include <cmath>
 #include <iomanip>
 
-#include "genius_env.h"
 #include "genius_common.h"
+#include "genius_env.h"
 #include "log.h"
 #include "material_define.h"
 
-#ifdef CYGWIN
+#ifdef WINDOWS
   #include <Windows.h>
   #undef max
   #undef min
@@ -59,7 +59,7 @@ namespace Material
 
   MaterialBase::~MaterialBase()
   {
-#ifdef CYGWIN
+#ifdef WINDOWS
     FreeLibrary(dll_file);
 #else
     if ( dll_file )
@@ -78,13 +78,13 @@ namespace Material
 
   void MaterialBase::load_material( const std::string & _material )
   {
-#ifdef CYGWIN
+#ifdef WINDOWS
     std::string filename =  Genius::genius_dir() + "\\lib\\lib" + _material + ".dll";
 #else
     std::string filename =  Genius::genius_dir() + "/lib/lib" + _material + ".so";
 #endif
 
-#ifdef CYGWIN
+#ifdef WINDOWS
     dll_file = LoadLibrary(filename.c_str());
     if(dll_file==NULL)
     {
@@ -93,7 +93,11 @@ namespace Material
       genius_error();
     }
 #else
+#ifdef RTLD_DEEPBIND
+    dll_file = dlopen(filename.c_str(), RTLD_LAZY|RTLD_DEEPBIND);
+#else
     dll_file = dlopen(filename.c_str(), RTLD_LAZY);
+#endif
     if(dll_file==NULL)
     {
       MESSAGE<<"Open material file lib"<< _material <<".so error." << '\n'; RECORD();
@@ -1177,7 +1181,7 @@ namespace Material
   }
 
   //-------------------------------------------------------------------------------------------------------
-  std::map<const std::string, PMI_Type> PMI_name_to_PMI_type;
+  std::map<std::string, PMI_Type> PMI_name_to_PMI_type;
 
   static void init_PMI_name_to_PMI_type()
   {

@@ -180,9 +180,9 @@ void SemiconductorSimulationRegion::HALL_Function(const VectorValue<double> & B,
     // evaluate E field parallel and vertical to current flow
     if(highfield_mob)
     {
-      for(unsigned int nd=0; nd<(*it)->n_nodes(); ++nd)
+      for(unsigned int nd=0; nd<elem->n_nodes(); ++nd)
       {
-        const FVM_Node * fvm_node = (*it)->get_fvm_node(nd);
+        const FVM_Node * fvm_node = elem->get_fvm_node(nd);
         const FVM_NodeData * fvm_node_data = fvm_node->node_data();
 
         PetscScalar V;  // electrostatic potential
@@ -212,9 +212,9 @@ void SemiconductorSimulationRegion::HALL_Function(const VectorValue<double> & B,
 
 
       // compute the gradient
-      E   = - (*it)->gradient(psi_vertex);  // E = - grad(psi)
-      Jnv = - (*it)->gradient(phin_vertex); // we only need the direction of Jnv, here Jnv = - gradient of Fn
-      Jpv = - (*it)->gradient(phip_vertex); // Jpv = - gradient of Fp
+      E   = - elem->gradient(psi_vertex);  // E = - grad(psi)
+      Jnv = - elem->gradient(phin_vertex); // we only need the direction of Jnv, here Jnv = - gradient of Fn
+      Jpv = - elem->gradient(phip_vertex); // Jpv = - gradient of Fp
 
 
       // for elem on insulator interface, we will do special treatment to electrical field
@@ -223,7 +223,7 @@ void SemiconductorSimulationRegion::HALL_Function(const VectorValue<double> & B,
         // get all the sides on insulator interface
         std::vector<unsigned int> sides;
         std::vector<SimulationRegion *> regions;
-        elem_on_insulator_interface(*it, sides, regions);
+        elem_on_insulator_interface(elem, sides, regions);
 
         VectorValue<PetscScalar> E_insul(0,0,0);
         unsigned int side_insul;
@@ -231,7 +231,7 @@ void SemiconductorSimulationRegion::HALL_Function(const VectorValue<double> & B,
         // find the neighbor element which has max E field
         for(unsigned int ne=0; ne<sides.size(); ++ne)
         {
-          const Elem * elem_neighbor = (*it)->neighbor(sides[ne]);
+          const Elem * elem_neighbor = elem->neighbor(sides[ne]);
           std::vector<PetscScalar> psi_vertex_neighbor;
           for(unsigned int nd=0; nd<elem_neighbor->n_nodes(); ++nd)
           {
@@ -247,7 +247,7 @@ void SemiconductorSimulationRegion::HALL_Function(const VectorValue<double> & B,
           }
         }
         // interface normal, point to semiconductor side
-        Point norm = - (*it)->outside_unit_normal(side_insul);
+        Point norm = - elem->outside_unit_normal(side_insul);
         // effective electric fields in vertical
         PetscScalar ZETAN = mt->mob->ZETAN();
         PetscScalar ETAN  = mt->mob->ETAN();
@@ -302,32 +302,33 @@ void SemiconductorSimulationRegion::HALL_Function(const VectorValue<double> & B,
 
     // process \nabla psi and S-G current along the cell's edge
     // search for all the edges this cell own
-    for(unsigned int ne=0; ne<(*it)->n_edges(); ++ne )
+    for(unsigned int ne=0; ne<elem->n_edges(); ++ne )
     {
-      AutoPtr<Elem> edge = (*it)->build_edge (ne);
+      AutoPtr<Elem> edge = elem->build_edge (ne);
       genius_assert(edge->type()==EDGE2);
 
       std::vector<unsigned int > edge_nodes;
-      (*it)->nodes_on_edge(ne, edge_nodes);
+      elem->nodes_on_edge(ne, edge_nodes);
 
       double length = edge->volume();                           // the length of this edge
       VectorValue<double> dir = (edge->point(1) - edge->point(0)).unit(); // unit direction of the edge
-      double partial_area = (*it)->partial_area_with_edge(ne);  // partial area associated with this edge
-      double partial_volume = (*it)->partial_volume_with_edge(ne); // partial volume associated with this edge
 
+      const FVM_Node * fvm_n1 = elem->get_fvm_node(edge_nodes[0]);   assert(fvm_n1);  // fvm_node of node1
+      const FVM_Node * fvm_n2 = elem->get_fvm_node(edge_nodes[1]);   assert(fvm_n2);  // fvm_node of node2
+
+      const FVM_NodeData * n1_data = fvm_n1->node_data();  assert(n1_data);            // fvm_node_data of node1
+      const FVM_NodeData * n2_data = fvm_n2->node_data();  assert(n2_data);            // fvm_node_data of node2
+
+      double partial_area = elem->partial_area_with_edge(ne);        // partial area associated with this edge
+      double partial_volume = elem->partial_volume_with_edge(ne);    // partial volume associated with this edge
       double truncated_partial_area =  partial_area;
       double truncated_partial_volume =  partial_volume;
       if(truncation)
       {
-        truncated_partial_area =  elem->partial_area_with_edge_truncated(ne);
+        // use truncated partial area to avoid negative area due to bad mesh elem
+        truncated_partial_area =  this->truncated_partial_area(elem, ne);
         truncated_partial_volume =  elem->partial_volume_with_edge_truncated(ne);
       }
-
-      const FVM_Node * fvm_n1 = (*it)->get_fvm_node(edge_nodes[0]);   assert(fvm_n1);  // fvm_node of node1
-      const FVM_Node * fvm_n2 = (*it)->get_fvm_node(edge_nodes[1]);   assert(fvm_n2);  // fvm_node of node2
-
-      const FVM_NodeData * n1_data = fvm_n1->node_data();  assert(n1_data);            // fvm_node_data of node1
-      const FVM_NodeData * n2_data = fvm_n2->node_data();  assert(n2_data);            // fvm_node_data of node2
 
       unsigned int n1_local_offset = fvm_n1->local_offset();
       unsigned int n2_local_offset = fvm_n2->local_offset();
@@ -476,7 +477,7 @@ void SemiconductorSimulationRegion::HALL_Function(const VectorValue<double> & B,
 
         if (get_advanced_model()->BandBandTunneling && SolverSpecify::Type!=SolverSpecify::EQUILIBRIUM)
         {
-          VectorValue<PetscScalar> E   = - (*it)->gradient(psi_vertex);  // E = - grad(psi)
+          VectorValue<PetscScalar> E   = - elem->gradient(psi_vertex);  // E = - grad(psi)
           PetscScalar GBTBT1 = mt->band->BB_Tunneling(T, E.size());
           PetscScalar GBTBT2 = mt->band->BB_Tunneling(T, E.size());
 
@@ -510,13 +511,13 @@ void SemiconductorSimulationRegion::HALL_Function(const VectorValue<double> & B,
 
           Eg = 0.5* ( Eg1 + Eg2 );
 
-          VectorValue<PetscScalar> E   = - (*it)->gradient(psi_vertex);  // E = - grad(psi)
-          VectorValue<PetscScalar> Jnv = - (*it)->gradient(phin_vertex); // we only need the direction of Jnv, here Jnv = - gradient of Fn
-          VectorValue<PetscScalar> Jpv = - (*it)->gradient(phip_vertex); // Jpv = - gradient of Fpa
+          VectorValue<PetscScalar> E   = - elem->gradient(psi_vertex);  // E = - grad(psi)
+          VectorValue<PetscScalar> Jnv = - elem->gradient(phin_vertex); // we only need the direction of Jnv, here Jnv = - gradient of Fn
+          VectorValue<PetscScalar> Jpv = - elem->gradient(phip_vertex); // Jpv = - gradient of Fpa
           Jnv.add_scaled(VectorValue<PetscScalar>(0, 1e-20, 0), 1.0);
           Jpv.add_scaled(VectorValue<PetscScalar>(0, 1e-20, 0), 1.0);
 
-          VectorValue<PetscScalar> ev = ((*it)->point(edge_nodes[1]) - (*it)->point(edge_nodes[0]));
+          VectorValue<PetscScalar> ev = (elem->point(edge_nodes[1]) - elem->point(edge_nodes[0]));
           PetscScalar riin1 = 0.5 + 0.5* (ev.unit()).dot(Jnv.unit());
           PetscScalar riin2 = 1.0 - riin1;
           PetscScalar riip2 = 0.5 + 0.5* (ev.unit()).dot(Jpv.unit());
@@ -579,12 +580,12 @@ void SemiconductorSimulationRegion::HALL_Function(const VectorValue<double> & B,
      */
 
     // the average cell electron/hole current density vector
-    VectorValue<PetscScalar> vn_cell =  (*it)->reconstruct_vector(Vn_edge);
-    VectorValue<PetscScalar> vp_cell =  (*it)->reconstruct_vector(Vp_edge);
+    VectorValue<PetscScalar> vn_cell =  elem->reconstruct_vector(Vn_edge);
+    VectorValue<PetscScalar> vp_cell =  elem->reconstruct_vector(Vp_edge);
 
 
-    PetscScalar mun_cell = std::accumulate(mun_edge.begin(), mun_edge.end(), 0.0 ) / (*it)->n_edges();
-    PetscScalar mup_cell = std::accumulate(mup_edge.begin(), mup_edge.end(), 0.0 ) / (*it)->n_edges();
+    PetscScalar mun_cell = std::accumulate(mun_edge.begin(), mun_edge.end(), 0.0 ) / elem->n_edges();
+    PetscScalar mup_cell = std::accumulate(mup_edge.begin(), mup_edge.end(), 0.0 ) / elem->n_edges();
 
     // magnetic field deflection matrix
     TensorValue<double> Mn,Mp;
@@ -597,24 +598,24 @@ void SemiconductorSimulationRegion::HALL_Function(const VectorValue<double> & B,
 
 
 
-    for(unsigned int ne=0; ne<(*it)->n_edges(); ++ne )
+    for(unsigned int ne=0; ne<elem->n_edges(); ++ne )
     {
-      AutoPtr<Elem> edge = (*it)->build_edge (ne);
+      AutoPtr<Elem> edge = elem->build_edge (ne);
       VectorValue<double> dir = (edge->point(1) - edge->point(0)).unit(); // unit direction of the edge
 
       double length = edge->volume();
-      double partial_area = (*it)->partial_area_with_edge(ne);  // partial area associated with this edge
+      double partial_area = elem->partial_area_with_edge(ne);  // partial area associated with this edge
       double truncated_partial_area =  partial_area;
       if(truncation)
       {
-        truncated_partial_area =  elem->partial_area_with_edge_truncated(ne);
+        truncated_partial_area =  this->truncated_partial_area(elem, ne);
       }
 
       std::vector<unsigned int > edge_nodes;
-      (*it)->nodes_on_edge(ne, edge_nodes);
+      elem->nodes_on_edge(ne, edge_nodes);
 
-      FVM_Node * fvm_n1 = (*it)->get_fvm_node(edge_nodes[0]);   // fvm_node of node1
-      FVM_Node * fvm_n2 = (*it)->get_fvm_node(edge_nodes[1]);   // fvm_node of node2
+      FVM_Node * fvm_n1 = elem->get_fvm_node(edge_nodes[0]);   // fvm_node of node1
+      FVM_Node * fvm_n2 = elem->get_fvm_node(edge_nodes[1]);   // fvm_node of node2
 
       FVM_NodeData * n1_data = fvm_n1->node_data();  assert(n1_data);            // fvm_node_data of node1
       FVM_NodeData * n2_data = fvm_n2->node_data();  assert(n2_data);            // fvm_node_data of node2
@@ -672,8 +673,8 @@ void SemiconductorSimulationRegion::HALL_Function(const VectorValue<double> & B,
     }
 
     // the average cell electron/hole current density vector
-    elem_data->Jn() = - (*it)->reconstruct_vector(Jn_edge);
-    elem_data->Jp() =   (*it)->reconstruct_vector(Jp_edge);
+    elem_data->Jn() = - elem->reconstruct_vector(Jn_edge);
+    elem_data->Jp() =   elem->reconstruct_vector(Jp_edge);
 
   }// end of scan all the cell
 
@@ -766,16 +767,16 @@ void SemiconductorSimulationRegion::HALL_Jacobian(const VectorValue<double> & B,
         (SolverSpecify::VoronoiTruncation == SolverSpecify::VoronoiTruncationBoundary && boundary_elem) ;
 
     //the indepedent variable number, 3*n_nodes
-    adtl::AutoDScalar::numdir = 3*(*it)->n_nodes();
+    adtl::AutoDScalar::numdir = 3*elem->n_nodes();
 
     //synchronize with material database
     mt->set_ad_num(adtl::AutoDScalar::numdir);
 
     // indicate the column position of the variables in the matrix
     std::vector<PetscInt> cell_col;
-    for(unsigned int nd=0; nd<(*it)->n_nodes(); ++nd)
+    for(unsigned int nd=0; nd<elem->n_nodes(); ++nd)
     {
-      const FVM_Node * fvm_node = (*it)->get_fvm_node(nd);
+      const FVM_Node * fvm_node = elem->get_fvm_node(nd);
       cell_col.push_back( fvm_node->global_offset()+0 );
       cell_col.push_back( fvm_node->global_offset()+1 );
       cell_col.push_back( fvm_node->global_offset()+2 );
@@ -810,9 +811,9 @@ void SemiconductorSimulationRegion::HALL_Jacobian(const VectorValue<double> & B,
     // evaluate E field parallel and vertical to current flow
     if(highfield_mob)
     {
-      for(unsigned int nd=0; nd<(*it)->n_nodes(); ++nd)
+      for(unsigned int nd=0; nd<elem->n_nodes(); ++nd)
       {
-        const FVM_Node * fvm_node = (*it)->get_fvm_node(nd);
+        const FVM_Node * fvm_node = elem->get_fvm_node(nd);
         const FVM_NodeData * fvm_node_data = fvm_node->node_data();
 
         AutoDScalar V;               // electrostatic potential
@@ -841,9 +842,9 @@ void SemiconductorSimulationRegion::HALL_Jacobian(const VectorValue<double> & B,
       }
 
       // compute the gradient
-      E   = - (*it)->gradient(psi_vertex);  // E = - grad(psi)
-      Jnv = - (*it)->gradient(phin_vertex); // we only need the direction of Jnv, here Jnv = - gradient of Fn
-      Jpv = - (*it)->gradient(phip_vertex); // the same as Jnv
+      E   = - elem->gradient(psi_vertex);  // E = - grad(psi)
+      Jnv = - elem->gradient(phin_vertex); // we only need the direction of Jnv, here Jnv = - gradient of Fn
+      Jpv = - elem->gradient(phip_vertex); // the same as Jnv
 
 
       // for elem on insulator interface, we will do special treatment to electrical field
@@ -852,7 +853,7 @@ void SemiconductorSimulationRegion::HALL_Jacobian(const VectorValue<double> & B,
         // get all the sides on insulator interface
         std::vector<unsigned int> sides;
         std::vector<SimulationRegion *> regions;
-        elem_on_insulator_interface(*it, sides, regions);
+        elem_on_insulator_interface(elem, sides, regions);
 
         VectorValue<AutoDScalar> E_insul(0.0,0.0,0.0);
         const Elem * elem_insul;
@@ -862,14 +863,14 @@ void SemiconductorSimulationRegion::HALL_Jacobian(const VectorValue<double> & B,
         // find the neighbor element which has max E field
         for(unsigned int ne=0; ne<sides.size(); ++ne)
         {
-          const Elem * elem_neighbor = (*it)->neighbor(sides[ne]);
+          const Elem * elem_neighbor = elem->neighbor(sides[ne]);
 
           std::vector<AutoDScalar> psi_vertex_neighbor;
           for(unsigned int nd=0; nd<elem_neighbor->n_nodes(); ++nd)
           {
             const FVM_Node * fvm_node_neighbor = elem_neighbor->get_fvm_node(nd);
             AutoDScalar V_neighbor = x[fvm_node_neighbor->local_offset()+0];
-            V_neighbor.setADValue(3*(*it)->n_nodes()+nd, 1.0);
+            V_neighbor.setADValue(3*elem->n_nodes()+nd, 1.0);
             psi_vertex_neighbor.push_back(V_neighbor);
           }
           VectorValue<AutoDScalar> E_neighbor = - elem_neighbor->gradient(psi_vertex_neighbor);
@@ -891,7 +892,7 @@ void SemiconductorSimulationRegion::HALL_Jacobian(const VectorValue<double> & B,
         }
 
         // interface normal, point to semiconductor side
-        Point _norm = - (*it)->outside_unit_normal(side_insul);
+        Point _norm = - elem->outside_unit_normal(side_insul);
         // stupid code... we can not dot point with VectorValue<AutoDScalar> yet.
         VectorValue<AutoDScalar> norm(_norm(0), _norm(1), _norm(2));
 
@@ -949,38 +950,38 @@ void SemiconductorSimulationRegion::HALL_Jacobian(const VectorValue<double> & B,
 
     // process conservation terms: laplace operator of poisson's equation and div operator of continuation equation
     // search for all the Edge this cell own
-    for(unsigned int ne=0; ne<(*it)->n_edges(); ++ne )
+    for(unsigned int ne=0; ne<elem->n_edges(); ++ne )
     {
-      AutoPtr<Elem> edge = (*it)->build_edge (ne);
+      AutoPtr<Elem> edge = elem->build_edge (ne);
       genius_assert(edge->type()==EDGE2);
 
       std::vector<unsigned int > edge_nodes;
-      (*it)->nodes_on_edge(ne, edge_nodes);
+      elem->nodes_on_edge(ne, edge_nodes);
 
       // the length of this edge
       double length = edge->volume();
       VectorValue<double> dir = (edge->point(1) - edge->point(0)).unit(); // unit direction of the edge
-      // partial area associated with this edge
-      double partial_area = (*it)->partial_area_with_edge(ne);
-      double partial_volume = (*it)->partial_volume_with_edge(ne); // partial volume associated with this edge
-
-      double truncated_partial_area =  partial_area;
-      double truncated_partial_volume =  partial_volume;
-      if(truncation)
-      {
-        truncated_partial_area =  elem->partial_area_with_edge_truncated(ne);
-        truncated_partial_volume =  elem->partial_volume_with_edge_truncated(ne);
-      }
 
       // fvm_node of node1
-      const FVM_Node * fvm_n1 = (*it)->get_fvm_node(edge_nodes[0]);
+      const FVM_Node * fvm_n1 = elem->get_fvm_node(edge_nodes[0]);
       // fvm_node of node2
-      const FVM_Node * fvm_n2 = (*it)->get_fvm_node(edge_nodes[1]);
+      const FVM_Node * fvm_n2 = elem->get_fvm_node(edge_nodes[1]);
 
       // fvm_node_data of node1
       const FVM_NodeData * n1_data =  fvm_n1->node_data() ;
       // fvm_node_data of node2
       const FVM_NodeData * n2_data =  fvm_n2->node_data() ;
+
+      // partial area associated with this edge
+      double partial_area = elem->partial_area_with_edge(ne);        // partial area associated with this edge
+      double partial_volume = elem->partial_volume_with_edge(ne);    // partial volume associated with this edge
+      double truncated_partial_area =  partial_area;
+      double truncated_partial_volume =  partial_volume;
+      if(truncation)
+      {
+        truncated_partial_area =  this->truncated_partial_area(elem, ne);
+        truncated_partial_volume =  elem->partial_volume_with_edge_truncated(ne);
+      }
 
       unsigned int n1_local_offset = fvm_n1->local_offset();
       unsigned int n2_local_offset = fvm_n2->local_offset();
@@ -1119,7 +1120,7 @@ void SemiconductorSimulationRegion::HALL_Jacobian(const VectorValue<double> & B,
 
         if (get_advanced_model()->BandBandTunneling && SolverSpecify::Type!=SolverSpecify::EQUILIBRIUM)
         {
-          VectorValue<AutoDScalar> E   = - (*it)->gradient(psi_vertex);  // E = - grad(psi)
+          VectorValue<AutoDScalar> E   = - elem->gradient(psi_vertex);  // E = - grad(psi)
           AutoDScalar GBTBT1 = mt->band->BB_Tunneling(T, E.size());
           AutoDScalar GBTBT2 = mt->band->BB_Tunneling(T, E.size());
 
@@ -1150,13 +1151,13 @@ void SemiconductorSimulationRegion::HALL_Jacobian(const VectorValue<double> & B,
           // FIXME should use weighted carrier temperature.
           Eg = 0.5* ( Eg1 + Eg2 );
 
-          VectorValue<AutoDScalar> E   = - (*it)->gradient(psi_vertex);  // E = - grad(psi)
-          VectorValue<AutoDScalar> Jnv = - (*it)->gradient(phin_vertex); // we only need the direction of Jnv, here Jnv = - gradient of Fn
-          VectorValue<AutoDScalar> Jpv = - (*it)->gradient(phip_vertex); // Jpv = - gradient of Fpa
+          VectorValue<AutoDScalar> E   = - elem->gradient(psi_vertex);  // E = - grad(psi)
+          VectorValue<AutoDScalar> Jnv = - elem->gradient(phin_vertex); // we only need the direction of Jnv, here Jnv = - gradient of Fn
+          VectorValue<AutoDScalar> Jpv = - elem->gradient(phip_vertex); // Jpv = - gradient of Fpa
           Jnv.add_scaled(VectorValue<AutoDScalar>(0, 1e-20, 0), 1.0);
           Jpv.add_scaled(VectorValue<AutoDScalar>(0, 1e-20, 0), 1.0);
 
-          VectorValue<PetscScalar> ev0 = ((*it)->point(edge_nodes[1]) - (*it)->point(edge_nodes[0]));
+          VectorValue<PetscScalar> ev0 = (elem->point(edge_nodes[1]) - elem->point(edge_nodes[0]));
           VectorValue<AutoDScalar> ev;
           ev(0)=ev0(0); ev(1)=ev0(1); ev(2)=ev0(2);
           AutoDScalar riin1 = 0.5 + 0.5* (ev.unit()).dot(Jnv.unit());
@@ -1220,11 +1221,11 @@ void SemiconductorSimulationRegion::HALL_Jacobian(const VectorValue<double> & B,
      */
 
     // the average cell electron/hole current density vector
-    VectorValue<AutoDScalar> vn_cell =  (*it)->reconstruct_vector(Vn_edge);
-    VectorValue<AutoDScalar> vp_cell =  (*it)->reconstruct_vector(Vp_edge);
+    VectorValue<AutoDScalar> vn_cell =  elem->reconstruct_vector(Vn_edge);
+    VectorValue<AutoDScalar> vp_cell =  elem->reconstruct_vector(Vp_edge);
 
-    AutoDScalar mun_cell = std::accumulate(mun_edge.begin(), mun_edge.end(), AutoDScalar(0.0) ) / (*it)->n_edges();
-    AutoDScalar mup_cell = std::accumulate(mup_edge.begin(), mup_edge.end(), AutoDScalar(0.0) ) / (*it)->n_edges();
+    AutoDScalar mun_cell = std::accumulate(mun_edge.begin(), mun_edge.end(), AutoDScalar(0.0) ) / elem->n_edges();
+    AutoDScalar mup_cell = std::accumulate(mup_edge.begin(), mup_edge.end(), AutoDScalar(0.0) ) / elem->n_edges();
 
     // magnetic field deflection matrix
     TensorValue<AutoDScalar> Mn,Mp;
@@ -1235,26 +1236,26 @@ void SemiconductorSimulationRegion::HALL_Jacobian(const VectorValue<double> & B,
     VectorValue<AutoDScalar> Mvn = Mn*vn_cell;
     VectorValue<AutoDScalar> Mvp = Mp*vp_cell;
 
-    for(unsigned int ne=0; ne<(*it)->n_edges(); ++ne )
+    for(unsigned int ne=0; ne<elem->n_edges(); ++ne )
     {
-      AutoPtr<Elem> edge = (*it)->build_edge (ne);
+      AutoPtr<Elem> edge = elem->build_edge (ne);
       VectorValue<double> dir = (edge->point(1) - edge->point(0)).unit(); // unit direction of the edge
 
       double length = edge->volume();
-      double partial_area = (*it)->partial_area_with_edge(ne);  // partial area associated with this edge
+      double partial_area = elem->partial_area_with_edge(ne);  // partial area associated with this edge
       double truncated_partial_area =  partial_area;
       if(truncation)
       {
-        truncated_partial_area =  elem->partial_area_with_edge_truncated(ne);
+        truncated_partial_area =  this->truncated_partial_area(elem, ne);
       }
 
       std::vector<unsigned int > edge_nodes;
-      (*it)->nodes_on_edge(ne, edge_nodes);
+      elem->nodes_on_edge(ne, edge_nodes);
 
       // fvm_node of node1
-      const FVM_Node * fvm_n1 = (*it)->get_fvm_node(edge_nodes[0]);
+      const FVM_Node * fvm_n1 = elem->get_fvm_node(edge_nodes[0]);
       // fvm_node of node2
-      const FVM_Node * fvm_n2 = (*it)->get_fvm_node(edge_nodes[1]);
+      const FVM_Node * fvm_n2 = elem->get_fvm_node(edge_nodes[1]);
 
       // fvm_node_data of node1
       const FVM_NodeData * n1_data =  fvm_n1->node_data() ;

@@ -72,6 +72,18 @@ public:
   {return _psi;}
 
   /**
+   * @return the current flow of this boundary.
+   */
+  virtual PetscScalar current() const
+  {return _current_flow;}
+
+  /**
+   * @return writable reference to current flow of this boundary
+   */
+  virtual PetscScalar & current()
+  { return _current_flow;}
+
+  /**
    * @return false
    */
   virtual bool is_electrode()  const
@@ -81,7 +93,7 @@ public:
    * @return true iff this boundary has a current flow
    */
   virtual bool has_current_flow() const
-  { return false; }
+  { return true; }
 
   /**
    * @return the string which indicates the boundary condition
@@ -95,6 +107,12 @@ private:
    */
   PetscScalar      _psi;
 
+
+  /**
+   * current flow in/out ( HotCarrierInjection, FNTunneling, etc )
+   */
+  PetscScalar   _current_flow;
+
 public:
 
   //////////////////////////////////////////////////////////////////////////////////////////////
@@ -104,7 +122,7 @@ public:
   /**
    * preprocess Jacobian function for poisson solver
    */
-  virtual void Poissin_Function_Preprocess(Vec, std::vector<PetscInt>&, std::vector<PetscInt>&, std::vector<PetscInt>&);
+  virtual void Poissin_Function_Preprocess(PetscScalar *, Vec, std::vector<PetscInt>&, std::vector<PetscInt>&, std::vector<PetscInt>&);
 
   /**
    * build function and its jacobian for poisson solver, nothing to do
@@ -119,7 +137,7 @@ public:
   /**
    * preprocess Jacobian Matrix for poisson solver
    */
-  virtual void Poissin_Jacobian_Preprocess(Mat *, std::vector<PetscInt>&, std::vector<PetscInt>&, std::vector<PetscInt>&);
+  virtual void Poissin_Jacobian_Preprocess(PetscScalar *, Mat *, std::vector<PetscInt>&, std::vector<PetscInt>&, std::vector<PetscInt>&);
 
   /**
    * build function and its jacobian for poisson solver, nothing to do
@@ -140,7 +158,7 @@ public:
   /**
    * preprocess function for level 1 DDM solver
    */
-  virtual void DDM1_Function_Preprocess(Vec, std::vector<PetscInt>&, std::vector<PetscInt>&, std::vector<PetscInt>&);
+  virtual void DDM1_Function_Preprocess(PetscScalar *, Vec, std::vector<PetscInt>&, std::vector<PetscInt>&, std::vector<PetscInt>&);
 
   /**
    * build function and its jacobian for DDML1 solver
@@ -155,7 +173,7 @@ public:
   /**
    * preprocess Jacobian Matrix of level 1 DDM equation.
    */
-  virtual void DDM1_Jacobian_Preprocess(Mat *, std::vector<PetscInt>&, std::vector<PetscInt>&, std::vector<PetscInt>&);
+  virtual void DDM1_Jacobian_Preprocess(PetscScalar *, Mat *, std::vector<PetscInt>&, std::vector<PetscInt>&, std::vector<PetscInt>&);
 
   /**
    * build function and its jacobian for DDML1 solver
@@ -167,9 +185,24 @@ public:
    */
   virtual void DDM1_Update_Solution(PetscScalar *);
 
+  /**
+   * function for pre process of level 1 DDM equation.
+   */
+  virtual void DDM1_Pre_Process();
+
   //////////////////////////////////////////////////////////////////////////////////
   //----------------Function and Jacobian evaluate for L2 DDM---------------------//
   //////////////////////////////////////////////////////////////////////////////////
+
+  /**
+   * preprocess function for level 2 DDM solver
+   */
+  virtual void DDM2_Function_Preprocess(PetscScalar * ,Vec, std::vector<PetscInt>&, std::vector<PetscInt>&, std::vector<PetscInt>&);
+
+  /**
+   * build function and its jacobian for DDML2 solver
+   */
+  virtual void DDM2_Function(PetscScalar * , Vec , InsertMode &);
 
   /**
    * reserve none zero pattern in petsc matrix.
@@ -177,9 +210,9 @@ public:
   virtual void DDM2_Jacobian_Reserve(Mat * , InsertMode &);
 
   /**
-   * build function and its jacobian for DDML2 solver
+   * preprocess Jacobian Matrix of level 2 DDM equation.
    */
-  virtual void DDM2_Function(PetscScalar * , Vec , InsertMode &);
+  virtual void DDM2_Jacobian_Preprocess(PetscScalar *,Mat *, std::vector<PetscInt>&, std::vector<PetscInt>&, std::vector<PetscInt>&);
 
   /**
    * build function and its jacobian for DDML2 solver
@@ -190,6 +223,11 @@ public:
    * update solution data of DDML2 solver.
    */
   virtual void DDM2_Update_Solution(PetscScalar *);
+
+  /**
+   * function for pre process of level 2 DDM equation.
+   */
+  virtual void DDM2_Pre_Process();
 
   //////////////////////////////////////////////////////////////////////////////////
   //----------------Function and Jacobian evaluate for EBM   ---------------------//

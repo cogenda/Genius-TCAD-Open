@@ -402,22 +402,54 @@ void HallSolver::projection_positive_density_check(Vec x, Vec xo)
 }
 
 
+/*------------------------------------------------------------------
+ * test if BDF2 can be used for next time step
+ */
+bool HallSolver::BDF2_positive_defined() const
+{
+  const double r = SolverSpecify::dt_last/(SolverSpecify::dt_last + SolverSpecify::dt);
+  const double a = 1.0/(r*(1-r));
+  const double b = (1-r)/r;
+
+  unsigned int failure_count=0;
+  for(unsigned int n=0; n<_system.n_regions(); n++)
+  {
+    const SimulationRegion * region = _system.region(n);
+    if ( region->type() == SemiconductorRegion)
+    {
+      SimulationRegion::const_processor_node_iterator it = region->on_processor_nodes_begin();
+      SimulationRegion::const_processor_node_iterator it_end = region->on_processor_nodes_end();
+      for(; it!=it_end; ++it)
+      {
+        const FVM_Node * fvm_node = *it;
+        const FVM_NodeData * node_data = fvm_node->node_data();
+
+        if(a*node_data->n() < b*node_data->n_last() ) failure_count++;
+        if(a*node_data->p() < b*node_data->p_last() ) failure_count++;
+      }
+    }
+  }
+
+  Parallel::sum(failure_count);
+  return failure_count != 0;
+}
+
 
 /*------------------------------------------------------------------
  * evaluate local truncation error
  */
-PetscScalar HallSolver::LTE_norm()
+PetscReal HallSolver::LTE_norm()
 {
 
   // time steps
-  PetscScalar hn  = SolverSpecify::dt;
-  PetscScalar hn1 = SolverSpecify::dt_last;
-  PetscScalar hn2 = SolverSpecify::dt_last_last;
+  PetscReal hn  = SolverSpecify::dt;
+  PetscReal hn1 = SolverSpecify::dt_last;
+  PetscReal hn2 = SolverSpecify::dt_last_last;
 
   // relative error
-  PetscScalar eps_r = SolverSpecify::TS_rtol;
+  PetscReal eps_r = SolverSpecify::TS_rtol;
   // abs error
-  PetscScalar eps_a = SolverSpecify::TS_atol;
+  PetscReal eps_a = SolverSpecify::TS_atol;
 
   VecZeroEntries(xp);
   VecZeroEntries(LTE);
@@ -432,19 +464,29 @@ PetscScalar HallSolver::LTE_norm()
   }
   else if(SolverSpecify::TS_type == SolverSpecify::BDF2)
   {
-    PetscScalar cn  = 1+hn*(hn+2*hn1+hn2)/(hn1*(hn1+hn2));
-    PetscScalar cn1 = -hn*(hn+hn1+hn2)/(hn1*hn2);
-    PetscScalar cn2 = hn*(hn+hn1)/(hn2*(hn1+hn2));
+    if(SolverSpecify::BDF2_LowerOrder)
+    {
+      VecAXPY(xp, 1+hn/hn1, x_n);
+      VecAXPY(xp, -hn/hn1, x_n1);
+      VecAXPY(LTE, hn/(hn+hn1), x);
+      VecAXPY(LTE, -hn/(hn+hn1), xp);
+    }
+    else
+    {
+      PetscScalar cn  = 1+hn*(hn+2*hn1+hn2)/(hn1*(hn1+hn2));
+      PetscScalar cn1 = -hn*(hn+hn1+hn2)/(hn1*hn2);
+      PetscScalar cn2 = hn*(hn+hn1)/(hn2*(hn1+hn2));
 
-    VecAXPY(xp, cn,  x_n);
-    VecAXPY(xp, cn1, x_n1);
-    VecAXPY(xp, cn2, x_n2);
-    VecAXPY(LTE, hn/(hn+hn1+hn2),  x);
-    VecAXPY(LTE, -hn/(hn+hn1+hn2), xp);
+      VecAXPY(xp, cn,  x_n);
+      VecAXPY(xp, cn1, x_n1);
+      VecAXPY(xp, cn2, x_n2);
+      VecAXPY(LTE, hn/(hn+hn1+hn2),  x);
+      VecAXPY(LTE, -hn/(hn+hn1+hn2), xp);
+    }
   }
 
   int N=0;
-  PetscScalar r;
+  PetscReal r;
 
 
   // with LTE vector and relative & abs error, we get the error estimate here
@@ -736,7 +778,7 @@ void HallSolver::build_petsc_sens_residual(Vec x, Vec r)
   for(unsigned int b=0; b<_system.get_bcs()->n_bcs(); b++)
   {
     BoundaryCondition * bc = _system.get_bcs()->get_bc(b);
-    bc->DDM1_Function_Preprocess(r, src_row, dst_row, clear_row);
+    bc->DDM1_Function_Preprocess(lxx, r, src_row, dst_row, clear_row);
   }
   //add source rows to destination rows, and clear rows
   PetscUtils::VecAddClearRow(r, src_row, dst_row, clear_row);
@@ -761,19 +803,7 @@ void HallSolver::build_petsc_sens_residual(Vec x, Vec r)
   VecAssemblyEnd(r);
 
   // scale the function vec
-  PetscScalar *ff,*scale;
-  // get function array and scale array.
-  VecGetArray(r, &ff);
-  // L is the scaling vector, the Jacobian evaluate function may dynamically update it.
-  VecGetArray(L, &scale);
-
-  // scale it!
-  for(unsigned int n=0; n<n_local_dofs; n++)
-    ff[n] *= scale[n];
-
-  // restore back
-  VecRestoreArray(r, &ff);
-  VecRestoreArray(L, &scale);
+  VecPointwiseMult(r, r, L);
 
   STOP_LOG("DDM1Solver_Residual()", "HallSolver");
 
@@ -862,7 +892,7 @@ void HallSolver::build_petsc_sens_jacobian(Vec x, Mat *, Mat *)
   for(unsigned int b=0; b<_system.get_bcs()->n_bcs(); b++)
   {
     BoundaryCondition * bc = _system.get_bcs()->get_bc(b);
-    bc->DDM1_Jacobian_Preprocess(&J, src_row, dst_row, clear_row);
+    bc->DDM1_Jacobian_Preprocess(lxx, &J, src_row, dst_row, clear_row);
   }
   //add source rows to destination rows
   PetscUtils::MatAddRowToRow(J, src_row, dst_row);

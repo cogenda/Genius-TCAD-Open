@@ -62,12 +62,19 @@ CGNSHook::CGNSHook ( SolverBase & solver, const std::string & name, void * param
   system.export_cgns ( cgns_filename.str() );
 
   SolverSpecify::SolverType solver_type = this->get_solver().solver_type();
+
   // if we are called by mixA solver?
-  if ( solver_type == SolverSpecify::DDML1MIXA ||
-       solver_type == SolverSpecify::DDML2MIXA ||
-       solver_type == SolverSpecify::EBML3MIXA
-     )
-    _mixA = true;
+  switch ( solver_type )
+  {
+    case SolverSpecify::DDML1     :
+    case SolverSpecify::DDML2     :
+    case SolverSpecify::EBML3     :   _ddm = true; break;
+    case SolverSpecify::DDML1MIXA :
+    case SolverSpecify::DDML2MIXA :
+    case SolverSpecify::EBML3MIXA :   _mixA = true; break;
+    case SolverSpecify::DDMAC     :   _ddm_ac = true; break;
+    default : break;
+  }
 }
 
 
@@ -108,17 +115,17 @@ void CGNSHook::post_solve()
     double Vscan = 0;
 
     // DDM solver
-    if ( !_mixA )
+    if ( _ddm )
     {
       const BoundaryConditionCollector * bcs = _solver.get_system().get_bcs();
       const BoundaryCondition * bc = bcs->get_bc ( SolverSpecify::Electrode_VScan[0] );
       Vscan = bc->ext_circuit()->Vapp();
     }
     // MIXA solver
-    else
+    if ( _mixA )
     {
       SPICE_CKT * spice_ckt = _solver.get_system().get_circuit();
-      Vscan = spice_ckt->get_voltage_from ( SolverSpecify::Electrode_VScan[0] );
+      Vscan = spice_ckt->get_voltage_from_sync ( SolverSpecify::Electrode_VScan[0] );
     }
 
 
@@ -135,12 +142,22 @@ void CGNSHook::post_solve()
 
   if ( SolverSpecify::Type==SolverSpecify::DCSWEEP && SolverSpecify::Electrode_IScan.size() )
   {
-    // DDM solver only
-    assert ( !_mixA );
+    double Iscan = 0;
 
-    const BoundaryConditionCollector * bcs = _solver.get_system().get_bcs();
-    const BoundaryCondition * bc = bcs->get_bc ( SolverSpecify::Electrode_IScan[0] );
-    double Iscan = bc->ext_circuit()->Iapp();
+    // DDM solver
+    if ( _ddm )
+    {
+      const BoundaryConditionCollector * bcs = _solver.get_system().get_bcs();
+      const BoundaryCondition * bc = bcs->get_bc ( SolverSpecify::Electrode_IScan[0] );
+      Iscan = bc->ext_circuit()->Iapp();
+    }
+
+    // MIXA solver
+    if ( _mixA )
+    {
+      SPICE_CKT * spice_ckt = _solver.get_system().get_circuit();
+      Iscan = spice_ckt->get_current_from_sync ( SolverSpecify::Electrode_IScan[0] );
+    }
 
     if ( std::fabs ( Iscan - this->_i_last ) >= this->_i_step )
     {
@@ -200,7 +217,7 @@ void CGNSHook::on_close()
 {}
 
 
-#ifndef CYGWIN
+#ifdef DLLHOOK
 
 // dll interface
 extern "C"

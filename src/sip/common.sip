@@ -24,7 +24,7 @@ std::map<std::string, cfilebuf_t*> filebufs;
 
 int _genius_error=0;
 
-#ifdef PETSC_VERSION_DEV
+#if PETSC_VERSION_GE(3,2,0)
 PetscErrorCode genius_error_handler(MPI_Comm comm, int line, const char *func, const char *file, const char *dir,PetscErrorCode n, PetscErrorType p, const char *mess,void *ctx)
 #else
 PetscErrorCode genius_error_handler(int line, const char *func, const char *file, const char *dir,PetscErrorCode n, int p, const char *mess,void *ctx)

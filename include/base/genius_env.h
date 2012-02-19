@@ -1,9 +1,39 @@
+/********************************************************************************/
+/*     888888    888888888   88     888  88888   888      888    88888888       */
+/*   8       8   8           8 8     8     8      8        8    8               */
+/*  8            8           8  8    8     8      8        8    8               */
+/*  8            888888888   8   8   8     8      8        8     8888888        */
+/*  8      8888  8           8    8  8     8      8        8            8       */
+/*   8       8   8           8     8 8     8      8        8            8       */
+/*     888888    888888888  888     88   88888     88888888     88888888        */
+/*                                                                              */
+/*       A Three-Dimensional General Purpose Semiconductor Simulator.           */
+/*                                                                              */
+/*                                                                              */
+/*  Copyright (C) 2007-2008                                                     */
+/*  Cogenda Pte Ltd                                                             */
+/*                                                                              */
+/*  Please contact Cogenda Pte Ltd for license information                      */
+/*                                                                              */
+/*  Author: Gong Ding   gdiso@ustc.edu                                          */
+/*                                                                              */
+/********************************************************************************/
+
 #ifndef _genius_env_h_
 #define _genius_env_h_
+
+#include "config.h"
+#include "genius_petsc.h"
+
+#ifdef HAVE_MPI
+#include "mpi.h"
+#endif
+
 
 #include <cstdlib>
 #include <cstring>
 #include <string>
+
 
 namespace Genius {
 
@@ -49,6 +79,19 @@ namespace Genius {
    */
   bool is_last_processor();
 
+#ifdef HAVE_MPI
+  /**
+   * @return MPI_Comm global communicator
+   */
+  const MPI_Comm & comm_world();
+
+  /**
+   * @return MPI_Comm self communicator
+   */
+  const MPI_Comm & comm_self();
+#endif
+
+
   /**
    * @returns the input filename;
    */
@@ -70,6 +113,16 @@ namespace Genius {
   void set_genius_dir(const std::string &genius_dir);
 
   /**
+   * set flag to enable experiment code
+   */
+  void set_experiment_code(bool f);
+
+  /**
+   * flag to enable experiment code
+   */
+  bool experiment_code();
+
+  /**
    * Namespaces don't provide private data,
    * so let's take the data we would like
    * private and put it in an obnoxious
@@ -88,6 +141,19 @@ namespace Genius {
      */
     static int  _processor_id;
 
+#ifdef HAVE_MPI
+    /**
+     * MPI_Comm global communicator
+     */
+    static MPI_Comm _comm_world;
+
+    /**
+     * MPI_Comm local communicator
+     */
+    static MPI_Comm _comm_self;
+
+#endif
+
     /**
      * the user input file.
      */
@@ -97,6 +163,11 @@ namespace Genius {
      * Genius base dir
      */
     static std::string _genius_dir;
+
+    /**
+     * flag to enable experiment code
+     */
+    static bool _experiment_code;
 
   };
 }
@@ -141,6 +212,19 @@ inline bool Genius::is_last_processor()
 }
 
 
+#ifdef HAVE_MPI
+inline  const MPI_Comm & Genius::comm_world()
+{
+  return (GeniusPrivateData::_comm_world);
+}
+
+inline  const MPI_Comm & Genius::comm_self()
+{
+  return (GeniusPrivateData::_comm_self);
+}
+#endif
+
+
 inline const char * Genius::input_file()
 {
   return GeniusPrivateData::_input_file.c_str();
@@ -159,6 +243,16 @@ inline std::string Genius::genius_dir()
 inline void Genius::set_genius_dir(const std::string &genius_dir)
 {
   GeniusPrivateData::_genius_dir = genius_dir;
+}
+
+inline void Genius::set_experiment_code(bool f)
+{
+  GeniusPrivateData::_experiment_code = f;
+}
+
+inline bool Genius::experiment_code()
+{
+  return GeniusPrivateData::_experiment_code;
 }
 
 #endif // #define _genius_env_h_

@@ -47,6 +47,8 @@ public:
       : _points(pts)
   {}
 
+  virtual ~Polygon() {}
+
   /**
    * set the contour points of polygon
    */
@@ -75,15 +77,24 @@ public:
   Point norm() const;
 
   /**
+   * return the plane of the polygon
+   */
+  Plane plane() const;
+
+  /**
    * @return the signed area of polygon
    */
   Real signed_area() const;
-
 
   /**
    * @return the area of polygon
    */
   Real area() const { return std::abs(signed_area()); }
+
+  /**
+   * @return true when p (coplanr and ) inside polygon
+   */
+  //bool has_point(const Point &p) const;
 
   /**
    * clip the polygon by given plane, any part below the plane will be droped
@@ -104,12 +115,13 @@ public:
     return os;
   }
 
-private:
+protected:
 
   /**
-   * polygon contour points
+   * polygon contour points, not closed
    */
   std::vector<Point> _points;
+
 
 };
 

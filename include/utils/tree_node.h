@@ -26,8 +26,8 @@
 #include <vector>
 
 // Local includes
-#include "genius_env.h"
 #include "genius_common.h"
+#include "genius_env.h"
 #include "point.h"
 
 // Forward Declarations

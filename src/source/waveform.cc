@@ -23,7 +23,7 @@
 
 #include "waveform.h"
 
-#ifdef CYGWIN
+#ifdef WINDOWS
   #include <Windows.h>
   #undef max
   #undef min
@@ -35,14 +35,19 @@
 WaveformShell::WaveformShell(const std::string & s, const std::string & dll_file, const std::string & function, double s_t):Waveform(s)
 {
 
-#ifdef CYGWIN
+#ifdef WINDOWS
 
   dll = LoadLibrary(dll_file.c_str());
   void *fp = GetProcAddress(dll, function.c_str());
 
 #else
 
+#ifdef RTLD_DEEPBIND
+  dll = dlopen(dll_file.c_str(), RTLD_LAZY|RTLD_DEEPBIND);  assert(dll);
+#else
   dll = dlopen(dll_file.c_str(), RTLD_LAZY);  assert(dll);
+#endif
+
   void *fp = dlsym(dll, function.c_str());  assert(fp);
 
 #endif
@@ -59,7 +64,7 @@ WaveformShell::WaveformShell(const std::string & s, const std::string & dll_file
 WaveformShell::~WaveformShell()
 {
   //delete Vapp_Shell;
-#ifdef CYGWIN
+#ifdef WINDOWS
   FreeLibrary(dll);
 #else
   dlclose( dll );

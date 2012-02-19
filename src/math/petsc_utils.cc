@@ -24,7 +24,7 @@
 #include <map>
 #include <vector>
 
-
+#include "genius_petsc.h"
 #include "petsc_utils.h"
 
 
@@ -35,7 +35,7 @@ namespace PetscUtils
    */
   PetscErrorCode MatZeroRows(Mat mat,PetscInt numRows,const PetscInt rows[],PetscScalar diag)
   {
-#ifdef PETSC_VERSION_DEV // next version
+#if PETSC_VERSION_GE(3,2,0)
       return ::MatZeroRows(mat, numRows, rows, diag, PETSC_NULL, PETSC_NULL);
 #else
       return ::MatZeroRows(mat, numRows, rows, diag);

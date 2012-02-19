@@ -150,18 +150,6 @@ public:
   int  do_import  ( const Parser::Card & c );
 
   /**
-   * create 2d fem solver to do electromagnetic calculation
-   * mainly for optical device simulation
-   */
-  int do_em_fem2d_solve ( const Parser::Card & c );
-
-  /**
-   * create ray trace solver to do electromagnetic calculation
-   * mainly for optical device simulation
-   */
-  int do_ray_trace( const Parser::Card & c );
-
-  /**
    * process and do "NODESET" card
    */
   int  set_initial_node_voltage  ( const Parser::Card & c );

@@ -102,7 +102,7 @@ ThresholdHook::ThresholdHook ( SolverBase & solver, const std::string & name, vo
 
     // the variable to be monitor
     {
-      SolutionVariable var = solution_string_to_enum (parm_it->name());
+      SolutionVariable var = solution_string_to_enum (FormatVariableString(parm_it->name()));
       if( var == INVALID_Variable )
       {
         if( Genius::is_first_processor() )
@@ -277,7 +277,7 @@ bool ThresholdHook::_in_bound_box(const Point &p)
 }
 
 
-#ifndef CYGWIN
+#ifdef DLLHOOK
 
 // dll interface
 extern "C"

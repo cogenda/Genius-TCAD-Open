@@ -78,7 +78,7 @@ void ElectrodeInsulatorInterfaceBC::Poissin_Fill_Value(Vec , Vec L)
 /*---------------------------------------------------------------------
  * do pre-process to function evaluation for poisson solver
  */
-void ElectrodeInsulatorInterfaceBC::Poissin_Function_Preprocess(Vec, std::vector<PetscInt> &src_row,
+void ElectrodeInsulatorInterfaceBC::Poissin_Function_Preprocess(PetscScalar *, Vec, std::vector<PetscInt> &src_row,
     std::vector<PetscInt> &dst_row, std::vector<PetscInt> &clear_row)
 {
   // search for all the node with this boundary type
@@ -292,7 +292,7 @@ void ElectrodeInsulatorInterfaceBC::Poissin_Jacobian_Reserve(Mat *jac, InsertMod
 /*---------------------------------------------------------------------
  * do pre-process to jacobian matrix for poisson solver
  */
-void ElectrodeInsulatorInterfaceBC::Poissin_Jacobian_Preprocess(Mat *jac, std::vector<PetscInt> &src_row,
+void ElectrodeInsulatorInterfaceBC::Poissin_Jacobian_Preprocess(PetscScalar *, Mat *jac, std::vector<PetscInt> &src_row,
     std::vector<PetscInt> &dst_row, std::vector<PetscInt> &clear_row)
 {
   // search for all the node with this boundary type

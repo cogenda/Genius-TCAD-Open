@@ -82,7 +82,7 @@ public:
       case SemiconductorRegion : return 3; //semiconductor node has 3 dof
       case InsulatorRegion     : return 1; //insulator node has 1 dof
       case ElectrodeRegion     : return 1; //conductor node has 1 dof
-      case MetalRegion    : return 1; //resistance node has 1 dof
+      case MetalRegion         : return 1; //resistance node has 1 dof
       default : return 0;
     }
   }
@@ -133,7 +133,7 @@ public:
     switch (bc->bc_type())
     {
       case OhmicContact      : return 3; // ohmic electrode current
-      case SchottkyContact   : return 1; // displacement current
+      case SchottkyContact   : return 3; // displacement current
       case SimpleGateContact : return 1; // displacement current
       case GateContact       : return 1; // displacement current
       case SolderPad         : return 1; // conductance current
@@ -155,7 +155,7 @@ public:
       case SemiconductorRegion : return true;
       case InsulatorRegion     : return false;
       case ElectrodeRegion     : return false;
-      case MetalRegion    : return false;
+      case MetalRegion         : return false;
       default : return false;
     }
   }
@@ -186,9 +186,14 @@ public:
   }
 
   /**
+   * test if BDF2 can be used for next time step
+   */
+  virtual bool BDF2_positive_defined() const;
+
+  /**
    * compute the norm of local truncate error (LTE)
    */
-  virtual PetscScalar LTE_norm();
+  virtual PetscReal LTE_norm();
 
   /**
    * check carrier density after projection
@@ -200,6 +205,10 @@ public:
    */
   virtual void error_norm();
 
+  /**
+   * function for convergence test of pseudo time step method
+   */
+  virtual bool pseudo_time_step_convergence_test() { return true; }
 
 private:
 

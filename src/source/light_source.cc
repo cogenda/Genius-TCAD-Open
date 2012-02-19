@@ -22,13 +22,14 @@
 #include <fstream>
 #include <iomanip>
 
-#include "light_source.h"
+
 #include "simulation_system.h"
 #include "simulation_region.h"
 #include "interpolation_2d_csa.h"
 #include "interpolation_2d_nn.h"
 //#include "interpolation_3d_qshep.h"
 #include "interpolation_3d_nbtet.h"
+#include "light_source.h"
 #include "mathfunc.h"
 #include "log.h"
 
@@ -135,12 +136,29 @@ Light_Source_From_File::Light_Source_From_File(SimulationSystem &system, const P
   else
     _FUnit = 1.0;
 
-  _translate = VectorValue<double>(c.get_real("translate.x", 0.0) * um,
-                                   c.get_real("translate.y", 0.0) * um,
-                                   c.get_real("translate.z", 0.0) * um);
-  _transform = TensorValue<double>(c.get_real("transform.xx", 1.0), c.get_real("transform.xy", 0.0), c.get_real("transform.xz", 0.0),
-                                   c.get_real("transform.yx", 0.0), c.get_real("transform.yy", 1.0), c.get_real("transform.yz", 0.0),
-                                   c.get_real("transform.zx", 0.0), c.get_real("transform.zy", 0.0), c.get_real("transform.zz", 1.0));
+  if( c.is_parameter_exist("translate") )
+  {
+    std::vector<double> dummy = c.get_array<double>("translate");
+    _translate = VectorValue<double>(&dummy[0])*um;
+  }
+  else
+  {
+    _translate = VectorValue<double>(c.get_real("translate.x", 0.0)*um,
+                                     c.get_real("translate.y", 0.0)*um,
+                                     c.get_real("translate.z", 0.0)*um);
+  }
+
+  if( c.is_parameter_exist("transform") )
+  {
+    std::vector<double> dummy = c.get_array<double>("transform");
+    _transform = TensorValue<double>(&dummy[0]);
+  }
+  else
+  {
+    _transform = TensorValue<double>(c.get_real("transform.xx", 1.0), c.get_real("transform.xy", 0.0), c.get_real("transform.xz", 0.0),
+                                     c.get_real("transform.yx", 0.0), c.get_real("transform.yy", 1.0), c.get_real("transform.yz", 0.0),
+                                     c.get_real("transform.zx", 0.0), c.get_real("transform.zy", 0.0), c.get_real("transform.zz", 1.0));
+  }
 
 }
 
@@ -262,4 +280,27 @@ void Light_Source_From_File::update_system()
 }
 
 
+//-------------------------------------------------------------------------------------------
 
+#include "ray_tracing/ray_tracing.h"
+void Light_Source_RayTracing::update_system()
+{
+  RayTraceSolver * solver = new RayTraceSolver(_system, _card);
+  solver->create_solver();
+  solver->solve();
+  solver->destroy_solver();
+  delete solver;
+}
+
+
+//-------------------------------------------------------------------------------------------
+
+#include "emfem2d/emfem2d.h"
+void Light_Source_EMFEM2D::update_system()
+{
+  EMFEM2DSolver * solver = new EMFEM2DSolver(_system, _card);
+  solver->create_solver();
+  solver->solve();
+  solver->destroy_solver();
+  delete solver;
+}

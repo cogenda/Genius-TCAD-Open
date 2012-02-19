@@ -47,8 +47,8 @@ int StressSolver::create_solver()
   KSPSetType(ksp, KSPBCGS);
 
   // Set user-specified  solver and preconditioner types
-  set_petsc_linear_solver_type    ( SolverSpecify::LS );
-  set_petsc_preconditioner_type   ( SolverSpecify::PC );
+  set_linear_solver_type    ( SolverSpecify::LS );
+  set_preconditioner_type   ( SolverSpecify::PC );
 
   // must set linear matrix/vector here!
   setup_linear_data();

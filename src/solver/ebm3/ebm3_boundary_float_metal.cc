@@ -214,7 +214,7 @@ void ChargedContactBC::EBM3_Function(PetscScalar * x, Vec f, InsertMode &add_val
   if(Genius::processor_id() == Genius::n_processors() -1)
   {
     // the governing equation of float metal surface, process it only on last processor
-    PetscScalar f_ext = surface_integral_electric_displacement + this->Qf();
+    PetscScalar f_ext = surface_integral_electric_displacement + this->scalar("qf");
 
     VecSetValue(f, this->global_offset(), f_ext, INSERT_VALUES);
   }

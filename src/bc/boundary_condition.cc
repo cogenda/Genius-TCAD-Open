@@ -51,7 +51,7 @@ bool BoundaryCondition::_bool_dummy_ = false;
 
 
 
-static std::map<const std::string, BCType> bc_name_to_bc_type;
+static std::map<std::string, BCType> bc_name_to_bc_type;
 
 
 void init_bc_name_to_bc_type_map()
@@ -261,7 +261,8 @@ BCType determine_bc_by_subdomain(const std::string & mat1, const std::string mat
 
 
 BoundaryCondition::BoundaryCondition(SimulationSystem  & system, const std::string & label)
-  : _system(system), _boundary_name(label), _boundary_id(BoundaryInfo::invalid_id), _bc_regions(NULL, NULL), _ext_circuit(NULL), _z_width(system.z_width()),
+  : _system(system), _boundary_name(label), _boundary_id(BoundaryInfo::invalid_id), _bc_regions(NULL, NULL), _link_to_spice(false),
+    _ext_circuit(NULL), _z_width(system.z_width()),
     _T_Ext(system.T_external()), _inter_connect_hub(0)
 {
   for(int i=0; i<4; ++i)
@@ -366,7 +367,7 @@ std::vector<const Node *> BoundaryCondition::node_neighbors(const Node * n) cons
 
 
 
-void BoundaryCondition::set_boundary_id_to_fvm_node()
+void BoundaryCondition::set_boundary_info_to_fvm_node()
 {
   std::map<const Node *, std::multimap<SimulationRegionType, std::pair<SimulationRegion *, FVM_Node *> > >::iterator  it = _bd_fvm_nodes.begin();
   for( ; it != _bd_fvm_nodes.end(); ++it)
@@ -374,9 +375,40 @@ void BoundaryCondition::set_boundary_id_to_fvm_node()
     std::multimap<SimulationRegionType, std::pair<SimulationRegion *, FVM_Node *> > & boundary_fvm_nodes = it->second;
     std::multimap<SimulationRegionType, std::pair<SimulationRegion *, FVM_Node *> >::iterator fvm_node_it = boundary_fvm_nodes.begin();
     for(; fvm_node_it != boundary_fvm_nodes.end(); ++fvm_node_it)
+    {
+      fvm_node_it->second.second->set_bc_type(this->bc_type());
       fvm_node_it->second.second->set_boundary_id(_boundary_id);
+    }
   }
 }
+
+
+PetscScalar BoundaryCondition::scalar(const std::string & name) const
+{
+  genius_assert(_real_parameters.find(name) != _real_parameters.end());
+  return _real_parameters.find(name)->second;
+}
+
+
+PetscScalar & BoundaryCondition::scalar(const std::string & name)
+{
+  return _real_parameters[name];
+}
+
+
+
+bool BoundaryCondition::flag(const std::string & name) const
+{
+  genius_assert(_bool_parameters.find(name) != _bool_parameters.end());
+  return _bool_parameters.find(name)->second;
+}
+
+
+bool & BoundaryCondition::flag(const std::string & name)
+{
+  return _bool_parameters[name];
+}
+
 
 //---------------------------------------------------------------------------------
 // constructors for each derived class
@@ -413,14 +445,14 @@ ChargeIntegralBC::ChargeIntegralBC(SimulationSystem  & system, const std::string
 {
   //std::cout<<"  Initializing \""<< label <<"\" as Charge Integral..."<<std::endl;
   MESSAGE<<"  Initializing \""<< label <<"\" as Charge Integral..."<<std::endl; RECORD();
-  _Qf  = 0*C;
+  scalar("qf")  = 0*C;
 }
 
 
 NeumannBC::NeumannBC(SimulationSystem  & system, const std::string & label): BoundaryCondition(system,label)
 {
   MESSAGE<<"  Initializing \""<< label <<"\" as Neumann BC..."<<std::endl; RECORD();
-  _Heat_Transfer = 0.0*J/s/pow(cm,2)/K;
+  scalar("heat.transfer") = 0.0*J/s/pow(cm,2)/K;
   _reflection    = false;
 }
 
@@ -432,7 +464,7 @@ OhmicContactBC::OhmicContactBC(SimulationSystem  & system, const std::string & l
   else _bd_type = BOUNDARY;
 
   MESSAGE<<"  Initializing \""<< label <<"\" as Ohmic Contact BC..."<<std::endl; RECORD();
-  _Heat_Transfer = 1e3*J/s/pow(cm,2)/K;
+  scalar("heat.transfer") = 1e3*J/s/pow(cm,2)/K;
   _reflection    = true;
 }
 
@@ -440,10 +472,10 @@ OhmicContactBC::OhmicContactBC(SimulationSystem  & system, const std::string & l
 IF_Metal_OhmicBC::IF_Metal_OhmicBC(SimulationSystem  & system, const std::string & label): BoundaryCondition(system,label)
 {
   MESSAGE<<"  Initializing \""<< label <<"\" as Resistance Ohmic Contact BC..."<<std::endl; RECORD();
-  _elec_recomb_velocity = std::numeric_limits<PetscScalar>::infinity();
-  _hole_recomb_velocity = std::numeric_limits<PetscScalar>::infinity();
-  //_elec_recomb_velocity = 2.573e6*cm/s;// for silicon
-  //_hole_recomb_velocity = 1.93e6*cm/s;// for silicon
+  scalar("elec.recomb.velocity") = std::numeric_limits<PetscScalar>::infinity();
+  scalar("hole.recomb.velocity") = std::numeric_limits<PetscScalar>::infinity();
+  //scalar("elec.recomb.velocity") = 2.573e6*cm/s;// for silicon
+  //scalar("hole.recomb.velocity") = 1.93e6*cm/s;// for silicon
   _current_flow = 0.0;
 }
 
@@ -454,8 +486,8 @@ SchottkyContactBC::SchottkyContactBC(SimulationSystem  & system, const std::stri
   else _bd_type = BOUNDARY;
 
   MESSAGE<<"  Initializing \""<< label <<"\" as Schottky Contact BC..."<<std::endl; RECORD();
-  _Heat_Transfer = 1e3*J/s/pow(cm,2)/K;
-  _WorkFunction  = 0.0;
+  scalar("heat.transfer") = 1e3*J/s/pow(cm,2)/K;
+  scalar("workfunction")  = 0.0;
   _reflection    = true;
 }
 
@@ -473,8 +505,8 @@ GateContactBC::GateContactBC(SimulationSystem  & system, const std::string & lab
   else _bd_type = BOUNDARY;
 
   MESSAGE<<"  Initializing \""<< label <<"\" as Gate BC..."<<std::endl; RECORD();
-  _Heat_Transfer = 1e3*J/s/pow(cm,2)/K;
-  _WorkFunction = 0.0;
+  scalar("heat.transfer") = 1e3*J/s/pow(cm,2)/K;
+  scalar("workfunction") = 0.0;
 }
 
 
@@ -482,11 +514,11 @@ GateContactBC::GateContactBC(SimulationSystem  & system, const std::string & lab
 SimpleGateContactBC::SimpleGateContactBC(SimulationSystem  & system, const std::string & label): BoundaryCondition(system,label)
 {
   MESSAGE<<"  Initializing \""<< label <<"\" as Simple Gate BC..."<<std::endl; RECORD();
-  _Heat_Transfer = 1e3*J/s/pow(cm,2)/K;
-  _WorkFunction = 0.0;
-  _Thickness = 1e-9*cm;
-  _eps = 3.9*eps0;
-  _Qf  = 1e10/pow(cm,2);
+  scalar("heat.transfer") = 1e3*J/s/pow(cm,2)/K;
+  scalar("workfunction")  = 0.0;
+  scalar("thickness")     = 1e-9*cm;
+  scalar("eps")           = 3.9*eps0;
+  scalar("qf")            = 1e10/pow(cm,2);
 }
 
 
@@ -507,13 +539,14 @@ ResistanceResistanceBC::ResistanceResistanceBC(SimulationSystem  & system, const
 SolderPadBC::SolderPadBC(SimulationSystem  & system, const std::string & label): BoundaryCondition(system,label)
 {
   MESSAGE<<"  Initializing \""<< label <<"\" as Solder Pad BC..."<<std::endl; RECORD();
-  _Heat_Transfer = 1e3*J/s/pow(cm,2)/K;
+  scalar("heat.transfer") = 1e3*J/s/pow(cm,2)/K;
 }
 
 InsulatorSemiconductorInterfaceBC::InsulatorSemiconductorInterfaceBC(SimulationSystem  & system, const std::string & label): BoundaryCondition(system,label)
 {
   MESSAGE<<"  Initializing \""<< label <<"\" as Insulator Semiconductor Interface..."<<std::endl; RECORD();
-  _Qf  = 1e10/pow(cm,2);
+  scalar("qf")  = 1e10/pow(cm,2);
+  _current_flow = 0.0;
 }
 
 
@@ -528,7 +561,7 @@ HomoInterfaceBC::HomoInterfaceBC(SimulationSystem  & system, const std::string &
 HeteroInterfaceBC::HeteroInterfaceBC(SimulationSystem  & system, const std::string & label): BoundaryCondition(system,label)
 {
   MESSAGE<<"  Initializing \""<< label <<"\" as Semiconductor Hetero Junction..."<<std::endl; RECORD();
-  _Qf  = 0.0;
+  scalar("qf")  = 0.0;
 }
 
 
@@ -549,6 +582,7 @@ InsulatorInsulatorInterfaceBC::InsulatorInsulatorInterfaceBC(SimulationSystem  &
 ChargedContactBC::ChargedContactBC(SimulationSystem  & system, const std::string & label): BoundaryCondition(system,label)
 {
   MESSAGE<<"  Initializing \""<< label <<"\" as Float Metal with Free Charge..."<<std::endl; RECORD();
+  _current_flow = 0.0;
 }
 
 
@@ -570,7 +604,7 @@ std::string NeumannBC::boundary_condition_in_string() const
   <<"string<id>="<<this->label()<<" "
   <<"enum<type>=Neumann "
   <<"real<ext.temp>="<<T_external()/K<<" "
-  <<"real<heat.transfer>="<<_Heat_Transfer/(J/s/pow(cm,2)/K)<<" "
+  <<"real<heat.transfer>="<<scalar("heat.transfer")/(J/s/pow(cm,2)/K)<<" "
   <<"bool<reflection>="<<( _reflection ? "true" : "false" )<<" ";
 
   if(system().mesh().mesh_dimension () == 2)
@@ -601,7 +635,7 @@ std::string OhmicContactBC::boundary_condition_in_string() const
   if(_bd_type == BOUNDARY)
   {
     ss <<"real<ext.temp>="<<T_external()/K<<" "
-       <<"real<heat.transfer>="<<_Heat_Transfer/(J/s/pow(cm,2)/K)<<" ";
+       <<"real<heat.transfer>="<<scalar("heat.transfer")/(J/s/pow(cm,2)/K)<<" ";
   }
   else
   {
@@ -627,8 +661,8 @@ std::string IF_Metal_OhmicBC::boundary_condition_in_string() const
       <<"enum<type>=resistanceohmiccontact ";
 
   if( !_infinity_recombination() )
-  ss  <<"real<elec.recomb.velocity>="<<_elec_recomb_velocity/(cm/s)<<" "
-      <<"real<hole.recomb.velocity>="<<_hole_recomb_velocity/(cm/s)<<" ";
+    ss  <<"real<elec.recomb.velocity>="<<scalar("elec.recomb.velocity")/(cm/s)<<" "
+        <<"real<hole.recomb.velocity>="<<scalar("hole.recomb.velocity")/(cm/s)<<" ";
 
   if(system().mesh().mesh_dimension () == 2)
     ss<<"real<z.width>="<<z_width()/um;
@@ -647,7 +681,7 @@ std::string SchottkyContactBC::boundary_condition_in_string() const
   ss <<"BOUNDARY "
      <<"string<id>="<<this->label()<<" "
      <<"enum<type>=SchottkyContact "
-     <<"real<workfunction>="<<_WorkFunction/V<<" ";
+     <<"real<workfunction>="<<scalar("workfunction")/V<<" ";
 
   if(this->ext_circuit())
   {
@@ -660,7 +694,7 @@ std::string SchottkyContactBC::boundary_condition_in_string() const
   if(_bd_type == BOUNDARY)
   {
     ss <<"real<ext.temp>="<<T_external()/K<<" "
-       <<"real<heat.transfer>="<<_Heat_Transfer/(J/s/pow(cm,2)/K)<<" ";
+       <<"real<heat.transfer>="<<scalar("heat.transfer")/(J/s/pow(cm,2)/K)<<" ";
   }
   else
   {
@@ -701,7 +735,7 @@ std::string GateContactBC::boundary_condition_in_string() const
   ss <<"BOUNDARY "
      <<"string<id>="<<this->label()<<" "
      <<"enum<type>=GateContact "
-     <<"real<workfunction>="<<_WorkFunction/V<<" ";
+     <<"real<workfunction>="<<scalar("workfunction")/V<<" ";
 
   if(this->ext_circuit())
   {
@@ -714,7 +748,7 @@ std::string GateContactBC::boundary_condition_in_string() const
   if(_bd_type == BOUNDARY)
   {
     ss <<"real<ext.temp>="<<T_external()/K<<" "
-       <<"real<heat.transfer>="<<_Heat_Transfer/(J/s/pow(cm,2)/K)<<" ";
+       <<"real<heat.transfer>="<<scalar("heat.transfer")/(J/s/pow(cm,2)/K)<<" ";
   }
   else
   {
@@ -738,16 +772,16 @@ std::string SimpleGateContactBC::boundary_condition_in_string() const
   ss <<"BOUNDARY "
   <<"string<id>="<<this->label()<<" "
   <<"enum<type>=SimpleGateContact "
-  <<"real<workfunction>="<<_WorkFunction/V<<" "
-  <<"real<thickness>="<<_Thickness/um<<" "
-  <<"real<eps>="<<_eps<<" "
-  <<"real<qf>="<<_Qf*pow(cm,2)<<" "
-  <<"real<res>="<<this->ext_circuit()->R()<<" "
-  <<"real<cap>="<<this->ext_circuit()->C()<<" "
-  <<"real<ind>="<<this->ext_circuit()->L()<<" "
+  <<"real<workfunction>="<<scalar("workfunction")/V<<" "
+  <<"real<thickness>="<<scalar("thickness")/um<<" "
+  <<"real<eps>="<<scalar("eps")<<" "
+  <<"real<qf>="<<scalar("qf")*pow(cm,2)<<" "
+  <<"real<res>="<<this->ext_circuit()->R()/(V/A)<<" "
+  <<"real<cap>="<<this->ext_circuit()->C()/(C/V)<<" "
+  <<"real<ind>="<<this->ext_circuit()->L()/(V*s/A)<<" "
   <<"real<potential>="<<this->ext_circuit()->potential()<<" "
   <<"real<ext.temp>="<<T_external()/K<<" "
-  <<"real<heat.transfer>="<<_Heat_Transfer/(J/s/pow(cm,2)/K)<<" ";
+  <<"real<heat.transfer>="<<scalar("heat.transfer")/(J/s/pow(cm,2)/K)<<" ";
 
   if(system().mesh().mesh_dimension () == 2)
     ss<<"real<z.width>="<<z_width()/um;
@@ -791,12 +825,12 @@ std::string SolderPadBC::boundary_condition_in_string() const
   ss <<"BOUNDARY "
       <<"string<id>="<<this->label()<<" "
       <<"enum<type>=SolderPad "
-      <<"real<res>="<<this->ext_circuit()->R()<<" "
-      <<"real<cap>="<<this->ext_circuit()->C()<<" "
-      <<"real<ind>="<<this->ext_circuit()->L()<<" "
+      <<"real<res>="<<this->ext_circuit()->R()/(V/A)<<" "
+      <<"real<cap>="<<this->ext_circuit()->C()/(C/V)<<" "
+      <<"real<ind>="<<this->ext_circuit()->L()/(V*s/A)<<" "
       <<"real<potential>="<<this->ext_circuit()->potential()<<" "
       <<"real<ext.temp>="<<T_external()/K<<" "
-      <<"real<heat.transfer>="<<_Heat_Transfer/(J/s/pow(cm,2)/K)<<" ";
+      <<"real<heat.transfer>="<<scalar("heat.transfer")/(J/s/pow(cm,2)/K)<<" ";
 
   if(system().mesh().mesh_dimension () == 2)
     ss<<"real<z.width>="<<z_width()/um;
@@ -814,7 +848,7 @@ std::string InsulatorSemiconductorInterfaceBC::boundary_condition_in_string() co
   ss <<"BOUNDARY "
   <<"string<id>="<<this->label()<<" "
   <<"enum<type>=InsulatorInterface "
-  <<"real<qf>="<<_Qf*pow(cm,2)<<" "
+  <<"real<qf>="<<scalar("qf")*pow(cm,2)<<" "
   <<std::endl;
 
   return ss.str();
@@ -894,13 +928,13 @@ std::string ElectrodeInterConnectBC::boundary_condition_in_string() const
 {
   std::stringstream ss;
 
-  ss <<"INTERCONNECT "
-  <<"string<id>="<<this->label()<<" "
-  <<"real<res>="<<this->ext_circuit()->R()<<" "
-  <<"real<cap>="<<this->ext_circuit()->C()<<" "
-  <<"real<ind>="<<this->ext_circuit()->L()<<" "
-  <<"real<potential>="<<this->ext_circuit()->potential()<<" "
-  <<"bool<float>="<<( this->ext_circuit()->is_float() ? "true" : "false" )<<" ";
+  ss  <<"INTERCONNECT "
+      <<"string<id>="<<this->label()<<" "
+      <<"real<res>="<<this->ext_circuit()->R()/(V/A)<<" "
+      <<"real<cap>="<<this->ext_circuit()->C()/(C/V)<<" "
+      <<"real<ind>="<<this->ext_circuit()->L()/(V*s/A)<<" "
+      <<"real<potential>="<<this->ext_circuit()->potential()<<" "
+      <<"bool<float>="<<( this->ext_circuit()->is_float() ? "true" : "false" )<<" ";
 
   const std::vector<BoundaryCondition * > & inter_connect_bcs = this->inter_connect();
 
@@ -919,7 +953,7 @@ std::string ChargeIntegralBC::boundary_condition_in_string() const
 
   ss <<"CHARGE "
       <<"string<id>="<<this->label()<<" "
-      <<"real<charge>="<<this->Qf()/C<<" ";
+      <<"real<charge>="<<this->scalar("qf")/C<<" ";
 
   const std::vector<BoundaryCondition * > & inter_connect_bcs = this->inter_connect();
 

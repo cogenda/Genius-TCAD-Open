@@ -144,22 +144,32 @@ inline AutoDScalar Ip_diffusion(PetscScalar Vt, const AutoDScalar &Vv1, const Au
 //-----------------------------------------------------------------------------
 inline PetscScalar In_dd(PetscScalar Vt,PetscScalar dVc,PetscScalar n1,PetscScalar n2,PetscScalar h)
 {
-  return Vt/h*(n2*bern(-dVc/Vt)-n1*bern(dVc/Vt));
+  return Vt*(n2*bern(-dVc/Vt)-n1*bern(dVc/Vt))/h;
+}
+
+inline PetscScalar dVIn_dd(PetscScalar Vt,PetscScalar dVc,PetscScalar n1,PetscScalar n2,PetscScalar h)
+{
+  return (-n2*pd1bern(-dVc/Vt)-n1*pd1bern(dVc/Vt))/h;
 }
 
 inline PetscScalar Ip_dd(PetscScalar Vt,PetscScalar dVv,PetscScalar p1,PetscScalar p2,PetscScalar h)
 {
-  return Vt/h*(p1*bern(-dVv/Vt)-p2*bern(dVv/Vt));
+  return Vt*(p1*bern(-dVv/Vt)-p2*bern(dVv/Vt))/h;
+}
+
+inline PetscScalar dVIp_dd(PetscScalar Vt,PetscScalar dVv,PetscScalar p1,PetscScalar p2,PetscScalar h)
+{
+  return (-p1*pd1bern(-dVv/Vt)-p2*pd1bern(dVv/Vt))/h;
 }
 
 inline AutoDScalar In_dd(PetscScalar Vt,const AutoDScalar &dVc,const AutoDScalar &n1,const AutoDScalar &n2, PetscScalar h)
 {
-  return Vt/h*(n2*bern(-dVc/Vt)-n1*bern(dVc/Vt));
+  return Vt*(n2*bern(-dVc/Vt)-n1*bern(dVc/Vt))/h;
 }
 
 inline AutoDScalar Ip_dd(PetscScalar Vt,const AutoDScalar &dVv,const AutoDScalar &p1,const AutoDScalar &p2, PetscScalar h)
 {
-  return Vt/h*(p1*bern(-dVv/Vt)-p2*bern(dVv/Vt));
+  return Vt*(p1*bern(-dVv/Vt)-p2*bern(dVv/Vt))/h;
 }
 
 

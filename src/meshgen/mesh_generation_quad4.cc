@@ -244,9 +244,9 @@ int MeshGeneratorQuad4::set_face(const Parser::Card &c)
 
   if(c.is_parameter_exist("direction"))
   {
-    if(c.is_enum_value("direction","YNORM"))
+    if(c.is_enum_value("direction","ynorm"))
       iymin=iymax=iy;
-    else if(c.is_enum_value("direction","XNORM"))
+    else if(c.is_enum_value("direction","xnorm"))
       ixmin=ixmax=ix;
   }
 
@@ -294,6 +294,7 @@ int  MeshGeneratorQuad4::make_face(unsigned int ixmin,unsigned int ixmax,
   SkeletonFace face;
   face.face_label=label;
   face.face_mark=face_mark;
+  face.user_define = true;
   face.ixmin = ixmin;
   face.ixmax = ixmax;
   face.iymin = iymin;
@@ -353,6 +354,7 @@ int  MeshGeneratorQuad4::make_region_boundary()
     SkeletonFace  face;
     face.face_label=region_array1d[r].label+"_Neumann";
     face.face_mark=r+1;
+    face.user_define = false;
     face_array1d.push_back(face);
 
     SkeletonEdge edge;
@@ -579,15 +581,15 @@ int MeshGeneratorQuad4::do_mesh()
 
   // write boundary label into mesh.boundary_info structure
   for(size_t f=0; f < face_array1d.size(); f++)
-    _mesh.boundary_info->set_label_to_id( face_array1d[f].face_mark, face_array1d[f].face_label );
+    _mesh.boundary_info->set_label_to_id( face_array1d[f].face_mark, face_array1d[f].face_label, face_array1d[f].user_define );
 
   //the interface information should be set here
 
   std::vector<unsigned int>       elems;
   std::vector<unsigned short int> sides;
   std::vector<short int>          bds;
-  std::map<const std::string, short int> bd_map;
-  typedef std::map<const std::string, short int>::iterator Bd_It;
+  std::map<std::string, short int> bd_map;
+  typedef std::map<std::string, short int>::iterator Bd_It;
 
   // get all the boundary element
   _mesh.boundary_info->build_side_list (elems, sides, bds);
@@ -642,7 +644,7 @@ int MeshGeneratorQuad4::do_mesh()
   // write down new labels
   Bd_It bd_it = bd_map.begin();
   for(; bd_it != bd_map.end(); bd_it++)
-    _mesh.boundary_info->set_label_to_id( (*bd_it).second, (*bd_it).first );
+    _mesh.boundary_info->set_label_to_id( (*bd_it).second, (*bd_it).first, false );
 
   // addtinal work: rotate the mesh as y positive point to top direction
   //MeshTools::Modification::rotate (_mesh, 180.0, 0.0, 0.0);

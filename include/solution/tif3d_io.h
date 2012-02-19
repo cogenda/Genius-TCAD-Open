@@ -94,8 +94,7 @@ private:
 // TIF3DIO inline members
 inline
 TIF3DIO::TIF3DIO (SimulationSystem& system) :
-    FieldInput<SimulationSystem> (system),
-    FieldOutput<SimulationSystem> (system)
+    FieldInput<SimulationSystem> (system)
 {
 }
 

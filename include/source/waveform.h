@@ -7,7 +7,7 @@
 #include "config.h"
 #include "expr_evaluate.h"
 
-#ifdef CYGWIN
+#ifdef WINDOWS
 class HINSTANCE__; // Forward or never
 typedef HINSTANCE__* HINSTANCE;
 #endif
@@ -378,7 +378,7 @@ private:
   /**
    * the pointer to dll file
    */
-#ifdef CYGWIN
+#ifdef WINDOWS
   HINSTANCE                  dll;
 #else
   void                      *dll;

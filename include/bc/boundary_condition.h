@@ -28,6 +28,7 @@
 #include <vector>
 #include <string>
 
+#include "genius_common.h"
 #include "genius_env.h"
 #include "log.h"
 #include "node.h"
@@ -94,6 +95,8 @@ public:
    */
   virtual ~BoundaryCondition();
 
+  //menbers for boundary info
+public:
   /**
    * @return the const reference to label
    */
@@ -185,18 +188,12 @@ public:
   /**
    * node default const begin() accessor
    */
-  const_node_iterator nodes_begin        () const
-  {
-    return _bd_nodes.begin();
-  }
+  const_node_iterator nodes_begin        () const  { return _bd_nodes.begin(); }
 
   /**
    * node default const end() accessor
    */
-  const_node_iterator nodes_end          () const
-  {
-    return _bd_nodes.end();
-  }
+  const_node_iterator nodes_end          () const  { return _bd_nodes.end();  }
 
 
   typedef std::vector<const Node *>::iterator node_iterator;
@@ -204,18 +201,12 @@ public:
   /**
    * node default begin() accessor
    */
-  node_iterator nodes_begin        ()
-  {
-    return _bd_nodes.begin();
-  }
+  node_iterator nodes_begin        ()   { return _bd_nodes.begin(); }
 
   /**
    * node default end() accessor
    */
-  node_iterator nodes_end          ()
-  {
-    return _bd_nodes.end();
-  }
+  node_iterator nodes_end          ()   { return _bd_nodes.end(); }
 
   /**
    * @return the number of FVM nodes with Node n as its root_node
@@ -236,10 +227,10 @@ public:
     { return n_region_node_with_root_node(n) > 1; }
 
   /**
-   * set bd_id (boundary index) to region FVM_Node,
+   * set bd_id (boundary index) as well as bc (boundary condition) to region FVM_Node,
    * then we can easily find boundary_condition_index for each FVM_Node
    */
-  void set_boundary_id_to_fvm_node();
+  void set_boundary_info_to_fvm_node();
 
 
   typedef std::multimap<SimulationRegionType, std::pair<SimulationRegion *, FVM_Node *> >::iterator region_node_iterator;
@@ -378,17 +369,71 @@ public:
   /**
    * @return reference to system
    */
-  const SimulationSystem    & system() const
-  { return _system; }
+  const SimulationSystem    & system() const  { return _system; }
 
   /**
    * @return reference to system
    */
-  SimulationSystem    & system()
-  { return _system; }
+  SimulationSystem    & system()  { return _system; }
+
+private:
+
+  /**
+   * the reference to corresponding SimulationSystem
+   * since bc contains physical equations, it is important
+   * for bc having the ability to access region information
+   */
+  SimulationSystem    & _system;
+
+  /**
+   * the boundary name given by user, shoule be unique
+   */
+  std::string _boundary_name;
+
+  /**
+   * the boundary id
+   */
+  short int  _boundary_id;
+
+  /**
+   * the nodes this boundary/interface has
+   * @Note: please make sure the nodes are sorted by their id
+   */
+  std::vector<const Node *> _bd_nodes;
+
+  /**
+   * record (max) two regions this bc involved
+   */
+  std::pair<SimulationRegion *, SimulationRegion *> _bc_regions;
+
+  /**
+   * the global node to region node map. the regions are sorted by SimulationRegionType
+   */
+  std::map<const Node *, std::multimap<SimulationRegionType, std::pair<SimulationRegion *, FVM_Node *> > > _bd_fvm_nodes;
 
 
+  /**
+   * the electrode region name, which can be used to specify the
+   * electrode boundary
+   */
+  std::string _electrode_name;
+
+
+  // members for bc parameters
 public:
+
+
+  /**
+   * @return a flag to show whether a boundary is full reflection
+   * default is false
+   */
+  virtual bool reflection() const    { return false; }
+
+  /**
+   * @return writable reference to a reflection flag
+   * however, we should never reach here
+   */
+  virtual bool & reflection()  { genius_error(); return _bool_dummy_;}
 
   /**
    * @return the temperature of external entironment.
@@ -404,91 +449,30 @@ public:
   {return _T_Ext;}
 
   /**
-   * @return a flag to show whether a boundary is full reflection
-   * default is false
+   * @return the width in z direction
+   * for 2D mesh, z_width is the device dimension in Z direction;
+   * for 3D mesh, z_width is always 1.0
    */
-  virtual bool reflection() const
-    { return false; }
+  virtual PetscScalar z_width() const
+    { return _z_width;}
 
   /**
-   * @return writable reference to a reflection flag
-   * however, we should never reach here
+   * @return the writable reference to width in z direction
+   * for 2D mesh, z_width is the device dimension in Z direction;
+   * for 3D mesh, z_width is always 1.0
    */
-  virtual bool & reflection()
-  { genius_error(); return _bool_dummy_;}
+  virtual PetscScalar & z_width()
+  { return _z_width;}
 
   /**
-   * @return the heat transfer rate of this boundary
-   * however, we should never reach here
+   * @return true iff this boundary is an electrode
    */
-  virtual PetscScalar Heat_Transfer() const
-    {genius_error(); return _dummy_;}
+  virtual bool is_electrode() const=0;
 
   /**
-   * @return writable reference to heat transfer rate of this boundary
-   * however, we should never reach here
+   * @return true iff this boundary has a current flow
    */
-  virtual PetscScalar & Heat_Transfer()
-  {genius_error(); return _dummy_;}
-
-  /**
-   * @return the work function of electrode material
-   * however, we should never reach here
-   */
-  virtual PetscScalar Work_Function() const
-    {genius_error(); return _dummy_;}
-
-  /**
-   * @return writable reference to work function of electrode material
-   * however, we should never reach here
-   */
-  virtual PetscScalar & Work_Function()
-  {genius_error(); return _dummy_;}
-
-
-  /**
-   * @return the thichness of gate material
-   * however, we should never reach here
-   */
-  virtual PetscScalar Thickness() const
-    {genius_error(); return _dummy_;}
-
-  /**
-   * @return writable reference to thichness of gate material
-   * however, we should never reach here
-   */
-  virtual PetscScalar & Thickness()
-  {genius_error(); return _dummy_;}
-
-  /**
-   * @return the electric constant of gate material
-   * however, we should never reach here
-   */
-  virtual PetscScalar eps() const
-    {genius_error(); return _dummy_;}
-
-  /**
-   * @return writable reference to electric constant of gate material
-   * however, we should never reach here
-   */
-  virtual PetscScalar & eps()
-  {genius_error(); return _dummy_;}
-
-  /**
-   * @return the free charge density.
-   * @note it has differente meaning in different BCs
-   * however, we should never reach here
-   */
-  virtual PetscScalar Qf() const
-    {genius_error(); return _dummy_;}
-
-  /**
-   * @return writable reference to free charge density
-   * @note it has differente meaning in different BCs
-   * however, we should never reach here
-   */
-  virtual PetscScalar & Qf()
-  {genius_error(); return _dummy_;}
+  virtual bool has_current_flow() const=0;
 
 
   /**
@@ -496,7 +480,7 @@ public:
    * however, we should never reach here
    */
   virtual PetscScalar psi() const
-    {genius_error(); return _dummy_;}
+  {genius_error(); return _dummy_;}
 
   /**
    * @return writable reference to psi of this boundary
@@ -522,62 +506,64 @@ public:
 
 
   /**
-   * @return the electron recombination velocity
-   * however, we should never reach here
+   * get scalar parameter
    */
-  virtual PetscScalar eRecombVelocity() const
-    {genius_error(); return _dummy_;}
+  PetscScalar scalar(const std::string & ) const;
 
   /**
-   * @return writable reference to electron recombination velocity
-   * however, we should never reach here
+   * set scalar parameter
    */
-  virtual PetscScalar & eRecombVelocity()
-  {genius_error(); return _dummy_;}
-
+  PetscScalar & scalar(const std::string & );
 
   /**
-  * @return the hole recombination velocity
-  * however, we should never reach here
+   * get booling flag
    */
-  virtual PetscScalar hRecombVelocity() const
-    {genius_error(); return _dummy_;}
+  bool flag(const std::string & ) const;
 
   /**
-   * @return writable reference to hole recombination velocity
-   * however, we should never reach here
+   * set booling flag
    */
-  virtual PetscScalar & hRecombVelocity()
-  {genius_error(); return _dummy_;}
+  bool & flag(const std::string & );
+
+
+private:
 
   /**
-   * @return true iff this boundary is an electrode
-   */
-  virtual bool is_electrode() const=0;
-
-
-  /**
-   * @return true iff this boundary has a current flow
-   */
-  virtual bool has_current_flow() const=0;
-
-  /**
-   * @return the width in z direction
+   * the width in z direction
    * for 2D mesh, z_width is the device dimension in Z direction;
    * for 3D mesh, z_width is always 1.0
+   * @Note system level also has z.width variable.
+   * However, it will be override by boundary level z.width
    */
-  virtual PetscScalar z_width() const
-    { return _z_width;}
+  PetscScalar _z_width;
+
 
   /**
-   * @return the writable reference to width in z direction
-   * for 2D mesh, z_width is the device dimension in Z direction;
-   * for 3D mesh, z_width is always 1.0
+   * temperature of external entironment
    */
-  virtual PetscScalar & z_width()
-  { return _z_width;}
+  PetscScalar   _T_Ext;
 
 
+  std::map<std::string, PetscScalar>  _real_parameters;
+
+
+  std::map<std::string, bool>  _bool_parameters;
+
+
+  /**
+   * dummy to prevent compile problem
+   */
+  static PetscScalar _dummy_;
+
+  /**
+   * the same purpose with dummy
+   */
+  static bool _bool_dummy_;
+
+
+
+
+  // members for inter connect
 public:
   /**
    * @return true if this bc belongs to inter-connect layer
@@ -632,6 +618,23 @@ public:
    */
   void set_inter_connect_hub(BoundaryCondition * hub)
   { _inter_connect_hub = hub; }
+
+private:
+
+  /**
+   * An inter-connect layer of IC, it can connect several electrodes
+   * every electrodes belongs to this inter-connect layer owns the same _inter_connect structure
+   */
+  std::vector<BoundaryCondition * > _inter_connect;
+
+  /**
+   * pointer to _inter_connect_hub
+   * every electrodes belongs to this inter-connect layer owns this pointer
+   */
+  BoundaryCondition * _inter_connect_hub;
+
+
+
 
 public:
 
@@ -688,119 +691,11 @@ public:
   void set_array_offset (unsigned int pos )
   { _array_offset[_solver_index] = pos; }
 
-
-  /**
-   * let this bc hold a pointer of External Circuit
-   */
-  void build_ext_circuit(ExternalCircuit * ckt)
-  { _ext_circuit = ckt;};
-
-
-  /**
-   * @return the const pointer of External Circuit
-   */
-  const ExternalCircuit * ext_circuit() const
-  {
-    return  _ext_circuit;
-  }
-
-  /**
-   * @return the writable pointer of External Circuit
-   */
-  ExternalCircuit * ext_circuit()
-  {
-    return  _ext_circuit;
-  }
-
-  /**
-   * @return the string which indicates the boundary condition
-   */
-  virtual std::string boundary_condition_in_string() const
-    { return ""; }
-
-  /**
-   * derived class can do some more things
-   */
-  virtual void prepare_for_use() {}
-
 private:
 
   /**
-   * the reference to corresponding SimulationSystem
-   * since bc contains physical equations, it is important
-   * for bc having the ability to access region information
-   */
-  SimulationSystem    & _system;
-
-  /**
-   * the boundary name given by user
-   */
-  std::string _boundary_name;
-
-  /**
-   * the boundary id
-   */
-  short int  _boundary_id;
-
-  /**
-   * the nodes this boundary/interface has
-   * @Note: please make sure the nodes are sorted by their id
-   */
-  std::vector<const Node *> _bd_nodes;
-
-  /**
-   * record (max) two regions this bc involved
-   */
-  std::pair<SimulationRegion *, SimulationRegion *> _bc_regions;
-
-  /**
-   * the global node to region node map. the regions are sorted by SimulationRegionType
-   */
-  std::map<const Node *, std::multimap<SimulationRegionType, std::pair<SimulationRegion *, FVM_Node *> > > _bd_fvm_nodes;
-
-
-  /**
-   * the electrode region name, which can be used to specify the
-   * electrode boundary
-   */
-  std::string _electrode_name;
-
-  /**
-   * pointer to External Circuit, only electrode owns this data
-   */
-  ExternalCircuit * _ext_circuit;
-
-  /**
-   * the width in z direction
-   * for 2D mesh, z_width is the device dimension in Z direction;
-   * for 3D mesh, z_width is always 1.0
-   * @Note system level also has z.width variable.
-   * However, it will be override by boundary level z.width
-   */
-  PetscScalar _z_width;
-
-
-  /**
-   * temperature of external entironment
-   */
-  PetscScalar   _T_Ext;
-
-  /**
-   * An inter-connect layer of IC, it can connect several electrodes
-   * every electrodes belongs to this inter-connect layer owns the same _inter_connect structure
-   */
-  std::vector<BoundaryCondition * > _inter_connect;
-
-  /**
-   * pointer to _inter_connect_hub
-   * every electrodes belongs to this inter-connect layer owns this pointer
-   */
-  BoundaryCondition * _inter_connect_hub;
-
-
-  /**
    * this variable determines which _global_offset/_local_offset pair are used
-   * default is 0, max is 7. that means we can use up to 8 individual solvers
+   * default is 0, max is 3. that means we can use up to 4 individual solvers
    * each has their own _global_offset/_local_offset pair
    */
   static unsigned int _solver_index;
@@ -826,17 +721,66 @@ private:
    */
   unsigned int _array_offset[4];
 
+
+  // members for external circuit
+public:
+
+  /**
+   * let this bc hold a pointer of External Circuit
+   */
+  void build_ext_circuit(ExternalCircuit * ckt)
+  { _ext_circuit = ckt;};
+
+
+  /**
+   * @return the const pointer of External Circuit
+   */
+  const ExternalCircuit * ext_circuit() const  { return  _ext_circuit; }
+
+  /**
+   * @return the writable pointer of External Circuit
+   */
+  ExternalCircuit * ext_circuit()  { return  _ext_circuit; }
+
+  /**
+   * set link to spice flag
+   */
+  void set_spice_electrode(bool f) { _link_to_spice = f; }
+
+  /**
+   * @return link to spice flag
+   */
+  bool is_spice_electrode() const { return _link_to_spice; }
+
 private:
 
   /**
-   * dummy to prevent compile problem
+   * pointer to External Circuit, only electrode owns this data
    */
-  static PetscScalar _dummy_;
+  ExternalCircuit * _ext_circuit;
 
   /**
-   * the same purpose with dummy
+   * flag to indicate that this bc is linked to spice
    */
-  static bool _bool_dummy_;
+  bool _link_to_spice;
+
+
+
+  // members for bc info and some preprocess
+public:
+  /**
+   * @return the string which indicates the boundary condition
+   */
+  virtual std::string boundary_condition_in_string() const
+    { return ""; }
+
+  /**
+   * derived class can do some more things
+   */
+  virtual void prepare_for_use() {}
+
+
+
 
 public:
 
@@ -860,14 +804,19 @@ public:
   /**
    * @brief virtual function for preprocess of poisson's equation.
    *
-   * @param f            petsc global function vector
-   * @param src          source row
-   * @param dst          destination row
-   * @param clear        row for clear
+   * @param PetscScalar*    local unknown vector
+   * @param f               petsc global function vector
+   * @param src             source row
+   * @param dst             destination row
+   * @param clear           row for clear
    *
    * @note each derived boundary condition can override it
    */
-  virtual void Poissin_Function_Preprocess(Vec /*f*/, std::vector<PetscInt> &/*src*/,  std::vector<PetscInt> &/*dst*/, std::vector<PetscInt> &/*clear*/) {}
+  virtual void Poissin_Function_Preprocess(PetscScalar * /*x*/, Vec /*f*/,
+                                           std::vector<PetscInt> &/*src*/,
+                                           std::vector<PetscInt> &/*dst*/,
+                                           std::vector<PetscInt> &/*clear*/)
+  {}
 
 
   /**
@@ -895,14 +844,19 @@ public:
   /**
    * @brief virtual function for preprocess Jacobian Matrix of poisson's equation.
    *
-   * @param jac          petsc global jacobian matrix
-   * @param src          source row
-   * @param dst          destination row
-   * @param clear        row for clear
+   * @param PetscScalar*     local unknown vector
+   * @param jac              petsc global jacobian matrix
+   * @param src              source row
+   * @param dst              destination row
+   * @param clear            row for clear
    *
    * @note each derived boundary condition can override it
    */
-  virtual void Poissin_Jacobian_Preprocess(Mat */*jac*/, std::vector<PetscInt> &/*src*/,  std::vector<PetscInt> &/*dst*/, std::vector<PetscInt> &/*clear*/) {}
+  virtual void Poissin_Jacobian_Preprocess(PetscScalar * /*x*/, Mat */*jac*/,
+                                           std::vector<PetscInt> &/*src*/,
+                                           std::vector<PetscInt> &/*dst*/,
+                                           std::vector<PetscInt> &/*clear*/)
+  {}
 
   /**
    * @brief virtual function for evaluating Jacobian of poisson's equation.
@@ -947,14 +901,19 @@ public:
   /**
    * @brief virtual function for preprocess for level 1 DDM equation.
    *
-   * @param f            petsc global function vector
-   * @param src          source row
-   * @param dst          destination row
-   * @param clear        row for clear
+   * @param PetscScalar*     local unknown vector
+   * @param f                petsc global function vector
+   * @param src              source row
+   * @param dst              destination row
+   * @param clear            row for clear
    *
    * @note each derived boundary condition can override it
    */
-  virtual void DDM1_Function_Preprocess(Vec /*f*/, std::vector<PetscInt> &/*src*/,  std::vector<PetscInt> &/*dst*/, std::vector<PetscInt> &/*clear*/) {}
+  virtual void DDM1_Function_Preprocess(PetscScalar * /*x*/, Vec /*f*/,
+                                        std::vector<PetscInt> &/*src*/,
+                                        std::vector<PetscInt> &/*dst*/,
+                                        std::vector<PetscInt> &/*clear*/)
+  {}
 
 
   /**
@@ -982,14 +941,19 @@ public:
   /**
    * @brief virtual function for preprocess Jacobian Matrix of level 1 DDM equation.
    *
-   * @param jac          petsc global jacobian matrix
-   * @param src          source row
-   * @param dst          destination row
-   * @param clear        row for clear
+   * @param PetscScalar*     local unknown vector
+   * @param jac              petsc global jacobian matrix
+   * @param src              source row
+   * @param dst              destination row
+   * @param clear            row for clear
    *
    * @note each derived boundary condition can override it
    */
-  virtual void DDM1_Jacobian_Preprocess(Mat */*jac*/, std::vector<PetscInt> &/*src*/,  std::vector<PetscInt> &/*dst*/, std::vector<PetscInt> &/*clear*/) {}
+  virtual void DDM1_Jacobian_Preprocess(PetscScalar * /*x*/, Mat */*jac*/,
+                                        std::vector<PetscInt> &/*src*/,
+                                        std::vector<PetscInt> &/*dst*/,
+                                        std::vector<PetscInt> &/*clear*/)
+  {}
 
   /**
    * @brief virtual function for evaluating Jacobian of level 1 DDM equation.
@@ -1026,13 +990,138 @@ public:
 
 
   /**
+   * @brief virtual function for pre process of level 1 DDM equation.
+   *
+   * @note each derived boundary condition can override it
+   */
+  virtual void DDM1_Pre_Process() {}
+
+
+  /**
+   * @brief virtual function for post process of level 1 DDM equation.
+   *
+   * @note each derived boundary condition can override it
+   */
+  virtual void DDM1_Post_Process() {}
+
+
+
+
+  //////////////////////////////////////////////////////////////////////////////////
+  //--------------Function and Jacobian evaluate for new L1 DDM-------------------//
+  //////////////////////////////////////////////////////////////////////////////////
+
+
+  /**
+   * @brief virtual function for fill vector of level 1 DDM equation.
+   *
+   * filling solution data into petsc vector of level 1 DDM equation.
+   * can be used as initial data of nonlinear equation or diverged recovery.
+   *
+   * @param Vec              global solution vector
+   * @param Vec              the left scaling vector
+   * @note each derived boundary condition can override it
+   */
+  virtual void DDM1R_Fill_Value(Vec x, Vec L )
+  { this->DDM1_Fill_Value(x, L); }
+
+  /**
+   * @brief virtual function for preprocess for level 1 DDM equation.
+   *
+   * @param f            petsc global function vector
+   * @param src          source row
+   * @param dst          destination row
+   * @param clear        row for clear
+   *
+   * @note each derived boundary condition can override it
+   */
+  virtual void DDM1R_Function_Preprocess(PetscScalar *x, Vec f, std::vector<PetscInt> &src,  std::vector<PetscInt> &dst, std::vector<PetscInt> &clear)
+  { this->DDM1_Function_Preprocess(x, f, src, dst, clear); }
+
+
+  /**
+   * @brief virtual function for evaluating level 1 DDM equation.
+   *
+   * @param PetscScalar*    local unknown vector
+   * @param Vec             petsc global function vector
+   * @param InsertMode&     flag for last operator is ADD_VALUES
+   *
+   * @note each derived boundary condition should override it
+   */
+  virtual void DDM1R_Function(PetscScalar *x , Vec f, InsertMode &add_value_flag)
+  { this->DDM1_Function(x , f, add_value_flag ); }
+
+
+  /**
+   * @brief virtual function for reserve none zero pattern in petsc matrix.
+   *
+   * @param Mat*              petsc global jacobian matrix
+   * @param InsertMode&       flag for last operator is ADD_VALUES
+   *
+   * @note each derived boundary condition can override it
+   */
+  virtual void DDM1R_Jacobian_Reserve(Mat * jac, InsertMode &add_value_flag)
+  { this->DDM1_Jacobian_Reserve(jac, add_value_flag ); }
+
+
+  /**
+   * @brief virtual function for preprocess Jacobian Matrix of level 1 DDM equation.
+   *
+   * @param jac          petsc global jacobian matrix
+   * @param src          source row
+   * @param dst          destination row
+   * @param clear        row for clear
+   *
+   * @note each derived boundary condition can override it
+   */
+  virtual void DDM1R_Jacobian_Preprocess(PetscScalar *x, Mat *jac, std::vector<PetscInt> &src,  std::vector<PetscInt> &dst, std::vector<PetscInt> &clear)
+  { this->DDM1_Jacobian_Preprocess(x, jac, src, dst, clear); }
+
+  /**
+   * @brief virtual function for evaluating Jacobian of level 1 DDM equation.
+   *
+   * @param PetscScalar*     local unknown vector
+   * @param Mat*             petsc global jacobian matrix
+   * @param InsertMode&      flag for last operator is ADD_VALUES
+   *
+   * @note each derived boundary condition should override it
+   */
+  virtual void DDM1R_Jacobian(PetscScalar * x, Mat * jac, InsertMode &add_value_flag)
+  { this->DDM1_Jacobian(x, jac, add_value_flag); }
+
+  /**
+   * @brief virtual function for evaluating trace parameter of level 1 DDM equation.
+   *
+   * @param Vec              local unknown vector
+   * @param Mat*             petsc global jacobian matrix
+   * @param Vec              vector for dI/dx
+   * @param Vec              vector for dF/dV
+   * @param InsertMode&      flag for last operator is ADD_VALUES
+   *
+   * @note each derived boundary condition should override it
+   */
+  virtual void DDM1R_Electrode_Trace(Vec x, Mat *jac, Vec pdI_pdx, Vec pdF_pdV)
+  { this->DDM1R_Electrode_Trace(x, jac, pdI_pdx, pdF_pdV); }
+
+  /**
+   * @brief virtual function for update solution value of level 1 DDM equation.
+   *
+   * @param PetscScalar*     global solution vector
+   *
+   * @note each derived boundary condition can override it
+   */
+  virtual void DDM1R_Update_Solution(PetscScalar *lxx)
+  { this->DDM1_Update_Solution(lxx); }
+
+
+  /**
    * @brief virtual function for post process of level 1 DDM equation.
    *
    * @param PetscScalar*     global solution vector
    *
    * @note each derived boundary condition can override it
    */
-  virtual void DDM1_Post_Process() {}
+  virtual void DDM1R_Post_Process() {}
 
 
   //////////////////////////////////////////////////////////////////////////////////
@@ -1062,8 +1151,8 @@ public:
    *
    * @note each derived boundary condition can override it
    */
-  virtual void MixA_DDM1_Function_Preprocess(Vec f, std::vector<PetscInt> &src,  std::vector<PetscInt> &dst, std::vector<PetscInt> &clear)
-  { this->DDM1_Function_Preprocess(f, src, dst, clear); }
+  virtual void MixA_DDM1_Function_Preprocess(PetscScalar *x, Vec f, std::vector<PetscInt> &src,  std::vector<PetscInt> &dst, std::vector<PetscInt> &clear)
+  { this->DDM1_Function_Preprocess(x, f, src, dst, clear); }
 
   /**
    * @brief virtual function for evaluating Advanced Mixed type level 1 DDM equation.
@@ -1099,8 +1188,8 @@ public:
    *
    * @note each derived boundary condition can override it
    */
-  virtual void MixA_DDM1_Jacobian_Preprocess(Mat *jac, std::vector<PetscInt> &src,  std::vector<PetscInt> &dst, std::vector<PetscInt> &clear)
-  { this->DDM1_Jacobian_Preprocess(jac, src, dst, clear); }
+  virtual void MixA_DDM1_Jacobian_Preprocess(PetscScalar *x, Mat *jac, std::vector<PetscInt> &src,  std::vector<PetscInt> &dst, std::vector<PetscInt> &clear)
+  { this->DDM1_Jacobian_Preprocess(x, jac, src, dst, clear); }
 
   /**
    * @brief virtual function for evaluating Advanced Mixed type Jacobian of level 1 DDM equation.
@@ -1142,7 +1231,7 @@ public:
    *
    * @note each derived boundary condition can override it
    */
-  virtual void DDM2_Function_Preprocess(Vec /*f*/, std::vector<PetscInt> &/*src*/,  std::vector<PetscInt> &/*dst*/, std::vector<PetscInt> &/*clear*/) {}
+  virtual void DDM2_Function_Preprocess(PetscScalar * ,Vec /*f*/, std::vector<PetscInt> &/*src*/,  std::vector<PetscInt> &/*dst*/, std::vector<PetscInt> &/*clear*/) {}
 
   /**
    * @brief virtual function for evaluating level 2 DDM equation.
@@ -1175,7 +1264,7 @@ public:
    *
    * @note each derived boundary condition can override it
      */
-  virtual void DDM2_Jacobian_Preprocess(Mat */*jac*/, std::vector<PetscInt> &/*src*/,  std::vector<PetscInt> &/*dst*/, std::vector<PetscInt> &/*clear*/) {}
+  virtual void DDM2_Jacobian_Preprocess(PetscScalar *,Mat */*jac*/, std::vector<PetscInt> &/*src*/,  std::vector<PetscInt> &/*dst*/, std::vector<PetscInt> &/*clear*/) {}
 
   /**
    * @brief virtual function for evaluating Jacobian of level 2 DDM equation.
@@ -1211,6 +1300,22 @@ public:
   virtual void DDM2_Update_Solution(PetscScalar *) {}
 
 
+  /**
+   * @brief virtual function for pre process of level 2 DDM equation.
+   *
+   * @note each derived boundary condition can override it
+   */
+  virtual void DDM2_Pre_Process() {}
+
+
+  /**
+   * @brief virtual function for post process of level 2 DDM equation.
+   *
+   * @note each derived boundary condition can override it
+   */
+  virtual void DDM2_Post_Process() {}
+
+
   //////////////////////////////////////////////////////////////////////////////////
   //----------Function and Jacobian evaluate for Advanced Mixed DDML2-------------//
   //////////////////////////////////////////////////////////////////////////////////
@@ -1238,8 +1343,8 @@ public:
    *
    * @note each derived boundary condition can override it
    */
-  virtual void MixA_DDM2_Function_Preprocess(Vec f, std::vector<PetscInt> &src,  std::vector<PetscInt> &dst, std::vector<PetscInt> &clear)
-  { this->DDM2_Function_Preprocess(f, src, dst, clear); }
+  virtual void MixA_DDM2_Function_Preprocess(PetscScalar * x, Vec f, std::vector<PetscInt> &src,  std::vector<PetscInt> &dst, std::vector<PetscInt> &clear)
+  { this->DDM2_Function_Preprocess(x, f, src, dst, clear); }
 
   /**
    * @brief virtual function for evaluating Advanced Mixed type level 2 DDM equation.
@@ -1274,8 +1379,8 @@ public:
    *
    * @note each derived boundary condition can override it
    */
-  virtual void MixA_DDM2_Jacobian_Preprocess(Mat *jac, std::vector<PetscInt> &src,  std::vector<PetscInt> &dst, std::vector<PetscInt> &clear)
-  { this->DDM2_Jacobian_Preprocess(jac, src, dst, clear); }
+  virtual void MixA_DDM2_Jacobian_Preprocess(PetscScalar *x, Mat *jac, std::vector<PetscInt> &src,  std::vector<PetscInt> &dst, std::vector<PetscInt> &clear)
+  { this->DDM2_Jacobian_Preprocess(x,jac, src, dst, clear); }
 
   /**
    * @brief virtual function for evaluating Advanced Mixed type Jacobian of level 2 DDM equation.
@@ -1317,7 +1422,7 @@ public:
    *
    * @note each derived boundary condition can override it
    */
-  virtual void EBM3_Function_Preprocess(Vec /*f*/, std::vector<PetscInt> &/*src*/,  std::vector<PetscInt> &/*dst*/, std::vector<PetscInt> &/*clear*/) {}
+  virtual void EBM3_Function_Preprocess(PetscScalar *,Vec /*f*/, std::vector<PetscInt> &/*src*/,  std::vector<PetscInt> &/*dst*/, std::vector<PetscInt> &/*clear*/) {}
 
   /**
    * @brief virtual function for evaluating level 3 EBM equation.
@@ -1350,7 +1455,7 @@ public:
    *
    * @note each derived boundary condition can override it
    */
-  virtual void EBM3_Jacobian_Preprocess(Mat */*jac*/, std::vector<PetscInt> &/*src*/,  std::vector<PetscInt> &/*dst*/, std::vector<PetscInt> &/*clear*/) {}
+  virtual void EBM3_Jacobian_Preprocess(PetscScalar * ,Mat */*jac*/, std::vector<PetscInt> &/*src*/,  std::vector<PetscInt> &/*dst*/, std::vector<PetscInt> &/*clear*/) {}
 
   /**
    * @brief virtual function for evaluating Jacobian of level 3 EBM equation.
@@ -1385,11 +1490,39 @@ public:
    */
   virtual void EBM3_Update_Solution(PetscScalar *) {}
 
+  /**
+   * @brief virtual function for pre process of level 3 EBM equation.
+   *
+   * @note each derived boundary condition can override it
+   */
+  virtual void EBM3_Pre_Process() {}
+
+  /**
+   * @brief virtual function for post process of level 3 EBM equation.
+   *
+   * @note each derived boundary condition can override it
+   */
+  virtual void EBM3_Post_Process() {}
+
 
 
   //////////////////////////////////////////////////////////////////////////////////
   //----------Function and Jacobian evaluate for Advanced Mixed EBM3 -------------//
   //////////////////////////////////////////////////////////////////////////////////
+
+
+  /**
+   * @brief virtual function for fill vector for Advanced Mixed type level 3 EBM equation.
+   *
+   * filling solution data into petsc vector of Advanced Mixed type level 3 EBM equation.
+   * can be used as initial data of nonlinear equation or diverged recovery.
+   *
+   * @param Vec              global solution vector
+   * @param Vec              the left scaling vector
+   * @note each derived boundary condition can override it
+   */
+  virtual void MixA_EBM3_Fill_Value(Vec x, Vec L)
+  { this->EBM3_Fill_Value(x, L); }
 
   /**
    * @brief virtual function for evaluating Advanced Mixed type level 3 EBM equation.
@@ -1413,8 +1546,8 @@ public:
    *
    * @note each derived boundary condition can override it
    */
-  virtual void MixA_EBM3_Function_Preprocess(Vec f, std::vector<PetscInt> &src,  std::vector<PetscInt> &dst, std::vector<PetscInt> &clear)
-  { this->EBM3_Function_Preprocess(f, src, dst, clear); }
+  virtual void MixA_EBM3_Function_Preprocess(PetscScalar *x, Vec f, std::vector<PetscInt> &src,  std::vector<PetscInt> &dst, std::vector<PetscInt> &clear)
+  { this->EBM3_Function_Preprocess(x, f, src, dst, clear); }
 
   /**
    * @brief virtual function for reserve none zero pattern in petsc matrix.
@@ -1438,8 +1571,8 @@ public:
    *
    * @note each derived boundary condition can override it
    */
-  virtual void MixA_EBM3_Jacobian_Preprocess(Mat *jac, std::vector<PetscInt> &src,  std::vector<PetscInt> &dst, std::vector<PetscInt> &clear)
-  { this->EBM3_Jacobian_Preprocess(jac, src, dst, clear); }
+  virtual void MixA_EBM3_Jacobian_Preprocess(PetscScalar *x, Mat *jac, std::vector<PetscInt> &src,  std::vector<PetscInt> &dst, std::vector<PetscInt> &clear)
+  { this->EBM3_Jacobian_Preprocess(x, jac, src, dst, clear); }
 
   /**
    * @brief virtual function for evaluating Advanced Mixed type Jacobian of level 3 EBM equation.
@@ -1480,6 +1613,178 @@ public:
    * @note each derived boundary condition can override it
    */
   virtual void DDMAC_Update_Solution(const PetscScalar * , const Mat, const double) {}
+
+
+#ifdef COGENDA_COMMERCIAL_PRODUCT
+  //////////////////////////////////////////////////////////////////////////////////
+  //----------------- functions for Gummel DDML1 solver --------------------------//
+  //////////////////////////////////////////////////////////////////////////////////
+
+
+  /**
+   * @brief virtual function for preprocess build RHS and matrix for gummel equation.
+   *
+   * @param carrier      carrier type
+   * @param A                petsc matrix as dF/dx
+   * @param r                petsc vector F(x)
+   * @param src          source row
+   * @param dst          destination row
+   * @param clear        row for clear
+   *
+   * @note each derived boundary condition can override it
+   */
+  virtual void DDM1_Gummel_Carrier_Preprocess(const std::string & carrier, Mat A, Vec r,
+                                              std::vector<PetscInt> &src,  std::vector<PetscInt> &dst, std::vector<PetscInt> &clear) {}
+
+  /**
+   * @brief virtual function for build RHS and matrix for gummel equation.
+   *
+   * @param carrier          carrier type
+   * @param x                local unknown vector
+   * @param A                petsc matrix as dF/dx
+   * @param r                petsc vector F(x)
+   * @param add_value_flag   flag for last operator is ADD_VALUES
+   *
+   * @note only ohmic/schottky boundary should override it
+   */
+  virtual void DDM1_Gummel_Carrier(const std::string & carrier, PetscScalar * x, Mat A, Vec r, InsertMode &add_value_flag) {}
+
+  /**
+   * @brief virtual function for preprocess build RHS and matrix for gummel equation.
+   *
+   * @param src          source row
+   * @param dst          destination row
+   * @param clear        row for clear
+   *
+   * @note each derived boundary condition can override it
+   */
+  virtual void DDM1_Implicit_Gummel_Carrier_Preprocess(std::vector<PetscInt> &src,  std::vector<PetscInt> &dst, std::vector<PetscInt> &clear) {}
+
+  /**
+   * @brief virtual function for build function for gummel equation.
+   *
+   * @param x                local unknown vector
+   * @param r                petsc vector F(x)
+   * @param add_value_flag   flag for last operator is ADD_VALUES
+   *
+   * @note only ohmic/schottky boundary should override it
+   */
+  virtual void DDM1_Implicit_Gummel_Carrier_Function(PetscScalar * x, Vec r, InsertMode &add_value_flag) {}
+
+  /**
+   * @brief virtual function for build function for gummel equation.
+   *
+   * @param x                local unknown vector
+   * @param Mat*             petsc global jacobian matrix
+   * @param add_value_flag   flag for last operator is ADD_VALUES
+   *
+   * @note only ohmic/schottky boundary should override it
+   */
+  virtual void DDM1_Implicit_Gummel_Carrier_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_value_flag) {}
+
+  /**
+   * @brief virtual function for reserve none zero pattern in petsc matrix.
+   *
+   * @param Mat *              petsc global jacobian matrix
+   * @param InsertMode&        flag for last operator is ADD_VALUES
+   *
+   * @note only electrode boundary need to override it
+   */
+  virtual void DDM1_Implicit_Gummel_Carrier_Reserve(Mat *jac, InsertMode &add_value_flag) {}
+
+
+
+  /**
+   * @brief virtual function for fill vector for half implicit current continuity equation.
+   *
+   * filling solution data into petsc vector
+   *
+   * @param x               global solution vector
+   * @note each derived boundary condition can override it
+   */
+  virtual void DDM1_Half_Implicit_Current_Fill_Value(Vec x) {}
+
+
+  /**
+   * @brief virtual function for reserve none zero pattern in petsc matrix.
+   *
+   * @param Mat *              petsc global jacobian matrix
+   * @param InsertMode&        flag for last operator is ADD_VALUES
+   *
+   * @note only electrode boundary need to override it
+   */
+  virtual void DDM1_Half_Implicit_Current_Reserve(Mat A, InsertMode &add_value_flag) {}
+
+
+  /**
+   * @brief virtual function for preprocess build RHS and matrix for half implicit current continuity equation.
+   *
+   * @param f            petsc vector F(x)
+   * @param A            petsc matrix A=dF(x)/dx
+   * @param src          source row
+   * @param dst          destination row
+   * @param clear        row for clear
+   *
+   * @note each derived boundary condition can override it
+   */
+  virtual void DDM1_Half_Implicit_Current_Preprocess(Vec f, Mat A, std::vector<PetscInt> &src,  std::vector<PetscInt> &dst, std::vector<PetscInt> &clear) {}
+
+  /**
+   * @brief virtual function for build RHS and matrix for half implicit current continuity equation.
+   *
+   * @param x                local unknown vector
+   * @param A                petsc matrix as dF/dx
+   * @param r                petsc vector F(x)
+   * @param add_value_flag   flag for last operator is ADD_VALUES
+   *
+   * @note each derived region should override it
+   */
+  virtual void DDM1_Half_Implicit_Current(PetscScalar * x, Mat A, Vec r, InsertMode &add_value_flag) {}
+
+
+  /**
+   * @brief virtual function for update solution value for half implicit current continuity equation.
+   *
+   * @param PetscScalar*     global solution vector
+   *
+   * @note each derived boundary condition can override it
+   */
+  virtual void DDM1_Half_Implicit_Current_Update_Solution(PetscScalar *) {}
+
+  /**
+   * @brief virtual function for preprocess build RHS and matrix for half implicit poisson correction equation.
+   *
+   * @param src          source row
+   * @param dst          destination row
+   * @param clear        row for clear
+   *
+   * @note each derived boundary condition can override it
+   */
+  virtual void DDM1_Half_Implicit_Poisson_Correction_Preprocess(Vec f, std::vector<PetscInt> &src,  std::vector<PetscInt> &dst, std::vector<PetscInt> &clear) {}
+
+  /**
+   * @brief virtual function for build RHS and matrix for half implicit poisson correction equation.
+   *
+   * @param x                local unknown vector
+   * @param A                petsc matrix as dF/dx
+   * @param r                petsc vector F(x)
+   * @param add_value_flag   flag for last operator is ADD_VALUES
+   *
+   * @note each derived region should override it
+   */
+  virtual void DDM1_Half_Implicit_Poisson_Correction(PetscScalar * x, Mat A, Vec r, InsertMode &add_value_flag) {}
+
+
+  /**
+   * @brief virtual function for update solution value for half implicit poisson correction equation.
+   *
+   * @param PetscScalar*     global solution vector
+   *
+   * @note each derived boundary condition can override it
+   */
+  virtual void DDM1_Half_Implicit_Poisson_Update_Solution(PetscScalar *) {}
+
+#endif
 
 
   //////////////////////////////////////////////////////////////////////////////////

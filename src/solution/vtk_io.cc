@@ -62,7 +62,7 @@ using PhysicalUnit::um;
 using PhysicalUnit::V;
 using PhysicalUnit::A;
 using PhysicalUnit::K;
-
+using PhysicalUnit::J;
 
 #ifdef HAVE_VTK
 class VTKIO::XMLUnstructuredGridWriter : public vtkXMLUnstructuredGridWriter
@@ -153,6 +153,7 @@ void VTKIO::cells_to_vtk(const MeshBase& mesh, vtkUnstructuredGrid* grid)
           break;// 1
           case TRI3:
           case TRI3_FVM:
+          case TRI3_CY_FVM:
           celltype = VTK_TRIANGLE;
           break;// 3
           case TRI6:
@@ -160,6 +161,7 @@ void VTKIO::cells_to_vtk(const MeshBase& mesh, vtkUnstructuredGrid* grid)
           break;// 4
           case QUAD4:
           case QUAD4_FVM:
+          case QUAD4_CY_FVM:
           celltype = VTK_QUAD;
           break;// 5
           case QUAD8:
@@ -421,7 +423,7 @@ void VTKIO::meshinfo_to_vtk(const MeshBase& mesh, vtkUnstructuredGrid* grid)
       partition_info->SetValue(id, elem_partition[n]);
     }
 
-    std::vector<int> boundary_face_ids;
+
     typedef std::pair<unsigned int, unsigned short int> boundary_elem_key;
     std::map<boundary_elem_key, unsigned int> boundary_face_order;
     for(unsigned int n=0; n<boundary_elem_ids.size(); ++n)
@@ -624,8 +626,9 @@ void VTKIO::solution_to_vtk(const MeshBase& mesh, vtkUnstructuredGrid* grid)
     std::vector<float> psi, Ec, Ev, qFn, qFp;
     std::vector<float> n, p, T, Tn, Tp; //scalar value
     std::vector<float> mole_x, mole_y;
-    std::vector<float> OptG, PatG;
+    std::vector<float> OptG, OptE, PatG, PatE;
     std::vector<float> R, Taun, Taup;
+    std::vector<float> II;
 
     std::vector<std::complex<float> >psi_ac, n_ac, p_ac, T_ac, Tn_ac, Tp_ac; //complex value
     std::vector<std::complex<float> > OptE_complex, OptH_complex;
@@ -680,6 +683,7 @@ void VTKIO::solution_to_vtk(const MeshBase& mesh, vtkUnstructuredGrid* grid)
             mole_x.push_back(static_cast<float>(node_data->mole_x()));
             mole_y.push_back(static_cast<float>(node_data->mole_y()));
             R.push_back(static_cast<float>(node_data->Recomb()/(concentration_scale/s)));
+            II.push_back(static_cast<float>(node_data->ImpactIonization()/(concentration_scale/s)));
             /*
             Jnx.push_back(static_cast<float>(node_data->Jn()(0)/(A/cm)));
             Jny.push_back(static_cast<float>(node_data->Jn()(1)/(A/cm)));
@@ -709,10 +713,15 @@ void VTKIO::solution_to_vtk(const MeshBase& mesh, vtkUnstructuredGrid* grid)
           }
 
           if(optical_generation)
-            OptG.push_back(static_cast<float>(node_data->OptG()/(concentration_scale/s)));
-
+          {
+            OptE.push_back(static_cast<float>(node_data->OptE()));
+            OptG.push_back(static_cast<float>(node_data->Field_G()/(concentration_scale/s)));
+          }
           if(particle_generation)
-            PatG.push_back(static_cast<float>(node_data->PatG()/(concentration_scale/s)));
+          {
+            PatE.push_back(static_cast<float>(node_data->PatE()/(eV)));
+            PatG.push_back(static_cast<float>(node_data->Field_G()/(concentration_scale/s)));
+          }
 
           if(ddm_ac_data)
           {
@@ -752,23 +761,24 @@ void VTKIO::solution_to_vtk(const MeshBase& mesh, vtkUnstructuredGrid* grid)
     if (Genius::processor_id() == 0)
       genius_assert( order.size() == mesh.n_nodes() );
 
-    write_node_scaler_solution(order, psi, "psi", grid);
+    write_node_scaler_solution(order, psi, "potential", grid);
     write_node_scaler_solution(order, Ec,  "Ec",  grid);
     write_node_scaler_solution(order, Ev,  "Ev",  grid);
-    write_node_scaler_solution(order, qFn, "elec quasi Fermi level", grid);
-    write_node_scaler_solution(order, qFp, "hole quasi Fermi level", grid);
+    write_node_scaler_solution(order, qFn, "elec_quasi_Fermi_level", grid);
+    write_node_scaler_solution(order, qFp, "hole_quasi_Fermi_level", grid);
 
     if(semiconductor_material)
     {
       write_node_scaler_solution(order, Na,  "Na", grid);
       write_node_scaler_solution(order, Nd,  "Nd", grid);
-      write_node_scaler_solution(order, n,   "electron density", grid);
-      write_node_scaler_solution(order, p,   "hole density", grid);
+      write_node_scaler_solution(order, n,   "electron_density", grid);
+      write_node_scaler_solution(order, p,   "hole_density", grid);
       write_node_scaler_solution(order, net_doping,  "net_doping", grid);
       write_node_scaler_solution(order, net_charge,  "net_charge", grid);
-      write_node_scaler_solution(order, mole_x, "mole x", grid);
-      write_node_scaler_solution(order, mole_y, "mole y", grid);
+      write_node_scaler_solution(order, mole_x, "mole_x", grid);
+      write_node_scaler_solution(order, mole_y, "mole_y", grid);
       write_node_scaler_solution(order, R, "recombination", grid);
+      write_node_scaler_solution(order, II, "impact_ionization", grid);
       //write_node_vector_solution(order, Vnx, Vny, Vnz, "Vn_node", grid);
       //write_node_vector_solution(order, Vpx, Vpy, Vpz, "Vp_node", grid);
       //write_node_vector_solution(order, Jnx, Jny, Jnz, "Jn_node", grid);
@@ -780,39 +790,43 @@ void VTKIO::solution_to_vtk(const MeshBase& mesh, vtkUnstructuredGrid* grid)
 
     if(ebm_solution_data)
     {
-      write_node_scaler_solution(order, Tn,  "elec temperature", grid);
-      write_node_scaler_solution(order, Tp,  "hole temperature", grid);
+      write_node_scaler_solution(order, Tn,  "elec_temperature", grid);
+      write_node_scaler_solution(order, Tp,  "hole_temperature", grid);
     }
 
     if(ddm_ac_data)
     {
-      write_node_complex_solution(order, psi_ac, "psi AC", grid);
-      write_node_complex_solution(order, n_ac,   "electron AC", grid);
-      write_node_complex_solution(order, p_ac,   "hole AC", grid);
-      write_node_complex_solution(order, T_ac,   "temperature AC", grid);
-      write_node_complex_solution(order, Tn_ac,  "elec temperature AC", grid);
-      write_node_complex_solution(order, Tp_ac,  "hole temperature AC", grid);
+      write_node_complex_solution(order, psi_ac, "potential_AC", grid);
+      write_node_complex_solution(order, n_ac,   "electron_AC", grid);
+      write_node_complex_solution(order, p_ac,   "hole_AC", grid);
+      write_node_complex_solution(order, T_ac,   "temperature_AC", grid);
+      write_node_complex_solution(order, Tn_ac,  "elec_temperature_AC", grid);
+      write_node_complex_solution(order, Tp_ac,  "hole_temperature_AC", grid);
     }
 
     if(optical_complex_field)
     {
-      write_node_complex_solution(order, OptE_complex, "Optical E", grid);
-      write_node_complex_solution(order, OptH_complex, "Optical H", grid);
+      write_node_complex_solution(order, OptE_complex, "Optical_E", grid);
+      write_node_complex_solution(order, OptH_complex, "Optical_H", grid);
     }
 
     if(optical_generation)
-      write_node_scaler_solution(order, OptG,   "Optical Generation", grid);
-
+    {
+      write_node_scaler_solution(order, OptE,   "optical_energy_density", grid);
+      write_node_scaler_solution(order, OptG,   "optical_generation", grid);
+    }
     if(particle_generation)
-      write_node_scaler_solution(order, PatG,   "Radiation Generation", grid);
-
+    {
+      write_node_scaler_solution(order, PatE,   "radiation_energy_density", grid);
+      write_node_scaler_solution(order, PatG,   "radiation_generation", grid);
+    }
     //write_node_scaler_solution(order, Taun,   "Taun", grid);
     //write_node_scaler_solution(order, Taup,   "Taup", grid);
   }
 
   // write cell based data
   {
-    std::map<unsigned int, unsigned int> id_order;
+    std::map<const Elem *, const FVM_CellData *> elem_to_elem_data_map;
     std::vector<unsigned int> order;
 
     //std::vector<float> mos_channel_flag;
@@ -828,8 +842,8 @@ void VTKIO::solution_to_vtk(const MeshBase& mesh, vtkUnstructuredGrid* grid)
       {
         const Elem * elem = region->get_region_elem(n);
         if( elem->processor_id() != Genius::processor_id() ) continue;
-
-        id_order[elem->id()] = order.size();
+        const FVM_CellData * elem_data = region->get_region_elem_data(n);
+        elem_to_elem_data_map.insert( std::make_pair(elem, elem_data) );
         order.push_back(elem->id());
         /*
         if( region->type()==SemiconductorRegion)
@@ -840,7 +854,6 @@ void VTKIO::solution_to_vtk(const MeshBase& mesh, vtkUnstructuredGrid* grid)
         else
           mos_channel_flag.push_back(0.0);
         */
-        const FVM_CellData * elem_data = region->get_region_elem_data(n);
 
         Ex.push_back(static_cast<float>(elem_data->E()(0)/(V/cm)));
         Ey.push_back(static_cast<float>(elem_data->E()(1)/(V/cm)));
@@ -853,42 +866,78 @@ void VTKIO::solution_to_vtk(const MeshBase& mesh, vtkUnstructuredGrid* grid)
         Jpx.push_back(static_cast<float>(elem_data->Jp()(0)/(A/cm)));
         Jpy.push_back(static_cast<float>(elem_data->Jp()(1)/(A/cm)));
         Jpz.push_back(static_cast<float>(elem_data->Jp()(2)/(A/cm)));
+
       }
     }
 
     // write solution for boundary elements, just keep the same as mesh elems
     {
-      unsigned int id = mesh.n_active_elem();
-      for(unsigned int n=0; n<_il.size(); ++n, ++id)
+      std::vector<unsigned int> boundary_elem_ids(_el);
+      std::vector<unsigned short int> boundary_elem_sides(_sl);
+      Parallel::gather(0, boundary_elem_ids);
+      Parallel::gather(0, boundary_elem_sides);
+
+      typedef std::pair<unsigned int, unsigned short int> boundary_elem_key;
+      std::map<boundary_elem_key, unsigned int> boundary_face_order;
+      for(unsigned int n=0; n<boundary_elem_ids.size(); ++n)
+      {
+        boundary_elem_key key = std::make_pair(boundary_elem_ids[n], boundary_elem_sides[n]);
+        boundary_face_order.insert(std::make_pair(key, 0));
+      }
+      std::map< boundary_elem_key, unsigned int >::iterator boundary_face_it=boundary_face_order.begin();
+      for(unsigned int i=0;boundary_face_it != boundary_face_order.end(); ++boundary_face_it, ++i)
+      {
+        boundary_face_it->second = i;
+      }
+
+      unsigned int id_offset = mesh.n_elem();
+      for(unsigned int n=0; n<_il.size(); ++n)
       {
         const Elem * elem = mesh.elem(_el[n]);
         if( elem->processor_id() != Genius::processor_id() ) continue;
+        genius_assert(elem_to_elem_data_map.find(elem) != elem_to_elem_data_map.end());
+        const FVM_CellData * elem_data = elem_to_elem_data_map.find(elem)->second;
 
-        order.push_back(id);
-        genius_assert(id_order.find(elem->id()) != id_order.end());
-        unsigned int elem_id_order = id_order[elem->id()];
+        boundary_elem_key key = std::make_pair(_el[n], _sl[n]);
+        order.push_back(id_offset + boundary_face_order.find(key)->second);
 
+        //std::cout<<id_offset + boundary_face_order.find(key)->second<<std::endl;
         //mos_channel_flag.push_back(0.5);
+#if 0
+        Ex.push_back(static_cast<float>(elem_data->E()(0)/(V/cm)));
+        Ey.push_back(static_cast<float>(elem_data->E()(1)/(V/cm)));
+        Ez.push_back(static_cast<float>(elem_data->E()(2)/(V/cm)));
 
-        Ex.push_back(Ex[elem_id_order]);
-        Ey.push_back(Ey[elem_id_order]);
-        Ez.push_back(Ez[elem_id_order]);
+        Jnx.push_back(static_cast<float>(elem_data->Jn()(0)/(A/cm)));
+        Jny.push_back(static_cast<float>(elem_data->Jn()(1)/(A/cm)));
+        Jnz.push_back(static_cast<float>(elem_data->Jn()(2)/(A/cm)));
 
-        Jnx.push_back(Jnx[elem_id_order]);
-        Jny.push_back(Jny[elem_id_order]);
-        Jnz.push_back(Jnz[elem_id_order]);
+        Jpx.push_back(static_cast<float>(elem_data->Jp()(0)/(A/cm)));
+        Jpy.push_back(static_cast<float>(elem_data->Jp()(1)/(A/cm)));
+        Jpz.push_back(static_cast<float>(elem_data->Jp()(2)/(A/cm)));
+#endif
 
-        Jpx.push_back(Jpx[elem_id_order]);
-        Jpy.push_back(Jpy[elem_id_order]);
-        Jpz.push_back(Jpz[elem_id_order]);
+#if 1
+        Ex.push_back(0);
+        Ey.push_back(0);
+        Ez.push_back(0);
+
+        Jnx.push_back(0);
+        Jny.push_back(0);
+        Jnz.push_back(0);
+
+        Jpx.push_back(0);
+        Jpy.push_back(0);
+        Jpz.push_back(0);
+#endif
       }
     }
 
     Parallel::gather(0, order);
     //write_cell_scaler_solution(order, mos_channel_flag,  "mos channel", grid);
-    write_cell_vector_solution(order, Ex,  Ey,  Ez,  "electrical field", grid);
-    write_cell_vector_solution(order, Jnx, Jny, Jnz, "electron current", grid);
-    write_cell_vector_solution(order, Jpx, Jpy, Jpz, "hole current", grid);
+    write_cell_vector_solution(order, Ex,  Ey,  Ez,  "electrical_field", grid);
+    write_cell_vector_solution(order, Jnx, Jny, Jnz, "electron_current", grid);
+    write_cell_vector_solution(order, Jpx, Jpy, Jpz, "hole_current", grid);
   }
 }
 
@@ -1139,7 +1188,7 @@ void VTKIO::nodes_to_vtk(const MeshBase& mesh, std::ofstream & out)
 
 void VTKIO::cells_to_vtk(const MeshBase& mesh,  std::ofstream & out)
 {
-  int cell_size = mesh.n_active_elem();
+  int cell_size = mesh.n_elem();
 
   int cell_nodes = 0;
   std::map<unsigned int, unsigned int> elem_type;
@@ -1161,7 +1210,7 @@ void VTKIO::cells_to_vtk(const MeshBase& mesh,  std::ofstream & out)
   // only do it at root node
   if(Genius::processor_id() == 0)
   {
-    out<<"CELLS "<<mesh.n_active_elem()<<" "<<cell_size+cell_nodes<<'\n';
+    out<<"CELLS "<<mesh.n_elem()<<" "<<cell_size+cell_nodes<<'\n';
 
     unsigned int cnt = 0;
     while (cnt < conn.size())
@@ -1184,7 +1233,7 @@ void VTKIO::cells_to_vtk(const MeshBase& mesh,  std::ofstream & out)
     }
     out << std::endl;
 
-    out << "CELL_TYPES " << mesh.n_active_elem() << '\n';
+    out << "CELL_TYPES " << mesh.n_elem() << '\n';
 
     std::map<unsigned int, unsigned int>::const_iterator it = elem_type.begin();
     for (; it != elem_type.end(); ++it)
@@ -1202,6 +1251,7 @@ void VTKIO::cells_to_vtk(const MeshBase& mesh,  std::ofstream & out)
           break;// 1
           case TRI3:
           case TRI3_FVM:
+          case TRI3_CY_FVM:
           celltype = 5;  //VTK_TRIANGLE;
           break;// 3
           case TRI6:
@@ -1209,6 +1259,7 @@ void VTKIO::cells_to_vtk(const MeshBase& mesh,  std::ofstream & out)
           break;// 4
           case QUAD4:
           case QUAD4_FVM:
+          case QUAD4_CY_FVM:
           celltype = 9;  //VTK_QUAD;
           break;// 5
           case QUAD8:
@@ -1398,7 +1449,7 @@ void VTKIO::solution_to_vtk(const MeshBase& mesh, std::ofstream & out)
 
   // write cell based data
   {
-    const unsigned int n_elems = mesh.n_active_elem();
+    const unsigned int n_elems = mesh.n_elem();
     out << "CELL_DATA "<<n_elems     <<'\n';
 
     meshinfo_cell_to_vtk(mesh, out);
@@ -2013,8 +2064,8 @@ void VTKIO::read (const std::string& name)
       //build neighbor information for mesh. then elem->neighbor() is functional
       mesh.find_neighbors();
 
-      std::map<const std::string, int> bd_map;
-      typedef std::map<const std::string, int>::iterator Bd_It;
+      std::map<std::string, int> bd_map;
+      typedef std::map<std::string, int>::iterator Bd_It;
 
       const MeshBase::element_iterator el_end = mesh.elements_end();
       for (MeshBase::element_iterator el = mesh.elements_begin(); el != el_end; ++el)

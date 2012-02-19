@@ -21,6 +21,7 @@
 
 #include "elem.h"
 #include "simulation_region.h"
+#include "boundary_condition.h"
 #include "material.h"
 #include "parallel.h"
 
@@ -29,8 +30,8 @@ std::map<unsigned int,  SimulationRegion *>  SimulationRegion::_subdomain_id_to_
 
 
 
-SimulationRegion::SimulationRegion(const std::string &name, const std::string &material, const PetscScalar T)
-    :_region_name(name), _region_material(material), _T_external(T)
+SimulationRegion::SimulationRegion(const std::string &name, const std::string &material, const double T, const double z)
+  :_region_name(name), _region_material(material), _T_external(T), _z_width(z)
 {}
 
 
@@ -40,8 +41,19 @@ SimulationRegion::~SimulationRegion()
 }
 
 
-PetscScalar SimulationRegion::T_external() const
-  { return _T_external; }
+double SimulationRegion::T_external() const
+{ return _T_external; }
+
+
+
+double SimulationRegion::z_width() const
+{ return _z_width; }
+
+
+void SimulationRegion::add_boundary(BoundaryCondition * bc)
+{
+  _region_boundaries[bc->boundary_id()] = bc;
+}
 
 
 unsigned int SimulationRegion::n_on_processor_cell() const
@@ -55,11 +67,7 @@ unsigned int SimulationRegion::n_on_processor_cell() const
 
 unsigned int SimulationRegion::n_on_processor_node() const
 {
-  unsigned int n_node = 0;
-  std::map<unsigned int, FVM_Node *>::const_iterator it = _region_node.begin();
-  for(; it != _region_node.end(); ++it)
-    if( (*it).second->on_processor() ) n_node++;
-  return n_node;
+  return _region_processor_node.size();
 }
 
 
@@ -75,6 +83,43 @@ void SimulationRegion::region_node(std::vector<unsigned int> & nodes) const
 
   Parallel::allgather( nodes );
   std::sort(nodes.begin(), nodes.end());
+}
+
+
+
+FVM_Node * SimulationRegion::region_fvm_node(const Node* node) const
+{
+  std::map<unsigned int, FVM_Node *>::const_iterator it = _region_node.find( node->id() );
+  if( it!=_region_node.end() )
+    return (*it).second;
+  return NULL;
+}
+
+
+FVM_Node * SimulationRegion::region_fvm_node(unsigned int id) const
+{
+  std::map<unsigned int, FVM_Node *>::const_iterator it = _region_node.find( id );
+  if( it!=_region_node.end() )
+    return (*it).second;
+  return NULL;
+}
+
+
+FVM_NodeData * SimulationRegion::region_node_data(const Node* node) const
+{
+  std::map<unsigned int, FVM_Node *>::const_iterator it = _region_node.find( node->id() );
+  if( it!=_region_node.end() )
+    return (*it).second->node_data();
+  return NULL;
+}
+
+
+FVM_NodeData * SimulationRegion::region_node_data(unsigned int id) const
+{
+  std::map<unsigned int, FVM_Node *>::const_iterator it = _region_node.find( id );
+  if( it!=_region_node.end() )
+    return (*it).second->node_data();
+  return NULL;
 }
 
 
@@ -97,6 +142,9 @@ void SimulationRegion::clear()
   _region_node.clear();
   _region_local_node.clear();
   _region_processor_node.clear();
+  _region_ghost_node.clear();
+  _region_image_node.clear();
+
 
   _cell_data_storage.clear();
   _node_data_storage.clear();
@@ -104,6 +152,7 @@ void SimulationRegion::clear()
   _region_edges.clear();
   _region_elem_edge_in_edges_index.clear();
   _region_neighbors.clear();
+  _region_boundaries.clear();
   _region_bounding_box = std::make_pair(Point(), Point());
 
   _hanging_node_on_elem_side.clear();
@@ -117,10 +166,15 @@ void SimulationRegion::reserve_data_block(unsigned int n_cell_data, unsigned int
   _node_data_storage.reserve(n_node_data);
 }
 
+
 void SimulationRegion::rebuild_region_fvm_node_list()
 {
   _region_local_node.clear();
   _region_processor_node.clear();
+  _region_ghost_node.clear();
+  _region_image_node.clear();
+
+
   // fill on_local and on_processor node vector
   for(std::map<unsigned int, FVM_Node *>::iterator nodes_it = _region_node.begin(); nodes_it != _region_node.end(); nodes_it++)
   {
@@ -130,35 +184,60 @@ void SimulationRegion::rebuild_region_fvm_node_list()
       genius_assert(fvm_node->node_data());
       _region_local_node.push_back(fvm_node);
     }
-    if( fvm_node->on_processor() ) _region_processor_node.push_back(fvm_node);
+    if( fvm_node->on_processor() )
+      _region_processor_node.push_back(fvm_node);
+    if( fvm_node->on_local() && !fvm_node->on_processor())
+      _region_ghost_node.push_back(fvm_node);
+  }
+
+  std::set<unsigned int> ghost_nodes;
+  for(unsigned int n=0; n<_region_ghost_node.size(); ++n)
+    ghost_nodes.insert( _region_ghost_node[n]->root_node()->id() );
+  Parallel::allgather(ghost_nodes);
+
+  std::set<unsigned int>::const_iterator it = ghost_nodes.begin();
+  for( ; it != ghost_nodes.end(); ++it)
+  {
+    unsigned int id = *it;
+    if( _region_node.find(id) == _region_node.end() ) continue;
+
+    FVM_Node * fvm_node = _region_node.find(id)->second;
+    if( fvm_node->on_processor() )
+      _region_image_node.push_back(fvm_node);
   }
 }
 
 
 void SimulationRegion::prepare_for_use()
 {
+  START_LOG("prepare_for_use()", "SimulationRegion");
+
   // first, we set std::map< const Node *, FVM_Node * > _node_neighbor for FVM_Node
-  std::map<unsigned int, FVM_Node *>::iterator nodes_it = _region_node.begin();
-  for(; nodes_it != _region_node.end(); ++nodes_it)
   {
-    FVM_Node * fvm_node = (*nodes_it).second;
+    std::map<unsigned int, FVM_Node *>::iterator nodes_it = _region_node.begin();
+    for(; nodes_it != _region_node.end(); ++nodes_it)
+    {
+      FVM_Node * fvm_node = (*nodes_it).second;
 
-    // skip nonlocal fvm_node
-    if( !fvm_node->on_local() ) continue;
+      // skip nonlocal fvm_node
+      if( !fvm_node->on_local() ) continue;
 
-    FVM_Node::fvm_neighbor_node_iterator  nb_fvm_node_it = fvm_node->neighbor_node_begin();
-    for(; nb_fvm_node_it!=fvm_node->neighbor_node_end(); ++nb_fvm_node_it)
-      fvm_node->set_node_neighbor( (*nb_fvm_node_it).first, region_fvm_node((*nb_fvm_node_it).first) );
+      FVM_Node::fvm_neighbor_node_iterator  nb_fvm_node_it = fvm_node->neighbor_node_begin();
+      for(; nb_fvm_node_it!=fvm_node->neighbor_node_end(); ++nb_fvm_node_it)
+        fvm_node->set_node_neighbor( (*nb_fvm_node_it).first, region_fvm_node((*nb_fvm_node_it).first) );
+    }
   }
 
   // for efficient reason, let each element hold pointer to corresponding FVM_Node
   // since _region_cell is <const Elem *>, we do const_cast here
-  element_iterator elem_it = elements_begin();
-  for(; elem_it != elements_end(); elem_it++)
   {
-    Elem * e = const_cast<Elem *> (*elem_it);
-    for(unsigned int i=0; i<e->n_nodes(); i++)
-      e->hold_fvm_node( i, region_fvm_node( e->get_node(i)) );
+    element_iterator elem_it = elements_begin();
+    for(; elem_it != elements_end(); elem_it++)
+    {
+      Elem * e = const_cast<Elem *> (*elem_it);
+      for(unsigned int i=0; i<e->n_nodes(); i++)
+        e->hold_fvm_node( i, region_fvm_node( e->get_node(i)) );
+    }
   }
 
   // fix extra on local cells
@@ -182,15 +261,12 @@ void SimulationRegion::prepare_for_use()
     }
   }
 
-  // build these two vector for fast iteration
-  rebuild_region_fvm_node_list();
-
 
   // build region edges
   {
     typedef std::map<std::pair<unsigned int, unsigned int>, std::vector<std::pair<const Elem*, unsigned int> > > EdgeCellMap;
     EdgeCellMap region_edge_map;
-    for(elem_it = elements_begin(); elem_it != elements_end(); elem_it++)
+    for(element_iterator elem_it = elements_begin(); elem_it != elements_end(); elem_it++)
     {
       const Elem * elem = *elem_it; // elem are on local
       for(unsigned int n=0; n<elem->n_edges(); ++n)
@@ -230,11 +306,47 @@ void SimulationRegion::prepare_for_use()
     }
   }
 
+  STOP_LOG("prepare_for_use()", "SimulationRegion");
+}
+
+
+void SimulationRegion::prepare_for_use_parallel()
+{
+  START_LOG("prepare_for_use_parallel()", "SimulationRegion");
+
+  // build these two vector for fast iteration
+  rebuild_region_fvm_node_list();
+
+  // statistic all the region nodes
+  _n_region_node = this->n_on_processor_node();
+  Parallel::sum(_n_region_node);
+
+  // build bounding box of the region
+  {
+    std::vector<Real> min(3, 1.e30);
+    std::vector<Real> max(3, -1.e30);
+
+    processor_node_iterator nodes_it = on_processor_nodes_begin();
+    for(; nodes_it != on_processor_nodes_end(); ++nodes_it)
+    {
+      const FVM_Node * fvm_node = *nodes_it;
+      const Node * node = fvm_node->root_node();
+      for (unsigned int i=0; i<3; i++)
+      {
+        min[i] = std::min(min[i], (*node)(i));
+        max[i] = std::max(max[i], (*node)(i));
+      }
+    }
+
+    Parallel::min(min);
+    Parallel::max(max);
+    _region_bounding_box = std::make_pair(Point(&min[0]), Point(&max[0]));
+  }
 
   // find region neighbors
   {
     std::set<unsigned int> neighbor_region_id;
-    for(elem_it = elements_begin(); elem_it != elements_end(); elem_it++)
+    for(element_iterator elem_it = elements_begin(); elem_it != elements_end(); elem_it++)
     {
       const Elem * elem = *elem_it; // elem are on local
       if( !elem->on_processor() ) continue; //
@@ -252,31 +364,13 @@ void SimulationRegion::prepare_for_use()
       _region_neighbors.push_back( _subdomain_id_to_region_map.find(*it)->second );
   }
 
-
-  // build bounding box of the region
-  {
-    std::vector<Real> min(3, 1.e30);
-    std::vector<Real> max(3, -1.e30);
-
-    for(nodes_it = _region_node.begin(); nodes_it != _region_node.end(); ++nodes_it)
-    {
-      const FVM_Node * fvm_node = (*nodes_it).second;
-      const Node * node = fvm_node->root_node();
-      for (unsigned int i=0; i<3; i++)
-      {
-        min[i] = std::min(min[i], (*node)(i));
-        max[i] = std::max(max[i], (*node)(i));
-      }
-    }
-    Parallel::min(min);
-    Parallel::max(max);
-    _region_bounding_box = std::make_pair(Point(&min[0]), Point(&max[0]));
-  }
-
-  // set fvm_node volumn for all the FVM_Node
+  // reset fvm_node volumn for all the FVM_Node (also sync ghost nodes)
+  //NOTE zero/negative fvm_node volumn due to bad mesh will cause simulation fail.
+  // here we force all the fvm_node volumn to be positive
   {
     std::map<unsigned int, Real> fvm_node_volumn_map;
-    for(nodes_it = _region_node.begin(); nodes_it != _region_node.end(); ++nodes_it)
+    std::map<unsigned int, FVM_Node *>::iterator nodes_it = _region_node.begin();
+    for(; nodes_it != _region_node.end(); ++nodes_it)
     {
       const FVM_Node * fvm_node = (*nodes_it).second;
       if( !fvm_node->on_processor() ) continue;
@@ -284,14 +378,28 @@ void SimulationRegion::prepare_for_use()
     }
 
     Parallel::allgather(fvm_node_volumn_map);
-
+    const double min_fvm_volumn = 1*std::pow(PhysicalUnit::nm, 3);
     for(nodes_it = _region_node.begin(); nodes_it != _region_node.end(); ++nodes_it)
     {
       FVM_Node * fvm_node = (*nodes_it).second;
-      fvm_node->set_control_volume( fvm_node_volumn_map.find(fvm_node->root_node()->id())->second );
+      fvm_node->set_control_volume( std::max(min_fvm_volumn, std::abs(fvm_node_volumn_map.find(fvm_node->root_node()->id())->second)) );
     }
   }
+
+  // hanging node flag
+  {
+    std::vector<int> hanging_node_flags;
+    hanging_node_flags.push_back(static_cast<int>( _hanging_node_on_elem_side.size() != 0 && _hanging_node_on_elem_edge.size() == 0 ));
+    hanging_node_flags.push_back(static_cast<int>(  _hanging_node_on_elem_edge.size() != 0 ));
+    Parallel::max(hanging_node_flags);
+    _hanging_node_on_elem_side_flag = static_cast<bool>(hanging_node_flags[0]);
+    _hanging_node_on_elem_edge_flag = static_cast<bool>(hanging_node_flags[1]);
+  }
+
+  STOP_LOG("prepare_for_use_parallel()", "SimulationRegion");
 }
+
+
 
 
 bool SimulationRegion::is_neighbor(const SimulationRegion *r) const
@@ -552,6 +660,37 @@ bool SimulationRegion::get_variable_data(const std::string &var_name, DataLocati
 }
 
 
+template <typename T>
+bool SimulationRegion::sync_point_variable(const std::string &var_name)
+{
+  parallel_only();
+
+  if( _region_point_variables.find(var_name) == _region_point_variables.end() ) return false;
+
+  const SimulationVariable & variable = _region_point_variables.find(var_name)->second;
+  unsigned int variable_index = variable.variable_index;
+
+  std::map<unsigned int, T> ghost_values;
+  for(unsigned int n=0; n<_region_image_node.size(); ++n)
+  {
+    const FVM_Node * fvm_node = _region_image_node[n];
+    unsigned int offset = fvm_node->node_data()->offset();
+    ghost_values.insert( std::make_pair(fvm_node->root_node()->id(), _node_data_storage.data<T>(variable_index, offset)) );
+  }
+  Parallel::allgather(ghost_values);
+
+  for(unsigned int n=0; n<_region_ghost_node.size(); ++n)
+  {
+    const FVM_Node * fvm_node = _region_ghost_node[n];
+    T value = ghost_values.find(fvm_node->root_node()->id())->second;
+    unsigned int offset = fvm_node->node_data()->offset();
+    _node_data_storage.data<T>(variable_index, offset) = value;
+  }
+
+}
+
+
+
 void SimulationRegion::set_pmi(const std::string &type, const std::string &model_name, std::vector<Parser::Parameter> & pmi_parameters)
 {
   get_material_base()->set_pmi(type,model_name,pmi_parameters);
@@ -583,19 +722,26 @@ std::string SimulationRegion::get_pmi_info(const std::string& type, const int ve
 }
 
 
-bool SimulationRegion::has_2d_hanging_node() const
+void SimulationRegion::add_hanging_node_on_side(const Node * node, const Elem * elem, unsigned int s)
 {
-  bool flag = ( _hanging_node_on_elem_side.size() != 0 && _hanging_node_on_elem_edge.size() == 0 );
-  Parallel::max(flag);
-  return flag;
+  std::map<unsigned int, FVM_Node *>::iterator it = _region_node.find(node->id());
+  genius_assert( it!=_region_node.end() );
+
+  const FVM_Node * fvm_node = (*it).second;
+  _hanging_node_on_elem_side[fvm_node] = std::pair<const Elem *, unsigned int>(elem, s);
 }
 
-bool SimulationRegion::has_3d_hanging_node() const
+
+void SimulationRegion::add_hanging_node_on_edge(const Node * node, const Elem * elem, unsigned int e)
 {
-  bool flag = ( _hanging_node_on_elem_edge.size() != 0 );
-  Parallel::max(flag);
-  return flag;
+  std::map<unsigned int, FVM_Node *>::iterator it = _region_node.find(node->id());
+  genius_assert( it!=_region_node.end() );
+
+  const FVM_Node * fvm_node = (*it).second;
+  _hanging_node_on_elem_edge[fvm_node] = std::pair<const Elem *, unsigned int>(elem, e);
+
 }
+
 
 //explicit instantiation
 template

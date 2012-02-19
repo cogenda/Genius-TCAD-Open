@@ -27,14 +27,15 @@
 #include <vector>
 #include <map>
 
-#include "point.h"
-#include "key.h"   // for parameter calibrating from user input file
+
+#include "parser_parameter.h"   // for parameter calibrating from user input file
 #include "adolc.h" // for automatic differentiation
 #include "variable_define.h"
 
 using namespace adtl;
 
 //predefine
+class Point;
 class FVM_NodeData;
 
 
@@ -113,6 +114,14 @@ struct PMI_Environment
                   double _m_, double _s_, double _V_, double _C_, double _K_)
   : pp_point(point), pp_node_data(node_data), p_clock(time), pp_variables(variables), m(_m_), s(_s_), V(_V_), C(_C_), K(_K_)
   {}
+
+  /**
+   * constructor
+   */
+  PMI_Environment(double _m_, double _s_, double _V_, double _C_, double _K_)
+  : pp_point(0), pp_node_data(0), p_clock(0), pp_variables(0), m(_m_), s(_s_), V(_V_), C(_C_), K(_K_)
+  {}
+
 };
 
 /**
@@ -248,7 +257,7 @@ protected:
    * this map links variable \p name to its \p address
    * user can change the default value by providing variable \p name
    */
-  std::map<const std::string, PARA >  parameter_map;
+  std::map<std::string, PARA >  parameter_map;
 
   typedef std::pair<const std::string, PARA >  para_item;
 
@@ -324,7 +333,7 @@ public:
   /**
    * an interface for main code to access the parameter information in the material database
    */
-  std::map<const std::string, PARA > & get_parameter_info();
+  std::map<std::string, PARA > & get_parameter_info();
 
   /**
    * an interface for main code to access the library information in the material database
@@ -362,6 +371,9 @@ typedef PMI_Environment PMIS_Environment;
  */
 class PMIS_Server : public PMI_Server
 {
+private:
+  // debug
+  PetscScalar _Na, _Nd, _mole_x, _mole_y;
 public:
 
   /**
@@ -374,6 +386,15 @@ public:
    */
   virtual ~PMIS_Server(){}
 
+  /**
+   * set the fake doping environment, debug only
+   */
+  void SetFakeDopingEnvironment(PetscScalar Na, PetscScalar Nd);
+
+  /**
+   * set the fake mole environment, debug only
+   */
+  void SetFakeMoleEnvironment(PetscScalar mole_x, PetscScalar mole_y=0.0);
 
   /**
    * aux function return first mole function of current node.
@@ -1003,9 +1024,14 @@ public:
   class TrapLocation
   {
     public:
-      Point point;
+      double point[3];
       TrapType type;
-      TrapLocation(const Point &p, TrapType t) : point(p), type(t) {};
+      TrapLocation(double x, double y, double z, TrapType t) : type(t)
+      {
+        point[0] = x;
+        point[1] = y;
+        point[2] = z;
+      }
   };
 
   class TrapLocationComp
@@ -1013,19 +1039,19 @@ public:
     public:
       bool operator() (const TrapLocation &lhs, const TrapLocation &rhs) const
       {
-        if (lhs.point(0) < rhs.point(0))
+        if (lhs.point[0] < rhs.point[0])
           return true;
-        if (lhs.point(0) > rhs.point(0))
+        if (lhs.point[0] > rhs.point[0])
           return false;
 
-        if (lhs.point(1) < rhs.point(1))
+        if (lhs.point[1] < rhs.point[1])
           return true;
-        if (lhs.point(1) > rhs.point(1))
+        if (lhs.point[1] > rhs.point[1])
           return false;
 
-        if (lhs.point(2) < rhs.point(2))
+        if (lhs.point[2] < rhs.point[2])
           return true;
-        if (lhs.point(2) > rhs.point(2))
+        if (lhs.point[2] > rhs.point[2])
           return false;
         return lhs.type<rhs.type;
       }
@@ -1190,6 +1216,11 @@ public:
    * @return the complex refraction index of material
    */
   virtual std::complex<PetscScalar> RefractionIndex(PetscScalar lamda, PetscScalar Tl, PetscScalar Eg=0) const=0;
+
+  /**
+   * @return the free carrier absorption coefficient
+   */
+  virtual PetscScalar FreeCarrierAbsorption(PetscScalar lamda, PetscScalar n, PetscScalar p, PetscScalar Tl) const { return 0.0; }
 };
 
 
@@ -1438,6 +1469,11 @@ public:
   virtual PetscScalar Density       (const PetscScalar &Tl) const=0;
 
   /**
+   * @return the ion density [cm^-3] of material
+   */
+  virtual PetscScalar IonDensity    (const PetscScalar &Tl) const=0;
+
+  /**
    * @return the \p relative \p permittivity of material
    */
   virtual PetscScalar Permittivity  ()                      const=0;
@@ -1456,6 +1492,11 @@ public:
    * @return the electrical conductance of material
    */
   virtual PetscScalar Conductance   ()                      const=0;
+
+  /**
+   * @return the thermal emit velocity of material
+   */
+  virtual PetscScalar ThermalVn   (const PetscScalar &Tl)   const=0;
 
   /**
    * get the atom fraction of this material.

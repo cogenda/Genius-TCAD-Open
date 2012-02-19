@@ -94,10 +94,11 @@ void ExtendTo3D::save_old_system()
     std::set<short int> boundary_ids;
     boundary_ids = mesh.boundary_info->get_boundary_ids();
     for(std::set<short int>::iterator it=boundary_ids.begin(); it!=boundary_ids.end(); ++it)
-      {
-        std::string label = mesh.boundary_info->get_label_by_id(*it);
-        bd_map.insert(std::make_pair(label, *it));
-      }
+    {
+      std::string label = mesh.boundary_info->get_label_by_id(*it);
+      bool user_define = mesh.boundary_info->boundary_id_has_user_defined_label(*it);
+      bd_map.insert(std::make_pair(label, std::make_pair(*it, user_define)));
+    }
   }
 
 
@@ -276,10 +277,10 @@ void ExtendTo3D::set_new_system()
       {
         short int bd_id = 0;
         for(Bd_It it = bd_map.begin(); it!=bd_map.end(); ++it)
-          bd_id = std::max(bd_id, it->second);
-        bd_map[bd_label] = bd_id+1;
+          bd_id = std::max(bd_id, it->second.first);
+        bd_map[bd_label].first = bd_id+1;
       }
-      boundary_id_map[n] = bd_map[bd_label];
+      boundary_id_map[n] = bd_map[bd_label].first;
     }
 
     //frond side
@@ -298,7 +299,7 @@ void ExtendTo3D::set_new_system()
 
     // set boundary label
     for(Bd_It it = bd_map.begin(); it!=bd_map.end(); ++it)
-      mesh.boundary_info->set_label_to_id(it->second, it->first);
+      mesh.boundary_info->set_label_to_id(it->second.first, it->first, it->second.second);
   }
 
   // broadcast mesh to all the processor

@@ -131,7 +131,7 @@ void MeshCommunication::broadcast (MeshBase& mesh) const
   this->broadcast_mesh (mesh);
   this->broadcast_bcs  (mesh, *(mesh.boundary_info));
 
-  MESSAGE<<"Mesh synchronization finished."<<std::endl;  RECORD();
+  MESSAGE<<"Mesh synchronization finished.\n"<<std::endl;  RECORD();
 }
 
 
@@ -403,32 +403,27 @@ void MeshCommunication::broadcast_mesh (MeshBase&) const
   // distribut subdomain information
   {
 
-    // broadcast subdomain label
+    std::vector<std::string> labels;
+    std::vector<std::string> materials;
+
     for(unsigned int n_sub = 0; n_sub < mesh.n_subdomains (); n_sub++)
     {
-      std::string label;
-
       if (Genius::processor_id() == 0)
-        label = mesh.subdomain_label_by_id(n_sub);
-
-      Parallel::broadcast (label);
-
-      if (Genius::processor_id() != 0)
-        mesh.set_subdomain_label(n_sub, label);
+      {
+        labels.push_back(mesh.subdomain_label_by_id(n_sub));
+        materials.push_back(mesh.subdomain_material(n_sub));
+      }
     }
+    Parallel::broadcast (labels);
+    Parallel::broadcast (materials);
 
-    // broadcast subdomain material
     for(unsigned int n_sub = 0; n_sub < mesh.n_subdomains (); n_sub++)
     {
-      std::string material;
-
-      if (Genius::processor_id() == 0)
-        material = mesh.subdomain_material(n_sub);
-
-      Parallel::broadcast (material);
-
       if (Genius::processor_id() != 0)
-        mesh.set_subdomain_material(n_sub, material);
+      {
+        mesh.set_subdomain_label(n_sub, labels[n_sub]);
+        mesh.set_subdomain_material(n_sub, materials[n_sub]);
+      }
     }
   } // Done distribut subdomain information
 
@@ -526,45 +521,46 @@ void MeshCommunication::broadcast_bcs (MeshBase&,
 
 
   // distribute boundary ids
-  std::set<short int> boundary_ids;
-  if (Genius::processor_id() == 0)
-    boundary_ids = boundary_info.get_boundary_ids();
+  std::set<short int> & boundary_ids = boundary_info.get_boundary_ids();
   Parallel::broadcast (boundary_ids);
 
   // distribute boundary labels
-  for(std::set<short int>::iterator it=boundary_ids.begin(); it!=boundary_ids.end(); ++it)
   {
-      std::string label;
-      std::string description;
+    std::vector<std::string> labels;
+    std::vector<std::string> descriptions;
+    std::vector<bool> user_defined;
 
+    std::set<short int>::iterator it=boundary_ids.begin();
+    for(; it!=boundary_ids.end(); ++it)
+    {
       if (Genius::processor_id() == 0)
       {
-        label = boundary_info.get_label_by_id(*it);
-        description = boundary_info.get_description_by_id(*it);
+        labels.push_back(boundary_info.get_label_by_id(*it));
+        descriptions.push_back(boundary_info.get_description_by_id(*it));
+        user_defined.push_back(boundary_info.boundary_id_has_user_defined_label(*it));
       }
+    }
 
-      Parallel::broadcast (label);
-      Parallel::broadcast (description);
+    Parallel::broadcast (labels);
+    Parallel::broadcast (descriptions);
+    Parallel::broadcast (user_defined);
 
+    it=boundary_ids.begin();
+    for(unsigned int n=0; it!=boundary_ids.end(); ++n, ++it)
+    {
       if (Genius::processor_id() != 0)
       {
-        boundary_info.set_label_to_id(*it, label);
-        if( !description.empty() )
-          boundary_info.set_description_to_id(*it, description);
+        boundary_info.set_label_to_id(*it, labels[n], user_defined[n]);
+        boundary_info.set_description_to_id(*it, descriptions[n]);
       }
+    }
   }
+
 
   // distribute extra boundary descriptions
   {
     std::vector<std::string> & extra_descriptions = boundary_info.extra_descriptions();
-    unsigned int n_extra_descriptions = extra_descriptions.size();
-    Parallel::broadcast(n_extra_descriptions);
-    if (Genius::processor_id() != 0)
-      extra_descriptions.resize(n_extra_descriptions);
-    for(unsigned int n=0; n<n_extra_descriptions; ++n)
-    {
-      Parallel::broadcast(extra_descriptions[n]);
-    }
+    Parallel::broadcast(extra_descriptions);
   }
 
   // Build up the list of nodes with boundary conditions

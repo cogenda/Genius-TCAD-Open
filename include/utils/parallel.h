@@ -29,8 +29,8 @@
 #include <complex>
 
 // Local includes
-#include "genius_env.h"
 #include "genius_common.h" // for Real
+#include "genius_env.h"
 #include "vector_value.h"
 #include "tensor_value.h"
 #include "perf_log.h"
@@ -40,7 +40,7 @@
 // parallel on every processor at once
 
 #undef parallel_only
-#ifndef NDEBUG
+#ifdef DEBUG
   #define parallel_only() { genius_assert(Parallel::verify(std::string(__FILE__))); assert(Parallel::verify(__LINE__)); }
 #else
   #define parallel_only() { }
@@ -87,6 +87,17 @@ namespace Parallel
    * Accept from any source
    */
   const int any_source=MPI_ANY_SOURCE;
+
+  /**
+   * MPI error string
+   */
+  inline std::string error_string(int error_code)
+  {
+    char error[MPI_MAX_ERROR_STRING];
+    int length;
+    MPI_Error_string(error_code, error, &length);
+    return std::string(error);
+  }
 
 #else
   // These shouldn't be needed
@@ -151,7 +162,7 @@ namespace Parallel
   inline void barrier ()
   {
 #ifdef HAVE_MPI
-    MPI_Barrier (PETSC_COMM_WORLD);
+    MPI_Barrier (Genius::comm_world());
 #endif
     return;
   }
@@ -572,6 +583,8 @@ namespace Parallel
   template <typename T>
   inline void min(T &r)
   {
+    START_LOG("min()", "Parallel");
+
     if (Genius::n_processors() > 1)
     {
       T temp;
@@ -580,15 +593,19 @@ namespace Parallel
                      1,
                      datatype<T>(),
                      MPI_MIN,
-                     PETSC_COMM_WORLD);
+                     Genius::comm_world());
       r = temp;
     }
+
+    STOP_LOG("min()", "Parallel");
   }
 
 
   template <>
   inline void min(bool &r)
   {
+    START_LOG("min()", "Parallel");
+
     if (Genius::n_processors() > 1)
     {
       unsigned int tempsend = r;
@@ -598,15 +615,19 @@ namespace Parallel
                      1,
                      datatype<unsigned int>(),
                      MPI_MIN,
-                     PETSC_COMM_WORLD);
+                     Genius::comm_world());
       r = temp;
     }
+
+    STOP_LOG("min()", "Parallel");
   }
 
 
   template <typename T>
   inline void min(std::vector<T> &r)
   {
+    START_LOG("min()", "Parallel");
+
     if (Genius::n_processors() > 1)
     {
       std::vector<T> temp(r.size());
@@ -615,15 +636,19 @@ namespace Parallel
                      r.size(),
                      datatype<T>(),
                      MPI_MIN,
-                     PETSC_COMM_WORLD);
+                     Genius::comm_world());
       r = temp;
     }
+
+    STOP_LOG("min()", "Parallel");
   }
 
 
   template <>
   inline void min(std::vector<bool> &r)
   {
+    START_LOG("min()", "Parallel");
+
     if (Genius::n_processors() > 1)
     {
       std::vector<unsigned int> rchar;
@@ -634,15 +659,19 @@ namespace Parallel
                      rchar.size(),
                      datatype<unsigned int>(),
                      MPI_BAND,
-                     PETSC_COMM_WORLD);
+                     Genius::comm_world());
       unpack_vector_bool(temp, r);
     }
+
+    STOP_LOG("min()", "Parallel");
   }
 
 
   template <typename T>
   inline void max(T &r)
   {
+    START_LOG("max()", "Parallel");
+
     if (Genius::n_processors() > 1)
     {
       T temp;
@@ -651,15 +680,19 @@ namespace Parallel
                      1,
                      datatype<T>(),
                      MPI_MAX,
-                     PETSC_COMM_WORLD);
+                     Genius::comm_world());
       r = temp;
     }
+
+    STOP_LOG("max()", "Parallel");
   }
 
 
   template <>
   inline void max(bool &r)
   {
+    START_LOG("max()", "Parallel");
+
     if (Genius::n_processors() > 1)
     {
       unsigned int tempsend = r;
@@ -669,15 +702,19 @@ namespace Parallel
                      1,
                      datatype<unsigned int>(),
                      MPI_MAX,
-                     PETSC_COMM_WORLD);
+                     Genius::comm_world());
       r = temp;
     }
+
+    STOP_LOG("max()", "Parallel");
   }
 
 
   template <typename T>
   inline void max(std::vector<T> &r)
   {
+    START_LOG("max()", "Parallel");
+
     if (Genius::n_processors() > 1)
     {
       std::vector<T> temp(r.size());
@@ -686,15 +723,19 @@ namespace Parallel
                      r.size(),
                      datatype<T>(),
                      MPI_MAX,
-                     PETSC_COMM_WORLD);
+                     Genius::comm_world());
       r = temp;
     }
+
+    STOP_LOG("max()", "Parallel");
   }
 
 
   template <>
   inline void max(std::vector<bool> &r)
   {
+    START_LOG("max()", "Parallel");
+
     if (Genius::n_processors() > 1)
     {
       std::vector<unsigned int> rchar;
@@ -705,9 +746,11 @@ namespace Parallel
                      rchar.size(),
                      datatype<unsigned int>(),
                      MPI_BOR,
-                     PETSC_COMM_WORLD);
+                     Genius::comm_world());
       unpack_vector_bool(temp, r);
     }
+
+    STOP_LOG("max()", "Parallel");
   }
 
 
@@ -730,7 +773,7 @@ namespace Parallel
                      1,
                      datatype_with_int<T>(),
                      MPI_MINLOC,
-                     PETSC_COMM_WORLD);
+                     Genius::comm_world());
       r   = out.val;
       loc = out.rank;
     }
@@ -758,7 +801,7 @@ namespace Parallel
                      1,
                      datatype_with_int<T>(),
                      MPI_MAXLOC,
-                     PETSC_COMM_WORLD);
+                     Genius::comm_world());
       r   = out.val;
       loc = out.rank;
     }
@@ -778,7 +821,7 @@ namespace Parallel
                      1,
                      datatype<T>(),
                      MPI_SUM,
-                     PETSC_COMM_WORLD);
+                     Genius::comm_world());
     }
   }
 
@@ -794,7 +837,7 @@ namespace Parallel
                      r.size(),
                      datatype<T>(),
                      MPI_SUM,
-                     PETSC_COMM_WORLD);
+                     Genius::comm_world());
     }
   }
 
@@ -810,7 +853,7 @@ namespace Parallel
                      2,
                      datatype<T>(),
                      MPI_SUM,
-                     PETSC_COMM_WORLD);
+                     Genius::comm_world());
     }
   }
 
@@ -826,7 +869,7 @@ namespace Parallel
                      r.size() * 2,
                      datatype<T>(),
                      MPI_SUM,
-                     PETSC_COMM_WORLD);
+                     Genius::comm_world());
     }
   }
 
@@ -845,7 +888,7 @@ namespace Parallel
                 datatype<T>(),
                 dest_processor_id,
                 tag,
-                PETSC_COMM_WORLD);
+                Genius::comm_world());
     assert (ierr == MPI_SUCCESS);
 
     STOP_LOG("send()", "Parallel");
@@ -865,7 +908,7 @@ namespace Parallel
                 datatype<T>(),
                 dest_processor_id,
                 tag,
-                PETSC_COMM_WORLD);
+                Genius::comm_world());
     assert (ierr == MPI_SUCCESS);
 
     STOP_LOG("send()", "Parallel");
@@ -887,7 +930,7 @@ namespace Parallel
                  datatype<T>(),
                  dest_processor_id,
                  tag,
-                 PETSC_COMM_WORLD,
+                 Genius::comm_world(),
                  &r);
     assert (ierr == MPI_SUCCESS);
 
@@ -909,7 +952,7 @@ namespace Parallel
                  datatype<T>(),
                  dest_processor_id,
                  tag,
-                 PETSC_COMM_WORLD,
+                 Genius::comm_world(),
                  &r);
     assert (ierr == MPI_SUCCESS);
 
@@ -933,7 +976,7 @@ namespace Parallel
                  type,
                  dest_processor_id,
                  tag,
-                 PETSC_COMM_WORLD,
+                 Genius::comm_world(),
                  &r);
     assert (ierr == MPI_SUCCESS);
 
@@ -957,7 +1000,7 @@ namespace Parallel
                 datatype<T>(),
                 src_processor_id,
                 tag,
-                PETSC_COMM_WORLD,
+                Genius::comm_world(),
                 &status);
     assert (ierr == MPI_SUCCESS);
 
@@ -984,7 +1027,7 @@ namespace Parallel
                 type,
                 src_processor_id,
                 tag,
-                PETSC_COMM_WORLD,
+                Genius::comm_world(),
                 &status);
     assert (ierr == MPI_SUCCESS);
 
@@ -1009,7 +1052,7 @@ namespace Parallel
                 datatype<T>(),
                 src_processor_id,
                 tag,
-                PETSC_COMM_WORLD,
+                Genius::comm_world(),
                 &status);
     assert (ierr == MPI_SUCCESS);
 
@@ -1034,7 +1077,7 @@ namespace Parallel
                  datatype<T>(),
                  src_processor_id,
                  tag,
-                 PETSC_COMM_WORLD,
+                 Genius::comm_world(),
                  &r);
     assert (ierr == MPI_SUCCESS);
 
@@ -1056,7 +1099,7 @@ namespace Parallel
                  datatype<T>(),
                  src_processor_id,
                  tag,
-                 PETSC_COMM_WORLD,
+                 Genius::comm_world(),
                  &r);
     assert (ierr == MPI_SUCCESS);
 
@@ -1108,7 +1151,7 @@ namespace Parallel
                  dest_processor_id, 0,
                  &recv, 1, datatype<T>(),
                  source_processor_id, 0,
-                 PETSC_COMM_WORLD,
+                 Genius::comm_world(),
                  &status);
 
     STOP_LOG("send_receive()", "Parallel");
@@ -1136,7 +1179,7 @@ namespace Parallel
                  dest_processor_id, 0,
                  &recv, 2, datatype<T>(),
                  source_processor_id, 0,
-                 PETSC_COMM_WORLD,
+                 Genius::comm_world(),
                  &status);
 
     STOP_LOG("send_receive()", "Parallel");
@@ -1167,7 +1210,7 @@ namespace Parallel
                  dest_processor_id, 0,
                  &recvsize, 1, datatype<unsigned int>(),
                  source_processor_id, 0,
-                 PETSC_COMM_WORLD,
+                 Genius::comm_world(),
                  &status);
 
     recv.resize(recvsize);
@@ -1176,7 +1219,7 @@ namespace Parallel
                  dest_processor_id, 0,
                  recvsize ? &recv[0] : NULL, recvsize, datatype<T>(),
                  source_processor_id, 0,
-                 PETSC_COMM_WORLD,
+                 Genius::comm_world(),
                  &status);
 
     STOP_LOG("send_receive()", "Parallel");
@@ -1206,7 +1249,7 @@ namespace Parallel
                  dest_processor_id, 0,
                  &recvsize, 1, datatype<unsigned int>(),
                  source_processor_id, 0,
-                 PETSC_COMM_WORLD,
+                 Genius::comm_world(),
                  &status);
 
     recv.resize(recvsize);
@@ -1215,7 +1258,7 @@ namespace Parallel
                  dest_processor_id, 0,
                  recvsize ? &recv[0] : NULL, recvsize * 2, datatype<T>(),
                  source_processor_id, 0,
-                 PETSC_COMM_WORLD,
+                 Genius::comm_world(),
                  &status);
 
     STOP_LOG("send_receive()", "Parallel");
@@ -1247,7 +1290,7 @@ namespace Parallel
                  dest_processor_id, 0,
                  &recvsize, 1, datatype<unsigned int>(),
                  source_processor_id, 0,
-                 PETSC_COMM_WORLD,
+                 Genius::comm_world(),
                  &status);
 
     recv.resize(recvsize);
@@ -1256,7 +1299,7 @@ namespace Parallel
                  dest_processor_id, 0,
                  recvsize ? &recv[0] : NULL, recvsize, type,
                  source_processor_id, 0,
-                 PETSC_COMM_WORLD,
+                 Genius::comm_world(),
                  &status);
 
     STOP_LOG("send_receive()", "Parallel");
@@ -1287,7 +1330,7 @@ namespace Parallel
                  dest_processor_id, 0,
                  &recvsize, 1, datatype<unsigned int>(),
                  source_processor_id, 0,
-                 PETSC_COMM_WORLD,
+                 Genius::comm_world(),
                  &status);
 
     recv.resize(recvsize);
@@ -1305,7 +1348,7 @@ namespace Parallel
                  datatype<unsigned int>(), dest_processor_id, 0,
                  recvsize ? &recvsizes[0] : NULL, recvsize,
                  datatype<unsigned int>(), source_processor_id, 0,
-                 PETSC_COMM_WORLD,
+                 Genius::comm_world(),
                  &status);
 
     for (unsigned int i = 0; i != recvsize; ++i)
@@ -1331,7 +1374,7 @@ namespace Parallel
                  datatype<T>(), dest_processor_id, 0,
                  recvsizesum ? &recvdata[0] : NULL, recvsizesum,
                  datatype<T>(), source_processor_id, 0,
-                 PETSC_COMM_WORLD,
+                 Genius::comm_world(),
                  &status);
 
     // Empty the temporary recv buffer
@@ -1366,7 +1409,7 @@ namespace Parallel
                  1,
                  datatype<T>(),
                  root_id,
-                 PETSC_COMM_WORLD);
+                 Genius::comm_world());
     }
     else
       recv[0] = send;
@@ -1393,7 +1436,7 @@ namespace Parallel
                  2,
                  datatype<T>(),
                  root_id,
-                 PETSC_COMM_WORLD);
+                 Genius::comm_world());
     }
     else
       recv[0] = send;
@@ -1472,7 +1515,7 @@ namespace Parallel
                    r.empty() ? NULL :  &r[0], &sendlengths[0],
                    &displacements[0], datatype<T>(),
                    root_id,
-                   PETSC_COMM_WORLD);
+                   Genius::comm_world());
 
     assert (ierr == MPI_SUCCESS);
 
@@ -1528,7 +1571,7 @@ namespace Parallel
       MPI_Gatherv (r_src.empty() ? NULL : &r_src[0], mysize, datatype<T>(),
                    r.empty() ? NULL : &r[0], &sendlengths[0],
                    &displacements[0], datatype<T>(),
-                   root_id, PETSC_COMM_WORLD);
+                   root_id, Genius::comm_world());
     assert (ierr == MPI_SUCCESS);
 
     STOP_LOG("gather()", "Parallel");
@@ -1632,7 +1675,7 @@ namespace Parallel
                      &recv[0],
                      1,
                      datatype<T>(),
-                     PETSC_COMM_WORLD);
+                     Genius::comm_world());
     }
     else
       recv[0] = send;
@@ -1658,7 +1701,7 @@ namespace Parallel
                      &recv[0],
                      2,
                      datatype<T>(),
-                     PETSC_COMM_WORLD);
+                     Genius::comm_world());
     }
     else
       recv[0] = send;
@@ -1732,7 +1775,7 @@ namespace Parallel
     const int ierr =
       MPI_Allgatherv (r_src.empty() ? NULL : &r_src[0], mysize, datatype<T>(),
                       r.empty()     ? NULL : &r[0],     &sendlengths[0],
-                      &displacements[0], datatype<T>(), PETSC_COMM_WORLD);
+                      &displacements[0], datatype<T>(), Genius::comm_world());
 
     assert (ierr == MPI_SUCCESS);
 
@@ -1783,7 +1826,7 @@ namespace Parallel
       MPI_Allgatherv (r_src.empty() ? NULL : &r_src[0], mysize, datatype<T>(),
                       r.empty()     ? NULL : &r[0],     &sendlengths[0],
                       &displacements[0], datatype<T>(),
-                      PETSC_COMM_WORLD);
+                      Genius::comm_world());
     assert (ierr == MPI_SUCCESS);
 
     STOP_LOG("allgather()", "Parallel");
@@ -1835,7 +1878,7 @@ namespace Parallel
         MPI_Allgatherv (r_src.empty() ? NULL : &r_src[0], mysize, datatype<T>(),
                         r.empty()     ? NULL : &r_dst[0], &sendlengths[0],
                         &displacements[0], datatype<T>(),
-                        PETSC_COMM_WORLD);
+                        Genius::comm_world());
     assert (ierr == MPI_SUCCESS);
 
     r.clear();
@@ -1893,7 +1936,7 @@ namespace Parallel
         MPI_Allgatherv (r_src.empty() ? NULL : &r_src[0], mysize, datatype<T>(),
                         r.empty()     ? NULL : &r_dst[0], &sendlengths[0],
                         &displacements[0], datatype<T>(),
-                        PETSC_COMM_WORLD);
+                        Genius::comm_world());
     assert (ierr == MPI_SUCCESS);
 
     r.clear();
@@ -2006,7 +2049,7 @@ namespace Parallel
                     buf.empty() ? NULL : &buf[0],
                     size_per_proc,
                     datatype<T>(),
-                    PETSC_COMM_WORLD);
+                    Genius::comm_world());
     assert (ierr == MPI_SUCCESS);
 
     STOP_LOG("alltoall()", "Parallel");
@@ -2026,9 +2069,7 @@ namespace Parallel
     START_LOG("broadcast()", "Parallel");
 
     // Spread data to remote processors.
-    const int ierr =
-      MPI_Bcast (&data, 1, datatype<T>(), root_id, PETSC_COMM_WORLD);
-
+    const int ierr = MPI_Bcast (&data, 1, datatype<T>(), root_id, Genius::comm_world());
     assert (ierr == MPI_SUCCESS);
 
     STOP_LOG("broadcast()", "Parallel");
@@ -2047,13 +2088,11 @@ namespace Parallel
     START_LOG("broadcast()", "Parallel");
 
     // Spread data to remote processors.
-    const int ierr =
-      MPI_Bcast (&data, 2, datatype<T>(), root_id, PETSC_COMM_WORLD);
+    const int ierr = MPI_Bcast (&data, 2, datatype<T>(), root_id, Genius::comm_world());
     assert (ierr == MPI_SUCCESS);
 
     STOP_LOG("broadcast()", "Parallel");
   }
-
 
 
   template <>
@@ -2065,6 +2104,8 @@ namespace Parallel
       return;
     }
 
+    START_LOG("broadcast()", "Parallel");
+
     unsigned int data_size = data.size();
     Parallel::broadcast(data_size, root_id);
 
@@ -2072,6 +2113,7 @@ namespace Parallel
     if(data_size==0)
     {
       data.clear();
+      STOP_LOG("broadcast()", "Parallel");
       return;
     }
 
@@ -2090,6 +2132,8 @@ namespace Parallel
 
     if (Genius::processor_id() == root_id)
       genius_assert(data == orig);
+
+    STOP_LOG("broadcast()", "Parallel");
   }
 
 
@@ -2109,18 +2153,23 @@ namespace Parallel
     Parallel::broadcast(data_size, root_id);
 
     // empty
-    if(data_size==0)    { data.clear(); return; }
-
+    if(data_size==0)
+    {
+      data.clear();
+      STOP_LOG("broadcast()", "Parallel");
+      return;
+    }
     data.resize(data_size);
 
-    // and get the data from the remote processors.
-    const int ierr = MPI_Bcast (&data[0], data_size, datatype<T>(),root_id, PETSC_COMM_WORLD);
 
+    // and get the data from the remote processors.
+    const int ierr = MPI_Bcast (&data[0], data_size, datatype<T>(),root_id, Genius::comm_world());
     assert (ierr == MPI_SUCCESS);
 
     STOP_LOG("broadcast()", "Parallel");
   }
 
+  template <>
   inline void broadcast (std::vector<std::string> &data, const unsigned int root_id)
   {
     if (Genius::n_processors() == 1)
@@ -2135,12 +2184,78 @@ namespace Parallel
     Parallel::broadcast(data_size, root_id);
 
     // empty
-    if(data_size==0)    { data.clear(); return; }
+    if(data_size==0)
+    {
+      data.clear();
+      STOP_LOG("broadcast()", "Parallel");
+      return;
+    }
+    data.resize(data_size);
+
+    // pack to char array
+    std::vector<char> data_c;
+    std::vector<unsigned int> data_length;
+    if (Genius::processor_id() == root_id)
+      for(unsigned int i=0; i<data.size(); i++)
+      {
+        const std::string string = data[i];
+        data_length.push_back(string.size());
+        for(unsigned int n=0; n<string.size(); n++)
+          data_c.push_back(string[n]);
+      }
+
+    Parallel::broadcast(data_c, root_id);
+    Parallel::broadcast(data_length, root_id);
+
+    // unpack
+    if (Genius::processor_id() != root_id)
+    {
+      unsigned int data_c_index = 0;
+      for(unsigned int i=0; i<data.size(); i++)
+      {
+        data[i].clear();
+        data[i].reserve(data_length[i]);
+        for(unsigned int n=0; n<data_length[i]; n++)
+          data[i].push_back(data_c[data_c_index++]);
+      }
+    }
+
+    STOP_LOG("broadcast()", "Parallel");
+  }
+
+
+  template <>
+  inline void broadcast (std::vector<bool> &data, const unsigned int root_id)
+  {
+    if (Genius::n_processors() == 1)
+    {
+      assert (Genius::processor_id() == root_id);
+      return;
+    }
+
+    START_LOG("broadcast()", "Parallel");
+
+    unsigned int data_size = data.size();
+    Parallel::broadcast(data_size, root_id);
+
+    // empty
+    if(data_size==0)
+    {
+      data.clear();
+      STOP_LOG("broadcast()", "Parallel");
+      return;
+    }
 
     data.resize(data_size);
 
-    for(unsigned int n=0; n<data_size; ++n)
-      Parallel::broadcast(data[n], root_id);
+    std::vector<unsigned int> int_data;
+    pack_vector_bool(data, int_data);
+
+    // and get the data from the remote processors.
+    const int ierr =  MPI_Bcast (&int_data[0], int_data.size(), datatype<unsigned int>(), root_id, Genius::comm_world());
+    assert (ierr == MPI_SUCCESS);
+
+    unpack_vector_bool(int_data, data);
 
     STOP_LOG("broadcast()", "Parallel");
   }
@@ -2162,16 +2277,23 @@ namespace Parallel
     Parallel::broadcast(data_size, root_id);
 
     // empty
-    if(data_size==0)    { data.clear(); return; }
+    if(data_size==0)
+    {
+      data.clear();
+      STOP_LOG("broadcast()", "Parallel");
+      return;
+    }
 
     data.resize(data_size);
 
+
     // and get the data from the remote processors.
-    const int ierr =  MPI_Bcast (&data[0], data_size * 2, datatype<T>(), root_id, PETSC_COMM_WORLD);
+    const int ierr =  MPI_Bcast (&data[0], data_size * 2, datatype<T>(), root_id, Genius::comm_world());
     assert (ierr == MPI_SUCCESS);
 
     STOP_LOG("broadcast()", "Parallel");
   }
+
 
   template <typename T>
   inline void broadcast (std::set<T> &set, const unsigned int root_id)
@@ -2199,12 +2321,16 @@ namespace Parallel
     Parallel::broadcast(data_size, root_id);
 
     // empty
-    if(data_size==0)    { set.clear(); return; }
+    if(data_size==0)
+    {
+      set.clear();
+      STOP_LOG("broadcast()", "Parallel");
+      return;
+    }
 
     key.resize(data_size);
 
-
-    genius_assert( MPI_Bcast (&key[0], data_size, datatype<T>(), root_id, PETSC_COMM_WORLD)== MPI_SUCCESS );
+    genius_assert( MPI_Bcast (&key[0], data_size, datatype<T>(), root_id, Genius::comm_world())== MPI_SUCCESS );
 
     if(Genius::processor_id() != root_id)
     {
@@ -2252,6 +2378,9 @@ namespace Parallel
 
     STOP_LOG("broadcast()", "Parallel");
   }
+
+
+
 
 #else // HAVE_MPI
 

@@ -27,7 +27,7 @@
 #include "resistance_region.h"
 #include "boundary_condition_solderpad.h"
 #include "parallel.h"
-
+#include "petsc_utils.h"
 
 using PhysicalUnit::kb;
 using PhysicalUnit::e;
@@ -93,7 +93,7 @@ void SolderPadBC::DDM2_Fill_Value(Vec x, Vec L)
 /*---------------------------------------------------------------------
  * do pre-process to function for DDML2 solver
  */
-void SolderPadBC::DDM2_Function_Preprocess(Vec f, std::vector<PetscInt> &src_row,
+void SolderPadBC::DDM2_Function_Preprocess(PetscScalar * ,Vec f, std::vector<PetscInt> &src_row,
                                               std::vector<PetscInt> &dst_row, std::vector<PetscInt> &clear_row)
 {
   BoundaryCondition::const_node_iterator node_it = nodes_begin();
@@ -138,16 +138,21 @@ void SolderPadBC::DDM2_Function(PetscScalar * x, Vec f, InsertMode &add_value_fl
   // for 2D mesh, z_width() is the device dimension in Z direction; for 3D mesh, z_width() is 1.0
   PetscScalar current_scale = this->z_width();
 
-  // get the workfunction and sigma
-  const SimulationRegion * region = bc_regions().first; genius_assert(region);
-  const MetalSimulationRegion * resistance_region = dynamic_cast<const MetalSimulationRegion *>(region); genius_assert(resistance_region);
-  const PetscScalar workfunction = resistance_region->material()->basic->Affinity(T_external());
-  const PetscScalar sigma = resistance_region->material()->basic->Conductance();
+  const PetscScalar Heat_Transfer = this->scalar("heat.transfer");
 
   // the electrode potential in current iteration
-  genius_assert( local_offset()!=invalid_uint );
   PetscScalar Ve = x[this->local_offset()];
 
+  const SimulationRegion * _r1 = bc_regions().first;
+  const SimulationRegion * _r2 = bc_regions().second;
+
+  const MetalSimulationRegion * resistance_region = 0;
+  if( _r1 && _r1->type() == MetalRegion ) resistance_region = dynamic_cast<const MetalSimulationRegion *>(_r1);
+  if( _r2 && _r2->type() == MetalRegion ) resistance_region = dynamic_cast<const MetalSimulationRegion *>(_r2);
+  genius_assert(resistance_region);
+
+  const double workfunction = resistance_region->material()->basic->Affinity(T_external());
+  const double sigma = resistance_region->material()->basic->Conductance();
 
   BoundaryCondition::const_node_iterator node_it = nodes_begin();
   BoundaryCondition::const_node_iterator end_it = nodes_end();
@@ -161,22 +166,22 @@ void SolderPadBC::DDM2_Function(PetscScalar * x, Vec f, InsertMode &add_value_fl
     for ( ; rnode_it!=end_rnode_it; ++rnode_it )
     {
       const SimulationRegion * region = ( *rnode_it ).second.first;
+      const FVM_Node * fvm_node = ( *rnode_it ).second.second;
+      const FVM_NodeData * node_data = fvm_node->node_data();
+
       switch ( region->type() )
       {
           case MetalRegion :
           {
-            const FVM_Node * fvm_node = ( *rnode_it ).second.second;
-            const FVM_NodeData * node_data = fvm_node->node_data();
-
             // psi of this node
             PetscScalar V = x[fvm_node->local_offset()+0];
             // T of this node
             PetscScalar T = x[fvm_node->local_offset()+1];
 
-            PetscScalar f_psi = V + workfunction - Ve;
+            PetscScalar f_psi = V + node_data->affinity()/e - Ve;
 
             // add heat flux out of boundary to lattice temperature equatiuon
-            PetscScalar f_q =this->Heat_Transfer()*(T_external()-T)*fvm_node->outside_boundary_surface_area();
+            PetscScalar f_q = Heat_Transfer*(T_external()-T)*fvm_node->outside_boundary_surface_area();
 
             // set governing equation to function vector
             VecSetValue(f, fvm_node->global_offset()+0, f_psi, ADD_VALUES);
@@ -203,7 +208,6 @@ void SolderPadBC::DDM2_Function(PetscScalar * x, Vec f, InsertMode &add_value_fl
 
           case InsulatorRegion:
           {
-            const FVM_Node * fvm_node = ( *rnode_it ).second.second;
             // psi of this node
             PetscScalar V = x[fvm_node->local_offset()];
             PetscScalar f_psi = (V + workfunction - Ve);
@@ -427,7 +431,7 @@ void SolderPadBC::DDM2_Jacobian_Reserve(Mat *jac, InsertMode &add_value_flag)
 /*---------------------------------------------------------------------
  * do pre-process to jacobian matrix for DDML2 solver
  */
-void SolderPadBC::DDM2_Jacobian_Preprocess(Mat *jac, std::vector<PetscInt> &src_row,
+void SolderPadBC::DDM2_Jacobian_Preprocess(PetscScalar *,Mat *jac, std::vector<PetscInt> &src_row,
                                            std::vector<PetscInt> &dst_row, std::vector<PetscInt> &clear_row)
 {
   BoundaryCondition::const_node_iterator node_it = nodes_begin();
@@ -474,18 +478,25 @@ void SolderPadBC::DDM2_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_value
   const PetscScalar L             = this->ext_circuit()->L();  // inductance
   const PetscScalar dt            = SolverSpecify::dt;
 
+  const PetscScalar Heat_Transfer = this->scalar("heat.transfer");
+
   // for 2D mesh, z_width() is the device dimension in Z direction; for 3D mesh, z_width() is 1.0
   PetscScalar current_scale = this->z_width();
-
-  const SimulationRegion * region = bc_regions().first; genius_assert(region);
-  const MetalSimulationRegion * resistance_region = dynamic_cast<const MetalSimulationRegion *>(region);
-  const PetscScalar workfunction = resistance_region->material()->basic->Affinity(T_external());
-  const PetscScalar sigma = resistance_region->material()->basic->Conductance();
-
 
   // we use AD again. no matter it is overkill here.
   //the indepedent variable number, we only need 2 here.
   adtl::AutoDScalar::numdir=2;
+
+  const SimulationRegion * _r1 = bc_regions().first;
+  const SimulationRegion * _r2 = bc_regions().second;
+
+  const MetalSimulationRegion * resistance_region = 0;
+  if( _r1 && _r1->type() == MetalRegion ) resistance_region = dynamic_cast<const MetalSimulationRegion *>(_r1);
+  if( _r2 && _r2->type() == MetalRegion ) resistance_region = dynamic_cast<const MetalSimulationRegion *>(_r2);
+  genius_assert(resistance_region);
+
+  const double workfunction = resistance_region->material()->basic->Affinity(T_external());
+  const double sigma = resistance_region->material()->basic->Conductance();
 
   BoundaryCondition::const_node_iterator node_it = nodes_begin();
   BoundaryCondition::const_node_iterator end_it = nodes_end();
@@ -500,14 +511,13 @@ void SolderPadBC::DDM2_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_value
     for ( ; rnode_it!=end_rnode_it; ++rnode_it )
     {
       const SimulationRegion * region = ( *rnode_it ).second.first;
+      const FVM_Node * fvm_node = ( *rnode_it ).second.second;
+      const FVM_NodeData * node_data = fvm_node->node_data();
+
       switch ( region->type() )
       {
           case MetalRegion :
           {
-
-            const FVM_Node * fvm_node = ( *rnode_it ).second.second;
-            const FVM_NodeData * node_data = fvm_node->node_data();
-
             // psi of this node
             AutoDScalar V = x[fvm_node->local_offset()+0];  V.setADValue(0, 1.0);
             // T of this node
@@ -517,10 +527,10 @@ void SolderPadBC::DDM2_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_value
             genius_assert( local_offset()!=invalid_uint );
             AutoDScalar Ve = x[this->local_offset()];     Ve.setADValue(1, 1.0);
 
-            AutoDScalar f_psi = V + workfunction - Ve;
+            AutoDScalar f_psi = V + node_data->affinity()/e - Ve;
 
             // add heat flux out of boundary to lattice temperature equatiuon
-            AutoDScalar f_q =this->Heat_Transfer()*(T_external()-T)*fvm_node->outside_boundary_surface_area();
+            AutoDScalar f_q = Heat_Transfer*(T_external()-T)*fvm_node->outside_boundary_surface_area();
 
             //governing equation
             MatSetValue(*jac, fvm_node->global_offset(), fvm_node->global_offset(), f_psi.getADValue(0), ADD_VALUES);
@@ -571,8 +581,6 @@ void SolderPadBC::DDM2_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_value
 
           case InsulatorRegion :
           {
-            const FVM_Node * fvm_node = ( *rnode_it ).second.second;
-
             // psi of this node
             AutoDScalar V = x[fvm_node->local_offset()];  V.setADValue(0, 1.0);
 
@@ -666,6 +674,85 @@ void SolderPadBC::DDM2_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_value
 }
 
 
+
+void SolderPadBC::DDM2_Electrode_Trace(Vec lx, Mat *jac, Vec pdI_pdx, Vec pdF_pdV)
+{
+  VecZeroEntries(pdI_pdx);
+  VecZeroEntries(pdF_pdV);
+
+  PetscScalar * xx;
+  VecGetArray(lx, &xx);
+
+  // for 2D mesh, z_width() is the device dimension in Z direction; for 3D mesh, z_width() is 1.0
+  PetscScalar current_scale = this->z_width();
+
+  //the indepedent variable number, we need 2 here.
+  adtl::AutoDScalar::numdir=2;
+
+  const SimulationRegion * _r1 = bc_regions().first;
+  const SimulationRegion * _r2 = bc_regions().second;
+
+  const MetalSimulationRegion * resistance_region = 0;
+  if( _r1 && _r1->type() == MetalRegion ) resistance_region = dynamic_cast<const MetalSimulationRegion *>(_r1);
+  if( _r2 && _r2->type() == MetalRegion ) resistance_region = dynamic_cast<const MetalSimulationRegion *>(_r2);
+  genius_assert(resistance_region);
+
+  const double workfunction = resistance_region->material()->basic->Affinity(T_external());
+  const double sigma = resistance_region->material()->basic->Conductance();
+
+  BoundaryCondition::const_node_iterator node_it;
+  BoundaryCondition::const_node_iterator end_it = nodes_end();
+  for(node_it = nodes_begin(); node_it!=end_it; ++node_it )
+  {
+    // skip node not belongs to this processor
+    if( (*node_it)->processor_id()!=Genius::processor_id() ) continue;
+
+    BoundaryCondition::region_node_iterator  rnode_it     = region_node_begin ( *node_it );
+    BoundaryCondition::region_node_iterator  end_rnode_it = region_node_end ( *node_it );
+    for ( ; rnode_it!=end_rnode_it; ++rnode_it )
+    {
+      const SimulationRegion * region = ( *rnode_it ).second.first;
+      if( region->type() !=  MetalRegion) continue;
+      const FVM_Node * fvm_node = ( *rnode_it ).second.second;
+      const FVM_NodeData * node_data = fvm_node->node_data();
+
+      AutoDScalar V = xx[fvm_node->local_offset()];   V.setADValue(0, 1.0);  // phi of node
+
+      FVM_Node::fvm_neighbor_node_iterator nb_it = fvm_node->neighbor_node_begin();
+      FVM_Node::fvm_neighbor_node_iterator nb_it_end = fvm_node->neighbor_node_end();
+      for(; nb_it != nb_it_end; ++nb_it)
+      {
+        const FVM_Node *  fvm_nb_node = (*nb_it).second;
+        AutoDScalar Vn = xx[fvm_nb_node->local_offset()];   Vn.setADValue(1, 1.0);  // phi of node
+
+        // distance from nb node to this node
+        PetscScalar distance = fvm_node->distance(fvm_nb_node);
+        // area of out surface of control volume related with neighbor node
+        PetscScalar cv_boundary = fvm_node->cv_surface_area(fvm_nb_node->root_node());
+
+        // current flow
+        AutoDScalar I = cv_boundary*sigma*(V-Vn)/distance*current_scale;
+
+        VecSetValue( pdI_pdx, fvm_node->global_offset(), I.getADValue(0), ADD_VALUES);
+        VecSetValue( pdI_pdx, fvm_nb_node->global_offset(), I.getADValue(1), ADD_VALUES);
+      }
+
+      VecSetValue( pdF_pdV, fvm_node->global_offset(), 1.0, ADD_VALUES);
+    }
+  }
+
+  VecAssemblyBegin(pdI_pdx);
+  VecAssemblyBegin(pdF_pdV);
+
+  VecAssemblyEnd(pdI_pdx);
+  VecAssemblyEnd(pdF_pdV);
+
+  VecRestoreArray(lx, &xx);
+
+  //delete electrode current equation, omit the effect of external resistance
+  PetscInt bc_global_offset = this->global_offset();
+  PetscUtils::MatZeroRows(*jac, 1, &bc_global_offset, 1.0);
+}
 
 
 /*---------------------------------------------------------------------

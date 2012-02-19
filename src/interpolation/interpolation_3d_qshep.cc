@@ -1,3 +1,5 @@
+#if 0
+
 #include <cassert>
 #include <cmath>
 
@@ -6,7 +8,7 @@
 #include "interpolation_3d_qshep.h"
 #include "parallel.h"
 
-#ifdef CYGWIN
+#ifdef WINDOWS
   #include "qshep_win.h"
 #else
   #include "qshep_linux.h"
@@ -141,4 +143,7 @@ double Interpolation3D_qshep::get_interpolated_value(const Point & point, int gr
 
   return value;
 }
+
+
+#endif
 

@@ -55,8 +55,7 @@ RawFileHook::RawFileHook(SolverBase & solver, const std::string & name, void * f
  */
 RawFileHook::~RawFileHook()
 {
-  if ( !Genius::processor_id() )
-    _out.close();
+
 }
 
 
@@ -72,7 +71,9 @@ void RawFileHook::on_init()
     // get simulation time
     time(&_time);
 
-    if( SolverSpecify::Type==SolverSpecify::DCSWEEP || SolverSpecify::Type==SolverSpecify::TRANSIENT )
+    if( SolverSpecify::Type==SolverSpecify::DCSWEEP ||
+        SolverSpecify::Type==SolverSpecify::TRACE   ||
+        SolverSpecify::Type==SolverSpecify::TRANSIENT )
     {
       // if transient simulation, we need to record time
       if ( SolverSpecify::Type == SolverSpecify::TRANSIENT )
@@ -193,7 +194,9 @@ void RawFileHook::post_solve()
     // variable counter
     unsigned int i=0;
 
-    if( SolverSpecify::Type==SolverSpecify::DCSWEEP || SolverSpecify::Type==SolverSpecify::TRANSIENT )
+    if( SolverSpecify::Type==SolverSpecify::DCSWEEP ||
+        SolverSpecify::Type==SolverSpecify::TRACE   ||
+        SolverSpecify::Type==SolverSpecify::TRANSIENT )
     {
       // if transient simulation, we need to record time
       if (SolverSpecify::Type == SolverSpecify::TRANSIENT)
@@ -231,7 +234,7 @@ void RawFileHook::post_solve()
           // charge integral interface
           if( bc->bc_type() == ChargeIntegral )
           {
-            _values[i++].push_back( bc->Qf()/PhysicalUnit::C );
+            _values[i++].push_back( bc->scalar("qf")/PhysicalUnit::C );
             _values[i++].push_back( bc->psi()/PhysicalUnit::V );
           }
         }
@@ -301,11 +304,13 @@ void RawFileHook::on_close()
     switch (SolverSpecify::Type)
     {
         case SolverSpecify::DCSWEEP :
-        _out << "Plotname: DC transfer characteristic" << std::endl; break;
+          _out << "Plotname: DC transfer characteristic" << std::endl; break;
+        case SolverSpecify::TRACE     :
+          _out << "Plotname: DC curve trace" << std::endl; break;
         case SolverSpecify::TRANSIENT :
-        _out << "Plotname: Transient Analysis" << std::endl; break;
+          _out << "Plotname: Transient Analysis" << std::endl; break;
         case SolverSpecify::ACSWEEP   :
-        _out << "Plotname: AC small signal Analysis" << std::endl; break;
+          _out << "Plotname: AC small signal Analysis" << std::endl; break;
         default: break;
     }
 
@@ -334,13 +339,14 @@ void RawFileHook::on_close()
       for(unsigned int n=0; n<_variables.size(); n++)
         _out  << '\t' << std::setw(25) << _values[n][i] << std::endl;
     }
-  }
 
+    _out.close();
+  }
 
 }
 
 
-#ifndef CYGWIN
+#ifdef DLLHOOK
 
 // dll interface
 extern "C"

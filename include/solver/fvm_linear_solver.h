@@ -59,6 +59,47 @@ public:
   void clear_linear_data();
 
   /**
+   * @return the condition number of matrix
+   */
+  double condition_number_of_matrix();
+
+  /**
+   * calculate the n largest and smallest eigen value of matrix
+   * optinally get the ith smallest vec and jth largest vec
+   */
+  void eigen_value_of_matrix(int n=1, int i=0, Vec = PETSC_NULL, int j=0, Vec = PETSC_NULL);
+
+  /**
+   * @return the jacobian_matrix
+   */
+  Mat jacobian_matrix() const  { return A; }
+
+
+  /**
+   * @return the rhs vector
+   */
+  Vec rhs_vector() const { return b; }
+
+
+  /**
+   * @return the residual vector
+   */
+  Vec residual_vector() const { return r; }
+
+
+  /**
+   * @return the working vector
+   */
+  Vec working_vector() const  { return w; }
+
+
+  /**
+   * @return the solution vector
+   */
+  Vec solution_vector() const { return x; }
+
+
+  /**
    * Returns the type of solver to use.
    */
   SolverSpecify::LinearSolverType linear_solver_type () const { return _linear_solver_type; }
@@ -66,7 +107,7 @@ public:
   /**
    * Sets the type of solver to use.
    */
-  void set_solver_type (const SolverSpecify::LinearSolverType st)
+  void set_linear_solver_type (const SolverSpecify::LinearSolverType st)
   { _linear_solver_type = st; }
 
   /**
@@ -81,17 +122,15 @@ public:
   void set_preconditioner_type (const SolverSpecify::PreconditionerType pct)
   { _preconditioner_type = pct; }
 
+  /**
+   * @return the number of linear iteration
+   */
+  PetscInt get_linear_iteration() const;
 
   /**
-   * virtual function for building the RHS vector
+   * virtual function for ksp convergence test. derived class can override it as needed.
    */
-  virtual void build_rhs(Vec ) {}
-
-  /**
-   * virtual function for building the matrix A and precondition matrix PC
-   */
-  virtual void build_matrix(Mat , Mat ) {}
-
+  virtual void petsc_ksp_convergence_test(PetscInt its, PetscReal rnorm, KSPConvergedReason* reason);
 
 
 protected:
@@ -99,12 +138,12 @@ protected:
   /**
    * which type of linear solver to use.
    */
-  void set_petsc_linear_solver_type(SolverSpecify::LinearSolverType t);
+  void set_petsc_linear_solver_type();
 
   /**
    * which type of proconditioner to use.
    */
-  void set_petsc_preconditioner_type(SolverSpecify::PreconditionerType t);
+  void set_petsc_preconditioner_type();
 
   /**
    * the global solution vector
@@ -117,12 +156,22 @@ protected:
   Vec            b;
 
   /**
+   * the global residual vector, defined as Ax-b
+   */
+  Vec            r;
+
+  /**
+   * the global working vector
+   */
+  Vec            w;
+
+  /**
    * the matrix
    */
   Mat            A;
 
   /**
-   * the left scaling vector of J
+   * the left scaling vector of A
    */
   Vec            L;
 

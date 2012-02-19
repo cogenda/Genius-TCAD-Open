@@ -249,7 +249,7 @@ private:
   /**
    *  map boundary label to boundary condition
    */
-  std::map<const std::string, BoundaryCondition * >  _bc_label_to_bc;
+  std::map<std::string, BoundaryCondition * >  _bc_label_to_bc;
 
   /**
    * map boundary id to boundary condition index
@@ -288,6 +288,8 @@ private:
   int Set_BC_SimpleGateContact(const Parser::Card &c);
 
   int Set_BC_InsulatorInterface(const Parser::Card &c);
+
+  int Set_BC_HeteroInterface(const Parser::Card &c);
 
   int Set_BC_Solderpad(const Parser::Card &c);
 

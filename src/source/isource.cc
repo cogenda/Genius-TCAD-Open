@@ -23,7 +23,7 @@
 
 #include "isource.h"
 
-#ifdef CYGWIN
+#ifdef WINDOWS
   #include <Windows.h>
   #undef max
   #undef min
@@ -32,7 +32,7 @@
 #endif
 
 
-#ifdef CYGWIN
+#ifdef WINDOWS
 ISHELL::ISHELL(const std::string & s, HINSTANCE dp, void * fp, double s_t,double s_A): ISource(s)
 #else
 ISHELL::ISHELL(const std::string & s, void * dp, void * fp, double s_t,double s_A): ISource(s)
@@ -48,7 +48,7 @@ ISHELL::ISHELL(const std::string & s, void * dp, void * fp, double s_t,double s_
 ISHELL::~ISHELL()
 {
   //delete Iapp_Shell;
-#ifdef CYGWIN
+#ifdef WINDOWS
   FreeLibrary(dll);
 #else
   if ( dll )

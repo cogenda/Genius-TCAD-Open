@@ -65,6 +65,7 @@ void BoundaryInfo::clear()
   _boundary_ids.clear();
   _boundary_labels_to_ids.clear();
   _boundary_ids_to_labels.clear();
+  _boundary_id_has_user_defined_label.clear();
   _boundary_ids_to_descriptions.clear();
   _extra_descriptions.clear();
 }
@@ -358,7 +359,7 @@ void BoundaryInfo::build_node_ids_from_priority_order(const std::map<short int, 
             _boundary_node_id[node] = bd_id;
 
           // or two node has the same priority order, set bd_id to little one
-          if( o1 == o2 && bd_id < node_bd_id)
+          if( o1 == o2 && get_label_by_id(bd_id) < get_label_by_id(node_bd_id))
             _boundary_node_id[node] = bd_id;
         }
         // not exist yet? insert it
@@ -1125,8 +1126,8 @@ void BoundaryInfo::print_info() const
 void BoundaryInfo::print_boundary_label() const
 {
   std::cout<<"Boundary label in processor " << Genius::processor_id()<<std::endl;
-  std::map<const std::string, const short int>::const_iterator it     = _boundary_labels_to_ids.begin();
-  std::map<const std::string, const short int>::const_iterator it_end = _boundary_labels_to_ids.end();
+  std::map<std::string, const short int>::const_iterator it     = _boundary_labels_to_ids.begin();
+  std::map<std::string, const short int>::const_iterator it_end = _boundary_labels_to_ids.end();
   for(; it!=it_end; ++it)
   {
     std::cout<< " Label: " << it->first <<"  ID: " <<it->second<<std::endl;
@@ -1135,12 +1136,13 @@ void BoundaryInfo::print_boundary_label() const
 }
 
 
-void BoundaryInfo::set_label_to_id(short int id, const std::string & label)
+void BoundaryInfo::set_label_to_id(short int id, const std::string & label, bool user_defined)
 {
-
   _boundary_labels_to_ids.insert(std::pair<const std::string, const short int>(label,id));
   _boundary_ids_to_labels.insert(std::pair<const short int, const std::string>(id,label));
 
+  if( user_defined )
+    _boundary_id_has_user_defined_label.insert(id);
 }
 
 
@@ -1165,6 +1167,11 @@ std::string BoundaryInfo::get_label_by_id(short int id) const
 
   return result  ;
 }
+
+
+
+bool BoundaryInfo::boundary_id_has_user_defined_label(short int id) const
+{ return _boundary_id_has_user_defined_label.find(id) != _boundary_id_has_user_defined_label.end(); }
 
 
 

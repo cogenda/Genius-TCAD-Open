@@ -12,8 +12,8 @@ IMPORT    cgnsfile=nmos_tri.cgns
 
 # voltage sources are needed here.
 Vsource Type = VDC    ID = GND    Tdelay=0   Vconst=0
-Vsource Type = VDC    ID = VCC    Tdelay=0   Vconst=0.3
-Vsource Type = VDC    ID = VGATE  Tdelay=0   Vconst=3
+Vsource Type = VDC    ID = VCC    Tdelay=0   Vconst=5
+Vsource Type = VDC    ID = VGATE  Tdelay=0   Vconst=5
 
 
 BOUNDARY ID=NOxide_to_NSilicon Type=InsulatorInterface  QF=1e10
@@ -22,16 +22,15 @@ BOUNDARY ID=GATE    Type=Gate Work=4.17
 CONTACT  ID=NSource Type=OhmicContact       Res=0 Cap=0 Ind=0
 CONTACT  ID=NDrain  Type=OhmicContact       Res=0 Cap=0 Ind=0
 
-
-ATTACH    Elec=GATE    Vapp=VGATE
-
-Model     Region=NSilicon H.Mob=true EB=Tl
 METHOD    Type=DDML1 NS=Basic LS=LU maxiteration=20 Damping=Potential
 SOLVE     Type=equ
 
-PMI       Region=NSilicon Type=Mobility Model=HP
-Model     Region=NSilicon H.Mob=true Mob.force=EQF
-SOLVE     Type=DC  Vscan=NDrain Vstart=0.0 Vstep=0.1 Vstop=3.0 out.prefix=drian_iv_1
+PMI       Region=NSilicon Type=Mobility Model=Lucent
+
+ATTACH    Elec=GATE    Vapp=VGATE
+SOLVE     Type=OP
+
+SOLVE     Type=DC  Vscan=NDrain Vstart=0.0 Vstep=0.1 Vstop=5.0 out.prefix=drian_iv
 
 EXPORT   VTKFILE=nmos_iv.vtk CGNSFILE=nmos_iv.cgns
 

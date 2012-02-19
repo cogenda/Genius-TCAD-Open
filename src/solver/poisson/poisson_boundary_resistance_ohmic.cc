@@ -95,7 +95,7 @@ void IF_Metal_OhmicBC::Poissin_Fill_Value(Vec , Vec L)
 /*---------------------------------------------------------------------
  * do pre-process to function for poisson solver
  */
-void IF_Metal_OhmicBC::Poissin_Function_Preprocess(Vec f, std::vector<PetscInt> &src_row,
+void IF_Metal_OhmicBC::Poissin_Function_Preprocess(PetscScalar *, Vec f, std::vector<PetscInt> &src_row,
     std::vector<PetscInt> &dst_row, std::vector<PetscInt> &clear_row)
 {
 
@@ -198,7 +198,7 @@ void IF_Metal_OhmicBC::Poissin_Function ( PetscScalar * x, Vec f, InsertMode &ad
     // process metal region
     {
       //governing equation for Ohmic contact boundary
-      PetscScalar ff = V_resistance + resistance_node_data->affinity();
+      PetscScalar ff = V_resistance + resistance_node_data->affinity()/e;
 
       // set governing equation to function vector
       VecSetValue(f, resistance_node->global_offset(), ff, ADD_VALUES);
@@ -287,7 +287,7 @@ void IF_Metal_OhmicBC::Poissin_Jacobian_Reserve ( Mat *jac, InsertMode &add_valu
 /*---------------------------------------------------------------------
  * do pre-process to jacobian matrix for poisson solver
  */
-void IF_Metal_OhmicBC::Poissin_Jacobian_Preprocess(Mat *jac, std::vector<PetscInt> &src_row,
+void IF_Metal_OhmicBC::Poissin_Jacobian_Preprocess(PetscScalar *, Mat *jac, std::vector<PetscInt> &src_row,
     std::vector<PetscInt> &dst_row, std::vector<PetscInt> &clear_row)
 {
 
@@ -386,7 +386,7 @@ void IF_Metal_OhmicBC::Poissin_Jacobian ( PetscScalar * x, Mat *jac, InsertMode 
     {
       AutoDScalar V_resistance = x[resistance_node->local_offset() ];  V_resistance.setADValue ( 0, 1.0 );
       //governing equation for Ohmic contact boundary
-      AutoDScalar ff = V_resistance + resistance_node_data->affinity();
+      AutoDScalar ff = V_resistance + resistance_node_data->affinity()/e;
       // set governing equation to function vector
       MatSetValue(*jac, resistance_node->global_offset(), resistance_node->global_offset(), ff.getADValue ( 0 ), ADD_VALUES);
     }

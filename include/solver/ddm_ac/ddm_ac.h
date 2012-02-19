@@ -49,7 +49,7 @@ public:
   /**
    * free all the contex
    */
-  virtual ~DDMACSolver() {}
+  virtual ~DDMACSolver();
 
   /**
    * @return the solver type

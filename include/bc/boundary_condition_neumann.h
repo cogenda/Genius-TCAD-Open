@@ -62,18 +62,6 @@ public:
     { return BOUNDARY; }
 
   /**
-   * @return the heat transfer rate of this boundary
-   */
-  virtual PetscScalar Heat_Transfer() const
-    {return _Heat_Transfer;}
-
-  /**
-   * @return writable reference to heat transfer rate of this boundary
-   */
-  virtual PetscScalar & Heat_Transfer()
-  {return _Heat_Transfer;}
-
-  /**
    * @return the reflection flag of this boundary
    */
   virtual bool reflection() const
@@ -104,11 +92,6 @@ public:
   virtual std::string boundary_condition_in_string() const;
 
 private:
-
-  /**
-   * heat transfer rate of this boundary
-   */
-  PetscScalar _Heat_Transfer;
 
   /**
    * full reflection flag......just used in ray tracing

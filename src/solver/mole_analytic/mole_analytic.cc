@@ -90,14 +90,33 @@ void MoleAnalytic::set_mole_function_file(const Parser::Card & c)
   std::string fname = c.get_string("file", "");
   int skip_line      = c.get_int("skipline", 0);
 
-  VectorValue<double> translate(c.get_real("translate.x", 0.0) * um,
-                                  c.get_real("translate.y", 0.0) * um,
-                                  c.get_real("translate.z", 0.0) * um);
-  TensorValue<double> transform(c.get_real("transform.xx", 1.0), c.get_real("transform.xy", 0.0), c.get_real("transform.xz", 0.0),
-                                c.get_real("transform.yx", 0.0), c.get_real("transform.yy", 1.0), c.get_real("transform.yz", 0.0),
-                                c.get_real("transform.zx", 0.0), c.get_real("transform.zy", 0.0), c.get_real("transform.zz", 1.0));
+  VectorValue<double> translate;
+  TensorValue<double> transform;
+  if( c.is_parameter_exist("translate") )
+  {
+    std::vector<double> dummy = c.get_array<double>("translate");
+    translate = VectorValue<double>(&dummy[0])*um;
+  }
+  else
+  {
+    translate = VectorValue<double>(c.get_real("translate.x", 0.0)*um,
+                                    c.get_real("translate.y", 0.0)*um,
+                                    c.get_real("translate.z", 0.0)*um);
+  }
 
-  bool is_3D_mesh = _system.mesh().magic_num() < 2008 ? false : true;
+  if( c.is_parameter_exist("transform") )
+  {
+    std::vector<double> dummy = c.get_array<double>("transform");
+    transform = TensorValue<double>(&dummy[0]);
+  }
+  else
+  {
+    transform = TensorValue<double>(c.get_real("transform.xx", 1.0), c.get_real("transform.xy", 0.0), c.get_real("transform.xz", 0.0),
+                                    c.get_real("transform.yx", 0.0), c.get_real("transform.yy", 1.0), c.get_real("transform.yz", 0.0),
+                                    c.get_real("transform.zx", 0.0), c.get_real("transform.zy", 0.0), c.get_real("transform.zz", 1.0));
+  }
+
+  bool is_3D_mesh = (_system.mesh().mesh_dimension() == 3);
   PetscScalar LUnit;
   if (c.is_enum_value("lunit", "m"))
     LUnit = 1.0;
@@ -207,7 +226,7 @@ void MoleAnalytic::set_mole_function_linear(const Parser::Card & c)
 {
   std::string region = c.get_string("region", "");
 
-  std::pair<Point, Point> bbox = _system.region(region)->region_bound_box();
+  std::pair<Point, Point> bbox = _system.region(region)->boundingbox();
 
   // get the bound box
   double xmin = c.get_real("x.min", (bbox.first) (0)/um, "x.left")*um;
@@ -217,9 +236,11 @@ void MoleAnalytic::set_mole_function_linear(const Parser::Card & c)
   double zmin = c.get_real("z.min", (bbox.first) (2)/um, "z.front")*um;
   double zmax = c.get_real("z.max", (bbox.second)(2)/um, "z.back")*um;
 
-  genius_assert(xmin<=xmax);
-  genius_assert(ymin<=ymax);
-  genius_assert(zmin<=zmax);
+  if(xmin>xmax || ymin>ymax || zmin>zmax)
+  {
+    MESSAGE<<"ERROR at " << c.get_fileline() <<" MOLE: Profile has incorrect XYZ bound."<<std::endl; RECORD();
+    genius_error();
+  }
 
   // the begin and end location of mole fraction
   double x_base, x_end;

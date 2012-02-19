@@ -24,7 +24,7 @@
 #ifndef __pattern_h_
 #define __pattern_h_
 
-#include "key.h"
+#include "parser_card.h"
 
 namespace Parser
 {

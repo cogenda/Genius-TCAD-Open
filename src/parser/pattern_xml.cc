@@ -161,23 +161,10 @@ Parameter DomPatternParser::parseParameter(mxml_node_t* node)
   if (mxml_node_t *nd = mxmlFindElement(node, node, "description", NULL, NULL, MXML_DESCEND_FIRST))
     param.set_description( getElementText(nd) );
 
+  // enum
   if (strncasecmp(type.c_str(), "enum", 10) == 0)
+  {
     param.set_type(ENUM);
-  else if (strncasecmp(type.c_str(), "bool", 10) == 0)
-    param.set_type(BOOL);
-  else if (strncasecmp(type.c_str(), "num", 10) == 0)
-    param.set_type(REAL);
-  else if (strncasecmp(type.c_str(), "int", 10) == 0)
-    param.set_type(INTEGER);
-  else if (strncasecmp(type.c_str(), "string", 10) == 0)
-    param.set_type(STRING);
-  else
-    param.set_type(REAL);
-
-  switch (param.type())
-  {
-  case ENUM:
-  {
     for (mxml_node_t *ne = mxmlFindElement(node, node, "enum", NULL, NULL, MXML_DESCEND_FIRST);
          ne != NULL; ne = mxmlFindElement(ne, node, "enum", NULL, NULL, MXML_NO_DESCEND))
     {
@@ -188,10 +175,32 @@ Parameter DomPatternParser::parseParameter(mxml_node_t* node)
     if (!strDefault.empty())
       if (param.string_pattern_match(strDefault))
         _errors.push_back("DOM Error: invalid enum default value "+strDefault);
-    break;
   }
-  case REAL:
+
+  // bool
+  if (strncasecmp(type.c_str(), "bool", 10) == 0)
   {
+    param.set_type(BOOL);
+    std::string strBool = getElementAttr(node, "default");
+    if (strncasecmp(strBool.c_str(), "yes", 10) ==0 ||
+        strncasecmp(strBool.c_str(), "true", 10) ==0 ||
+        strncasecmp(strBool.c_str(), "on", 10) ==0 )
+      param.set_bool(true);
+    else if (strncasecmp(strBool.c_str(), "no", 10) ==0 ||
+             strncasecmp(strBool.c_str(), "false", 10) ==0 ||
+             strncasecmp(strBool.c_str(), "off", 10) ==0 )
+      param.set_bool(false);
+    else
+    {
+      param.set_bool(false);
+      _errors.push_back("DOM Error: invalid bool default value "+getElementAttr(node, "default"));
+    }
+  }
+
+  // real
+  if (strncasecmp(type.c_str(), "num", 10) == 0)
+  {
+    param.set_type(REAL);
     double val;
     std::stringstream ss(std::string( getElementAttr(node, "default") ));
     ss >> val;
@@ -202,10 +211,39 @@ Parameter DomPatternParser::parseParameter(mxml_node_t* node)
     }
     else
       param.set_real(val);
-    break;
   }
-  case INTEGER:
+
+  // real array
+  if (strncasecmp(type.c_str(), "num[]", 10) == 0)
   {
+    param.set_type(REAL);
+
+    if(!getElementAttr(node, "element").empty())
+    {
+      int element;
+      std::stringstream ss_element(getElementAttr(node, "element"));
+      ss_element >> element;
+
+      std::vector<double> val(element, 0.0);
+      std::stringstream ss_default(getElementAttr(node, "default"));
+      for(int i=0; i<element; i++)
+      {
+        ss_default >> val[i];
+        if (ss_default.fail())
+        {
+          val[i] = 0.0;
+          _errors.push_back("DOM Error: invalid numerical default values "+ss_default.str());
+          break;
+        }
+      }
+      param.set_real_array(val);
+    }
+  }
+
+  // int
+  if (strncasecmp(type.c_str(), "int", 10) == 0 )
+  {
+    param.set_type(INTEGER);
     int val;
     std::stringstream ss(std::string( getElementAttr(node, "default") ));
     ss >> val;
@@ -216,34 +254,65 @@ Parameter DomPatternParser::parseParameter(mxml_node_t* node)
     }
     else
       param.set_int(val);
-    break;
   }
-  case BOOL:
+
+  // int array
+  if (strncasecmp(type.c_str(), "int[]", 10) == 0)
   {
-    std::string strBool = getElementAttr(node, "default");
-    if (strncasecmp(strBool.c_str(), "yes", 10) ==0 ||
-        strncasecmp(strBool.c_str(), "true", 10) ==0 ||
-        strncasecmp(strBool.c_str(), "on", 10) ==0 )
-      param.set_bool(true);
-    else if (strncasecmp(strBool.c_str(), "no", 10) ==0 ||
-        strncasecmp(strBool.c_str(), "false", 10) ==0 ||
-        strncasecmp(strBool.c_str(), "off", 10) ==0 )
-      param.set_bool(false);
-    else
+    param.set_type(INTEGER);
+    if(!getElementAttr(node, "element").empty())
     {
-      param.set_bool(false);
-      _errors.push_back("DOM Error: invalid bool default value "+getElementAttr(node, "default"));
+      int element;
+      std::stringstream ss_element(std::string( getElementAttr(node, "element") ));
+      ss_element >> element;
+
+      std::vector<int> val(element, 0);
+      std::stringstream ss_default(std::string( getElementAttr(node, "default") ));
+      for(int i=0; i<element; i++)
+      {
+        ss_default >> val[i];
+        if (ss_default.fail())
+        {
+          val[i] = 0;
+          _errors.push_back("DOM Error: invalid integer default values "+ss_default.str());
+          break;
+        }
+      }
+      param.set_int_array(val);
     }
-    break;
   }
-  case STRING:
+
+  // string
+  if (strncasecmp(type.c_str(), "string", 10) == 0)
   {
+    param.set_type(STRING);
     param.set_string(getElementAttr(node, "default"));
-    break;
   }
-  default:
-    _errors.push_back("DOM Error: invalid parameter type.");
-    break;
+
+  // string array
+  if (strncasecmp(type.c_str(), "string[]", 10) == 0)
+  {
+    param.set_type(STRING);
+    if(!getElementAttr(node, "element").empty())
+    {
+      int element;
+      std::stringstream ss_element(std::string( getElementAttr(node, "element") ));
+      ss_element >> element;
+
+      std::vector<std::string> val(element);
+      std::stringstream ss_default(std::string( getElementAttr(node, "default") ));
+      for(int i=0; i<element; i++)
+      {
+        ss_default >> val[i];
+        if (ss_default.fail())
+        {
+          val[i] = "";
+          _errors.push_back("DOM Error: invalid string default values "+ss_default.str());
+          break;
+        }
+      }
+      param.set_string_array(val);
+    }
   }
 
   return param;

@@ -69,7 +69,7 @@ void InsulatorSemiconductorInterfaceBC::Poissin_Fill_Value(Vec , Vec L)
 /*---------------------------------------------------------------------
  * do pre-process to function for poisson solver
  */
-void InsulatorSemiconductorInterfaceBC::Poissin_Function_Preprocess(Vec f, std::vector<PetscInt> &src_row,
+void InsulatorSemiconductorInterfaceBC::Poissin_Function_Preprocess(PetscScalar *, Vec f, std::vector<PetscInt> &src_row,
     std::vector<PetscInt> &dst_row, std::vector<PetscInt> &clear_row)
 {
 
@@ -141,6 +141,8 @@ void InsulatorSemiconductorInterfaceBC::Poissin_Function(PetscScalar * x, Vec f,
   std::vector<PetscScalar> y;
   y.reserve(n_nodes());
 
+  const PetscScalar qf = this->scalar("qf");
+
   // search for all the node with this boundary type
   BoundaryCondition::const_node_iterator node_it = nodes_begin();
   BoundaryCondition::const_node_iterator end_it = nodes_end();
@@ -173,7 +175,7 @@ void InsulatorSemiconductorInterfaceBC::Poissin_Function(PetscScalar * x, Vec f,
 
             // process interface fixed charge density
             PetscScalar boundary_area = fvm_nodes[i]->outside_boundary_surface_area();
-            VecSetValue(f, fvm_nodes[i]->global_offset(), this->Qf()*boundary_area, ADD_VALUES);
+            VecSetValue(f, fvm_nodes[i]->global_offset(), qf*boundary_area, ADD_VALUES);
 
             break;
           }
@@ -314,7 +316,7 @@ void InsulatorSemiconductorInterfaceBC::Poissin_Jacobian_Reserve(Mat *jac, Inser
 /*---------------------------------------------------------------------
  * do pre-process to jacobian matrix for poisson solver
  */
-void InsulatorSemiconductorInterfaceBC::Poissin_Jacobian_Preprocess(Mat *jac, std::vector<PetscInt> &src_row,
+void InsulatorSemiconductorInterfaceBC::Poissin_Jacobian_Preprocess(PetscScalar *, Mat *jac, std::vector<PetscInt> &src_row,
     std::vector<PetscInt> &dst_row, std::vector<PetscInt> &clear_row)
 {
 

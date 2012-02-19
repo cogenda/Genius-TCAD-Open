@@ -35,54 +35,56 @@ namespace libMeshEnums {
    * Defines an \p enum for geometric element types.
    */
   enum ElemType {
-         EDGE2=0,    // 0
-         EDGE2_FVM,  // 1
-         EDGE3,      // 2
-         EDGE4,      // 3
+         EDGE2=0,     // 0
+         EDGE2_FVM,   // 1
+         EDGE3,       // 2
+         EDGE4,       // 3
 
-         TRI3,       // 4
-         TRI3_FVM,   // 5
-         TRI6,       // 6
+         TRI3,        // 4
+         TRI3_FVM,    // 5
+         TRI3_CY_FVM, // 6
+         TRI6,        // 7
 
-         QUAD4,      // 7
-         QUAD4_FVM,  // 8
-         QUAD8,      // 9
-         QUAD9,      // 10
+         QUAD4,       // 8
+         QUAD4_FVM,   // 9
+         QUAD4_CY_FVM,// 10
+         QUAD8,       // 11
+         QUAD9,       // 12
 
-         TET4,       // 11
-         TET4_FVM,   // 12
-         TET10,      // 13
+         TET4,        // 13
+         TET4_FVM,    // 14
+         TET10,       // 15
 
-         HEX8,       // 14
-         HEX8_FVM,   // 15
-         HEX20,      // 16
-         HEX27,      // 17
+         HEX8,        // 16
+         HEX8_FVM,    // 17
+         HEX20,       // 18
+         HEX27,       // 19
 
-         PRISM6,     // 18
-         PRISM6_FVM, // 19
-         PRISM15,    // 20
-         PRISM18,    // 21
+         PRISM6,      // 20
+         PRISM6_FVM,  // 21
+         PRISM15,     // 22
+         PRISM18,     // 23
 
-         PYRAMID5,    // 22
-         PYRAMID5_FVM,// 23
+         PYRAMID5,    // 24
+         PYRAMID5_FVM,// 25
 
-         INFEDGE2,   // 24
+         INFEDGE2,    // 26
 
-         INFQUAD4,   // 25
-         INFQUAD6,   // 26
+         INFQUAD4,    // 27
+         INFQUAD6,    // 28
 
-         INFHEX8,    // 27
-         INFHEX16,   // 28
-         INFHEX18,   // 29
+         INFHEX8,     // 29
+         INFHEX16,    // 30
+         INFHEX18,    // 31
 
-         INFPRISM6,  // 30
-         INFPRISM12, // 31
+         INFPRISM6,   // 32
+         INFPRISM12,  // 33
 
-         NODEELEM,   // 32
+         NODEELEM,    // 34
 
-         REMOTEELEM,   // 33
+         REMOTEELEM,  // 35
 
-         INVALID_ELEM};  // 34 - should always be last
+         INVALID_ELEM};  // 36 - should always be last
 }
 
 using namespace libMeshEnums;

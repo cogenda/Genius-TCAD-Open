@@ -23,9 +23,10 @@
 #define __elem_intersection_h__
 
 #include <iostream>
+#include <vector>
 
 #include "point.h"
-#include "elem.h"
+
 
 namespace ElemIntersection
 {
@@ -84,6 +85,12 @@ namespace ElemIntersection
      * which face/edge/vertex the intersection point on
      */
     unsigned int mark;
+
+
+    bool operator()(const Hit_Point &p1, const Hit_Point &p2) const
+    {
+      return p1.t < p2.t;
+    }
   };
 
 
@@ -104,11 +111,11 @@ namespace ElemIntersection
      */
     std::vector<Hit_Point> hit_points;
 
-    bool is_point_overlap_exist(const Hit_Point &HP) const
+    bool is_point_overlap_exist(const Hit_Point &HP, double eps = 1e-8 ) const
     {
       for(unsigned int n=0; n<hit_points.size(); ++n)
       {
-        if( (hit_points[n].p - HP.p).size() < 1e-8  ) return true;
+        if( (hit_points[n].p - HP.p).size() < eps  ) return true;
       }
       return false;
     }

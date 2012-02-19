@@ -290,18 +290,6 @@ void SemiconductorSimulationRegion::DDM2_Function(PetscScalar * x, Vec f, Insert
       // the length of this edge
       const double length = elem->edge_length(ne);
 
-      // partial area associated with this edge
-      double partial_area = elem->partial_area_with_edge(ne);
-      double partial_volume = elem->partial_volume_with_edge(ne);
-
-      double truncated_partial_area =  partial_area;
-      double truncated_partial_volume =  partial_volume;
-      if(truncation)
-      {
-        truncated_partial_area =  elem->partial_area_with_edge_truncated(ne);
-        truncated_partial_volume =  elem->partial_volume_with_edge_truncated(ne);
-      }
-
       // fvm_node of node1
       const FVM_Node * fvm_n1 = elem->get_fvm_node(edge_nodes.first);
       // fvm_node of node2
@@ -311,6 +299,19 @@ void SemiconductorSimulationRegion::DDM2_Function(PetscScalar * x, Vec f, Insert
       const FVM_NodeData * n1_data =  fvm_n1->node_data();
       // fvm_node_data of node2
       const FVM_NodeData * n2_data =  fvm_n2->node_data();
+
+      // partial area associated with this edge
+      double partial_area = elem->partial_area_with_edge(ne);
+      double partial_volume = elem->partial_volume_with_edge(ne);
+
+      double truncated_partial_area =  partial_area;
+      double truncated_partial_volume =  partial_volume;
+      if(truncation)
+      {
+        // use truncated partial area to avoid negative area due to bad mesh elem
+        truncated_partial_area =  this->truncated_partial_area(elem, ne);
+        truncated_partial_volume =  elem->partial_volume_with_edge_truncated(ne);
+      }
 
       const unsigned int n1_local_offset = fvm_n1->local_offset();
       const unsigned int n2_local_offset = fvm_n2->local_offset();
@@ -895,18 +896,6 @@ void SemiconductorSimulationRegion::DDM2_Jacobian(PetscScalar * x, Mat *jac, Ins
       // the length of this edge
       const double length = elem->edge_length(ne);
 
-      // partial area associated with this edge
-      double partial_area = elem->partial_area_with_edge(ne);
-      double partial_volume = elem->partial_volume_with_edge(ne);
-
-      double truncated_partial_area =  partial_area;
-      double truncated_partial_volume =  partial_volume;
-      if(truncation)
-      {
-        truncated_partial_area =  elem->partial_area_with_edge_truncated(ne);
-        truncated_partial_volume =  elem->partial_volume_with_edge_truncated(ne);
-      }
-
       // fvm_node of node1
       const FVM_Node * fvm_n1 = elem->get_fvm_node(edge_nodes.first);
       // fvm_node of node2
@@ -916,6 +905,19 @@ void SemiconductorSimulationRegion::DDM2_Jacobian(PetscScalar * x, Mat *jac, Ins
       const FVM_NodeData * n1_data =  fvm_n1->node_data();
       // fvm_node_data of node2
       const FVM_NodeData * n2_data =  fvm_n2->node_data();
+
+      // partial area associated with this edge
+      double partial_area = elem->partial_area_with_edge(ne);
+      double partial_volume = elem->partial_volume_with_edge(ne);
+
+      double truncated_partial_area =  partial_area;
+      double truncated_partial_volume =  partial_volume;
+      if(truncation)
+      {
+        // use truncated partial area to avoid negative area due to bad mesh elem
+        truncated_partial_area =  this->truncated_partial_area(elem, ne);
+        truncated_partial_volume =  elem->partial_volume_with_edge_truncated(ne);
+      }
 
       const unsigned int n1_local_offset = fvm_n1->local_offset();
       const unsigned int n2_local_offset = fvm_n2->local_offset();
@@ -1253,6 +1255,8 @@ void SemiconductorSimulationRegion::DDM2_Time_Dependent_Function(PetscScalar * x
   iy.reserve(4*this->n_node());
   y.reserve(4*this->n_node());
 
+  const double r = SolverSpecify::dt_last/(SolverSpecify::dt_last + SolverSpecify::dt);
+
   // process node related terms
   const_processor_node_iterator node_it = on_processor_nodes_begin();
   const_processor_node_iterator node_it_end = on_processor_nodes_end();
@@ -1277,28 +1281,27 @@ void SemiconductorSimulationRegion::DDM2_Time_Dependent_Function(PetscScalar * x
     iy.push_back(fvm_node->global_offset()+3);
 
     //second order
-    if(SolverSpecify::TS_type==SolverSpecify::BDF2 && SolverSpecify::BDF2_restart==false)
+    if(SolverSpecify::TS_type==SolverSpecify::BDF2 && SolverSpecify::BDF2_LowerOrder==false)
     {
-      PetscScalar r = SolverSpecify::dt_last/(SolverSpecify::dt_last + SolverSpecify::dt);
-      PetscScalar Tn = -((2-r)/(1-r)*n - 1.0/(r*(1-r))*node_data->n() + (1-r)/r*node_data->n_last())
-                       / (SolverSpecify::dt_last+SolverSpecify::dt) * fvm_node->volume();
-      PetscScalar Tp = -((2-r)/(1-r)*p - 1.0/(r*(1-r))*node_data->p() + (1-r)/r*node_data->p_last())
-                       / (SolverSpecify::dt_last+SolverSpecify::dt) * fvm_node->volume();
-      PetscScalar TT = -((2-r)/(1-r)*T - 1.0/(r*(1-r))*node_data->T() + (1-r)/r*node_data->T_last())*node_data->density()*HeatCapacity
-                       / (SolverSpecify::dt_last+SolverSpecify::dt) * fvm_node->volume();
+      PetscScalar Tn_BDF2 = -((2-r)/(1-r)*n - 1.0/(r*(1-r))*node_data->n() + (1-r)/r*node_data->n_last())
+                            / (SolverSpecify::dt_last+SolverSpecify::dt) * fvm_node->volume();
+      PetscScalar Tp_BDF2 = -((2-r)/(1-r)*p - 1.0/(r*(1-r))*node_data->p() + (1-r)/r*node_data->p_last())
+                            / (SolverSpecify::dt_last+SolverSpecify::dt) * fvm_node->volume();
+      PetscScalar TT_BDF2 = -((2-r)/(1-r)*T - 1.0/(r*(1-r))*node_data->T() + (1-r)/r*node_data->T_last())*node_data->density()*HeatCapacity
+                            / (SolverSpecify::dt_last+SolverSpecify::dt) * fvm_node->volume();
 
-      y.push_back( Tn );
-      y.push_back( Tp );
-      y.push_back( TT );
+      y.push_back( Tn_BDF2 );
+      y.push_back( Tp_BDF2 );
+      y.push_back( TT_BDF2 );
     }
     else //first order
     {
-      PetscScalar Tn = -(n - node_data->n())/SolverSpecify::dt*fvm_node->volume();
-      PetscScalar Tp = -(p - node_data->p())/SolverSpecify::dt*fvm_node->volume();
-      PetscScalar TT = -(T - node_data->T())*node_data->density()*HeatCapacity/SolverSpecify::dt*fvm_node->volume();
-      y.push_back( Tn );
-      y.push_back( Tp );
-      y.push_back( TT );
+      PetscScalar Tn_BDF1 = -(n - node_data->n())/SolverSpecify::dt*fvm_node->volume();
+      PetscScalar Tp_BDF1 = -(p - node_data->p())/SolverSpecify::dt*fvm_node->volume();
+      PetscScalar TT_BDF1 = -(T - node_data->T())*node_data->density()*HeatCapacity/SolverSpecify::dt*fvm_node->volume();
+      y.push_back( Tn_BDF1 );
+      y.push_back( Tp_BDF1 );
+      y.push_back( TT_BDF1 );
     }
   }
 
@@ -1332,9 +1335,10 @@ void SemiconductorSimulationRegion::DDM2_Time_Dependent_Jacobian(PetscScalar * x
 
   //the indepedent variable number, 4 for each node
   adtl::AutoDScalar::numdir = 4;
-
   //synchronize with material database
   mt->set_ad_num(adtl::AutoDScalar::numdir);
+
+  const double r = SolverSpecify::dt_last/(SolverSpecify::dt_last + SolverSpecify::dt);
 
   const_processor_node_iterator node_it = on_processor_nodes_begin();
   const_processor_node_iterator node_it_end = on_processor_nodes_end();
@@ -1357,31 +1361,30 @@ void SemiconductorSimulationRegion::DDM2_Time_Dependent_Jacobian(PetscScalar * x
     // process \partial t
 
     //second order
-    if(SolverSpecify::TS_type==SolverSpecify::BDF2 && SolverSpecify::BDF2_restart==false)
+    if(SolverSpecify::TS_type==SolverSpecify::BDF2 && SolverSpecify::BDF2_LowerOrder==false)
     {
-      PetscScalar r = SolverSpecify::dt_last/(SolverSpecify::dt_last + SolverSpecify::dt);
-      AutoDScalar Tn = -((2-r)/(1-r)*n - 1.0/(r*(1-r))*node_data->n() + (1-r)/r*node_data->n_last())
+      AutoDScalar Tn_BDF2 = -((2-r)/(1-r)*n - 1.0/(r*(1-r))*node_data->n() + (1-r)/r*node_data->n_last())
                        / (SolverSpecify::dt_last+SolverSpecify::dt)*fvm_node->volume();
-      AutoDScalar Tp = -((2-r)/(1-r)*p - 1.0/(r*(1-r))*node_data->p() + (1-r)/r*node_data->p_last())
+      AutoDScalar Tp_BDF2 = -((2-r)/(1-r)*p - 1.0/(r*(1-r))*node_data->p() + (1-r)/r*node_data->p_last())
                        / (SolverSpecify::dt_last+SolverSpecify::dt)*fvm_node->volume();
-      AutoDScalar TT = -((2-r)/(1-r)*T - 1.0/(r*(1-r))*node_data->T() + (1-r)/r*node_data->T_last())*node_data->density()*HeatCapacity
+      AutoDScalar TT_BDF2 = -((2-r)/(1-r)*T - 1.0/(r*(1-r))*node_data->T() + (1-r)/r*node_data->T_last())*node_data->density()*HeatCapacity
                        / (SolverSpecify::dt_last+SolverSpecify::dt) * fvm_node->volume();
 
       // ADD to Jacobian matrix,
-      MatSetValues(*jac, 1, &index[1], 4, &index[0], Tn.getADValue(), ADD_VALUES);
-      MatSetValues(*jac, 1, &index[2], 4, &index[0], Tp.getADValue(), ADD_VALUES);
-      MatSetValues(*jac, 1, &index[3], 4, &index[0], TT.getADValue(), ADD_VALUES);
+      MatSetValues(*jac, 1, &index[1], 4, &index[0], Tn_BDF2.getADValue(), ADD_VALUES);
+      MatSetValues(*jac, 1, &index[2], 4, &index[0], Tp_BDF2.getADValue(), ADD_VALUES);
+      MatSetValues(*jac, 1, &index[3], 4, &index[0], TT_BDF2.getADValue(), ADD_VALUES);
     }
     else //first order
     {
-      AutoDScalar Tn = -(n - node_data->n())/SolverSpecify::dt*fvm_node->volume();
-      AutoDScalar Tp = -(p - node_data->p())/SolverSpecify::dt*fvm_node->volume();
-      AutoDScalar TT = -(T - node_data->T())*node_data->density()*HeatCapacity/SolverSpecify::dt*fvm_node->volume();
+      AutoDScalar Tn_BDF1 = -(n - node_data->n())/SolverSpecify::dt*fvm_node->volume();
+      AutoDScalar Tp_BDF1 = -(p - node_data->p())/SolverSpecify::dt*fvm_node->volume();
+      AutoDScalar TT_BDF1 = -(T - node_data->T())*node_data->density()*HeatCapacity/SolverSpecify::dt*fvm_node->volume();
 
       // ADD to Jacobian matrix,
-      MatSetValues(*jac, 1, &index[1], 4, &index[0], Tn.getADValue(), ADD_VALUES);
-      MatSetValues(*jac, 1, &index[2], 4, &index[0], Tp.getADValue(), ADD_VALUES);
-      MatSetValues(*jac, 1, &index[3], 4, &index[0], TT.getADValue(), ADD_VALUES);
+      MatSetValues(*jac, 1, &index[1], 4, &index[0], Tn_BDF1.getADValue(), ADD_VALUES);
+      MatSetValues(*jac, 1, &index[2], 4, &index[0], Tp_BDF1.getADValue(), ADD_VALUES);
+      MatSetValues(*jac, 1, &index[3], 4, &index[0], TT_BDF1.getADValue(), ADD_VALUES);
     }
   }
 
@@ -1393,6 +1396,177 @@ void SemiconductorSimulationRegion::DDM2_Time_Dependent_Jacobian(PetscScalar * x
 #endif
 }
 
+
+void SemiconductorSimulationRegion::DDM2_Pseudo_Time_Step_Function(PetscScalar * x, Vec f, InsertMode &add_value_flag)
+{
+  // note, we will use ADD_VALUES to set values of vec f
+  // if the previous operator is not ADD_VALUES, we should assembly the vec first!
+  if( (add_value_flag != ADD_VALUES) && (add_value_flag != NOT_SET_VALUES) )
+  {
+    VecAssemblyBegin(f);
+    VecAssemblyEnd(f);
+  }
+
+
+  const_processor_node_iterator node_it = on_processor_nodes_begin();
+  const_processor_node_iterator node_it_end = on_processor_nodes_end();
+  for(; node_it!=node_it_end; ++node_it)
+  {
+    const FVM_Node * fvm_node = *node_it;
+    //if( fvm_node->boundary_id() == BoundaryInfo::invalid_id ) continue;
+
+    const FVM_NodeData * node_data = fvm_node->node_data();
+
+    const unsigned int local_offset  = fvm_node->local_offset();
+    const unsigned int global_offset = fvm_node->global_offset();
+
+    PetscScalar V   =  x[local_offset];                         // phi
+    PetscScalar f_V = -node_data->eps()*(V-node_data->psi())/SolverSpecify::PseudoTimeStepPotential*fvm_node->volume();
+    VecSetValue(f, global_offset, f_V, ADD_VALUES);
+  }
+
+  for(node_it = on_processor_nodes_begin(); node_it!=node_it_end; ++node_it)
+  {
+    const FVM_Node * fvm_node = *node_it;
+    //if( fvm_node->boundary_id() != BoundaryInfo::invalid_id ) continue;
+
+    const FVM_NodeData * node_data = fvm_node->node_data();
+
+    const unsigned int local_offset  = fvm_node->local_offset();
+    const unsigned int global_offset = fvm_node->global_offset();
+
+    PetscScalar n   =  x[local_offset+1];                         // electron density
+    PetscScalar p   =  x[local_offset+2];                         // hole density
+
+    PetscScalar f_n   =  -(n-node_data->n())/SolverSpecify::PseudoTimeStepCarrier*fvm_node->volume();
+    VecSetValue(f, global_offset+1, f_n, ADD_VALUES);
+
+    PetscScalar f_p   =  -(p-node_data->p())/SolverSpecify::PseudoTimeStepCarrier*fvm_node->volume();
+    VecSetValue(f, global_offset+2, f_p, ADD_VALUES);
+  }
+
+  // the last operator is ADD_VALUES
+  add_value_flag = ADD_VALUES;
+}
+
+
+void SemiconductorSimulationRegion::DDM2_Pseudo_Time_Step_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_value_flag)
+{
+  // note, we will use ADD_VALUES to set values of matrix J
+  // if the previous operator is not ADD_VALUES, we should flush the matrix
+  if( (add_value_flag != ADD_VALUES) && (add_value_flag != NOT_SET_VALUES) )
+  {
+    MatAssemblyBegin(*jac, MAT_FLUSH_ASSEMBLY);
+    MatAssemblyEnd(*jac, MAT_FLUSH_ASSEMBLY);
+  }
+
+  //the indepedent variable number, 1 for each node
+  adtl::AutoDScalar::numdir = 1;
+  //synchronize with material database
+  mt->set_ad_num(adtl::AutoDScalar::numdir);
+
+
+  const_processor_node_iterator node_it = on_processor_nodes_begin();
+  const_processor_node_iterator node_it_end = on_processor_nodes_end();
+
+  for(; node_it!=node_it_end; ++node_it)
+  {
+    const FVM_Node * fvm_node = *node_it;
+    //if( fvm_node->boundary_id() == BoundaryInfo::invalid_id ) continue;
+
+    const FVM_NodeData * node_data = fvm_node->node_data();
+
+    const unsigned int local_offset  = fvm_node->local_offset();
+    const unsigned int global_offset = fvm_node->global_offset();
+
+    AutoDScalar V(x[local_offset]);   V.setADValue(0, 1.0);              // psi
+    AutoDScalar f_V = -node_data->eps()*(V-node_data->psi())/SolverSpecify::PseudoTimeStepPotential*fvm_node->volume();
+    MatSetValue(*jac, global_offset, global_offset, f_V.getADValue(0), ADD_VALUES);
+  }
+
+
+  for(node_it = on_processor_nodes_begin(); node_it!=node_it_end; ++node_it)
+  {
+    const FVM_Node * fvm_node = *node_it;
+    //if( fvm_node->boundary_id() != BoundaryInfo::invalid_id ) continue;
+
+    const FVM_NodeData * node_data = fvm_node->node_data();
+
+    const unsigned int local_offset  = fvm_node->local_offset();
+    const unsigned int global_offset = fvm_node->global_offset();
+
+    AutoDScalar n(x[local_offset+1]);   n.setADValue(0, 1.0);              // electron density
+    AutoDScalar p(x[local_offset+2]);   p.setADValue(0, 1.0);              // hole density
+
+    AutoDScalar f_n = -(n-node_data->n())/SolverSpecify::PseudoTimeStepCarrier*fvm_node->volume();
+    MatSetValue(*jac, global_offset+1, global_offset+1, f_n.getADValue(0), ADD_VALUES);
+
+    AutoDScalar f_p = -(p-node_data->p())/SolverSpecify::PseudoTimeStepCarrier*fvm_node->volume();
+    MatSetValue(*jac, global_offset+2, global_offset+2, f_p.getADValue(0), ADD_VALUES);
+  }
+
+  // the last operator is ADD_VALUES
+  add_value_flag = ADD_VALUES;
+}
+
+
+
+int SemiconductorSimulationRegion::DDM2_Pseudo_Time_Step_Convergence_Test(PetscScalar * x)
+{
+  int unconverged_node_potential = 0;
+  int unconverged_node_n = 0;
+  int unconverged_node_p = 0;
+
+  const_processor_node_iterator node_it = on_processor_nodes_begin();
+  const_processor_node_iterator node_it_end = on_processor_nodes_end();
+
+  for(; node_it!=node_it_end; ++node_it)
+  {
+    const FVM_Node * fvm_node = *node_it;
+    //if( fvm_node->boundary_id() == BoundaryInfo::invalid_id ) continue;
+
+    const FVM_NodeData * node_data = fvm_node->node_data();
+
+    const unsigned int local_offset  = fvm_node->local_offset();
+    const unsigned int global_offset = fvm_node->global_offset();
+
+    PetscScalar V   =  x[local_offset];                         // phi
+
+    PetscScalar fV_abs = std::abs(-node_data->eps()*(V-node_data->psi())/SolverSpecify::PseudoTimeStepPotential);
+    PetscScalar V_rel  = std::abs(node_data->eps()*(V-node_data->psi()))/(std::abs(V) + 1e-30);
+
+    if( fV_abs > SolverSpecify::PseudoTimeTolRelax*SolverSpecify::poisson_abs_toler && V_rel > SolverSpecify::relative_toler )
+      unconverged_node_potential++;
+  }
+
+
+  for(node_it = on_processor_nodes_begin(); node_it!=node_it_end; ++node_it)
+  {
+    const FVM_Node * fvm_node = *node_it;
+    //if( fvm_node->boundary_id() != BoundaryInfo::invalid_id ) continue;
+
+    const FVM_NodeData * node_data = fvm_node->node_data();
+
+    const unsigned int local_offset  = fvm_node->local_offset();
+
+    PetscScalar n   =  x[local_offset+1];                         // electron density
+    PetscScalar p   =  x[local_offset+2];                         // hole density
+
+    PetscScalar fn_abs   = std::abs(-(n-node_data->n())/SolverSpecify::PseudoTimeStepCarrier);
+    PetscScalar n_rel    = std::abs((n-node_data->n())/node_data->n());
+
+    PetscScalar fp_abs   = std::abs(-(p-node_data->p())/SolverSpecify::PseudoTimeStepCarrier);
+    PetscScalar p_rel    = std::abs((p-node_data->p())/node_data->p());
+
+    if( fn_abs > SolverSpecify::PseudoTimeTolRelax*SolverSpecify::elec_continuity_abs_toler && n_rel  > SolverSpecify::relative_toler )
+      unconverged_node_n++;
+
+    if(fp_abs > SolverSpecify::PseudoTimeTolRelax*SolverSpecify::hole_continuity_abs_toler && p_rel  > SolverSpecify::relative_toler)
+      unconverged_node_p++;
+  }
+
+  return unconverged_node_potential + unconverged_node_n + unconverged_node_p;
+}
 
 
 void SemiconductorSimulationRegion::DDM2_Update_Solution(PetscScalar *lxx)

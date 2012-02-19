@@ -1,3 +1,24 @@
+/********************************************************************************/
+/*     888888    888888888   88     888  88888   888      888    88888888       */
+/*   8       8   8           8 8     8     8      8        8    8               */
+/*  8            8           8  8    8     8      8        8    8               */
+/*  8            888888888   8   8   8     8      8        8     8888888        */
+/*  8      8888  8           8    8  8     8      8        8            8       */
+/*   8       8   8           8     8 8     8      8        8            8       */
+/*     888888    888888888  888     88   88888     88888888     88888888        */
+/*                                                                              */
+/*       A Three-Dimensional General Purpose Semiconductor Simulator.           */
+/*                                                                              */
+/*                                                                              */
+/*  Copyright (C) 2007-2008                                                     */
+/*  Cogenda Pte Ltd                                                             */
+/*                                                                              */
+/*  Please contact Cogenda Pte Ltd for license information                      */
+/*                                                                              */
+/*  Author: Gong Ding   gdiso@ustc.edu                                          */
+/*                                                                              */
+/********************************************************************************/
+
 #ifndef _genius_common_h_
 #define _genius_common_h_
 
@@ -12,25 +33,7 @@
 #include <complex>
 
 #include "config.h"
-#include "petscsys.h"
-#include "petsc_macro.h"
 
-#ifndef PETSC_VERSION_DEV
-  #define PetscBool PetscTruth
-#endif
-
-#ifdef CYGWIN
-  // something required for building windows dll
-  #define DLL_EXPORT_DECLARE  __declspec  (dllexport)
-#else
-  #define DLL_EXPORT_DECLARE
-#endif
-
-
-// when PETSC_HAVE_MPIUNI is defined by PETSC, no MPI exist!
-#ifdef PETSC_HAVE_MPIUNI
-  #undef HAVE_MPI
-#endif
 
 // enable AMR
 #define ENABLE_AMR
@@ -144,7 +147,7 @@ namespace std {
 
 // Define the value type for unknowns in simulations.
 // This may be double or long double, dependent on PETSC
-typedef PetscScalar Number;
+typedef Real Number;
 
 
 // Define the value type for error estimates.
@@ -182,7 +185,7 @@ typedef float ErrorVectorReal;
 
 // Use Petsc error mechanism for assertion tests
 #undef genius_assert
-#ifdef CYGWIN
+#ifdef WINDOWS
 #  include <csignal>
 #  define genius_assert(a)  {  if (! (a) ) { std::cerr << "Assertion failure at " << __FILE__ << ":" << __LINE__ << std::endl; std::raise(SIGTERM); } }
 #else

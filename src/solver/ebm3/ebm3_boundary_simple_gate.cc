@@ -102,9 +102,11 @@ void SimpleGateContactBC::EBM3_Function(PetscScalar * x, Vec f, InsertMode &add_
   genius_assert( local_offset()!=invalid_uint );
   PetscScalar Ve = x[this->local_offset()];
 
-  PetscScalar q = e*this->Qf();            // surface change density
-  PetscScalar Thick = this->Thickness();   // the thickness of gate oxide
-  PetscScalar eps_ox = this->eps();        // the permittivity of gate material
+  const PetscScalar q = e*this->scalar("qf");            // surface change density
+  const PetscScalar Thick = this->scalar("thickness");   // the thickness of gate oxide
+  const PetscScalar eps_ox = this->scalar("eps");        // the permittivity of gate material
+  const PetscScalar Work_Function = this->scalar("workfunction");
+  const PetscScalar Heat_Transfer = this->scalar("heat.transfer");
 
   BoundaryCondition::const_node_iterator node_it = nodes_begin();
   BoundaryCondition::const_node_iterator end_it = nodes_end();
@@ -119,7 +121,7 @@ void SimpleGateContactBC::EBM3_Function(PetscScalar * x, Vec f, InsertMode &add_
 
     PetscScalar V = x[fvm_node->local_offset()+0]; // psi of this node
     PetscScalar S = fvm_node->outside_boundary_surface_area();
-    PetscScalar dP = S*(eps_ox*(Ve - this->Work_Function()-V)/Thick + q);
+    PetscScalar dP = S*(eps_ox*(Ve - Work_Function-V)/Thick + q);
     // set governing equation of psi
     VecSetValue(f, fvm_node->global_offset()+0, dP, ADD_VALUES);
 
@@ -130,9 +132,8 @@ void SimpleGateContactBC::EBM3_Function(PetscScalar * x, Vec f, InsertMode &add_
       unsigned int node_Tl_offset  = region->ebm_variable_offset(TEMPERATURE);
 
       PetscScalar T = x[fvm_node->local_offset()+node_Tl_offset]; // T of this node
-      PetscScalar h = this->Heat_Transfer();
       PetscScalar S  = fvm_node->outside_boundary_surface_area();
-      PetscScalar fT = h*(T_external()-T)*S;
+      PetscScalar fT = Heat_Transfer*(T_external()-T)*S;
       VecSetValue(f, fvm_node->global_offset()+node_Tl_offset, fT, ADD_VALUES);
     }
 
@@ -349,9 +350,13 @@ void SimpleGateContactBC::EBM3_Jacobian(PetscScalar * x, Mat *jac, InsertMode &a
   }
 
   PetscInt bc_global_offset = this->global_offset();
-  PetscScalar q             = e*this->Qf();              // surface change density
-  PetscScalar Thick         = this->Thickness();         // the thickness of gate oxide
-  PetscScalar eps_ox        = this->eps();               // the permittivity of gate material
+
+  const PetscScalar q = e*this->scalar("qf");            // surface change density
+  const PetscScalar Thick = this->scalar("thickness");   // the thickness of gate oxide
+  const PetscScalar eps_ox = this->scalar("eps");        // the permittivity of gate material
+  const PetscScalar Work_Function = this->scalar("workfunction");
+  const PetscScalar Heat_Transfer = this->scalar("heat.transfer");
+
   PetscScalar R             = this->ext_circuit()->R();  // resistance
   PetscScalar C             = this->ext_circuit()->C();  // capacitance
   PetscScalar L             = this->ext_circuit()->L();  // inductance
@@ -385,7 +390,7 @@ void SimpleGateContactBC::EBM3_Jacobian(PetscScalar * x, Mat *jac, InsertMode &a
 
     PetscScalar S = fvm_node->outside_boundary_surface_area();
 
-    AutoDScalar dP = S*(eps_ox*(Ve - this->Work_Function()-V)/Thick + q);
+    AutoDScalar dP = S*(eps_ox*(Ve - Work_Function-V)/Thick + q);
 
     //governing equation of psi
     MatSetValue(*jac, fvm_node->global_offset(), fvm_node->global_offset(), dP.getADValue(0), ADD_VALUES);
@@ -398,9 +403,8 @@ void SimpleGateContactBC::EBM3_Jacobian(PetscScalar * x, Mat *jac, InsertMode &a
       unsigned int node_Tl_offset  = region->ebm_variable_offset(TEMPERATURE);
 
       AutoDScalar T = x[fvm_node->local_offset()+node_Tl_offset]; T.setADValue(0, 1.0); // psi of this node
-      PetscScalar h = this->Heat_Transfer();
       PetscScalar S  = fvm_node->outside_boundary_surface_area();
-      AutoDScalar fT = h*(T_external()-T)*S;
+      AutoDScalar fT = Heat_Transfer*(T_external()-T)*S;
       MatSetValue(*jac, fvm_node->global_offset()+node_Tl_offset, fvm_node->global_offset()+node_Tl_offset, fT.getADValue(0), ADD_VALUES);
     }
 

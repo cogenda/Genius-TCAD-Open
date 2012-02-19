@@ -82,10 +82,6 @@ private:
 
   bool _surface;
 
-  void write_gdml_header();
-
-  void write_gdml_element(const std::string &);
-
   void write_gdml_surface(const std::string &file);
 
   void write_gdml_body(const std::string &file);
@@ -96,6 +92,7 @@ private:
 
   void cell_average_doping(const Elem *elem, double &, double &);
 
+private:
   struct Atom
   {
     std::string name;
@@ -138,6 +135,8 @@ private:
    * fill atoms map
    */
   void set_atoms();
+
+  double atom_value(const std::string &);
 
 };
 

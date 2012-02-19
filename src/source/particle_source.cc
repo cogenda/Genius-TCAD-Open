@@ -20,8 +20,9 @@
 /********************************************************************************/
 
 #include <fstream>
-
+#include "parser.h"
 #include "mesh_base.h"
+#include "point_locator_base.h"
 #include "particle_source.h"
 #include "simulation_system.h"
 #include "simulation_region.h"
@@ -39,6 +40,41 @@ using PhysicalUnit::um;
 using PhysicalUnit::eV;
 using PhysicalUnit::cm;
 using PhysicalUnit::g;
+
+
+
+
+double Particle_Source::carrier_generation(double t) const
+{
+  if( t>= _t0 && (t-_t_max)*(t-_t_max)/(_t_char*_t_char)<30)
+    return exp(-(t-_t_max)*(t-_t_max)/(_t_char*_t_char));
+  return 0;
+}
+
+#if 0
+double Particle_Source::limit_dt(double time, double dt) const
+{
+  const double total = 0.5*sqrt(3.1415926536)*_t_char*(1 - Erf((_t0-_t_max)/_t_char));
+  while( 0.5*(carrier_generation(time) + carrier_generation(time+dt))*dt  > 0.05*total ) dt*=0.9;
+  return dt;
+}
+#endif
+
+double Particle_Source::limit_dt(double time, double dt) const
+{
+  const double total = 0.5*sqrt(3.1415926536)*_t_char*(1 - Erf((_t0-_t_max)/_t_char));
+  if(carrier_generation(time) < 0.001*total && carrier_generation(time+dt) < 0.001*total ) return dt;
+
+  do{
+    const double interval = 0.5*sqrt(3.1415926536)*_t_char*(Erf((time+dt-_t_max)/_t_char) - Erf((time-_t_max)/_t_char));
+    double error = std::abs(0.5*(carrier_generation(time) + carrier_generation(time+dt))*dt - interval);
+    if( error < 0.001*total || error < 0.001*interval || dt < 0.05*_t_char) break;
+    dt *= 0.9;
+  }
+  while(1);
+
+  return dt;
+}
 
 //-------------------------------------------------------------------------------------------------------------------------
 
@@ -73,12 +109,31 @@ void Particle_Source_DataFile::set_particle_profile_fromfile2d(const Parser::Car
 
   if(Genius::processor_id()==0)
   {
-    VectorValue<double> translate(c.get_real("translate.x", 0.0) * um,
-                                  c.get_real("translate.y", 0.0) * um,
-                                  c.get_real("translate.z", 0.0) * um);
-    TensorValue<double> transform(c.get_real("transform.xx", 1.0), c.get_real("transform.xy", 0.0), c.get_real("transform.xz", 0.0),
-                                  c.get_real("transform.yx", 0.0), c.get_real("transform.yy", 1.0), c.get_real("transform.yz", 0.0),
-                                  c.get_real("transform.zx", 0.0), c.get_real("transform.zy", 0.0), c.get_real("transform.zz", 1.0));
+    VectorValue<double> translate;
+    TensorValue<double> transform;
+    if( c.is_parameter_exist("translate") )
+    {
+      std::vector<double> dummy = c.get_array<double>("translate");
+      translate = VectorValue<double>(&dummy[0])*um;
+    }
+    else
+    {
+      translate = VectorValue<double>(c.get_real("translate.x", 0.0)*um,
+                                      c.get_real("translate.y", 0.0)*um,
+                                      c.get_real("translate.z", 0.0)*um);
+    }
+
+    if( c.is_parameter_exist("transform") )
+    {
+      std::vector<double> dummy = c.get_array<double>("transform");
+      transform = TensorValue<double>(&dummy[0]);
+    }
+    else
+    {
+      transform = TensorValue<double>(c.get_real("transform.xx", 1.0), c.get_real("transform.xy", 0.0), c.get_real("transform.xz", 0.0),
+                                      c.get_real("transform.yx", 0.0), c.get_real("transform.yy", 1.0), c.get_real("transform.yz", 0.0),
+                                      c.get_real("transform.zx", 0.0), c.get_real("transform.zy", 0.0), c.get_real("transform.zz", 1.0));
+    }
 
     std::string file = c.get_string("profile.file", "");
     std::ifstream in(file.c_str());
@@ -124,12 +179,31 @@ void Particle_Source_DataFile::set_particle_profile_fromfile3d(const Parser::Car
   interpolator->set_interpolation_type(0, InterpolationBase::Asinh);
 
 
-  VectorValue<double> translate(c.get_real("translate.x", 0.0) * um,
-                                c.get_real("translate.y", 0.0) * um,
-                                c.get_real("translate.z", 0.0) * um);
-  TensorValue<double> transform(c.get_real("transform.xx", 1.0), c.get_real("transform.xy", 0.0), c.get_real("transform.xz", 0.0),
-                                c.get_real("transform.yx", 0.0), c.get_real("transform.yy", 1.0), c.get_real("transform.yz", 0.0),
-                                c.get_real("transform.zx", 0.0), c.get_real("transform.zy", 0.0), c.get_real("transform.zz", 1.0));
+  VectorValue<double> translate;
+  TensorValue<double> transform;
+  if( c.is_parameter_exist("translate") )
+  {
+    std::vector<double> dummy = c.get_array<double>("translate");
+    translate = VectorValue<double>(&dummy[0])*um;
+  }
+  else
+  {
+    translate = VectorValue<double>(c.get_real("translate.x", 0.0)*um,
+                                    c.get_real("translate.y", 0.0)*um,
+                                    c.get_real("translate.z", 0.0)*um);
+  }
+
+  if( c.is_parameter_exist("transform") )
+  {
+    std::vector<double> dummy = c.get_array<double>("transform");
+    transform = TensorValue<double>(&dummy[0]);
+  }
+  else
+  {
+    transform = TensorValue<double>(c.get_real("transform.xx", 1.0), c.get_real("transform.xy", 0.0), c.get_real("transform.xz", 0.0),
+                                    c.get_real("transform.yx", 0.0), c.get_real("transform.yy", 1.0), c.get_real("transform.yz", 0.0),
+                                    c.get_real("transform.zx", 0.0), c.get_real("transform.zy", 0.0), c.get_real("transform.zz", 1.0));
+  }
 
   if(Genius::processor_id()==0)
   {
@@ -185,11 +259,7 @@ void Particle_Source_DataFile::update_system()
       FVM_NodeData * node_data = fvm_node->node_data();
 
       double E = interpolator->get_interpolated_value(*(fvm_node->root_node()), 0);
-#ifdef CYGWIN
       node_data->PatG() += 2*E/_quan_eff/_t_char/sqrt(3.1415926536)/(1+Erf((_t_max-_t0)/_t_char));
-#else
-      node_data->PatG() += 2*E/_quan_eff/_t_char/sqrt(3.1415926536)/(1+erf((_t_max-_t0)/_t_char));
-#endif
 
     }
   }
@@ -251,11 +321,7 @@ void Particle_Source_Analytic::update_system()
     else
       lateral_norm = pi*_lateral_char*_lateral_char;
 
-#ifdef CYGWIN
     double G0 = E/_quan_eff/(lateral_norm)/(_t_char/2.0*sqrt(pi)*(1+Erf((_t_max-_t0)/_t_char)));
-#else
-    double G0 = E/_quan_eff/(lateral_norm)/(_t_char/2.0*sqrt(pi)*(1+erf((_t_max-_t0)/_t_char)));
-#endif
 
     SimulationRegion::processor_node_iterator it = region->on_processor_nodes_begin();
     SimulationRegion::processor_node_iterator it_end = region->on_processor_nodes_end();
@@ -316,27 +382,25 @@ void Particle_Source_Track::_read_particle_profile_track(const std::string &file
 
     while(!in.eof())
     {
-      char flag;
-      while(in >> flag)
-      {
-        if (flag == 'T' )
-        {
-          double p1[3], p2[3], energy;
-          in >> p1[0] >> p1[1] >> p1[2] >> p2[0] >> p2[1] >> p2[2] >> energy ;
-          meta_data.push_back(p1[0]*um);
-          meta_data.push_back(p1[1]*um);
-          meta_data.push_back(p1[2]*um);
-          meta_data.push_back(p2[0]*um);
-          meta_data.push_back(p2[1]*um);
-          meta_data.push_back(p2[2]*um);
-          meta_data.push_back(energy*1e6*eV);
-        }
-        else
-        {
-          std::string rubbish;
-          std::getline(in, rubbish);
-        }
-      }
+      std::string context;
+      std::getline(in, context);
+      if(context.empty()) continue;
+      if(context[0] == '#') continue;
+
+      std::stringstream ss(context);
+      std::string particle;
+      ss >> particle;
+      if(particle.empty()) continue;
+
+      double p1[3], p2[3], energy;
+      ss >>  p1[0] >> p1[1] >> p1[2] >> p2[0] >> p2[1] >> p2[2] >> energy ;
+      meta_data.push_back(p1[0]*um);
+      meta_data.push_back(p1[1]*um);
+      meta_data.push_back(p1[2]*um);
+      meta_data.push_back(p2[0]*um);
+      meta_data.push_back(p2[1]*um);
+      meta_data.push_back(p2[2]*um);
+      meta_data.push_back(energy*1e6*eV);
     }
 
     in.close();
@@ -360,6 +424,8 @@ void Particle_Source_Track::_read_particle_profile_track(const std::string &file
 
 }
 
+
+
 void Particle_Source_Track::update_system()
 {
   const double pi = 3.1415926536;
@@ -371,51 +437,73 @@ void Particle_Source_Track::update_system()
   for(unsigned int t=0; t<_tracks.size(); ++t)
   {
     const track_t & track = _tracks[t];
+    // prevent bad tracks
+    if( track.energy == 0.0 ) continue;
+    if((track.end - track.start).size() == 0.0) continue;
 
     const Point track_dir = (track.end - track.start).unit(); // track direction
     const double ed = track.energy/(track.end - track.start).size(); // linear energy density
-
-    // find the nodes that
-    std::map<FVM_Node *, double> impacted_fvm_nodes;
+    // find the nodes that near the track
+    std::multimap<const Node *, std::pair<FVM_Node *, double> > impacted_fvm_nodes;
     for(unsigned int r=0; r<_system.n_regions(); r++)
     {
-      SimulationRegion * region = _system.region(r);
-      if( region->type() != SemiconductorRegion ) continue;
+      const SimulationRegion * region = _system.region(r);
 
       Real radii = 5*_lateral_char;
       std::vector<const Node *> nn = nn_locator->nearest_nodes(track.start, track.end, radii, r);
       for(unsigned int n=0; n<nn.size(); ++n)
       {
         Point loc = *nn[n];
-        FVM_Node * fvm_node = region->region_fvm_node(nn[n]);  genius_assert(fvm_node);
+        FVM_Node * fvm_node = region->region_fvm_node(nn[n]); // may be NULL, if not on local
+        if(!fvm_node || !fvm_node->on_processor()) continue;
+
         Point loc_pp = track.start + (loc-track.start)*track_dir*track_dir;
         Real r = (loc-loc_pp).size();
         double e_r = exp(-r*r/(_lateral_char*_lateral_char));
         double e_z = Erf((loc_pp-track.start)*track_dir/_lateral_char) - Erf((loc_pp-track.end)*track_dir/_lateral_char);
         double energy = ed/(2*pi*_lateral_char*_lateral_char)*e_r*e_z;
-        impacted_fvm_nodes.insert(std::make_pair(fvm_node, energy));
+        impacted_fvm_nodes.insert(std::make_pair(nn[n], std::make_pair(fvm_node, energy)));
       }
     }
 
-    if(!impacted_fvm_nodes.size()) continue;
 
     // statistic total energy deposit
-    double energy_statistics = 0.0;
-    std::map<FVM_Node *, double>::iterator it=impacted_fvm_nodes.begin();
+    double alpha = 1.0; //used for keep energy conservation
+    {
+      double energy_statistics = 0.0;
+      std::multimap<const Node *, std::pair<FVM_Node *, double> >::iterator it=impacted_fvm_nodes.begin();
+      for( ; it!=impacted_fvm_nodes.end(); ++it)
+      {
+        const FVM_Node * fvm_node = it->second.first;
+        if(fvm_node && fvm_node->on_processor())
+          energy_statistics += it->second.second*fvm_node->volume();
+      }
+      Parallel::sum(energy_statistics);
+      alpha = energy_statistics > 0.0 ? track.energy/energy_statistics : 1.0; //used for keep energy conservation
+    }
+
+    std::multimap<const Node *, std::pair<FVM_Node *, double> >::iterator it=impacted_fvm_nodes.begin();
     for( ; it!=impacted_fvm_nodes.end(); ++it)
     {
-      FVM_Node * fvm_node = it->first;
-      energy_statistics += it->second*fvm_node->volume();
-    }
-    double alpha = track.energy/energy_statistics;//used for keep energy conservation
+      FVM_Node * fvm_node = it->second.first;
+      if(!fvm_node) continue;
 
-    for( it=impacted_fvm_nodes.begin(); it!=impacted_fvm_nodes.end(); ++it)
-    {
-      FVM_Node * fvm_node = it->first;
-      if(!fvm_node->on_local()) continue;
+      SimulationRegion * region = _system.region(fvm_node->subdomain_id());
+      if( region->type() != SemiconductorRegion) continue;
 
-      FVM_NodeData * node_data = fvm_node->node_data();
-      node_data->PatG() += alpha*it->second/_quan_eff/(_t_char/2.0*sqrt(pi)*(1+Erf((_t_max-_t0)/_t_char)));
+      if(fvm_node && fvm_node->on_local())
+      {
+        FVM_NodeData * node_data = fvm_node->node_data();
+        node_data->PatG() += alpha*it->second.second/_quan_eff/(_t_char/2.0*sqrt(pi)*(1+Erf((_t_max-_t0)/_t_char)));
+        node_data->PatE() += alpha*it->second.second;//*fvm_node->volume();
+        //total_energy = alpha*it->second.second*fvm_node->volume();
+        //region_energy[ _system.region(fvm_node->subdomain_id())->name() ] += alpha*it->second.second*fvm_node->volume();
+      }
     }
   }
+
+  //std::map<std::string, double>::const_iterator it = region_energy.begin();
+  //for(;it != region_energy.end(); ++it)
+  //  std::cout<<it->first << " " << it->second<<std::endl;
+  //std::cout<<total_energy<<std::endl;
 }

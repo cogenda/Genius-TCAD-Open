@@ -63,68 +63,6 @@ public:
     { return BOUNDARY; }
 
   /**
-   * @return the heat transfer rate of this boundary
-   */
-  virtual PetscScalar Heat_Transfer() const
-    {return _Heat_Transfer;}
-
-  /**
-   * @return writable reference to heat transfer rate of this boundary
-   */
-  virtual PetscScalar & Heat_Transfer()
-  {return _Heat_Transfer;}
-
-
-  /**
-   * @return the work function of electrode material
-   */
-  virtual PetscScalar Work_Function() const
-    {return _WorkFunction;}
-
-  /**
-   * @return writable reference to work function of electrode material
-   */
-  virtual PetscScalar & Work_Function()
-  {return _WorkFunction;}
-
-
-  /**
-   * @return the thichness of gate material
-   */
-  virtual PetscScalar Thickness() const
-    {return _Thickness;}
-
-  /**
-   * @return writable reference to thichness of gate material
-   */
-  virtual PetscScalar & Thickness()
-  {return _Thickness;}
-
-  /**
-   * @return the electric constant of gate material
-   */
-  virtual PetscScalar eps() const
-    { return _eps;}
-
-  /**
-   * @return writable reference to electric constant of gate material
-   */
-  virtual PetscScalar & eps()
-  { return _eps;}
-
-  /**
-   * @return the free charge density at Si/SiO2 interface
-   */
-  virtual PetscScalar Qf() const
-    {return _Qf;}
-
-  /**
-   * @return writable reference to free charge density
-   */
-  virtual PetscScalar & Qf()
-  {return _Qf;}
-
-  /**
    * @return the reflection flag of this boundary
    */
   virtual bool reflection() const
@@ -166,32 +104,6 @@ private:
   void _find_mos_channel_elem();
 
 private:
-
-  /**
-   * heat transfer rate of this boundary
-   */
-  PetscScalar   _Heat_Transfer;
-
-
-  /**
-   * workfunction of electrode material
-   */
-  PetscScalar   _WorkFunction;
-
-  /**
-   * the thickness of SiO2
-   */
-  PetscScalar   _Thickness;
-
-  /**
-   * the electric constant of gate material (mostly SiO2)
-   */
-  PetscScalar   _eps;
-
-  /**
-   * the free charge density at Si/SiO2 interface
-   */
-  PetscScalar   _Qf;
 
   /**
    * full reflection flag......just used in ray tracing

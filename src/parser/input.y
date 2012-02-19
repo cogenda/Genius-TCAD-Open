@@ -7,10 +7,7 @@ static int yyerror(void * dummy, const char *s);
 
 
 
-static struct Parser::Card card;
-static Parser::Parameter   parameter;
-
-/*#define VERBOSE*/
+//#define VERBOSE
 
 %}
 
@@ -21,6 +18,13 @@ static Parser::Parameter   parameter;
     int    ival;
     double dval;
     char   sval[1024];
+    std::vector<bool>     * bool_array;
+    std::vector<int>      * int_array;
+    std::vector<double>   * real_array;
+    std::vector<std::string>  * string_array;
+    Parser::Parameter * parameter;
+    std::vector<Parser::Parameter *> * parameter_array;
+    Parser::Card      * card;
 }
 
 %parse-param { void * dummy}
@@ -34,6 +38,13 @@ static Parser::Parameter   parameter;
 %token <dval> REAL_VALUE
 %token <sval> STRING_VALUE
 %token <bval> BOOL_VALUE
+%type <bool_array> bool_exprs
+%type <int_array> int_exprs
+%type <real_array> real_exprs
+%type <string_array> string_exprs
+%type <parameter> parameter
+%type <parameter_array> parameters
+%type <card>    statement
 %token ENDFILE
 
 %token  BLANK COMMENT BAD_WORD
@@ -60,6 +71,7 @@ static Parser::Parameter   parameter;
 %type  <dval> real_expr
 %type  <sval> string_expr
 
+
 %%
 inputfile
     :   TITLE STRING_VALUE
@@ -68,9 +80,19 @@ inputfile
     ;
 
 command
-     :   statement
+     :   statement LINEINFO
+         {
+             $1->set_lineno(yylineno);
+             $1->set_fileline($2);
+             Parser::InputParser * p = (Parser::InputParser *) dummy;
+             p->_card_list.push_back(*$1);
+             p->_card_map.insert(std::pair<const std::string, Parser::Card>($1->key(), *$1));
+             delete $1
+         }
 
-     |   BOOL_TYPE     BOOL_ID    '='  bool_expr    ';'
+     |   expr ';' LINEINFO
+
+     |   BOOL_TYPE     BOOL_ID    '='  bool_expr    ';'  LINEINFO
          {
             Parser::InputParser * p = (Parser::InputParser *) dummy;
             if(p->bool_var.count($2))
@@ -80,7 +102,7 @@ command
             }
             p->bool_var.insert(std::pair< const std::string, bool >($2,$4));
          }
-     |   INT_TYPE      INT_ID     '='  int_expr     ';'
+     |   INT_TYPE      INT_ID     '='  int_expr     ';' LINEINFO
          {
             Parser::InputParser * p = (Parser::InputParser *) dummy;
             if(p->int_var.count($2))
@@ -90,7 +112,7 @@ command
             }
             p->int_var.insert(std::pair< const std::string, int >($2,$4));
          }
-     |   REAL_TYPE     REAL_ID    '='  real_expr    ';'
+     |   REAL_TYPE     REAL_ID    '='  real_expr    ';'  LINEINFO
          {
             Parser::InputParser * p = (Parser::InputParser *) dummy;
             if(p->real_var.count($2))
@@ -100,7 +122,7 @@ command
             }
             p->real_var.insert(std::pair< const std::string, double >($2,$4));
          }
-     |   STRING_TYPE   STRING_ID  '='  string_expr  ';'
+     |   STRING_TYPE   STRING_ID  '='  string_expr  ';' LINEINFO
          {
             Parser::InputParser * p = (Parser::InputParser *) dummy;
             if(p->string_var.count($2))
@@ -111,23 +133,9 @@ command
             p->string_var.insert(std::pair< const std::string, std::string >($2,$4));
          }
 
+    |   COMMENT LINEINFO
+
     |   LINEINFO
-        {
-           //LINEINFO is always at the end of card
-           if( !card.key().empty() )
-           {
-             card.set_lineno(yylineno);
-             card.set_fileline($1);
-             Parser::InputParser * p = (Parser::InputParser *) dummy;
-             p->_card_list.push_back(card);
-             p->_card_map.insert(std::pair<const std::string, Parser::Card>(card.key(), card));
-             card.clear();
-           }
-        }
-
-    |   COMMENT
-
-    |   BLANK
     ;
 
 
@@ -136,16 +144,23 @@ statement : KEYWORD
 #ifdef VERBOSE
         printf("line %d: -- YACC command %s --\n",yylineno,$1);
 #endif
-           card.set_key($1);
+           $$ = new Parser::Card;
+           $$->set_key($1);
 }
           | KEYWORD parameters
 {
 #ifdef VERBOSE
         printf("line %d: -- YACC command %s --\n",yylineno,$1);
 #endif
-           card.set_key($1);
+           $$ = new Parser::Card;
+           $$->set_key($1);
+           for(unsigned int n=0; n<$2->size(); ++n)
+           {
+             $$->insert(*(*$2)[n]);
+             delete (*$2)[n];
+           }
+           delete $2;
 }
-          |   expr ';'
           ;
 
 expr      :
@@ -267,8 +282,64 @@ string_expr :  STRING_VALUE
                }
             ;
 
+bool_exprs  : bool_expr
+              {
+                 $$ = new std::vector<bool>;
+                 $$->push_back($1);
+              }
+              | bool_exprs ',' bool_expr
+              {
+                $1->push_back($3);
+              }
+            ;
+real_exprs  : real_expr
+              {
+                 $$ = new std::vector<double>;
+                 $$->push_back($1);
+              }
+              | real_exprs ',' real_expr
+              {
+                $1->push_back($3);
+              }
+            ;
+
+int_exprs   : int_expr
+              {
+                $$ = new std::vector<int>;
+                $$->push_back($1);
+              }
+              | int_exprs ',' int_expr
+              {
+                $1->push_back($3);
+              }
+            ;
+
+string_exprs  : string_expr
+              {
+#ifdef VERBOSE
+                printf("line %d: -- YACC string array %s --\n",yylineno,$1);
+#endif
+                $$ = new std::vector<std::string>;
+                $$->push_back($1);
+              }
+              | string_exprs ',' string_expr
+              {
+#ifdef VERBOSE
+                printf("line %d: -- YACC string array %s --\n",yylineno,$3);
+#endif
+                $1->push_back($3);
+              }
+              ;
+
 parameters  :  parameter
+{
+               $$ = new std::vector<Parser::Parameter *>;
+               $$->push_back($1);
+}
             |  parameters parameter
+{
+               $1->push_back($2);
+}
             ;
 
 parameter
@@ -277,99 +348,140 @@ parameter
 #ifdef VERBOSE
         printf("line %d: -- YACC patameter %s REAL %e --\n",yylineno,$1,$3);
 #endif
-        parameter.set_name($1);
-        parameter.set_real($3);
-        card.insert(parameter);
-        parameter.clear();
+        $$ = new Parser::Parameter;
+        $$->set_name($1);
+        $$->set_real($3);
 }
      | UD_REAL_PARAMETER '=' real_expr
 {
 #ifdef VERBOSE
         printf("line %d: -- YACC user defined patameter %s REAL %e --\n",yylineno,$1,$3);
 #endif
-        parameter.set_name($1);
-        parameter.set_real($3);
-        parameter.do_not_check_me = true;
-        card.insert(parameter);
-        parameter.clear();
+        $$ = new Parser::Parameter;
+        $$->set_name($1);
+        $$->set_real($3);
+        $$->set_user_defined();
 }
-
+     | REAL_PARAMETER '=' '[' real_exprs ']'
+{
+        $$ = new Parser::Parameter;
+        $$->set_name($1);
+        $$->set_real_array(*$4);
+}
+     | UD_REAL_PARAMETER '=' '[' real_exprs ']'
+{
+        $$ = new Parser::Parameter;
+        $$->set_name($1);
+        $$->set_real_array(*$4);
+        $$->set_user_defined();
+}
      | INT_PARAMETER '=' int_expr
 {
 #ifdef VERBOSE
         printf("line %d: -- YACC patameter %s INT %d --\n",yylineno,$1,int($3));
 #endif
-        parameter.set_name($1);
-        parameter.set_int($3);
-        card.insert(parameter);
-        parameter.clear();
+        $$ = new Parser::Parameter;
+        $$->set_name($1);
+        $$->set_int($3);
 }
      | UD_INT_PARAMETER '=' int_expr
 {
 #ifdef VERBOSE
         printf("line %d: -- YACC user defined patameter %s INT %d --\n",yylineno,$1,int($3));
 #endif
-        parameter.set_name($1);
-        parameter.set_int($3);
-        parameter.do_not_check_me = true;
-        card.insert(parameter);
-        parameter.clear();
+        $$ = new Parser::Parameter;
+        $$->set_name($1);
+        $$->set_int($3);
+        $$->set_user_defined();
 }
-
+     | INT_PARAMETER '=' '[' int_exprs ']'
+{
+        $$ = new Parser::Parameter;
+        $$->set_name($1);
+        $$->set_int_array(*$4);
+}
+     | UD_INT_PARAMETER '=' '[' int_exprs ']'
+{
+        $$ = new Parser::Parameter;
+        $$->set_name($1);
+        $$->set_int_array(*$4);
+        $$->set_user_defined();
+}
      | STRING_PARAMETER '=' string_expr
 {
 #ifdef VERBOSE
         printf("line %d: -- YACC patameter %s STRING %s --\n",yylineno,$1,$3);
 #endif
-        parameter.set_name($1);
-        parameter.set_string($3);
-        card.insert(parameter);
-        parameter.clear();
+        $$ = new Parser::Parameter;
+        $$->set_name($1);
+        $$->set_string($3);
 }
      | UD_STRING_PARAMETER '=' string_expr
 {
 #ifdef VERBOSE
         printf("line %d: -- YACC user defined patameter %s STRING %s --\n",yylineno,$1,$3);
 #endif
-        parameter.set_name($1);
-        parameter.set_string($3);
-        parameter.do_not_check_me = true;
-        card.insert(parameter);
-        parameter.clear();
+        $$ = new Parser::Parameter;
+        $$->set_name($1);
+        $$->set_string($3);
+        $$->set_user_defined();
 }
-
+     | STRING_PARAMETER '=' '[' string_exprs ']'
+{
+        $$ = new Parser::Parameter;
+        $$->set_name($1);
+        $$->set_string_array(*$4);
+}
      | STRING_PARAMETER
 {
 #ifdef VERBOSE
         printf("line %d: -- YACC patameter %s STRING --\n",yylineno,$1);
 #endif
-        parameter.set_name($1);
-        parameter.set_string("");
-        card.insert(parameter);
-        parameter.clear();
+        $$ = new Parser::Parameter;
+        $$->set_name($1);
+        $$->set_string("");
+}
+     | UD_STRING_PARAMETER '=' '[' string_exprs ']'
+{
+        $$ = new Parser::Parameter;
+        $$->set_name($1);
+        $$->set_string_array(*$4);
+        $$->set_user_defined();
 }
      | BOOL_PARAMETER '=' bool_expr
 {
 #ifdef VERBOSE
         printf("line %d: -- YACC patameter %s BOOL %d --\n",yylineno,$1,int($3));
 #endif
-        parameter.set_name($1);
-        parameter.set_bool($3);
-        card.insert(parameter);
-        parameter.clear();
+        $$ = new Parser::Parameter;
+        $$->set_name($1);
+        $$->set_bool($3);
 }
      | UD_BOOL_PARAMETER '=' bool_expr
 {
 #ifdef VERBOSE
         printf("line %d: -- YACC user defined patameter %s BOOL %d --\n",yylineno,$1,int($3));
 #endif
-        parameter.set_name($1);
-        parameter.set_bool($3);
-        parameter.do_not_check_me = true;
-        card.insert(parameter);
-        parameter.clear();
+        $$ = new Parser::Parameter;
+        $$->set_name($1);
+        $$->set_bool($3);
+        $$->set_user_defined();
+}
+     | BOOL_PARAMETER '=' '[' bool_exprs ']'
+{
+        $$ = new Parser::Parameter;
+        $$->set_name($1);
+        $$->set_bool_array(*$4);
+}
+     | UD_BOOL_PARAMETER '=' '[' bool_exprs ']'
+{
+        $$ = new Parser::Parameter;
+        $$->set_name($1);
+        $$->set_bool_array(*$4);
+        $$->set_user_defined();
 }
      ;
+
 
 %%
 
@@ -381,3 +493,8 @@ static int yyerror(void * dummy, const char *)
    return 1;
 }
 
+#if 0
+
+
+
+#endif

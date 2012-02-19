@@ -19,6 +19,7 @@
 /*                                                                              */
 /********************************************************************************/
 
+#include <map>
 
 #include "polygon.h"
 
@@ -27,25 +28,40 @@ bool Polygon::valid() const
 {
   if(_points.size() < 3) return false;
   // or we have just an degenerated polygon
+
+  const Point n  = (_points[1] - _points[0]).cross(_points[2] - _points[0]);
+  if( n.size() == 0.0 ) return false;
+
+  Plane plane(_points[0], n.unit() );
+  for(unsigned int n=0; n<_points.size(); ++n)
+  {
+    const Point & p = _points[n];
+    if( std::abs(plane.signed_distance(p)) > 1e-8 )
+      return false;
+  }
+
   return true;
 }
 
 
 Point Polygon::norm() const
 {
-  if( !valid() ) return Point();
+  const Point n  = (_points[1] - _points[0]).cross(_points[2] - _points[0]);
+  if( n.size() == 0.0 ) return Point(0,0,0);
 
-  const Point e0 = _points[1] - _points[0];
-  const Point e1 = _points[2] - _points[0];
-  const Point n  = e0.cross(e1);
+  return  n.unit();
+}
 
-  return  n.unit(true);
+
+Plane Polygon::plane() const
+{
+  return Plane(_points[0],  norm() );
 }
 
 
 Real Polygon::signed_area() const
 {
-  if( !valid() ) return 0.0;
+  if(_points.size() < 3) return 0.0;
 
   Point cross;
   for(unsigned int n=0; n<_points.size(); ++n)
@@ -58,10 +74,53 @@ Real Polygon::signed_area() const
   return 0.5*norm()*cross;
 }
 
+/*
+bool Polygon::has_point(const Point &p) const
+{
+  Point norm = this->norm();
+
+  // project to 2D
+  std::vector<unsigned int> project_cood;
+  std::multimap<Real, unsigned int> sorter;
+  sorter.insert( std::make_pair(norm[0], 0) );
+  sorter.insert( std::make_pair(norm[1], 1) );
+  sorter.insert( std::make_pair(norm[2], 2) );
+
+  unsigned int min_cood = sorter.begin()->second;
+  for(unsigned int i=0; i<=2; i++)
+    if( i!= min_cood ) project_cood.push_back(i);
+  assert(project_cood.size() ==2);
+
+  std::vector<Point> projected_contour_points;
+  Point projected_p(p[project_cood[0]], p[project_cood[1]], 0.0);
+  for(unsigned int n=0; n<_points.size(); ++n)
+  {
+    projected_contour_points.push_back( Point(_points[n][project_cood[0]], _points[n][project_cood[1]], 0.0) );
+  }
+
+  // test
+  unsigned int i, j;
+  unsigned int nvert = projected_contour_points.size();
+  Real testx = projected_p.x();
+  Real testy = projected_p.y();
+  bool c = false;
+  for (i = 0, j = nvert-1; i < nvert; j = i++)
+  {
+    Real vi_x = projected_contour_points[i].x();
+    Real vi_y = projected_contour_points[i].y();
+    Real vj_x = projected_contour_points[j].x();
+    Real vj_y = projected_contour_points[j].y();
+    if ( ((vi_y>testy) != (vj_y>testy)) && (testx < (vj_x-vi_x) * (testy-vi_y) / (vj_y-vi_y) + vi_x) )
+      c = !c;
+  }
+  return c;
+}
+*/
+
 
 void Polygon::clip( const Plane &p )
 {
-  if( !valid() ) return;
+  if(_points.size() < 3) return;
 
   unsigned int above = 0;
   unsigned int below = 0;

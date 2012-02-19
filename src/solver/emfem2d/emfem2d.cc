@@ -650,7 +650,7 @@ void EMFEM2DSolver::save_TE_solution(double lambda, double power, double phase0,
       for(unsigned int i=0; i<elem->n_nodes(); ++i)
       {
         const Node * node = elem->get_node(i);
-        Complex E_weight = E*elem->partial_volume(i)/elem->volume();
+        Complex E_weight = E*elem->partial_volume_truncated(i)/elem->volume();
         if(node_Exy_map.find(node)!=node_Exy_map.end())
           node_Exy_map[node] += E_weight;
         else

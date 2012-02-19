@@ -1,6 +1,8 @@
 #ifndef __interpolation_3d_qshep_h__
 #define __interpolation_3d_qshep_h__
 
+#if 0
+
 #include <vector>
 
 #include "interpolation_base.h"
@@ -87,6 +89,9 @@ private:
   */
   std::map<int, std::pair<double, double> > field_limit;
 };
+
+
+#endif
 
 
 #endif

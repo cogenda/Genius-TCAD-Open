@@ -42,6 +42,14 @@
 #include <unordered_map>
 #endif
 
+#if defined(HAVE_TR1_UNORDERED_SET)
+# include <tr1/unordered_set>
+#elif defined(HAVE_TR1_UNORDERED_SET_WITH_STD_HEADER) || defined(HAVE_UNORDERED_SET)
+# include <unordered_set>
+#else
+# include <set>
+#endif
+
 namespace Parser {
   class Parameter;
 }
@@ -67,7 +75,7 @@ public:
   /**
    * constructor
    */
-  SimulationRegion(const std::string &name, const std::string &material, const PetscScalar T);
+  SimulationRegion(const std::string &name, const std::string &material, const double T, const double z);
 
   /**
    * destructor
@@ -98,7 +106,13 @@ public:
   /**
    * get the external temperature, as region's default temperature
    */
-  PetscScalar T_external() const;
+  double T_external() const;
+
+  /**
+   * @return the dimension in Z direction.
+   * @note only used for 2D mesh which lies on xy plane
+   */
+  double z_width() const;
 
   /**
    * set subdomain id of the region
@@ -111,6 +125,11 @@ public:
    */
   unsigned int subdomain_id() const
   { return _subdomain_id; }
+
+  /**
+   * add boundary condition belongs to this region
+   */
+  void add_boundary(BoundaryCondition * bc);
 
   /**
    * set subdomain id to region pointer map
@@ -174,10 +193,10 @@ public:
 
   /**
    * @return the FVM Node number in this region
-   * @note all the node are stored. no matter which processor_id the node is.
+   * @note all the node are count. no matter which processor_id the node is.
    */
   unsigned int n_node() const
-    { return _region_node.size(); }
+  { return _n_region_node; }
 
   /**
    * @return the on processor FVM Node number in this region
@@ -194,49 +213,25 @@ public:
    * @return the fvm_node pointer by Node *
    * if no find, NULL is returned
    */
-  FVM_Node * region_fvm_node(const Node* node) const
-  {
-    std::map<unsigned int, FVM_Node *>::const_iterator it = _region_node.find( node->id() );
-    if( it!=_region_node.end() )
-      return (*it).second;
-    return NULL;
-  }
+  FVM_Node * region_fvm_node(const Node* node) const;
 
   /**
    * @return the fvm_node pointer by Node id
    * if no find, NULL is returned
    */
-  FVM_Node * region_fvm_node(unsigned int id) const
-  {
-    std::map<unsigned int, FVM_Node *>::const_iterator it = _region_node.find( id );
-    if( it!=_region_node.end() )
-      return (*it).second;
-    return NULL;
-  }
+  FVM_Node * region_fvm_node(unsigned int id) const;
 
   /**
    * @return the node data pointer by Node *
    * if no find, NULL is returned
    */
-  FVM_NodeData * region_node_data(const Node* node) const
-  {
-    std::map<unsigned int, FVM_Node *>::const_iterator it = _region_node.find( node->id() );
-    if( it!=_region_node.end() )
-      return (*it).second->node_data();
-    return NULL;
-  }
+  FVM_NodeData * region_node_data(const Node* node) const;
 
   /**
    * @return the node data pointer by Node *
    * if no find, NULL is returned
    */
-  FVM_NodeData * region_node_data(unsigned int id) const
-  {
-    std::map<unsigned int, FVM_Node *>::const_iterator it = _region_node.find( id );
-    if( it!=_region_node.end() )
-      return (*it).second->node_data();
-    return NULL;
-  }
+  FVM_NodeData * region_node_data(unsigned int id) const;
 
   /**
    * @return region's name
@@ -269,6 +264,10 @@ public:
    */
   const std::vector<const Elem *> & cells() const
     { return _region_cell; }
+
+
+  const std::map<short int, BoundaryCondition *> & region_boundaries() const
+  { return _region_boundaries; }
 
   /**
    * clear stored data
@@ -463,6 +462,12 @@ public:
   virtual void prepare_for_use();
 
   /**
+   * for some pre process, which should be executed in parallel
+   * call it after prepare_for_use
+   */
+  virtual void prepare_for_use_parallel();
+
+  /**
    * delete fvm_node NOT on this processor, dangerous
    */
   void remove_remote_object();
@@ -475,7 +480,7 @@ public:
   /**
    * @return region neighbors
    */
-  const std::vector<SimulationRegion *> & neighbors() const
+  const std::vector<SimulationRegion *> & region_neighbors() const
   { return _region_neighbors; }
 
 
@@ -562,6 +567,13 @@ public:
   { return _region_cell_variables; }
 
   /**
+   * sync point variable with ghost node
+   * @return true for success
+   */
+  template <typename T>
+  bool sync_point_variable(const std::string &v);
+
+  /**
    * @return the optical refraction index of the region
    */
   virtual Complex get_optical_refraction(double lamda)
@@ -580,6 +592,17 @@ public:
    */
   virtual double get_eps() const
   { return 1.0; }
+
+  /**
+   * set material conductance [A/V/cm]
+   */
+  virtual void set_conductance(double )  {}
+
+  /**
+   * @return material conductance [A/V/cm]
+   */
+  virtual double get_conductance() const
+  { return 0.0; }
 
   /**
    * @return material density [g cm^-3]
@@ -609,57 +632,27 @@ public:
   virtual std::string get_pmi_info(const std::string& type, const int verbosity);
 
   /**
-   * @return the bound box of this region, which is described by two point
-   */
-  std::pair<Point, Point> region_bound_box() const
-  {
-    Point p1(1e30,1e30,1e30), p2(-1e30,-1e30,-1e30);
-
-    for(std::map<unsigned int, FVM_Node *>::const_iterator it=_region_node.begin(); it!=_region_node.end(); ++it )
-    {
-      (*it).second->root_node()->assign_min_to(p1);
-      (*it).second->root_node()->assign_max_to(p2);
-    }
-    return std::pair<Point, Point>(p1,p2);
-  }
-
-
-  /**
    * @return true if 2D hanging node exist
    */
-  bool has_2d_hanging_node() const;
+  bool has_2d_hanging_node() const
+  { return _hanging_node_on_elem_side_flag; }
 
 
   /**
    * @return true if 3D hanging node exist
    */
-  bool has_3d_hanging_node() const;
-
+  bool has_3d_hanging_node() const
+  { return _hanging_node_on_elem_edge_flag; }
 
   /**
    * store hanging node on elem side for later use
    */
-  void add_hanging_node_on_side(const Node * node, const Elem * elem, unsigned int s)
-  {
-    std::map<unsigned int, FVM_Node *>::iterator it = _region_node.find(node->id());
-    genius_assert( it!=_region_node.end() );
-
-    const FVM_Node * fvm_node = (*it).second;
-    _hanging_node_on_elem_side[fvm_node] = std::pair<const Elem *, unsigned int>(elem, s);
-  }
+  void add_hanging_node_on_side(const Node * node, const Elem * elem, unsigned int s);
 
   /**
    * store hanging node on elem edge for later use
    */
-  void add_hanging_node_on_edge(const Node * node, const Elem * elem, unsigned int e)
-  {
-    std::map<unsigned int, FVM_Node *>::iterator it = _region_node.find(node->id());
-    genius_assert( it!=_region_node.end() );
-
-    const FVM_Node * fvm_node = (*it).second;
-    _hanging_node_on_elem_edge[fvm_node] = std::pair<const Elem *, unsigned int>(elem, e);
-
-  }
+  void add_hanging_node_on_edge(const Node * node, const Elem * elem, unsigned int e);
 
   /**
    * @return the number of hanging nodes on element side
@@ -728,14 +721,13 @@ protected:
   /**
    * region's default temperature
    */
-  PetscScalar                    _T_external;
+  double                        _T_external;
 
 
   /**
-   * reference to mesh
+   * when 2D mesh is used, we may need the dimension in z direction
    */
-  //MeshBase                   &  _mesh;
-
+  double                        _z_width;
 
   /**
    * set subdomain_id_to_region_map as static member
@@ -746,6 +738,11 @@ protected:
    * neighbor regions
    */
   std::vector<SimulationRegion *> _region_neighbors;
+
+  /**
+   * the region boundaries
+   */
+  std::map<short int, BoundaryCondition *> _region_boundaries;
 
   /**
    * record the elements which belong to this region,
@@ -764,16 +761,20 @@ protected:
    */
   DataStorage _cell_data_storage;
 
+
+  /**
+   * all the nodes belongs to this region
+   */
+  unsigned int _n_region_node;
+
   /**
    *  the node belongs to this region. stored as \< node_id, FVM_Node *\>
-   *  all the nodes (on and off processor) are stored.
-   *  I am afraid that map may have efficent problem, use vector instead?
    */
   std::map< unsigned int, FVM_Node * > _region_node;
 
 
   /**
-   * on local nodes belong to this region.
+   * on local nodes (on processor nodes + ghost nodes) belong to this region.
    */
   std::vector<FVM_Node *>    _region_local_node;
 
@@ -781,6 +782,16 @@ protected:
    * on processor nodes belong to this region.
    */
   std::vector<FVM_Node *>    _region_processor_node;
+
+  /**
+   * ghost nodes belong to this region.
+   */
+  std::vector<FVM_Node *>    _region_ghost_node;
+
+  /**
+   * on processor nodes which is the ghost nodes in other regions, build when required.
+   */
+  std::vector<FVM_Node *>    _region_image_node;
 
   /**
    * data block for node based value
@@ -833,9 +844,14 @@ protected:
   std::map<const FVM_Node *, std::pair<const Elem *, unsigned int> >  _hanging_node_on_elem_edge;
 
 
-    /**
+  bool _hanging_node_on_elem_side_flag;
+
+  bool _hanging_node_on_elem_edge_flag;
+
+
+  /**
    * region advanced models
-     */
+   */
   AdvancedModel            _advanced_model;
 
 
@@ -991,6 +1007,39 @@ public:
    */
   virtual void DDM1_Time_Dependent_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_value_flag)=0;
 
+
+  /**
+   * @brief virtual function for evaluating pseudo time step of level 1 DDM equation.
+   *
+   * @param x                local unknown vector
+   * @param f                petsc global function vector
+   * @param add_value_flag   flag for last operator is ADD_VALUES
+   *
+   * @note each derived region can override it
+   */
+  virtual void DDM1_Pseudo_Time_Step_Function(PetscScalar * x, Vec f, InsertMode &add_value_flag) {}
+
+  /**
+   * @brief virtual function for evaluating Jacobian of pseudo time step of level 1 DDM equation.
+   *
+   * @param x                local unknown vector
+   * @param jac              petsc global jacobian matrix
+   * @param add_value_flag   flag for last operator is ADD_VALUES
+   *
+   * @note each derived region can override it
+   */
+  virtual void DDM1_Pseudo_Time_Step_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_value_flag) {}
+
+  /**
+   * @brief virtual function for convergence test of pseudo time step of level 1 DDM equation.
+   *
+   * @param x                local unknown vector
+   * @return                 the number of nodes not convergenced yet
+   *
+   * @note each derived region can override it
+   */
+  virtual int DDM1_Pseudo_Time_Step_Convergence_Test(PetscScalar * x) { return 0; }
+
   /**
    * @brief virtual function for evaluating hanging node for level 1 DDM equation.
    *
@@ -1027,6 +1076,145 @@ public:
 
 
 
+
+  //////////////////////////////////////////////////////////////////////////////////
+  //---------------Function and Jacobian evaluate for new L1 DDM------------------//
+  //////////////////////////////////////////////////////////////////////////////////
+
+
+
+  /**
+   * @brief virtual function for fill vector of level 1 DDM equation.
+   *
+   * filling solution data from FVM_NodeData into petsc vector of level 1 DDM equation.
+   * can be used as initial data of nonlinear equation or diverged recovery.
+   *
+   * @param x                global solution vector
+   * @param L                the left scaling vector, usually contains the cell volumn
+   * @note fill items of global solution vector with belongs to local processor
+   * each derived region should override it
+   */
+  virtual void DDM1R_Fill_Value(Vec x, Vec L)
+  { this->DDM1_Fill_Value(x, L); }
+
+  /**
+   * @brief virtual function for evaluating level 1 DDM equation.
+   *
+   * @param x                local unknown vector
+   * @param f                petsc global function vector
+   * @param add_value_flag   flag for last operator is ADD_VALUES
+   *
+   * @note each derived region should override it
+   */
+  virtual void DDM1R_Function(PetscScalar * x, Vec f, InsertMode &add_value_flag)
+  { this->DDM1_Function(x, f, add_value_flag); }
+
+  /**
+   * @brief virtual function for evaluating Jacobian of level 1 DDM equation.
+   *
+   * @param x                local unknown vector
+   * @param jac              petsc global jacobian matrix
+   * @param add_value_flag   flag for last operator is ADD_VALUES
+   *
+   * @note each derived region should override it
+   */
+  virtual void DDM1R_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_value_flag)
+  { this->DDM1_Jacobian(x, jac, add_value_flag); }
+
+  /**
+   * @brief virtual function for evaluating time derivative term of level 1 DDM equation.
+   *
+   * @param x                local unknown vector
+   * @param f                petsc global function vector
+   * @param add_value_flag   flag for last operator is ADD_VALUES
+   *
+   * @note each derived region should override it
+   */
+  virtual void DDM1R_Time_Dependent_Function(PetscScalar * x, Vec f, InsertMode &add_value_flag)
+  { this->DDM1_Time_Dependent_Function(x, f, add_value_flag); }
+
+  /**
+   * @brief virtual function for evaluating Jacobian of time derivative term of level 1 DDM equation.
+   *
+   * @param x                local unknown vector
+   * @param jac              petsc global jacobian matrix
+   * @param add_value_flag   flag for last operator is ADD_VALUES
+   *
+   * @note each derived region should override it
+   */
+  virtual void DDM1R_Time_Dependent_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_value_flag)
+  { this->DDM1_Time_Dependent_Jacobian(x, jac, add_value_flag); }
+
+  /**
+   * @brief virtual function for evaluating pseudo time step of level 1 DDM equation.
+   *
+   * @param x                local unknown vector
+   * @param f                petsc global function vector
+   * @param add_value_flag   flag for last operator is ADD_VALUES
+   *
+   * @note each derived region can override it
+   */
+  virtual void DDM1R_Pseudo_Time_Step_Function(PetscScalar * x, Vec f, InsertMode &add_value_flag)
+  { this->DDM1_Pseudo_Time_Step_Function(x, f, add_value_flag);}
+
+  /**
+   * @brief virtual function for evaluating Jacobian of pseudo time step of level 1 DDM equation.
+   *
+   * @param x                local unknown vector
+   * @param jac              petsc global jacobian matrix
+   * @param add_value_flag   flag for last operator is ADD_VALUES
+   *
+   * @note each derived region can override it
+   */
+  virtual void DDM1R_Pseudo_Time_Step_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_value_flag)
+  { this->DDM1_Pseudo_Time_Step_Jacobian(x, jac, add_value_flag);}
+
+  /**
+   * @brief virtual function for convergence test of pseudo time step of level 1 DDM equation.
+   *
+   * @param x                local unknown vector
+   * @return                 the number of nodes not convergenced yet
+   *
+   * @note each derived region can override it
+   */
+  virtual int DDM1R_Pseudo_Time_Step_Convergence_Test(PetscScalar * x)
+  { return DDM1_Pseudo_Time_Step_Convergence_Test(x); }
+
+  /**
+   * @brief virtual function for evaluating hanging node for level 1 DDM equation.
+   *
+   * @param x                local unknown vector
+   * @param f                petsc global function vector
+   * @param add_value_flag   flag for last operator is ADD_VALUES
+   *
+   * @note each derived region should override it
+   */
+  virtual void DDM1R_Function_Hanging_Node(PetscScalar * x, Vec f, InsertMode &add_value_flag)
+  {this->DDM1_Function_Hanging_Node(x, f, add_value_flag);}
+
+  /**
+   * @brief virtual function for evaluating Jacobian of hanging node for level 1 DDM equation.
+   *
+   * @param x                local unknown vector
+   * @param jac              petsc global jacobian matrix
+   * @param add_value_flag   flag for last operator is ADD_VALUES
+   *
+   * @note each derived region should override it
+   */
+  virtual void DDM1R_Jacobian_Hanging_Node(PetscScalar * x, Mat *jac, InsertMode &add_value_flag)
+  { this->DDM1_Jacobian_Hanging_Node(x, jac, add_value_flag);}
+
+  /**
+   * @brief virtual function for update solution value of level 1 DDM equation.
+   *
+   * update solution data of FVM_NodeData by petsc vector of level 1 DDM equation.
+   *
+   * @param x                global solution vector
+   *
+   * @note each derived region should override it
+   */
+  virtual void DDM1R_Update_Solution(PetscScalar *lxx)
+  { this->DDM1_Update_Solution(lxx); }
 
   //////////////////////////////////////////////////////////////////////////////////
   //--------------Function and Jacobian evaluate for L1 Hall DDM------------------//
@@ -1190,6 +1378,39 @@ public:
    * @note each derived region should override it
    */
   virtual void DDM2_Time_Dependent_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_value_flag)=0;
+
+
+  /**
+   * @brief virtual function for evaluating pseudo time step of level 2 DDM equation.
+   *
+   * @param x                local unknown vector
+   * @param f                petsc global function vector
+   * @param add_value_flag   flag for last operator is ADD_VALUES
+   *
+   * @note each derived region can override it
+   */
+  virtual void DDM2_Pseudo_Time_Step_Function(PetscScalar * x, Vec f, InsertMode &add_value_flag) {}
+
+  /**
+   * @brief virtual function for evaluating Jacobian of pseudo time step of level 2 DDM equation.
+   *
+   * @param x                local unknown vector
+   * @param jac              petsc global jacobian matrix
+   * @param add_value_flag   flag for last operator is ADD_VALUES
+   *
+   * @note each derived region can override it
+   */
+  virtual void DDM2_Pseudo_Time_Step_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_value_flag) {}
+
+  /**
+   * @brief virtual function for convergence test of pseudo time step of level 2 DDM equation.
+   *
+   * @param x                local unknown vector
+   * @return                 the number of nodes not convergenced yet
+   *
+   * @note each derived region can override it
+   */
+  virtual int DDM2_Pseudo_Time_Step_Convergence_Test(PetscScalar * x) { return 0; }
 
   /**
    * @brief virtual function for evaluating hanging node for level 2 DDM equation.
@@ -1472,6 +1693,88 @@ public:
 
 
 
+#ifdef COGENDA_COMMERCIAL_PRODUCT
+  //////////////////////////////////////////////////////////////////////////////////
+  //----------------- functions for Gummel DDML1 solver --------------------------//
+  //////////////////////////////////////////////////////////////////////////////////
+
+  /**
+   * @brief virtual function for build RHS and matrix for gummel carrier equation.
+   *
+   * @param carrier          carrier type
+   * @param x                local unknown vector
+   * @param A                petsc matrix as dF/dx
+   * @param r                petsc vector F(x)
+   * @param add_value_flag   flag for last operator is ADD_VALUES
+   *
+   * @note only semiconductor region should override it
+   */
+  virtual void DDM1_Gummel_Carrier(const std::string & carrier, PetscScalar * x, Mat A, Vec r, InsertMode &add_value_flag) {}
+
+
+  /**
+   * @brief virtual function for build RHS and matrix for gummel carrier equation.
+   *
+   * @param x                local unknown vector
+   * @param f                petsc global function vector
+   * @param add_value_flag   flag for last operator is ADD_VALUES
+   *
+   * @note only semiconductor region should override it
+   */
+  virtual void DDM1_Implicit_Gummel_Carrier_Function(PetscScalar * x, Vec f, InsertMode &add_value_flag) {}
+
+  /**
+   * @brief virtual function for evaluating Jacobian for gummel carrier equation.
+   *
+   * @param x                local unknown vector
+   * @param jac              petsc global jacobian matrix
+   * @param add_value_flag   flag for last operator is ADD_VALUES
+   *
+   * @note each derived region should override it
+   */
+  virtual void DDM1_Implicit_Gummel_Carrier_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_value_flag) {}
+
+
+  /**
+   * @brief virtual function for build RHS and matrix for half implicit current continuity equation.
+   *
+   * @param x                local unknown vector
+   * @param A                petsc matrix as dF/dx
+   * @param r                petsc vector F(x)
+   * @param add_value_flag   flag for last operator is ADD_VALUES
+   *
+   * @note each derived region should override it
+   */
+  virtual void DDM1_Half_Implicit_Current(PetscScalar * x, Mat A, Vec r, InsertMode &add_value_flag) {}
+
+
+  /**
+   * @brief virtual function for build RHS and matrix for half implicit poisson correction equation.
+   *
+   * @param x                local unknown vector
+   * @param A                petsc matrix as dF/dx
+   * @param r                petsc vector F(x)
+   * @param add_value_flag   flag for last operator is ADD_VALUES
+   *
+   * @note each derived region should override it
+   */
+  virtual void DDM1_Half_Implicit_Poisson_Correction(PetscScalar * x, Mat A, Vec r, InsertMode &add_value_flag) {}
+
+
+  /**
+   * @brief virtual function for build RHS and matrix for half implicit poisson correction with Polsky's method.
+   *
+   * @param x                local unknown vector
+   * @param A                petsc matrix as dF/dx
+   * @param r                petsc vector F(x)
+   * @param add_value_flag   flag for last operator is ADD_VALUES
+   *
+   * @note semiconductor region should override it
+   */
+  virtual void DDM1_Half_Implicit_Poisson_Correction_Polsky(PetscScalar * x, Mat A, Vec r, InsertMode &add_value_flag) {}
+
+#endif
+
   //////////////////////////////////////////////////////////////////////////////////
   //----------------- functions for Fast Hydrodynamic solver  --------------------//
   //////////////////////////////////////////////////////////////////////////////////
@@ -1553,6 +1856,23 @@ public:
    * @note each derived region should override it
    */
   virtual void LinearPoissin_Update_Solution(const PetscScalar * x) = 0;
+
+
+
+  //////////////////////////////////////////////////////////////////////////////////
+  //-----------------  functions for mobility evaluation     ---------------------//
+  //////////////////////////////////////////////////////////////////////////////////
+
+  /**
+   * @brief virtual function for evaluating mobility of edge.
+   *
+   * the moblity is ordered as region's edge, and weighted by partial area of the edge
+   *
+   * @note only semiconductor region should override it
+   */
+  virtual void Mob_Evaluation( std::vector< std::pair<unsigned int, unsigned int> > &edge,
+                               std::vector< std::pair<double, double> > & mob,
+                               std::vector< double > & weight) const {}
 
 };
 

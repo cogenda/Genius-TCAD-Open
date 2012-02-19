@@ -68,7 +68,7 @@ void SolderPadBC::MixA_DDM1_Fill_Value(Vec x, Vec L)
 /*---------------------------------------------------------------------
  * do pre-process to function for Mixed DDML1 solver
  */
-void SolderPadBC::MixA_DDM1_Function_Preprocess(Vec f, std::vector<PetscInt> &src_row,
+void SolderPadBC::MixA_DDM1_Function_Preprocess(PetscScalar *, Vec f, std::vector<PetscInt> &src_row,
     std::vector<PetscInt> &dst_row, std::vector<PetscInt> &clear_row)
 {
   BoundaryCondition::const_node_iterator node_it = nodes_begin();
@@ -118,13 +118,18 @@ void SolderPadBC::MixA_DDM1_Function(PetscScalar * x, Vec f, InsertMode &add_val
   PetscScalar current_scale = this->z_width()/A;
 
   // the electrode potential in current iteration
-  PetscScalar Ve = x[ckt->local_offset(spice_node_index)];
+  PetscScalar Ve = x[ckt->local_offset_x(spice_node_index)];
 
-  // get the workfunction and sigma
-  const SimulationRegion * region = bc_regions().first; genius_assert(region);
-  const MetalSimulationRegion * resistance_region = dynamic_cast<const MetalSimulationRegion *>(region);
-  const PetscScalar workfunction = resistance_region->material()->basic->Affinity(T_external());
-  const PetscScalar sigma = resistance_region->material()->basic->Conductance();
+  const SimulationRegion * _r1 = bc_regions().first;
+  const SimulationRegion * _r2 = bc_regions().second;
+
+  const MetalSimulationRegion * resistance_region = 0;
+  if( _r1 && _r1->type() == MetalRegion ) resistance_region = dynamic_cast<const MetalSimulationRegion *>(_r1);
+  if( _r2 && _r2->type() == MetalRegion ) resistance_region = dynamic_cast<const MetalSimulationRegion *>(_r2);
+  genius_assert(resistance_region);
+
+  const double workfunction = resistance_region->material()->basic->Affinity(T_external());
+  const double sigma = resistance_region->material()->basic->Conductance();
 
   BoundaryCondition::const_node_iterator node_it = nodes_begin();
   BoundaryCondition::const_node_iterator end_it = nodes_end();
@@ -138,16 +143,16 @@ void SolderPadBC::MixA_DDM1_Function(PetscScalar * x, Vec f, InsertMode &add_val
     for ( ; rnode_it!=end_rnode_it; ++rnode_it )
     {
       const SimulationRegion * region = ( *rnode_it ).second.first;
+      const FVM_Node * fvm_node = ( *rnode_it ).second.second;
+      const FVM_NodeData * node_data = fvm_node->node_data();
+
       switch ( region->type() )
       {
           case MetalRegion :
           {
-            const FVM_Node * fvm_node = (*region_node_begin(*node_it)).second.second;
-            const FVM_NodeData * node_data = fvm_node->node_data();
-
             // psi of this node
             PetscScalar V = x[fvm_node->local_offset()+0];
-            PetscScalar ff = V + workfunction - Ve;
+            PetscScalar ff = V + node_data->affinity()/e - Ve;
 
             // set governing equation to function vector
             VecSetValue(f, fvm_node->global_offset(), ff, ADD_VALUES);
@@ -173,7 +178,6 @@ void SolderPadBC::MixA_DDM1_Function(PetscScalar * x, Vec f, InsertMode &add_val
 
           case InsulatorRegion:
           {
-            const FVM_Node * fvm_node = ( *rnode_it ).second.second;
             // psi of this node
             PetscScalar V = x[fvm_node->local_offset()];
             PetscScalar f_psi = (V + workfunction - Ve);
@@ -241,7 +245,7 @@ void SolderPadBC::MixA_DDM1_Jacobian_Reserve(Mat *jac, InsertMode &add_value_fla
       if( (*node_it)->processor_id()!=Genius::processor_id() ) continue;
 
       const FVM_Node * fvm_node = (*region_node_begin(*node_it)).second.second;
-      MatSetValue(*jac, fvm_node->global_offset()+0, ckt->global_offset(spice_node_index), 0, ADD_VALUES);
+      MatSetValue(*jac, fvm_node->global_offset()+0, this->global_offset(), 0, ADD_VALUES);
     }
 
 
@@ -273,7 +277,7 @@ void SolderPadBC::MixA_DDM1_Jacobian_Reserve(Mat *jac, InsertMode &add_value_fla
       {
         PetscInt bc_global_offset = this->global_offset();
 
-        MatSetValue(*jac, bc_global_offset, ckt->global_offset(spice_node_index), 0, ADD_VALUES);
+        MatSetValue(*jac, bc_global_offset, this->global_offset(), 0, ADD_VALUES);
 
         if(bc_node_reserve.size())
         {
@@ -296,7 +300,7 @@ void SolderPadBC::MixA_DDM1_Jacobian_Reserve(Mat *jac, InsertMode &add_value_fla
 /*---------------------------------------------------------------------
  * do pre-process to jacobian matrix for DDML1 solver
  */
-void SolderPadBC::MixA_DDM1_Jacobian_Preprocess(Mat *jac, std::vector<PetscInt> &src_row,
+void SolderPadBC::MixA_DDM1_Jacobian_Preprocess(PetscScalar *, Mat *jac, std::vector<PetscInt> &src_row,
     std::vector<PetscInt> &dst_row, std::vector<PetscInt> &clear_row)
 {
   BoundaryCondition::const_node_iterator node_it = nodes_begin();
@@ -335,16 +339,21 @@ void SolderPadBC::MixA_DDM1_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_
 
   PetscInt bc_global_offset = this->global_offset();
 
-
-  const SimulationRegion * region = bc_regions().first; genius_assert(region);
-  const MetalSimulationRegion * resistance_region = dynamic_cast<const MetalSimulationRegion *>(region);
-  const PetscScalar workfunction = resistance_region->material()->basic->Affinity(T_external());
-  const PetscScalar sigma = resistance_region->material()->basic->Conductance();
-
   // after that, we should do gate boundary process here
 
   // for 2D mesh, z_width() is the device dimension in Z direction; for 3D mesh, z_width() is 1.0
   PetscScalar current_scale = this->z_width()/A;
+
+  const SimulationRegion * _r1 = bc_regions().first;
+  const SimulationRegion * _r2 = bc_regions().second;
+
+  const MetalSimulationRegion * resistance_region = 0;
+  if( _r1 && _r1->type() == MetalRegion ) resistance_region = dynamic_cast<const MetalSimulationRegion *>(_r1);
+  if( _r2 && _r2->type() == MetalRegion ) resistance_region = dynamic_cast<const MetalSimulationRegion *>(_r2);
+  genius_assert(resistance_region);
+
+  const double workfunction = resistance_region->material()->basic->Affinity(T_external());
+  const double sigma = resistance_region->material()->basic->Conductance();
 
   // loop again
   BoundaryCondition::const_node_iterator node_it = nodes_begin();
@@ -359,22 +368,21 @@ void SolderPadBC::MixA_DDM1_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_
     for ( ; rnode_it!=end_rnode_it; ++rnode_it )
     {
       const SimulationRegion * region = ( *rnode_it ).second.first;
+      const FVM_Node * fvm_node = ( *rnode_it ).second.second;
+      const FVM_NodeData * node_data = fvm_node->node_data();
+
       switch ( region->type() )
       {
           case MetalRegion :
           {
-
-            const FVM_Node * fvm_node = ( *rnode_it ).second.second;
-            const FVM_NodeData * node_data = fvm_node->node_data();
-
             // psi of this node
             AutoDScalar V = x[fvm_node->local_offset()];  V.setADValue(0, 1.0);
 
             // the electrode potential in current iteration
             genius_assert( local_offset()!=invalid_uint );
-            AutoDScalar Ve = x[this->local_offset()];     Ve.setADValue(1, 1.0);
+            AutoDScalar Ve = x[ckt->local_offset_x(spice_node_index)];     Ve.setADValue(1, 1.0);
 
-            AutoDScalar ff = V + workfunction - Ve;
+            AutoDScalar ff = V + node_data->affinity()/e - Ve;
 
             //governing equation
             MatSetValue(*jac, fvm_node->global_offset(), fvm_node->global_offset(), ff.getADValue(0), ADD_VALUES);
@@ -408,14 +416,12 @@ void SolderPadBC::MixA_DDM1_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_
 
           case InsulatorRegion :
           {
-            const FVM_Node * fvm_node = ( *rnode_it ).second.second;
-
             // psi of this node
             AutoDScalar V = x[fvm_node->local_offset()];  V.setADValue(0, 1.0);
 
             // the electrode potential in current iteration
             genius_assert( local_offset()!=invalid_uint );
-            AutoDScalar Ve = x[this->local_offset()];     Ve.setADValue(1, 1.0);
+            AutoDScalar Ve = x[ckt->local_offset_x(spice_node_index)];     Ve.setADValue(1, 1.0);
 
             AutoDScalar ff = (V + workfunction - Ve);
 

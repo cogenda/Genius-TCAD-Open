@@ -2,17 +2,17 @@
 
 // The libMesh Finite Element Library.
 // Copyright (C) 2002-2007  Benjamin S. Kirk, John W. Peterson
-  
+
 // This library is free software; you can redistribute it and/or
 // modify it under the terms of the GNU Lesser General Public
 // License as published by the Free Software Foundation; either
 // version 2.1 of the License, or (at your option) any later version.
-  
+
 // This library is distributed in the hope that it will be useful,
 // but WITHOUT ANY WARRANTY; without even the implied warranty of
 // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
 // Lesser General Public License for more details.
-  
+
 // You should have received a copy of the GNU Lesser General Public
 // License along with this library; if not, write to the Free Software
 // Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
@@ -27,13 +27,13 @@
 #include <cmath>
 
 // Local includes
-#include "genius_env.h"
 #include "genius_common.h"
+#include "genius_env.h"
 
 /**
  * The StatisticsVector class is derived from
  * the std::vector<> and therefore has all of
- * its useful features.  It was designed 
+ * its useful features.  It was designed
  * to not have any internal state, i.e. no
  * public or private data members.  Also,
  * it was only designed for classes and
@@ -43,7 +43,7 @@
  * decision was to allow a std::vector<> to
  * be successfully cast to a StatisticsVector,
  * thereby enabling its additional functionality.
- * We do not anticipate any problems with 
+ * We do not anticipate any problems with
  * deriving from an stl container which lacks
  * a virtual destructor in this case.
  *
@@ -80,7 +80,7 @@ class StatisticsVector : public std::vector<T>
    * Call the std::vector constructor.
    */
   StatisticsVector(unsigned int i=0) : std::vector<T> (i) {}
-  
+
   /**
    * Call the std::vector constructor, fill each entry with \p val
    */
@@ -96,17 +96,17 @@ class StatisticsVector : public std::vector<T>
    * Returns the l2 norm of the data set.
    */
   virtual Real l2_norm() const;
-  
+
   /**
    * Returns the minimum value in the data set.
    */
   virtual T minimum() const;
-  
+
   /**
    * Returns the maximum value in the data set.
    */
   virtual T maximum() const;
-  
+
   /**
    * Returns the mean value of the
    * data set using a recurrence relation.
@@ -142,7 +142,7 @@ class StatisticsVector : public std::vector<T>
   virtual Real variance() const
   { return this->variance(this->mean()); }
 
-  /**   
+  /**
    * Computes the variance of the data set
    * where the \p mean is provided. This is useful
    * for efficiency when you have already calculated
@@ -158,16 +158,16 @@ class StatisticsVector : public std::vector<T>
    * Computes the standard deviation of
    * the data set, which is simply the square-root
    * of the variance.
-   */  
+   */
   virtual Real stddev() const
   { return std::sqrt(this->variance()); }
-  
+
   /**
    * Computes the standard deviation of
    * the data set, which is simply the square-root
    * of the variance.  This method can be used for
    * efficiency when the \p mean has already been computed.
-   */  
+   */
   virtual Real stddev(const Real mean) const
   { return std::sqrt(this->variance(mean)); }
 
@@ -176,14 +176,14 @@ class StatisticsVector : public std::vector<T>
    * stores the result
    */
   void normalize();
-  
+
   /**
    * Computes and returns a histogram with n_bins bins for the data
    * set.  For simplicity, the bins are assumed to be of uniform size.
    * Upon return, the bin_members vector will contain unsigned
    * integers which give the number of members in each bin.
    * WARNING: This non-const function sorts the vector, changing its
-   * order.  
+   * order.
    * Source: GNU Scientific Library
    */
   virtual void histogram (std::vector<unsigned int>& bin_members,
@@ -194,11 +194,11 @@ class StatisticsVector : public std::vector<T>
    * make a plot of the histogram having the desired number of bins.
    * Uses the histogram(...) function in this class
    * WARNING: The histogram(...) function is non-const, and changes
-   * the order of the vector.  
+   * the order of the vector.
    */
   void plot_histogram(const std::string& filename,
 		      unsigned int n_bins);
-  
+
   /**
    * A const version of the histogram function.
    */
@@ -220,10 +220,10 @@ class StatisticsVector : public std::vector<T>
    * with one passed parameter instead of two.
    */
   virtual std::vector<unsigned int> cut_above(Real cut) const;
-  
-  
+
+
  private:
-  
+
 };
 
 #endif

@@ -97,9 +97,19 @@ private:
   std::vector< std::pair<double, std::string> > time_sequence;
 
   /**
+   * if we are in ddm mode
+   */
+  bool            _ddm;
+
+  /**
    * if we are in mixA mode
    */
   bool            _mixA;
+
+  /**
+   * if we are in ddmac mode
+   */
+  bool            _ddm_ac;
 };
 
 #endif

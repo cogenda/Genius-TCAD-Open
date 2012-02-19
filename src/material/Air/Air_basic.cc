@@ -54,8 +54,8 @@ public:
 
   void atom_fraction(std::vector<std::string> &atoms, std::vector<double> & fraction) const
   {
-    atoms.push_back("Oxygen");
-    atoms.push_back("Nitrogen");
+    atoms.push_back("O"); //Oxygen
+    atoms.push_back("N"); //Nitrogen
 
     fraction.push_back(0.3);
     fraction.push_back(0.7);

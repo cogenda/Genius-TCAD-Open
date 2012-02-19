@@ -12,9 +12,9 @@
 
 #define genius_assert(x)    {assert(x); }
 
-#define PetscScalar double
+typedef double PetscScalar;
 
-#ifdef CYGWIN
+#ifdef WINDOWS
   // something required for building windows dll
   #define DLL_EXPORT_DECLARE  __declspec  (dllexport)
 #else
@@ -25,5 +25,7 @@
 #define  TOLERANCE 1.e-8
 
 typedef double Real;
+const unsigned int invalid_uint = static_cast<unsigned int>(-1); // very large value: 4294967295
+
 
 #endif /* GENIUS_COMMON_H_ */

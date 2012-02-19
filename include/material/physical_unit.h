@@ -108,6 +108,11 @@ namespace PhysicalUnit
   extern double   us;
 
   /**
+   *  define as 1e-9*s
+   */
+  extern double   ns;
+
+  /**
    * define as 1e-12*s
    */
   extern double   ps;

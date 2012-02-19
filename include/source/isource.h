@@ -35,7 +35,7 @@
 #include "config.h"
 #include "expr_evaluate.h"
 
-#ifdef CYGWIN
+#ifdef WINDOWS
   class HINSTANCE__; // Forward or never
   typedef HINSTANCE__* HINSTANCE;
 #endif
@@ -361,7 +361,7 @@ private:
   /**
    * the pointer to dll file
    */
-#ifdef CYGWIN
+#ifdef WINDOWS
    HINSTANCE                  dll;
 #else
    void                      *dll;
@@ -387,7 +387,7 @@ public:
   /**
    * constructor
    */
-#ifdef CYGWIN
+#ifdef WINDOWS
   ISHELL(const std::string & s, HINSTANCE dp, void * fp, double s_t, double s_A);
 #else
   ISHELL(const std::string & s, void * dp, void * fp, double s_t, double s_A);

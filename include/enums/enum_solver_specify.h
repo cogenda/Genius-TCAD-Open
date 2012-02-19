@@ -39,28 +39,34 @@ namespace SolverSpecify
    */
   enum SolverType
   {
-    POISSON = 0,
-    HDM,
-    DDML1,
-    DDML1MIX,
-    DDML1MIXA,
-    HALLDDML1,
-    QDDML1,
-    DDML2,
-    DDML2MIX,
-    DDML2MIXA,
-    EBML3,
-    EBML3MIX,
-    EBML3MIXA,
-    DDMAC,
+    POISSON = 0,    // nonlinear poisson solver
+    HDM,            // hydrodynamic solver
+    DDML1,          // level 1 drift-diffusion solver
+    DDML1MIX,       // mixed type level 1 drift-diffusion solver (old)
+    DDML1MIXA,      // mixed type level 1 drift-diffusion solver
+    HALLDDML1,      // level 1 drift-diffusion solver with hall effect
+    DDML1R,         // level 1 drift-diffusion solver with electron PDE in resistive metal region
+    DDML2,          // level 2 drift-diffusion solver
+    DDML2MIX,       // mixed type level 2 drift-diffusion solver (old)
+    DDML2MIXA,      // mixed type level 2 drift-diffusion solver
+    EBML3,          // level 3 energy balance solver
+    EBML3MIX,       // mixed type level 3 energy balance solver (old)
+    EBML3MIXA,      // mixed type level 3 energy balance solver
+    GUMMEL,         // gummel steady-state solver
+    HALF_IMPLICIT,  // half-implicit transient solver
+    CARRIER_TRANSIENT,    // gummel carrier solver
+    CARRIER_TRANSIENT_IR, // gummel carrier solver with implicit recombination term
+    MOCK_CURRENT,   // Mock's full current continuity solver (and its correction by Polsky)
+    POLSKY_POISSON, // Polsky's poisson correction
+    DDMAC,          // ac sweep solver
     MC,
-    RAY_TRACE,
+    RAY_TRACE,      // ray tracing optical solver
     EM_FEM_2D,
     EM_FEM_3D,
     FDTD,
     FVTD,
-    DOPING_ANALYTIC,
-    MOLE_ANALYTIC,
+    DOPING_ANALYTIC,  // doping distribution solver
+    MOLE_ANALYTIC,    // mole distribution solver
     OPTG_ANALYTIC,
     STRESS,
     SOLVER_BASE,

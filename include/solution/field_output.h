@@ -94,6 +94,15 @@ class FieldOutput
 
 // ------------------------------------------------------------
 // FieldOutput inline members
+
+template <class MT>
+inline
+FieldOutput<MT>::FieldOutput () :
+    _obj (NULL)
+{
+}
+
+
 template <class MT>
 inline
 FieldOutput<MT>::FieldOutput (const MT& obj) :

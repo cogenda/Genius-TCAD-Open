@@ -39,7 +39,7 @@ class MetalSimulationRegion :  public SimulationRegion
 {
 public:
 
-  MetalSimulationRegion(const std::string &name, const std::string &material, const PetscScalar T);
+  MetalSimulationRegion(const std::string &name, const std::string &material, const double T, const double z);
 
   virtual ~MetalSimulationRegion()
   { delete mt; }
@@ -104,6 +104,17 @@ public:
   { return mt->basic->Permittivity(); }
 
   /**
+   * set material conductance [A/V/cm]
+   */
+  virtual void set_conductance(double s)  { _conductance = s; }
+
+  /**
+   * @return material conductance [A/V/cm]
+   */
+  virtual double get_conductance() const
+  { return _conductance; }
+
+  /**
    * @return maretial density [g cm^-3]
    */
   virtual double get_density(PetscScalar T) const
@@ -114,6 +125,11 @@ public:
    */
   virtual double get_affinity(PetscScalar T) const
   { return mt->basic->Affinity(T); }
+
+  /**
+   * virtual function for set different model, calibrate parameters to PMI
+   */
+  virtual void set_pmi(const std::string &type, const std::string &model_name, std::vector<Parser::Parameter> & pmi_parameters);
 
   /**
    * get atom fraction of region material
@@ -130,12 +146,59 @@ public:
    */
   virtual void set_region_variables();
 
+  /**
+   * function to find _total_nodes_in_connected_resistance_region
+   */
+  void find_total_nodes_in_connected_resistance_region();
+
+  /**
+   * function to find _connect_to_low_resistance_solderpad
+   */
+  void find_low_resistance_solderpad();
+
+  /**
+   * set _aux_resistance and _aux_capacitance
+   */
+  static void set_aux_parasitic_parameter(double, double);
+
+  /**
+   * @return true when this region connected to solderpad (maybe in neighbor metal region!)
+   */
+  bool connect_to_low_resistance_solderpad() const
+  { return _connect_to_low_resistance_solderpad; }
+
+private:
+
+  /**
+   * flag to indicate this region connected an external voltage source, thus has a well potential reference
+   * other wise, thie region is floating
+   */
+  bool _connect_to_low_resistance_solderpad;
+
+  /**
+   * resistance for prevent floating region in DC simulation
+   */
+  static double _aux_resistance;
+
+  /**
+   * capacitance for prevent floating region in transient simulation
+   */
+  static double _aux_capacitance;
+
+private:
+
+    unsigned int _total_nodes_in_connected_resistance_region;
+
 private:
   /**
    * the pointer to material database
    */
   Material::MaterialConductor *mt;
 
+  /**
+   * the conductance of this region, can be changed when necessary
+   */
+  double _conductance;
 
 public:
 
@@ -204,6 +267,21 @@ public:
   virtual void DDM1_Time_Dependent_Jacobian(PetscScalar * , Mat *, InsertMode &) {}
 
   /**
+   * function for evaluating pseudo time step of level 1 DDM equation.
+   */
+  virtual void DDM1_Pseudo_Time_Step_Function(PetscScalar * x, Vec f, InsertMode &add_value_flag);
+
+  /**
+   * function for evaluating Jacobian of pseudo time step of level 1 DDM equation.
+   */
+  virtual void DDM1_Pseudo_Time_Step_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_value_flag);
+
+  /**
+   * function for convergence test of pseudo time step of level 1 DDM equation.
+   */
+  virtual int DDM1_Pseudo_Time_Step_Convergence_Test(PetscScalar * x);
+
+  /**
    * process function and its jacobian at hanging node for L1 DDM (experimental)
    */
   virtual void DDM1_Function_Hanging_Node(PetscScalar * x, Vec f, InsertMode &add_value_flag);
@@ -219,6 +297,64 @@ public:
   virtual void DDM1_Update_Solution(PetscScalar *lxx);
 
 
+  //////////////////////////////////////////////////////////////////////////////////
+  //--------------Function and Jacobian evaluate for new L1 DDM-------------------//
+  //////////////////////////////////////////////////////////////////////////////////
+
+  /**
+   * filling solution data from FVM_NodeData into petsc vector of L1 DDM.
+   */
+  virtual void DDM1R_Fill_Value(Vec x, Vec L);
+
+  /**
+   * build function and its jacobian for L1 DDM
+   */
+  virtual void DDM1R_Function(PetscScalar * x, Vec f, InsertMode &add_value_flag);
+
+  /**
+   * build function and its jacobian for L1 DDM
+   */
+  virtual void DDM1R_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_value_flag);
+
+  /**
+   * build time derivative term and its jacobian for L1 DDM, do nothing here
+   */
+  virtual void DDM1R_Time_Dependent_Function(PetscScalar * , Vec , InsertMode &);
+
+  /**
+   * build time derivative term and its jacobian for L1 DDM, do nothing here
+   */
+  virtual void DDM1R_Time_Dependent_Jacobian(PetscScalar * , Mat *, InsertMode &);
+
+  /**
+   * function for evaluating pseudo time step of level 1 DDM equation.
+   */
+  virtual void DDM1R_Pseudo_Time_Step_Function(PetscScalar * x, Vec f, InsertMode &add_value_flag);
+
+  /**
+   * function for evaluating Jacobian of pseudo time step of level 1 DDM equation.
+   */
+  virtual void DDM1R_Pseudo_Time_Step_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_value_flag);
+
+  /**
+   * function for convergence test of pseudo time step of level 1 DDM equation.
+   */
+  virtual int DDM1R_Pseudo_Time_Step_Convergence_Test(PetscScalar * x);
+
+  /**
+   * process function and its jacobian at hanging node for L1 DDM (experimental)
+   */
+  virtual void DDM1R_Function_Hanging_Node(PetscScalar * x, Vec f, InsertMode &add_value_flag);
+
+  /**
+   * process function and its jacobian at hanging node for L1 DDM (experimental)
+   */
+  virtual void DDM1R_Jacobian_Hanging_Node(PetscScalar * x, Mat *jac, InsertMode &add_value_flag);
+
+  /**
+   * update solution data of FVM_NodeData by petsc vector of L1 DDM.
+   */
+  virtual void DDM1R_Update_Solution(PetscScalar *lxx);
 
   //////////////////////////////////////////////////////////////////////////////////
   //--------------Function and Jacobian evaluate for L1 HALL DDM------------------//
@@ -294,6 +430,21 @@ public:
    * build time derivative term and its jacobian for L2 DDM
    */
   virtual void DDM2_Time_Dependent_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_value_flag);
+
+  /**
+   * function for evaluating pseudo time step for L2 DDM
+   */
+  virtual void DDM2_Pseudo_Time_Step_Function(PetscScalar * x, Vec f, InsertMode &add_value_flag);
+
+  /**
+   * function for evaluating Jacobian of pseudo time step for L2 DDM
+   */
+  virtual void DDM2_Pseudo_Time_Step_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_value_flag);
+
+  /**
+   * function for convergence test of pseudo time step for L2 DDM
+   */
+  virtual int DDM2_Pseudo_Time_Step_Convergence_Test(PetscScalar * x);
 
   /**
    * process function and its jacobian at hanging node for L2 DDM (experimental)
@@ -418,6 +569,22 @@ public:
    */
   virtual void DDMAC_Update_Solution(PetscScalar *lxx);
 
+
+#ifdef COGENDA_COMMERCIAL_PRODUCT
+  //////////////////////////////////////////////////////////////////////////////////
+  //----------------- functions for Gummel DDML1 solver --------------------------//
+  //////////////////////////////////////////////////////////////////////////////////
+
+  /**
+   * function for build RHS and matrix for half implicit current continuity equation.
+   */
+  virtual void DDM1_Half_Implicit_Current(PetscScalar * x, Mat A, Vec r, InsertMode &add_value_flag);
+
+  /**
+   * function for build RHS and matrix for half implicit current poisson correction equation.
+   */
+  virtual void DDM1_Half_Implicit_Poisson_Correction(PetscScalar * x, Mat A, Vec r, InsertMode &add_value_flag);
+#endif
 
 
   //////////////////////////////////////////////////////////////////////////////////

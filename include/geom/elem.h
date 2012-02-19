@@ -431,6 +431,12 @@ class Elem :    public DofObject
                               std::pair<unsigned int, unsigned int> & nodes ) const =0;
 
   /**
+   * get the node local index on side s, only return minimal element necessary to uniquely identify the side
+   */
+  virtual void nodes_on_side (const unsigned int s,
+                              std::vector<unsigned int> & nodes ) const =0;
+
+  /**
    * @returns true iff the specified (local) edge number is on the
    * specified side
    */
@@ -483,6 +489,12 @@ class Elem :    public DofObject
    * @return the ith node on sth side
    */
   virtual unsigned int side_node(unsigned int s, unsigned int i) const=0;
+
+
+   /**
+    * @return the nodes on sth side
+    */
+  //virtual std::vector<unsigned int> side_nodes(unsigned int s) const=0;
 
   /**
    * Creates an element coincident with edge \p i. The element returned is
@@ -581,6 +593,14 @@ class Elem :    public DofObject
   {genius_assert( i<n_nodes() ); return 0;}
 
   /**
+   * @return the node associated partial (length/area/volume) of the geometric element with local node index.
+   * truncated means this value should be positive, some element has their own specific treatment
+   * only functional for FVM elements. return 0 for FEM elements
+   */
+  virtual Real partial_volume_truncated (unsigned int i) const
+  {genius_assert( i<n_nodes() ); return 0;}
+
+  /**
    * @return the edge associated partial (length/area) of the geometric element with local edge index.
    * only for 2D/3D however, we should never get here
    */
@@ -609,6 +629,16 @@ class Elem :    public DofObject
   virtual Real partial_volume_with_edge_truncated(unsigned int e) const
   { return std::max(0.0, this->partial_volume_with_edge(e)); }
 
+  /**
+   * @return the average edge associated partial (length/area) of the geometric element
+   */
+  virtual Real partial_area_with_edge_average() const
+  {
+    Real S=0.0;
+    for(unsigned int e=0; e< this->n_edges(); ++e)
+      S += partial_area_with_edge_truncated(e);
+    return S/this->n_edges();
+  }
 
   /**
    * Based on the quality metric q specified by the user,
@@ -778,19 +808,6 @@ class Elem :    public DofObject
   virtual std::pair<unsigned short int, unsigned short int>
           second_order_child_vertex (const unsigned int n) const;
 
-  /**
-   * @returns the element type of the associated second-order element,
-   * e.g. when \p this is a \p TET4, then \p TET10 is returned.  Returns
-   * \p INVALID_ELEM for second order or other elements that should not
-   * or cannot be converted into higher order equivalents.
-   *
-   * For some elements, there exist two second-order equivalents, e.g.
-   * for \p Quad4 there is \p Quad8 and \p Quad9.  When the optional
-   * \p full_ordered is \p true, then \p QUAD9 is returned.  When
-   * \p full_ordered is \p false, then \p QUAD8 is returned.
-   */
-  static ElemType second_order_equivalent_type (const ElemType et,
-                                                const bool full_ordered=true);
 
   /**
    * @returns the element type of the associated first-order element,
@@ -807,6 +824,13 @@ class Elem :    public DofObject
    * the elem is FVM compatible
    */
   static ElemType fvm_compatible_type (const ElemType et);
+
+
+  /**
+   * @returns the element type which may be use in cylindrical FVM.
+   * i.e. TRI3 and QUAD4.
+   */
+  static ElemType cylindrical_fvm_compatible_type (const ElemType et);
 
   /**
    * @returns dimension by elem type

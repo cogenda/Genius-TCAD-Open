@@ -80,7 +80,7 @@ void ResistanceResistanceBC::DDM2_Fill_Value(Vec , Vec L)
 /*---------------------------------------------------------------------
  * do pre-process to function for DDML2 solver
  */
-void ResistanceResistanceBC::DDM2_Function_Preprocess(Vec f, std::vector<PetscInt> &src_row,
+void ResistanceResistanceBC::DDM2_Function_Preprocess(PetscScalar * ,Vec f, std::vector<PetscInt> &src_row,
     std::vector<PetscInt> &dst_row, std::vector<PetscInt> &clear_row)
 {
   const SimulationRegion * _r1 = bc_regions().first;
@@ -180,7 +180,7 @@ void ResistanceResistanceBC::DDM2_Function(PetscScalar * x, Vec f, InsertMode &a
 
     // the psi of this node is equal to corresponding psi of  node in the first resistance region
     // since psi should be continuous for the interface
-    PetscScalar f_psi_metal = (V_resistance_1 + affinite_resistance_1) - (V_resistance_2 + affinite_resistance_2);
+    PetscScalar f_psi_metal = (e*V_resistance_1 + affinite_resistance_1) - (e*V_resistance_2 + affinite_resistance_2);
     iy.push_back(resistance_fvm_node_2->global_offset()+0);
     y_new.push_back(f_psi_metal);
 
@@ -211,7 +211,7 @@ void ResistanceResistanceBC::DDM2_Function(PetscScalar * x, Vec f, InsertMode &a
         const PetscScalar V_insulator  = x[insulator_fvm_node->local_offset()+0];
         const PetscScalar T_insulator  = x[insulator_fvm_node->local_offset()+1];
 
-        PetscScalar f_psi_insulator =  V_insulator - V_resistance_1;
+        PetscScalar f_psi_insulator =  V_insulator - 0.5*(V_resistance_1+V_resistance_2);
         iy.push_back(insulator_fvm_node->global_offset()+0);
         y_new.push_back(f_psi_insulator);
 
@@ -235,7 +235,7 @@ void ResistanceResistanceBC::DDM2_Function(PetscScalar * x, Vec f, InsertMode &a
             // area of out surface of control volume related with neighbor node
             PetscScalar cv_boundary = insulator_fvm_node->cv_surface_area(nb_node->root_node());
             PetscScalar dEdt;
-            if(SolverSpecify::TS_type==SolverSpecify::BDF2 && SolverSpecify::BDF2_restart==false) //second order
+            if(SolverSpecify::TS_type==SolverSpecify::BDF2 && SolverSpecify::BDF2_LowerOrder==false) //second order
             {
               PetscScalar r = SolverSpecify::dt_last/(SolverSpecify::dt_last + SolverSpecify::dt);
               dEdt = ( (2-r)/(1-r)*(V_insulator-V_nb)
@@ -328,6 +328,7 @@ void ResistanceResistanceBC::DDM2_Jacobian_Reserve(Mat *jac, InsertMode &add_val
 
       // reserve for later operator
       MatSetValue(*jac, insulator_fvm_node->global_offset()+0, resistance_fvm_node_1->global_offset()+0, 0, ADD_VALUES);
+      MatSetValue(*jac, insulator_fvm_node->global_offset()+0, resistance_fvm_node_2->global_offset()+0, 0, ADD_VALUES);
       MatSetValue(*jac, insulator_fvm_node->global_offset()+1, resistance_fvm_node_1->global_offset()+1, 0, ADD_VALUES);
 
       MatSetValue(*jac, resistance_fvm_node_1->global_offset()+0, insulator_fvm_node->global_offset()+0, 0, ADD_VALUES);
@@ -351,7 +352,7 @@ void ResistanceResistanceBC::DDM2_Jacobian_Reserve(Mat *jac, InsertMode &add_val
 /*---------------------------------------------------------------------
  * do pre-process to jacobian matrix for DDML2 solver
  */
-void ResistanceResistanceBC::DDM2_Jacobian_Preprocess(Mat *jac, std::vector<PetscInt> &src_row,
+void ResistanceResistanceBC::DDM2_Jacobian_Preprocess(PetscScalar *,Mat *jac, std::vector<PetscInt> &src_row,
     std::vector<PetscInt> &dst_row, std::vector<PetscInt> &clear_row)
 {
   const SimulationRegion * _r1 = bc_regions().first;
@@ -414,8 +415,8 @@ void ResistanceResistanceBC::DDM2_Jacobian(PetscScalar * x, Mat *jac, InsertMode
   const SimulationRegion * _r1 = bc_regions().first;
   const SimulationRegion * _r2 = bc_regions().second;
 
-  //the indepedent variable number, we need 2 here.
-  adtl::AutoDScalar::numdir=2;
+  //the indepedent variable number, we need 3 here.
+  adtl::AutoDScalar::numdir=3;
 
   // after that, set values to source rows
   BoundaryCondition::const_node_iterator node_it = nodes_begin();
@@ -447,7 +448,7 @@ void ResistanceResistanceBC::DDM2_Jacobian(PetscScalar * x, Mat *jac, InsertMode
 
     // the psi of this node is equal to corresponding psi of  node in the first resistance region
     // since psi should be continuous for the interface
-    AutoDScalar f_psi_metal = (V_resistance_1 + affinite_resistance_1) - (V_resistance_2 + affinite_resistance_2);
+    AutoDScalar f_psi_metal = (e*V_resistance_1 + affinite_resistance_1) - (e*V_resistance_2 + affinite_resistance_2);
 
     // set Jacobian of governing equation f_psi
     MatSetValue(*jac, resistance_fvm_node_2->global_offset(), resistance_fvm_node_1->global_offset(), f_psi_metal.getADValue(0), ADD_VALUES);
@@ -480,16 +481,17 @@ void ResistanceResistanceBC::DDM2_Jacobian(PetscScalar * x, Mat *jac, InsertMode
 
         const FVM_Node * insulator_fvm_node = (*rnode_it).second.second;
         const FVM_NodeData * insulator_fvm_node_data = insulator_fvm_node->node_data();
-        AutoDScalar V_insulator  = x[insulator_fvm_node->local_offset()+0]; V_insulator.setADValue(1, 1.0);
-        AutoDScalar T_insulator  = x[insulator_fvm_node->local_offset()+1]; T_insulator.setADValue(1, 1.0);
+        AutoDScalar V_insulator  = x[insulator_fvm_node->local_offset()+0]; V_insulator.setADValue(2, 1.0);
+        AutoDScalar T_insulator  = x[insulator_fvm_node->local_offset()+1]; T_insulator.setADValue(2, 1.0);
 
         // the psi of this node is equal to corresponding psi of  node in the first resistance region
         // since psi should be continuous for the interface
-        AutoDScalar f_psi_insulator = V_insulator - V_resistance_1;
+        AutoDScalar f_psi_insulator = V_insulator - 0.5*(V_resistance_1+V_resistance_2);
 
         // set Jacobian of governing equation f_psi_insulator
         MatSetValue(*jac, insulator_fvm_node->global_offset(), resistance_fvm_node_1->global_offset(), f_psi_insulator.getADValue(0), ADD_VALUES);
-        MatSetValue(*jac, insulator_fvm_node->global_offset(), insulator_fvm_node->global_offset(), f_psi_insulator.getADValue(1), ADD_VALUES);
+        MatSetValue(*jac, insulator_fvm_node->global_offset(), resistance_fvm_node_2->global_offset(), f_psi_insulator.getADValue(1), ADD_VALUES);
+        MatSetValue(*jac, insulator_fvm_node->global_offset(), insulator_fvm_node->global_offset(), f_psi_insulator.getADValue(2), ADD_VALUES);
 
         // the T of this node is equal to corresponding T of  node in the first resistance region
         // since T should be continuous for the interface
@@ -497,7 +499,7 @@ void ResistanceResistanceBC::DDM2_Jacobian(PetscScalar * x, Mat *jac, InsertMode
 
         // set Jacobian of governing equation f_T
         MatSetValue(*jac, insulator_fvm_node->global_offset()+1, resistance_fvm_node_1->global_offset()+1, f_T.getADValue(0), ADD_VALUES);
-        MatSetValue(*jac, insulator_fvm_node->global_offset()+1, insulator_fvm_node->global_offset()+1, f_T.getADValue(1), ADD_VALUES);
+        MatSetValue(*jac, insulator_fvm_node->global_offset()+1, insulator_fvm_node->global_offset()+1, f_T.getADValue(2), ADD_VALUES);
 
         // displacement current
         if(SolverSpecify::TimeDependent == true)
@@ -508,8 +510,9 @@ void ResistanceResistanceBC::DDM2_Jacobian(PetscScalar * x, Mat *jac, InsertMode
             const FVM_Node *nb_node = (*nb_it).second;
             const FVM_NodeData * nb_node_data = nb_node->node_data();
 
+            AutoDScalar V  = x[insulator_fvm_node->local_offset()+0]; V.setADValue(0, 1.0);
             // the psi of neighbor node
-            AutoDScalar V_nb = x[nb_node->local_offset()+0]; V_nb.setADValue(0, 1.0);
+            AutoDScalar V_nb = x[nb_node->local_offset()+0]; V_nb.setADValue(1, 1.0);
 
             // distance from nb node to this node
             PetscScalar distance = insulator_fvm_node->distance(nb_node);
@@ -517,22 +520,22 @@ void ResistanceResistanceBC::DDM2_Jacobian(PetscScalar * x, Mat *jac, InsertMode
             // area of out surface of control volume related with neighbor node
             PetscScalar cv_boundary = insulator_fvm_node->cv_surface_area(nb_node->root_node());
             AutoDScalar dEdt;
-            if(SolverSpecify::TS_type==SolverSpecify::BDF2 && SolverSpecify::BDF2_restart==false) //second order
+            if(SolverSpecify::TS_type==SolverSpecify::BDF2 && SolverSpecify::BDF2_LowerOrder==false) //second order
             {
               PetscScalar r = SolverSpecify::dt_last/(SolverSpecify::dt_last + SolverSpecify::dt);
-              dEdt = ( (2-r)/(1-r)*(V_insulator-V_nb)
+              dEdt = ( (2-r)/(1-r)*(V-V_nb)
                        - 1.0/(r*(1-r))*(insulator_fvm_node_data->psi()-nb_node_data->psi())
                        + (1-r)/r*(insulator_fvm_node_data->psi_last()-nb_node_data->psi_last()))/distance/(SolverSpecify::dt_last+SolverSpecify::dt);
             }
             else//first order
             {
-              dEdt = ((V_insulator-V_nb)-(insulator_fvm_node_data->psi()-nb_node_data->psi()))/distance/SolverSpecify::dt;
+              dEdt = ((V-V_nb)-(insulator_fvm_node_data->psi()-nb_node_data->psi()))/distance/SolverSpecify::dt;
             }
 
             AutoDScalar current_disp = cv_boundary*insulator_fvm_node_data->eps()*dEdt;
 
-            MatSetValue(*jac, resistance_fvm_node_1->global_offset(), insulator_fvm_node->global_offset(), -current_disp.getADValue(1), ADD_VALUES);
-            MatSetValue(*jac, resistance_fvm_node_1->global_offset(), nb_node->global_offset(), -current_disp.getADValue(0), ADD_VALUES);
+            MatSetValue(*jac, resistance_fvm_node_1->global_offset(), insulator_fvm_node->global_offset(), -current_disp.getADValue(0), ADD_VALUES);
+            MatSetValue(*jac, resistance_fvm_node_1->global_offset(), nb_node->global_offset(), -current_disp.getADValue(1), ADD_VALUES);
           }
         }
       }

@@ -210,10 +210,6 @@ int MeshGeneratorTri3::make_spread(  const std::string &location, double width,
                                      unsigned int upperline,unsigned int lowerline,
                                      double yuploc,double yloloc,double encroach,double grading)
 {
-  double ybtanc = point_array3d[0][IY-1][0].y;
-  double yupanc = point_array3d[0][upperline][0].y;
-  double yloanc = point_array3d[0][lowerline][0].y;
-
   double xloc,yupold,yloold,ybot;
   if(location == "left")
     xloc = point_array3d[0][0][0].x + width;
@@ -235,7 +231,7 @@ int MeshGeneratorTri3::make_spread(  const std::string &location, double width,
       erfar2=1.5*(erfarg-0.6);
     if (location== "left")
     {
-#ifdef CYGWIN
+#ifdef WINDOWS
       erfval=Erfc(erfarg);
       erfvl2=Erfc(erfar2);
 #else
@@ -246,7 +242,7 @@ int MeshGeneratorTri3::make_spread(  const std::string &location, double width,
     }
     else
     {
-#ifdef CYGWIN
+#ifdef WINDOWS
       erfval=Erfc(-erfarg);
       erfvl2=Erfc(-erfar2);
 #else
@@ -262,12 +258,8 @@ int MeshGeneratorTri3::make_spread(  const std::string &location, double width,
     // compute new node locations on this column
 
     //  get upper, lower, bottom current loc.
-
-    yupanc = yupold;
     yupold = point_array3d[0][upperline][i].y;
-    yloanc = yloold;
     yloold = point_array3d[0][lowerline][i].y;
-    ybtanc = ybot;
     ybot = point_array3d[0][IY-1][i].y;
 
     // compute upward shift and downward
@@ -370,6 +362,7 @@ int  MeshGeneratorTri3::make_region_segment()
     SkeletonFace  face;
     face.face_label=region_array1d[r].label+"_Neumann";
     face.face_mark=r+1;
+    face.user_define = false;
     face_array1d.push_back(face);
 
     SkeletonEdge edge;
@@ -433,6 +426,7 @@ int  MeshGeneratorTri3::make_face(int ixmin,int ixmax,int iymin,int iymax, const
   SkeletonFace face;
   face.face_label=label;
   face.face_mark=face_mark;
+  face.user_define=true;
   face.ixmin = ixmin;
   face.ixmax = ixmax;
   face.iymin = iymin;
@@ -1149,7 +1143,7 @@ int MeshGeneratorTri3::do_mesh()
   // write boundary label into mesh.boundary_info structure
   for(size_t f=0; f < face_array1d.size(); f++)
   {
-    _mesh.boundary_info->set_label_to_id( face_array1d[f].face_mark, face_array1d[f].face_label );
+    _mesh.boundary_info->set_label_to_id( face_array1d[f].face_mark, face_array1d[f].face_label, face_array1d[f].user_define );
   }
 
 
@@ -1158,8 +1152,8 @@ int MeshGeneratorTri3::do_mesh()
   std::vector<unsigned int>       elems;
   std::vector<unsigned short int> sides;
   std::vector<short int>          bds;
-  std::map<const std::string, short int> bd_map;
-  typedef std::map<const std::string, short int>::iterator Bd_It;
+  std::map<std::string, short int> bd_map;
+  typedef std::map<std::string, short int>::iterator Bd_It;
 
   // get all the boundary element
   _mesh.boundary_info->build_side_list (elems, sides, bds);
@@ -1231,7 +1225,7 @@ int MeshGeneratorTri3::do_mesh()
   //write down new labels
   Bd_It bd_it = bd_map.begin();
   for(; bd_it != bd_map.end(); bd_it++)
-    _mesh.boundary_info->set_label_to_id( (*bd_it).second, (*bd_it).first );
+    _mesh.boundary_info->set_label_to_id( (*bd_it).second, (*bd_it).first, false );
 
 
   // free tri_io structure
@@ -1333,6 +1327,7 @@ int MeshGeneratorTri3::do_refine(MeshRefinement & mesh_refinement)
 
   // set mesh boundary to triangle io
   std::map<short int, std::string> bd_label_map;
+  std::set<short int>  bd_user_defined;
   {
     in.numberofsegments =  _mesh.boundary_info->n_boundary_conds();
 #ifdef __triangle_h__
@@ -1358,8 +1353,11 @@ int MeshGeneratorTri3::do_refine(MeshRefinement & mesh_refinement)
     const std::set<short int>& boundary_ids = _mesh.boundary_info->get_boundary_ids();
     std::set<short int>::const_iterator it = boundary_ids.begin();
     for(; it != boundary_ids.end(); ++it)
+    {
       bd_label_map[*it] =  _mesh.boundary_info->get_label_by_id(*it);
-
+      if( _mesh.boundary_info->boundary_id_has_user_defined_label(*it) )
+        bd_user_defined.insert(*it);
+    }
   }
 
   // rebuild the triangulation mesh
@@ -1439,8 +1437,10 @@ int MeshGeneratorTri3::do_refine(MeshRefinement & mesh_refinement)
   // write boundary label into mesh.boundary_info structure
   std::map<short int, std::string>::iterator bd_it = bd_label_map.begin();
   for(; bd_it != bd_label_map.end(); ++bd_it)
-    _mesh.boundary_info->set_label_to_id( (*bd_it).first, (*bd_it).second );
-
+  {
+    bool user_defined = (bd_user_defined.find((*bd_it).first) != bd_user_defined.end());
+    _mesh.boundary_info->set_label_to_id( (*bd_it).first, (*bd_it).second, user_defined );
+  }
 
   // free tri_io structure
   triangulateio_finalize();

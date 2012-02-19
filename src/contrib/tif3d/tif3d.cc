@@ -19,6 +19,7 @@
 /*                                                                              */
 /********************************************************************************/
 
+#include <cassert>
 #include <iostream>
 #include <fstream>
 #include <sstream>
@@ -160,7 +161,14 @@ int TIF3D::read()
 
   //statistic how many triangles in each region
   for(unsigned int n=0; n<_tets.size(); ++n)
+  {
+    assert(_tets[n].region < _regions.size());
     _regions[_tets[n].region].tet_num++;
+  }
+
+  // check if empty region exist
+  for(unsigned int n=0; n<_regions.size(); ++n)
+    assert(_regions[n].tet_num > 0);
 
   return 0;
 }

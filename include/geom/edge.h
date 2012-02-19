@@ -116,6 +116,12 @@ class Edge : public Elem
   unsigned int key (const unsigned int s) const
   { return this->compute_key(this->node(s)); }
 
+
+  /**
+   * get edge nodes
+   */
+  void nodes_on_side (const unsigned int i, std::vector<unsigned int> & nodes ) const;
+
   /**
    * The \p Elem::side() member returns
    * an auto pointer to a NodeElem for the specified node.

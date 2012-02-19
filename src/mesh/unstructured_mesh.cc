@@ -43,8 +43,7 @@
 // UnstructuredMesh class member functions
 UnstructuredMesh::UnstructuredMesh (unsigned int d) :
     MeshBase (d)
-{
-}
+{}
 
 
 
@@ -130,9 +129,14 @@ UnstructuredMesh::~UnstructuredMesh ()
 
 
 
-
-
 void UnstructuredMesh::find_neighbors()
+{
+  //_find_neighbors_by_key();
+  _find_neighbors_by_ukey();
+}
+
+
+void UnstructuredMesh::_find_neighbors_by_key()
 {
   genius_assert(this->n_nodes() != 0);
   genius_assert(this->n_elem()  != 0);
@@ -295,6 +299,137 @@ void UnstructuredMesh::find_neighbors()
 }
 
 
+#include "elem_ukey.h"
+void UnstructuredMesh::_find_neighbors_by_ukey()
+{
+  genius_assert(this->n_nodes() != 0);
+  genius_assert(this->n_elem()  != 0);
+
+  START_LOG("find_neighbors()", "Mesh");
+
+
+  //TODO:[BSK] This should be removed later?!
+  const element_iterator el_end = this->elements_end();
+  for (element_iterator el = this->elements_begin(); el != el_end; ++el)
+  {
+    Elem* elem = *el;
+    for (unsigned int s=0; s<elem->n_neighbors(); s++)
+      elem->set_neighbor(s,NULL);
+  }
+
+  // Find neighboring elements by first finding elements
+  // with identical side keys and then check to see if they
+  // are neighbors
+  {
+    // data structures -- Use the unordered_map if available
+    typedef ElemKey                         key_type;
+    typedef std::pair<Elem*, unsigned char> val_type;
+
+#if defined(HAVE_UNORDERED_MAP)
+    typedef std::unordered_map<key_type, val_type, ElemKey::Hash, ElemKey::Equal> map_type;
+#elif defined(HAVE_TR1_UNORDERED_MAP) || defined(HAVE_TR1_UNORDERED_MAP_WITH_STD_HEADER)
+    typedef std::tr1::unordered_map<key_type, val_type, ElemKey::Hash, ElemKey::Equal> map_type;
+#else
+    typedef std::map<key_type, val_type, ElemKey::Less>  map_type;
+#endif
+
+    // A map from side keys to corresponding elements & side numbers
+    map_type side_to_elem_map;
+
+    for (element_iterator el = this->elements_begin(); el != el_end; ++el)
+    {
+      Elem* element = *el;
+
+      for (unsigned int ms=0; ms<element->n_neighbors(); ms++)
+      {
+        if (element->neighbor(ms) == NULL)
+        {
+          const AutoPtr<DofObject> side = element->side(ms);
+          const Elem* side_elem = dynamic_cast<const Elem*>(side.get());
+
+          // Get the key for the side of this element
+          const ElemKey key(side_elem);
+
+          // Look for elements that have an identical side key
+          map_type::iterator another_side_it = side_to_elem_map.find(key);
+
+          if( another_side_it !=  side_to_elem_map.end())
+          {
+            // Get the potential element
+            Elem* neighbor = another_side_it->second.first;
+
+            // Get the side for the neighboring element
+            const unsigned int ns = another_side_it->second.second;
+
+            // So share a side.  Is this a mixed pair
+            // of subactive and active/ancestor
+            // elements?
+            // If not, then we're neighbors.
+            // If so, then the subactive's neighbor is
+
+            if (element->subactive() == neighbor->subactive())
+            {
+              // an element is only subactive if it has
+              // been coarsened but not deleted
+              element->set_neighbor (ms,neighbor);
+              neighbor->set_neighbor(ns,element);
+            }
+            else if (element->subactive())
+            {
+              element->set_neighbor(ms,neighbor);
+            }
+            else if (neighbor->subactive())
+            {
+              neighbor->set_neighbor(ns,element);
+            }
+            side_to_elem_map.erase (another_side_it);
+
+          }
+          else
+          {
+            // didn't find a match...
+            // Build the map entry for this element
+            side_to_elem_map.insert ( std::make_pair(key, std::make_pair(element, ms)) );
+          }
+
+        }
+      }
+    }
+  }
+
+#ifdef ENABLE_AMR
+
+  /**
+  * Here we look at all of the child elements.
+  * If a child element has a NULL neighbor it is
+  * either because it is on the boundary or because
+  * its neighbor is at a different level.  In the
+  * latter case we must get the neighbor from the
+  * parent.
+  *
+  * Furthermore, that neighbor better be active,
+  * otherwise we missed a child somewhere.
+   */
+  element_iterator end = this->not_level_elements_end(0);
+  for (element_iterator el = this->not_level_elements_begin(0);
+       el != end; ++el)
+  {
+    Elem* elem = *el;
+
+    assert (elem->parent() != NULL);
+    for (unsigned int s=0; s < elem->n_neighbors(); s++)
+      if (elem->neighbor(s) == NULL)
+      {
+        elem->set_neighbor(s, elem->parent()->neighbor(s));
+      }
+  }
+
+#endif // AMR
+
+  STOP_LOG("find_neighbors()", "Mesh");
+
+}
+
 
 
 // ------------------------------------------------------------
@@ -405,282 +540,13 @@ void UnstructuredMesh::all_first_order ()
 
   STOP_LOG("all_first_order()", "Mesh");
 
-  // delete or renumber nodes, etc
-  this->prepare_for_use();
 }
 
 
 
-void UnstructuredMesh::all_second_order (const bool full_ordered)
+bool UnstructuredMesh::convert_to_fvm_mesh (std::string &error)
 {
-  /*
-   * when the mesh is not prepared,
-   * at least renumber the nodes and
-   * elements, so that the node ids
-   * are correct
-   */
-  if (!this->_is_prepared)
-    this->renumber_nodes_and_elements ();
-
-  /*
-   * If the mesh is empty or already second order
-   * then we have nothing to do
-   */
-  if (!this->n_elem() ||
-      (*(this->elements_begin()))->default_order() != FIRST)
-    return;
-
-  // does this work also in parallel?
-  // assert (this->n_processors() == 1);
-
-  START_LOG("all_second_order()", "Mesh");
-
-  /*
-   * this map helps in identifying second order
-   * nodes.  Namely, a second-order node:
-   * - edge node
-   * - face node
-   * - bubble node
-   * is uniquely defined through a set of adjacent
-   * vertices.  This set of adjacent vertices is
-   * used to identify already added higher-order
-   * nodes.  We are safe to use node id's since we
-   * make sure that these are correctly numbered.
-   */
-  std::map<std::vector<unsigned int>, Node*> adj_vertices_to_so_nodes;
-
-  /*
-   * for speed-up of the \p add_point() method, we
-   * can reserve memory.  Guess the number of additional
-   * nodes for different dimensions
-   */
-  switch (this->mesh_dimension())
-  {
-  case 1:
-    /*
-     * in 1D, there can only be order-increase from Edge2
-     * to Edge3.  Something like 1/2 of n_nodes() have
-     * to be added
-     */
-    this->reserve_nodes(static_cast<unsigned int>(1.5*this->n_nodes()));
-    break;
-
-  case 2:
-    /*
-     * in 2D, either refine from Tri3 to Tri6 (double the nodes)
-     * or from Quad4 to Quad8 (again, double) or Quad9 (2.25 that much)
-     */
-    this->reserve_nodes(static_cast<unsigned int>(2*this->n_nodes()));
-    break;
-
-
-  case 3:
-    /*
-     * in 3D, either refine from Tet4 to Tet10 (factor = 2.5) up to
-     * Hex8 to Hex27 (something  > 3).  Since in 3D there _are_ already
-     * quite some nodes, and since we do not want to overburden the memory by
-     * a too conservative guess, use the lower bound
-     */
-    this->reserve_nodes(static_cast<unsigned int>(2.5*this->n_nodes()));
-    break;
-
-  default:
-    // Hm?
-    genius_error();
-  }
-
-
-
-  /*
-   * form a vector that will hold the node id's of
-   * the vertices that are adjacent to the son-th
-   * second-order node.  Pull this outside of the
-   * loop so that silly compilers don't repeatedly
-   * create and destroy the vector.
-   */
-  std::vector<unsigned int> adjacent_vertices_ids;
-
-
-  /**
-   * Loop over the low-ordered elements in the _elements vector.
-   * First make sure they _are_ indeed low-order, and then replace
-   * them with an equivalent second-order element.  Don't
-   * forget to delete the low-order element, or else it will leak!
-   */
-  const_element_iterator endit = elements_end();
-  for (const_element_iterator it = elements_begin();
-       it != endit; ++it)
-  {
-    // the linear-order element
-    Elem* lo_elem = *it;
-
-    assert (lo_elem != NULL);
-
-    // make sure it is linear order
-    if (lo_elem->default_order() != FIRST)
-    {
-      std::cerr << "ERROR: This is not a linear element: type="
-      << lo_elem->type() << std::endl;
-      genius_error();
-    }
-
-    // this does _not_ work for refined elements
-    assert (lo_elem->level () == 0);
-
-    /*
-     * build the second-order equivalent, add to
-     * the new_elements list.  Note that this here
-     * is the only point where \p full_ordered
-     * is necessary.  The remaining code works well
-     * for either type of seconrd-order equivalent, e.g.
-     * Hex20 or Hex27, as equivalents for Hex8
-     */
-    Elem* so_elem =
-      Elem::build (Elem::second_order_equivalent_type(lo_elem->type(),
-                   full_ordered) ).release();
-
-    assert (lo_elem->n_vertices() == so_elem->n_vertices());
-
-
-    /*
-     * By definition the vertices of the linear and
-     * second order element are identically numbered.
-     * transfer these.
-     */
-    for (unsigned int v=0; v < lo_elem->n_vertices(); v++)
-      so_elem->set_node(v) = lo_elem->get_node(v);
-
-    /*
-     * set the subdomain id
-     */
-    so_elem->subdomain_id () = lo_elem->subdomain_id ();
-
-    /*
-     * Now handle the additional mid-side nodes.  This
-     * is simply handled through a map that remembers
-     * the already-added nodes.  This map maps the global
-     * ids of the vertices (that uniquely define this
-     * higher-order node) to the new node.
-     * Notation: son = second-order node
-     */
-    const unsigned int son_begin = so_elem->n_vertices();
-    const unsigned int son_end   = so_elem->n_nodes();
-
-
-    for (unsigned int son=son_begin; son<son_end; son++)
-    {
-      const unsigned int n_adjacent_vertices =
-        so_elem->n_second_order_adjacent_vertices(son);
-
-      adjacent_vertices_ids.resize(n_adjacent_vertices);
-
-      for (unsigned int v=0; v<n_adjacent_vertices; v++)
-        adjacent_vertices_ids[v] =
-          so_elem->node( so_elem->second_order_adjacent_vertex(son,v) );
-
-      /*
-       * \p adjacent_vertices_ids is now in order of the current
-       * side.  sort it, so that comparisons  with the
-       * \p adjacent_vertices_ids created through other elements'
-       * sides can match
-       */
-      std::sort(adjacent_vertices_ids.begin(),
-                adjacent_vertices_ids.end());
-
-
-      // does this set of vertices already has a mid-node added?
-      std::pair<std::map<std::vector<unsigned int>, Node*>::iterator,
-      std::map<std::vector<unsigned int>, Node*>::iterator>
-      pos = adj_vertices_to_so_nodes.equal_range (adjacent_vertices_ids);
-
-      // no, not added yet
-      if (pos.first == pos.second)
-      {
-        /*
-         * for this set of vertices, there is no
-         * second_order node yet.  Add it.
-         *
-         * compute the location of the new node as
-         * the average over the adjacent vertices.
-         */
-        Point new_location = this->point(adjacent_vertices_ids[0]);
-        for (unsigned int v=1; v<n_adjacent_vertices; v++)
-          new_location += this->point(adjacent_vertices_ids[v]);
-
-        new_location /= static_cast<Real>(n_adjacent_vertices);
-
-        // add the new point to the mesh
-        Node* so_node = this->add_point (new_location);
-
-        /*
-         * insert the new node with its defining vertex
-         * set into the map, and relocate pos to this
-         * new entry, so that the so_elem can use
-         * \p pos for inserting the node
-         */
-        adj_vertices_to_so_nodes.insert(pos.first,
-                                        std::make_pair(adjacent_vertices_ids,
-                                                       so_node));
-
-        so_elem->set_node(son) = so_node;
-      }
-      // yes, already added.
-      else
-      {
-        assert (pos.first->second != NULL);
-
-        so_elem->set_node(son) = pos.first->second;
-      }
-    }
-
-
-    /**
-     * If the linear element had any boundary conditions they
-     * should be transfered to the second-order element.  The old
-     * boundary conditions will be removed from the BoundaryInfo
-     * data structure by insert_elem.
-     */
-    assert (lo_elem->n_sides() == so_elem->n_sides());
-
-    for (unsigned int s=0; s<lo_elem->n_sides(); s++)
-    {
-      const short int boundary_id =
-        this->boundary_info->boundary_id (lo_elem, s);
-
-      if (boundary_id != this->boundary_info->invalid_id)
-        this->boundary_info->add_side (so_elem, s, boundary_id);
-    }
-
-    /*
-     * The new second-order element is ready.
-     * Inserting it into the mesh will replace and delete
-     * the first-order element.
-     */
-    so_elem->set_id(lo_elem->id());
-    this->insert_elem(so_elem);
-  }
-
-
-  // we can clear the map
-  adj_vertices_to_so_nodes.clear();
-
-
-  STOP_LOG("all_second_order()", "Mesh");
-
-  // renumber nodes, elements etc
-  this->prepare_for_use();
-}
-
-
-
-bool UnstructuredMesh::all_fvm_elem ()
-{
-
-  // make sure all the element is first order (FEM element)
-  // note, mesh is prepared here!
-
-  this->all_first_order ();
-
+  genius_assert(this->_is_prepared);
 
   // here we convert all the active FEM element to FVM element, maybe only element belongs to local
   // procesor needs to be converted.
@@ -695,7 +561,11 @@ bool UnstructuredMesh::all_fvm_elem ()
     if( !fem_elem->on_local() ) continue;
 
     // can this element be used in FVM?
-    if ( fem_elem->fvm_compatible_test() == false ) return false;
+    if ( fem_elem->fvm_compatible_test() == false )
+    {
+      error = "incompatible mesh element";
+      return false;
+    }
 
     /*
      * build the FVM compatible element, add to
@@ -803,6 +673,171 @@ bool UnstructuredMesh::all_fvm_elem ()
   this->boundary_info->rebuild_ids();
 
   return true;
+}
+
+
+
+
+bool UnstructuredMesh::convert_to_cylindrical_fvm_mesh (std::string &error)
+{
+  genius_assert(this->_is_prepared);
+
+  // here we convert all the active FEM element to FVM element, maybe only element belongs to local
+  // procesor needs to be converted.
+  const_element_iterator endit = active_elements_end();
+  for (const_element_iterator it = active_elements_begin();  it != endit; ++it )
+  {
+    Elem* fem_elem = *it;
+
+    assert (fem_elem != NULL);
+
+    // skip elements not on_local
+    if( !fem_elem->on_local() ) continue;
+
+    // can this element be used in FVM?
+    if ( fem_elem->fvm_compatible_test() == false )
+    {
+      error = "incompatible mesh element";
+      return false;
+    }
+    // 2d only
+    if ( fem_elem->dim() != 2 )
+    {
+      error = "cylindrical mesh only support 2D element";
+      return false;
+    }
+    // r dimention should be positive
+    {
+      Real rmin = 1e30;
+      for (unsigned int v=0; v < fem_elem->n_vertices(); v++)
+      {
+        rmin = std::min(rmin, fem_elem->get_node(v)->x());
+      }
+      if(rmin < 0.0)
+      {
+        error = "cylindrical mesh requires r(x) dimension be positive";
+        return false;
+      }
+    }
+
+    /*
+     * build the Cylindrical FVM compatible element, add to
+     * the new_elements list.
+     */
+    Elem *newparent = fem_elem->parent();
+    Elem *fvm_elem = Elem::build (Elem::cylindrical_fvm_compatible_type(fem_elem->type()), newparent).release();
+
+#ifdef ENABLE_AMR
+
+    /*
+     * replace FEM element with FVM element to it's parent if it has one
+     */
+    if (newparent)
+    {
+      newparent->delete_child(fem_elem);
+      newparent->add_child(fvm_elem);
+    }
+
+    /*
+     * Reset the parent links of any child elements
+     */
+
+    if (fem_elem->has_children())
+    {
+      for (unsigned int c=0; c != fem_elem->n_children(); ++c)
+        fem_elem->child(c)->set_parent(fvm_elem);
+    }
+
+    /*
+     * Copy as much data to the new element as makes sense
+     */
+    fvm_elem->set_p_level(fem_elem->p_level());
+    fvm_elem->set_refinement_flag(fem_elem->refinement_flag());
+    fvm_elem->set_p_refinement_flag(fem_elem->p_refinement_flag());
+#endif
+    assert (fvm_elem->n_vertices() == fem_elem->n_vertices());
+
+    /*
+     * The FVM element and first order FEM elem has the same node
+     */
+    for (unsigned int v=0; v < fem_elem->n_vertices(); v++)
+      fvm_elem->set_node(v) = fem_elem->get_node(v);
+
+    /*
+     * build cell's geometry information for FVM usage
+     */
+    fvm_elem->prepare_for_fvm();
+
+    /*
+     * set the subdomain id
+     */
+    fvm_elem->subdomain_id () = fem_elem->subdomain_id ();
+
+    /*
+     * set processor_id and on_local information
+     */
+    fvm_elem->processor_id () = fem_elem->processor_id ();
+    fvm_elem->on_local ()     = fem_elem->on_local ();
+
+    /**
+     * If the FEM element had any boundary conditions they
+     * should be transfered to the FVM element.  The old
+     * boundary conditions will be removed from the BoundaryInfo
+     * data structure by later this->insert_elem(fvm_elem) call.
+     */
+    assert (fvm_elem->n_sides() == fem_elem->n_sides());
+
+    /*
+     * update neighbor information
+     */
+    for(unsigned int n=0; n<fem_elem->n_neighbors(); ++n)
+    {
+      Elem * elem_neighbor = fem_elem->neighbor(n);
+      fvm_elem->set_neighbor(n, elem_neighbor);
+      if(elem_neighbor) // it may be NULL
+        elem_neighbor->set_neighbor(elem_neighbor->which_neighbor_am_i(fem_elem), fvm_elem);
+    }
+
+    if( this->boundary_info->is_boundary_elem(fem_elem) )
+    {
+      for (unsigned int s=0; s<fem_elem->n_sides(); s++)
+      {
+        // only search fem_elem itself in the boundary_info structure,
+        // send false to function boundary_id() avoid search the top parent of fem_elem in the boundary_info structure!
+        const short int boundary_id = this->boundary_info->boundary_id (fem_elem, s, false);
+        if (boundary_id != BoundaryInfo::invalid_id)
+          this->boundary_info->add_side ( fvm_elem, s, boundary_id );
+      }
+    }
+
+
+    /*
+     * The new FVM element is ready.
+     * Inserting it into the mesh will replace and delete
+     * the first-order FEM element.
+     */
+    fvm_elem->set_id(fem_elem->id());
+
+    // delete old fem element,
+    this->insert_elem(fvm_elem);
+
+  }
+
+  this->boundary_info->rebuild_ids();
+
+  return true;
+}
+
+
+void UnstructuredMesh::set_prepared ()
+{
+  // Reset our PointLocator.  This needs to happen any time the elements
+  // in the underlying elements in the mesh have changed, so we do it here.
+  this->clear_point_locator();
+  this->clear_surface_locator();
+
+  // The mesh is now prepared for use.
+  _is_prepared = true;
 }
 
 
@@ -927,6 +962,34 @@ void UnstructuredMesh::create_submesh (UnstructuredMesh& new_mesh,
 
 }
 
+
+
+void UnstructuredMesh::partition_cluster(std::vector<std::vector<unsigned int> > & clusters)
+{
+  clusters.resize(_subdomain_cluster.size());
+  if(_subdomain_cluster.empty()) return;
+
+  // map subdomain to clusters
+  std::map<unsigned int, unsigned int> subdomain_map;
+  for(unsigned int n=0; n<_subdomain_cluster.size(); ++n)
+  {
+    const std::vector<unsigned int> & subdomains =  _subdomain_cluster[n];
+    for(unsigned int s=0; s<subdomains.size(); ++s)
+      subdomain_map.insert(std::make_pair(subdomains[s], n));
+  }
+
+  element_iterator       elem_it  = active_elements_begin();
+  const element_iterator elem_end = active_elements_end();
+  for (; elem_it != elem_end; ++elem_it)
+  {
+    const Elem* elem = *elem_it;
+    if( subdomain_map.find(elem->subdomain_id()) != subdomain_map.end() )
+    {
+      unsigned int n = subdomain_map.find(elem->subdomain_id())->second;
+      clusters[n].push_back(elem->id());
+    }
+  }
+}
 
 
 #ifdef ENABLE_AMR

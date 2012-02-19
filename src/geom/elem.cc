@@ -29,8 +29,10 @@
 #include "edge_edge2_fvm.h"
 #include "face_tri3.h"
 #include "face_tri3_fvm.h"
+#include "face_cy_tri3_fvm.h"
 #include "face_quad4.h"
 #include "face_quad4_fvm.h"
+#include "face_cy_quad4_fvm.h"
 
 #ifdef COGENDA_COMMERCIAL_PRODUCT
   #include "cell_tet4.h"
@@ -85,6 +87,12 @@ AutoPtr<Elem> Elem::build(const ElemType type,
         break;
       }
 
+      case TRI3_CY_FVM:
+      {
+        elem = new Tri3_CY_FVM(p);
+        break;
+      }
+
       case QUAD4:
       {
         elem = new Quad4(p);
@@ -96,6 +104,13 @@ AutoPtr<Elem> Elem::build(const ElemType type,
         elem = new Quad4_FVM(p);
         break;
       }
+
+      case QUAD4_CY_FVM:
+      {
+        elem = new Quad4_CY_FVM(p);
+        break;
+      }
+
 #ifdef COGENDA_COMMERCIAL_PRODUCT
       // 3D elements
       case TET4:
@@ -205,6 +220,12 @@ AutoPtr<Elem> Elem::build_clone(const ElemType type, Elem* p)
         break;
       }
 
+      case TRI3_CY_FVM:
+      {
+        elem = new ElemClone<Tri3_CY_FVM>(p);
+        break;
+      }
+
       case QUAD4:
       {
         elem = new ElemClone<Quad4>(p);
@@ -216,6 +237,13 @@ AutoPtr<Elem> Elem::build_clone(const ElemType type, Elem* p)
         elem = new ElemClone<Quad4_FVM>(p);
         break;
       }
+
+      case QUAD4_CY_FVM:
+      {
+        elem = new ElemClone<Quad4_CY_FVM>(p);
+        break;
+      }
+
 #ifdef COGENDA_COMMERCIAL_PRODUCT
       // 3D elements
       case TET4:
@@ -297,14 +325,16 @@ unsigned int Elem::key() const
 {
   switch (this->type())
   {
-      case EDGE2     :
-      case EDGE2_FVM :
+      case EDGE2        :
+      case EDGE2_FVM    :
       return this->compute_key(this->node(0), this->node(1));
-      case TRI3      :
-      case TRI3_FVM  :
+      case TRI3         :
+      case TRI3_FVM     :
+      case TRI3_CY_FVM  :
       return this->compute_key(this->node(0), this->node(1), this->node(2));
-      case QUAD4     :
-      case QUAD4_FVM :
+      case QUAD4        :
+      case QUAD4_FVM    :
+      case QUAD4_CY_FVM :
       return this->compute_key(this->node(0), this->node(1), this->node(2), this->node(3));
       case TET4         :
       case TET4_FVM     :
@@ -1109,41 +1139,45 @@ ElemType Elem::first_order_equivalent_type (const ElemType et)
       case EDGE2:
       case EDGE3:
       case EDGE4:
-      return EDGE2;
+        return EDGE2;
       case EDGE2_FVM:
-      return EDGE2_FVM;
+        return EDGE2_FVM;
       case TRI3:
       case TRI6:
-      return TRI3;
+        return TRI3;
       case TRI3_FVM:
-      return TRI3_FVM;
+        return TRI3_FVM;
+      case TRI3_CY_FVM:
+        return TRI3_CY_FVM;
       case QUAD4:
       case QUAD8:
       case QUAD9:
-      return QUAD4;
+        return QUAD4;
       case QUAD4_FVM:
-      return QUAD4_FVM;
+        return QUAD4_FVM;
+      case QUAD4_CY_FVM:
+        return QUAD4_CY_FVM;
       case TET4:
       case TET10:
-      return TET4;
+        return TET4;
       case TET4_FVM:
-      return TET4_FVM;
+        return TET4_FVM;
       case HEX8:
       case HEX27:
       case HEX20:
-      return HEX8;
+        return HEX8;
       case HEX8_FVM:
-      return HEX8_FVM;
+        return HEX8_FVM;
       case PRISM6:
       case PRISM15:
       case PRISM18:
-      return PRISM6;
+        return PRISM6;
       case PRISM6_FVM:
-      return PRISM6_FVM;
+        return PRISM6_FVM;
       case PYRAMID5:
-      return PYRAMID5;
+        return PYRAMID5;
       case PYRAMID5_FVM:
-      return PYRAMID5_FVM;
+        return PYRAMID5_FVM;
 
       default:
       // unknown element
@@ -1151,81 +1185,6 @@ ElemType Elem::first_order_equivalent_type (const ElemType et)
   }
 }
 
-
-
-ElemType Elem::second_order_equivalent_type (const ElemType et,
-    const bool full_ordered)
-{
-  /* for second-order elements, always return \p INVALID_ELEM
-   * since second-order elements should not be converted
-   * into something else.  Only linear elements should
-   * return something sensible here
-   */
-  switch (et)
-  {
-      case EDGE2:
-      case EDGE2_FVM:
-      {
-        // full_ordered not relevant
-        return EDGE3;
-      }
-
-      case TRI3:
-      case TRI3_FVM:
-      {
-        // full_ordered not relevant
-        return TRI6;
-      }
-
-      case QUAD4:
-      case QUAD4_FVM:
-      {
-        if (full_ordered)
-          return QUAD9;
-        else
-          return QUAD8;
-      }
-
-      case TET4:
-      case TET4_FVM:
-      {
-        // full_ordered not relevant
-        return TET10;
-      }
-
-      case HEX8:
-      case HEX8_FVM:
-      {
-        // see below how this correlates with INFHEX8
-        if (full_ordered)
-          return HEX27;
-        else
-          return HEX20;
-      }
-
-      case PRISM6:
-      case PRISM6_FVM:
-      {
-        if (full_ordered)
-          return PRISM18;
-        else
-          return PRISM15;
-      }
-
-      case PYRAMID5:
-      case PYRAMID5_FVM:
-      {
-        genius_error();
-        return INVALID_ELEM;
-      }
-
-      default:
-      {
-        // second-order element
-        return INVALID_ELEM;
-      }
-  }
-}
 
 
 ElemType Elem::fvm_compatible_type (const ElemType et)
@@ -1236,35 +1195,55 @@ ElemType Elem::fvm_compatible_type (const ElemType et)
       case EDGE2_FVM:
       case EDGE3:
       case EDGE4:
-      return EDGE2_FVM;
+        return EDGE2_FVM;
       case TRI3:
       case TRI3_FVM:
       case TRI6:
-      return TRI3_FVM;
+        return TRI3_FVM;
       case QUAD4:
       case QUAD4_FVM:
       case QUAD8:
       case QUAD9:
-      return QUAD4_FVM;
+        return QUAD4_FVM;
       case TET4:
       case TET4_FVM:
       case TET10:
-      return TET4_FVM;
+        return TET4_FVM;
       case HEX8:
       case HEX8_FVM:
       case HEX27:
       case HEX20:
-      return HEX8_FVM;
+        return HEX8_FVM;
       case PRISM6:
       case PRISM6_FVM:
       case PRISM15:
       case PRISM18:
-      return PRISM6_FVM;
+        return PRISM6_FVM;
       case PYRAMID5:
       case PYRAMID5_FVM:
-      return PYRAMID5_FVM;
+        return PYRAMID5_FVM;
 
       default:
+      // unknown element
+      return INVALID_ELEM;
+  }
+}
+
+
+ElemType Elem::cylindrical_fvm_compatible_type (const ElemType et)
+{
+  switch (et)
+  {
+    case TRI3:
+    case TRI3_CY_FVM:
+    case TRI6:
+      return TRI3_CY_FVM;
+    case QUAD4:
+    case QUAD4_CY_FVM:
+    case QUAD8:
+    case QUAD9:
+      return QUAD4_CY_FVM;
+    default:
       // unknown element
       return INVALID_ELEM;
   }
@@ -1279,33 +1258,35 @@ unsigned int Elem::dim (const ElemType et)
       case EDGE2_FVM:
       case EDGE3:
       case EDGE4:
-      return 1;
+        return 1;
       case TRI3:
       case TRI3_FVM:
+      case TRI3_CY_FVM:
       case TRI6:
-      return 2;
+        return 2;
       case QUAD4:
       case QUAD4_FVM:
+      case QUAD4_CY_FVM:
       case QUAD8:
       case QUAD9:
-      return 2;
+        return 2;
       case TET4:
       case TET4_FVM:
       case TET10:
-      return 3;
+        return 3;
       case HEX8:
       case HEX8_FVM:
       case HEX27:
       case HEX20:
-      return 3;
+        return 3;
       case PRISM6:
       case PRISM6_FVM:
       case PRISM15:
       case PRISM18:
-      return 3;
+        return 3;
       case PYRAMID5:
       case PYRAMID5_FVM:
-      return 3;
+        return 3;
 
       default:
       // unknown element
@@ -1411,9 +1392,11 @@ unsigned int Elem::pack_size( ElemType t )
       case EDGE2        :
       case EDGE2_FVM    :      return header + 2 + 2;
       case TRI3         :
-      case TRI3_FVM     :      return header + 3 + 3;
+      case TRI3_FVM     :
+      case TRI3_CY_FVM  :      return header + 3 + 3;
       case QUAD4        :
-      case QUAD4_FVM    :      return header + 4 + 4;
+      case QUAD4_FVM    :
+      case QUAD4_CY_FVM :      return header + 4 + 4;
       case TET4         :
       case TET4_FVM     :      return header + 4 + 4;
       case PYRAMID5     :

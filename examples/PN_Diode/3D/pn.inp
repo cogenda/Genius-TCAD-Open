@@ -51,7 +51,7 @@ SOLVE
 
 # compute diode forward IV
 MODEL     Region=Silicon Mobility.Force=EQF
-METHOD    Type=DDML1 NS=Basic LS=BCGS PC=ILU
+METHOD    Type=DDML1 NS=Basic LS=BCGS PC=ASM
 SOLVE     Type=EQ
 SOLVE     Type=DCSWEEP Vscan=Anode Vstart=0.0 Vstep=0.05 Vstop=1.0 out.prefix=diode_iv
 

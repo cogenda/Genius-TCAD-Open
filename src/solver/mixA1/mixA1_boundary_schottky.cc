@@ -45,7 +45,7 @@ using PhysicalUnit::e;
 /*---------------------------------------------------------------------
  * do pre-process to function for Mixed DDML1 solver
  */
-void SchottkyContactBC::MixA_DDM1_Function_Preprocess(Vec f, std::vector<PetscInt> &src_row,
+void SchottkyContactBC::MixA_DDM1_Function_Preprocess(PetscScalar *, Vec f, std::vector<PetscInt> &src_row,
     std::vector<PetscInt> &dst_row, std::vector<PetscInt> &clear_row)
 {
   BoundaryCondition::const_node_iterator node_it = nodes_begin();
@@ -97,8 +97,10 @@ void SchottkyContactBC::MixA_DDM1_Function(PetscScalar * x, Vec f, InsertMode &a
   PetscScalar current_scale = this->z_width()/A;
   std::vector<double> current_buffer;
 
+  const PetscScalar Work_Function = this->scalar("workfunction");
+
   // the electrode potential in current iteration
-  PetscScalar Ve = x[ckt->local_offset(spice_node_index)];
+  PetscScalar Ve = x[ckt->local_offset_x(spice_node_index)];
 
   // search and process all the nodes belongs to this bc
   BoundaryCondition::const_node_iterator node_it = nodes_begin();
@@ -127,8 +129,6 @@ void SchottkyContactBC::MixA_DDM1_Function(PetscScalar * x, Vec f, InsertMode &a
           case SemiconductorRegion:
           {
             // semiconductor region should be the first region
-            genius_assert(i==0);
-
             const SemiconductorSimulationRegion * semi_region = dynamic_cast<const SemiconductorSimulationRegion *>(regions[i]);
 
             const FVM_NodeData * node_data = fvm_nodes[i]->node_data();
@@ -145,10 +145,10 @@ void SchottkyContactBC::MixA_DDM1_Function(PetscScalar * x, Vec f, InsertMode &a
             PetscScalar deltaVB = semi_region->material()->band->SchottyBarrierLowerring(node_data->eps(), node_data->E().size());
             //Schottky current
             PetscScalar S  = fvm_nodes[i]->outside_boundary_surface_area();
-            PetscScalar Fn = semi_region->material()->band->SchottyJsn(n, T, this->Work_Function() - node_data->affinity() - deltaVB) * S;
-            PetscScalar Fp = semi_region->material()->band->SchottyJsp(p, T, this->Work_Function() - node_data->affinity() + deltaVB) * S;
+            PetscScalar Fn = semi_region->material()->band->SchottyJsn(n, T, Work_Function - node_data->affinity() - deltaVB) * S;
+            PetscScalar Fp = semi_region->material()->band->SchottyJsp(p, T, Work_Function - node_data->affinity() + deltaVB) * S;
 
-            PetscScalar ff = V + this->Work_Function() - deltaVB - Ve;
+            PetscScalar ff = V + Work_Function - deltaVB - Ve;
 
             // set governing equation to boundary condition of poisson's equation
             VecSetValue(f, fvm_nodes[i]->global_offset()+0, ff, ADD_VALUES);
@@ -166,7 +166,7 @@ void SchottkyContactBC::MixA_DDM1_Function(PetscScalar * x, Vec f, InsertMode &a
             if(SolverSpecify::TimeDependent == true)
             {
               //second order
-              if(SolverSpecify::TS_type==SolverSpecify::BDF2 && SolverSpecify::BDF2_restart==false)
+              if(SolverSpecify::TS_type==SolverSpecify::BDF2 && SolverSpecify::BDF2_LowerOrder==false)
               {
                 PetscScalar r = SolverSpecify::dt_last/(SolverSpecify::dt_last + SolverSpecify::dt);
                 PetscScalar Tn = -((2-r)/(1-r)*n - 1.0/(r*(1-r))*node_data->n() + (1-r)/r*node_data->n_last())
@@ -199,7 +199,7 @@ void SchottkyContactBC::MixA_DDM1_Function(PetscScalar * x, Vec f, InsertMode &a
                 // area of out surface of control volume related with neighbor node
                 PetscScalar cv_boundary = fvm_nodes[i]->cv_surface_area(nb_node->root_node());
                 PetscScalar dEdt;
-                if(SolverSpecify::TS_type==SolverSpecify::BDF2 && SolverSpecify::BDF2_restart==false) //second order
+                if(SolverSpecify::TS_type==SolverSpecify::BDF2 && SolverSpecify::BDF2_LowerOrder==false) //second order
                 {
                   PetscScalar r = SolverSpecify::dt_last/(SolverSpecify::dt_last + SolverSpecify::dt);
                   dEdt = ( (2-r)/(1-r)*(V-V_nb)
@@ -321,7 +321,7 @@ void SchottkyContactBC::MixA_DDM1_Jacobian_Reserve(Mat *jac, InsertMode &add_val
           case SemiconductorRegion:
           {
             // reserve for electrode potential item
-            MatSetValue(*jac, fvm_nodes[i]->global_offset(), ckt->global_offset(spice_node_index), 0, ADD_VALUES);
+            MatSetValue(*jac, fvm_nodes[i]->global_offset(), this->global_offset(), 0, ADD_VALUES);
             break;
           }
           case ElectrodeRegion:
@@ -351,21 +351,36 @@ void SchottkyContactBC::MixA_DDM1_Jacobian_Reserve(Mat *jac, InsertMode &add_val
     std::vector<PetscInt> bc_node_reserve;
     for(node_it = nodes_begin(); node_it!=end_it; ++node_it )
     {
-      // get the derivative of electrode current to ohmic node
-      const FVM_Node *  fvm_node = get_region_fvm_node(*node_it, SemiconductorRegion);
-      if(fvm_node->on_processor())
-      {
-        bc_node_reserve.push_back(fvm_node->global_offset()+0);
-        bc_node_reserve.push_back(fvm_node->global_offset()+1);
-        bc_node_reserve.push_back(fvm_node->global_offset()+2);
+      // get the derivative of electrode current to schottky node
+      // skip node not belongs to this processor
+      if( (*node_it)->processor_id()!=Genius::processor_id() ) continue;
 
-        // get the derivative of electrode current to neighbors of bc node
-        FVM_Node::fvm_neighbor_node_iterator nb_it = fvm_node->neighbor_node_begin();
-        FVM_Node::fvm_neighbor_node_iterator nb_it_end = fvm_node->neighbor_node_end();
-        for(; nb_it != nb_it_end; ++nb_it)
+      // search all the fvm_node which has *node_it as root node, these fvm_nodes have the same location in geometry,
+      // but belong to different regions in logic.
+      BoundaryCondition::region_node_iterator  rnode_it     = region_node_begin(*node_it);
+      BoundaryCondition::region_node_iterator  end_rnode_it = region_node_end(*node_it);
+      for(; rnode_it!=end_rnode_it; ++rnode_it  )
+      {
+        const SimulationRegion * region = (*rnode_it).second.first;
+        const FVM_Node *  fvm_node = (*rnode_it).second.second;
+
+        if ( region->type() == SemiconductorRegion)
         {
-          const FVM_Node *  fvm_nb_node = (*nb_it).second;
-          bc_node_reserve.push_back(fvm_nb_node->global_offset()+0);
+          bc_node_reserve.push_back(fvm_node->global_offset()+0);
+          bc_node_reserve.push_back(fvm_node->global_offset()+1);
+          bc_node_reserve.push_back(fvm_node->global_offset()+2);
+
+          // get the derivative of electrode current to neighbors of schottky node
+
+          FVM_Node::fvm_neighbor_node_iterator nb_it = fvm_node->neighbor_node_begin();
+          FVM_Node::fvm_neighbor_node_iterator nb_it_end = fvm_node->neighbor_node_end();
+          for(; nb_it != nb_it_end; ++nb_it)
+          {
+            const FVM_Node *  fvm_nb_node = (*nb_it).second;
+            bc_node_reserve.push_back(fvm_nb_node->global_offset()+0);
+            //bc_node_reserve.push_back(fvm_nb_node->global_offset()+1);
+            //bc_node_reserve.push_back(fvm_nb_node->global_offset()+2);
+          }
         }
       }
     }
@@ -375,7 +390,7 @@ void SchottkyContactBC::MixA_DDM1_Jacobian_Reserve(Mat *jac, InsertMode &add_val
     {
       PetscInt bc_global_offset = this->global_offset();
 
-      MatSetValue(*jac, bc_global_offset, ckt->global_offset(spice_node_index), 0, ADD_VALUES);
+      MatSetValue(*jac, bc_global_offset, this->global_offset(), 0, ADD_VALUES);
 
       if(bc_node_reserve.size())
       {
@@ -395,7 +410,7 @@ void SchottkyContactBC::MixA_DDM1_Jacobian_Reserve(Mat *jac, InsertMode &add_val
 /*---------------------------------------------------------------------
  * do pre-process to jacobian matrix for Mixed DDML1 solver
  */
-void SchottkyContactBC::MixA_DDM1_Jacobian_Preprocess(Mat *jac, std::vector<PetscInt> &src_row,
+void SchottkyContactBC::MixA_DDM1_Jacobian_Preprocess(PetscScalar *, Mat *jac, std::vector<PetscInt> &src_row,
     std::vector<PetscInt> &dst_row, std::vector<PetscInt> &clear_row)
 {
   BoundaryCondition::const_node_iterator node_it = nodes_begin();
@@ -448,6 +463,7 @@ void SchottkyContactBC::MixA_DDM1_Jacobian(PetscScalar * x, Mat *jac, InsertMode
   // for 2D mesh, z_width() is the device dimension in Z direction; for 3D mesh, z_width() is 1.0
   PetscScalar current_scale = this->z_width()/A;
 
+  const PetscScalar Work_Function = this->scalar("workfunction");
 
   // loop again
   BoundaryCondition::const_node_iterator node_it = nodes_begin();
@@ -477,8 +493,6 @@ void SchottkyContactBC::MixA_DDM1_Jacobian(PetscScalar * x, Mat *jac, InsertMode
           case SemiconductorRegion:
           {
             // semiconductor region should be the first region
-            genius_assert(i==0);
-
             const SemiconductorSimulationRegion * semi_region = dynamic_cast<const SemiconductorSimulationRegion *>(regions[i]);
 
             const FVM_NodeData * node_data = fvm_nodes[i]->node_data();
@@ -497,18 +511,18 @@ void SchottkyContactBC::MixA_DDM1_Jacobian(PetscScalar * x, Mat *jac, InsertMode
 
             // the electrode potential in current iteration
             genius_assert( local_offset()!=invalid_uint );
-            AutoDScalar Ve = x[ckt->local_offset(spice_node_index)];             Ve.setADValue(3, 1.0);
+            AutoDScalar Ve = x[ckt->local_offset_x(spice_node_index)];             Ve.setADValue(3, 1.0);
 
             //Schotty Barrier Lowerring
             PetscScalar deltaVB = semi_region->material()->band->SchottyBarrierLowerring(node_data->eps(), node_data->E().size());
 
             //Schottky current
             PetscScalar S  = fvm_nodes[i]->outside_boundary_surface_area();
-            AutoDScalar Fn = semi_region->material()->band->SchottyJsn(n, T, this->Work_Function() - node_data->affinity() - deltaVB) * S;
-            AutoDScalar Fp = semi_region->material()->band->SchottyJsp(p, T, this->Work_Function() - node_data->affinity() + deltaVB) * S;
+            AutoDScalar Fn = semi_region->material()->band->SchottyJsn(n, T, Work_Function - node_data->affinity() - deltaVB) * S;
+            AutoDScalar Fp = semi_region->material()->band->SchottyJsp(p, T, Work_Function - node_data->affinity() + deltaVB) * S;
 
             // schottky boundary condition of poisson's equation
-            AutoDScalar ff = V + this->Work_Function() - deltaVB - Ve;
+            AutoDScalar ff = V + Work_Function - deltaVB - Ve;
 
             // the insert position
             std::vector<PetscInt> row, col;
@@ -534,7 +548,7 @@ void SchottkyContactBC::MixA_DDM1_Jacobian(PetscScalar * x, Mat *jac, InsertMode
             if(SolverSpecify::TimeDependent == true)
             {
               //second order
-              if(SolverSpecify::TS_type==SolverSpecify::BDF2 && SolverSpecify::BDF2_restart==false)
+              if(SolverSpecify::TS_type==SolverSpecify::BDF2 && SolverSpecify::BDF2_LowerOrder==false)
               {
                 PetscScalar r = SolverSpecify::dt_last/(SolverSpecify::dt_last + SolverSpecify::dt);
                 AutoDScalar Tn = -((2-r)/(1-r)*n - 1.0/(r*(1-r))*node_data->n() + (1-r)/r*node_data->n_last())
@@ -569,7 +583,7 @@ void SchottkyContactBC::MixA_DDM1_Jacobian(PetscScalar * x, Mat *jac, InsertMode
                 PetscScalar cv_boundary = fvm_nodes[i]->cv_surface_area(nb_node->root_node());
 
                 AutoDScalar dEdt;
-                if(SolverSpecify::TS_type==SolverSpecify::BDF2 && SolverSpecify::BDF2_restart==false) //second order
+                if(SolverSpecify::TS_type==SolverSpecify::BDF2 && SolverSpecify::BDF2_LowerOrder==false) //second order
                 {
                   PetscScalar r = SolverSpecify::dt_last/(SolverSpecify::dt_last + SolverSpecify::dt);
                   dEdt = ( (2-r)/(1-r)*(V-V_nb)

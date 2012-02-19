@@ -33,7 +33,7 @@ using PhysicalUnit::A;
  */
 void ElectrodeInterConnectBC::inter_connect_fill_value(Vec x, Vec L)
 {
-  if(Genius::processor_id() == Genius::n_processors() -1)
+  if(Genius::is_last_processor())
   {
     VecSetValue(x, this->global_offset(), this->ext_circuit()->potential(), INSERT_VALUES);
 
@@ -43,13 +43,13 @@ void ElectrodeInterConnectBC::inter_connect_fill_value(Vec x, Vec L)
     {
       const BoundaryCondition * electrode = electrodes[n];
       PetscScalar r  = electrode->ext_circuit()->R();
-      rmin = r<rmin ? r : rmin;
+      rmin = std::min(r, rmin);
     }
 
     if(this->ext_circuit()->is_voltage_driven())
     {
       PetscScalar R = this->ext_circuit()->R();
-      rmin = R<rmin ? R : rmin;
+      rmin = std::min(R, rmin);
     }
 
     VecSetValue(L, this->global_offset(), rmin, INSERT_VALUES);
@@ -102,6 +102,7 @@ void ElectrodeInterConnectBC::inter_connect_function(PetscScalar *x , Vec f, Ins
     VecAssemblyEnd(f);
   }
 
+
   // potential of inter-connect node
   PetscScalar Vic = x[this->local_offset()];
   // total current flow into each electrodes
@@ -115,9 +116,10 @@ void ElectrodeInterConnectBC::inter_connect_function(PetscScalar *x , Vec f, Ins
     I += (Vic-Ve)/r;
   }
 
-  // only last processor do this
-  if(Genius::processor_id() == Genius::n_processors() -1)
+    // only last processor do this
+  if(Genius::is_last_processor())
   {
+
     // the inter connect node has external voltage source
     if(this->ext_circuit()->is_voltage_driven())
     {
@@ -193,7 +195,7 @@ void ElectrodeInterConnectBC::inter_connect_reserve(Mat *jac, InsertMode &add_va
   }
 
   // only past processor do this
-  if(Genius::processor_id() == Genius::n_processors() -1)
+  if(Genius::is_last_processor())
   {
     // current flow into each electrode
     const std::vector<BoundaryCondition * > & electrodes = this->inter_connect();
@@ -225,7 +227,7 @@ void ElectrodeInterConnectBC::inter_connect_jacobian(PetscScalar * , Mat *jac, I
   }
 
   // only last processor do this
-  if(Genius::processor_id() == Genius::n_processors() -1)
+  if(Genius::is_last_processor())
   {
     // current flow into each electrode
     const std::vector<BoundaryCondition * > & electrodes = this->inter_connect();

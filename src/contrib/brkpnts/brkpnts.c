@@ -7,7 +7,8 @@
 
 typedef double (* FUNC)(double);
 
-#define PRECISION 1.0e-15
+#define XPRECISION 1.0e-15
+#define FPRECISION 1.0e-100
 #define MAX_ITERATIONS 100
 
 #ifndef MAXDOUBLE
@@ -113,14 +114,14 @@ double Secant(FUNC func1, FUNC func2, double x1)
 
       if (++iteration > MAX_ITERATIONS)
       {
-  	if (fabs(f2) <= 100.0 * PRECISION) 
+  	if (fabs(f2) <= 100.0 * XPRECISION)
 	{
 		return(x2);
-	}	
+	}
   	fprintf(stderr, "ERROR:  secant method not converging!\n");
   	exit(1);
       }
-    
+
     }
 
     x1 = x2;
@@ -128,7 +129,7 @@ double Secant(FUNC func1, FUNC func2, double x1)
     f1 = f2;
     f2 = f3;
 
-    if ((fabs(dx / x2) <= PRECISION) || (fabs(f2) <= PRECISION)) break;
+    if ((fabs(dx / x2) <= XPRECISION) || (fabs(f2) <= XPRECISION)) break;
   }
 
   return(x3);
@@ -140,12 +141,13 @@ double Asymptotic(FUNC func1, FUNC func2, double x, double dx)
 {
   while (1)
   {
-    if (fabs(dx/x) <= PRECISION) return(x);
-    while (func1(x) != func2(x))
+    if (fabs(dx/x) <= XPRECISION) return(x);
+    while ( fabs(func1(x) - func2(x)) >= FPRECISION)
       x += dx;
+
     dx *= -0.1;
-    if (fabs(dx/x) <= PRECISION) return(x);
-    while (func1(x) == func2(x))
+    if (fabs(dx/x) <= XPRECISION) return(x);
+    while (fabs(func1(x) - func2(x)) <= FPRECISION)
       x += dx;
     dx *= -0.1;
   }
@@ -218,86 +220,86 @@ int main ( int cArg, char *apszArg[] )
 
   fprintf(stderr, "Bernoulli and Aux function limit evaluation, (c) 1992 K. Kramer\n");
 
-  
+
   fprintf(stderr, "BP0_BERN: Asymptotic\n");
   B[0]	= Asymptotic(Bbp0a, Bbp0b,  0.0e+00, -1.0e+02);
-  
+
   fprintf(stderr, "BP1_BERN: Secant\n");
   B[1]	= Secant    (Bbp1a, Bbp1b, -1.0e+00);
-  
+
   fprintf(stderr, "BP2_BERN: Secant\n");
   B[2]	= Secant    (Bbp2a, Bbp2b, +1.0e+00);
- 
+
   fprintf(stderr, "BP3_BERN: Asymptotic\n");
   B[3]	= Asymptotic(Bbp3a, Bbp3b,  0.0e+00, +1.0e+02);
-  
+
   fprintf(stderr, "BP4_BERN: Asymptotic\n");
   B[4]	= Asymptotic(Bbp4a, Bbp4b,  1.0e+00, +1.0e+03);
-  
 
-  
+
+
   fprintf(stderr, "BP0_DBERN: Asymptotic\n");
   dB[0] = Asymptotic(dBbp0a, dBbp0b,  0.0e+00, -1.0e+02);
-  
+
   dB[1] = B[0];
-  
+
   fprintf(stderr, "BP2_DBERN: Secant\n");
   dB[2] = Secant    (dBbp2a, dBbp2b, -1.0e+00);
 /*dB[2] = Bisection (dBbp2a, dBbp2b, dB[1], -1.0e-6); */
- 
+
   fprintf(stderr, "BP3_DBERN: Secant\n");
   dB[3] = Secant    (dBbp3a, dBbp3b, +1.0e+00);
- 
+
   dB[4] = B[3];
-  
+
   fprintf(stderr, "BP5_DBERN: Asymptotic\n");
   dB[5] = Asymptotic(dBbp5a, dBbp5b,  1.0e+00, +1.0e+03);
- 
+
 
   fprintf(stderr, "BP0_AUX1: Secant\n");
   AUX1[0] = Secant(AUX1bp0a, AUX1bp0b, -1.0e+00);
-  
+
   fprintf(stderr, "BP1_AUX1: Secant\n");
   AUX1[1] = Secant(AUX1bp0a, AUX1bp0b,	1.0e+00);
- 
+
 
   fprintf(stderr, "BP0_DAUX1: Secant\n");
   dAUX1[0] = Secant(dAUX1bp0a, dAUX1bp0b, -1.0e+00);
- 
+
   fprintf(stderr, "BP1_DAUX1: Secant\n");
   dAUX1[1] = Secant(dAUX1bp0a, dAUX1bp0b,  1.0e+00);
- 
+
   fprintf(stderr, "BP2_DAUX1: Asymptotic\n");
-  dAUX1[2] = Asymptotic(dAUX1bp2a, dAUX1bp2b,  0.0e+00, -1.0e+02);
+  dAUX1[2] = Asymptotic(dAUX1bp2a, dAUX1bp2b,  -1.0e+00, -1.0e+02);
 
   fprintf(stderr, "BP3_DAUX1: Asymptotic\n");
-  dAUX1[3] = Asymptotic(dAUX1bp3a, dAUX1bp3b,  0.0e+00,  1.0e+02);
- 
+  dAUX1[3] = Asymptotic(dAUX1bp3a, dAUX1bp3b,  1.0e+00,  1.0e+02);
+
   fprintf(stderr, "BP4_DAUX1: Asymptotic\n");
   dAUX1[4] = Asymptotic(dAUX1bp4a, dAUX1bp4b,  0.0e+00, -1.0e+02);
 
   fprintf(stderr, "BP5_DAUX1: Asymptotic\n");
   dAUX1[5] = Asymptotic(dAUX1bp5a, dAUX1bp5b,  0.0e+00,  1.0e+02);
- 
+
   fprintf(stderr, "BP0_AUX2: Asymptotic\n");
   AUX2[0] = Asymptotic(AUX2bp0a, AUX2bp0b,  0.0e+00, -1.0e+02);
-  
+
   fprintf(stderr, "BP1_AUX2: Asymptotic\n");
   AUX2[1] = Asymptotic(AUX2bp1a, AUX2bp1b,  0.0e+00,  1.0e+02);
- 
+
   fprintf(stderr, "BP2_AUX2: Asymptotic\n");
   AUX2[2] = Asymptotic(AUX2bp2a, AUX2bp2b,  0.0e+00,  1.0e+02);
-  
+
 
   fprintf(stderr, "BP0_DAUX2: Asymptotic\n");
   dAUX2[0] = Asymptotic(dAUX2bp0a, dAUX2bp0b,  0.0e+00, -1.0e+02);
-  
+
   dAUX2[1] = AUX2[0];
- 
+
   dAUX2[2] = AUX2[1];
-  
+
   dAUX2[3] = AUX2[2];
- 
+
 
   fprintf(stderr, "Test completed, writing to output file.\n");
 

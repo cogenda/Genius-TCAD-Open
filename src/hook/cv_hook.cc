@@ -245,7 +245,7 @@ void CVHook::on_close()
 }
 
 
-#ifndef CYGWIN
+#ifdef DLLHOOK
 
 // dll interface
 extern "C"

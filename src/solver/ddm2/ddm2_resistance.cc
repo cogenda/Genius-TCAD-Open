@@ -306,7 +306,7 @@ void MetalSimulationRegion::DDM2_Time_Dependent_Function(PetscScalar * x, Vec f,
     iy.push_back(fvm_node->global_offset()+1);                                // save index in the buffer
 
     //second order
-    if(SolverSpecify::TS_type==SolverSpecify::BDF2 && SolverSpecify::BDF2_restart==false)
+    if(SolverSpecify::TS_type==SolverSpecify::BDF2 && SolverSpecify::BDF2_LowerOrder==false)
     {
       PetscScalar r = SolverSpecify::dt_last/(SolverSpecify::dt_last + SolverSpecify::dt);
       PetscScalar TT = -((2-r)/(1-r)*T - 1.0/(r*(1-r))*node_data->T() + (1-r)/r*node_data->T_last())*node_data->density()*HeatCapacity
@@ -369,7 +369,7 @@ void MetalSimulationRegion::DDM2_Time_Dependent_Jacobian(PetscScalar * x, Mat *j
     // process \partial t
 
     //second order
-    if(SolverSpecify::TS_type==SolverSpecify::BDF2 && SolverSpecify::BDF2_restart==false)
+    if(SolverSpecify::TS_type==SolverSpecify::BDF2 && SolverSpecify::BDF2_LowerOrder==false)
     {
       PetscScalar r = SolverSpecify::dt_last/(SolverSpecify::dt_last + SolverSpecify::dt);
       AutoDScalar TT = -((2-r)/(1-r)*T - 1.0/(r*(1-r))*node_data->T() + (1-r)/r*node_data->T_last())*node_data->density()*HeatCapacity
@@ -393,6 +393,124 @@ void MetalSimulationRegion::DDM2_Time_Dependent_Jacobian(PetscScalar * x, Mat *j
 #endif
 
 }
+
+
+void MetalSimulationRegion::DDM2_Pseudo_Time_Step_Function(PetscScalar * x, Vec f, InsertMode &add_value_flag)
+{
+  // note, we will use ADD_VALUES to set values of vec f
+  // if the previous operator is not ADD_VALUES, we should assembly the vec first!
+  if( (add_value_flag != ADD_VALUES) && (add_value_flag != NOT_SET_VALUES) )
+  {
+    VecAssemblyBegin(f);
+    VecAssemblyEnd(f);
+  }
+
+  if(this->connect_to_low_resistance_solderpad()) return;
+
+  // we need a capacitor here for pseudo time step smoother.
+  const double sigma = this->get_conductance();
+
+  const_processor_node_iterator node_it = on_processor_nodes_begin();
+  const_processor_node_iterator node_it_end = on_processor_nodes_end();
+  for(; node_it!=node_it_end; ++node_it)
+  {
+    const FVM_Node * fvm_node = *node_it;
+
+    // C/T = \sigma*L, set T to 0.1ns
+    const double cap = sigma*pow(fvm_node->volume()*_z_width, 1.0/3.0)*SolverSpecify::PseudoTimeCMOSTime/_z_width/this->n_node();
+
+    const FVM_NodeData * node_data = fvm_node->node_data();
+    const unsigned int local_offset  = fvm_node->local_offset();
+    const unsigned int global_offset = fvm_node->global_offset();
+
+    PetscScalar V   =  x[local_offset];                         // electrostatic potential
+    PetscScalar f_V = -cap*(V-node_data->psi())/SolverSpecify::PseudoTimeStepMetal;
+
+    VecSetValue(f, global_offset, f_V, ADD_VALUES);
+  }
+
+  // the last operator is ADD_VALUES
+  add_value_flag = ADD_VALUES;
+}
+
+
+void MetalSimulationRegion::DDM2_Pseudo_Time_Step_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_value_flag)
+{
+  // note, we will use ADD_VALUES to set values of matrix J
+  // if the previous operator is not ADD_VALUES, we should flush the matrix
+  if( (add_value_flag != ADD_VALUES) && (add_value_flag != NOT_SET_VALUES) )
+  {
+    MatAssemblyBegin(*jac, MAT_FLUSH_ASSEMBLY);
+    MatAssemblyEnd(*jac, MAT_FLUSH_ASSEMBLY);
+  }
+
+  if(this->connect_to_low_resistance_solderpad()) return;
+
+  //the indepedent variable number, 1 for each node
+  adtl::AutoDScalar::numdir = 1;
+  //synchronize with material database
+  mt->set_ad_num(adtl::AutoDScalar::numdir);
+
+  // we need a capacitor here for pseudo time step smoother.
+  const double sigma = this->get_conductance();
+
+  const_processor_node_iterator node_it = on_processor_nodes_begin();
+  const_processor_node_iterator node_it_end = on_processor_nodes_end();
+  for(; node_it!=node_it_end; ++node_it)
+  {
+    const FVM_Node * fvm_node = *node_it;
+
+    // C/T = \sigma*L, set T to 0.1ns
+    const double cap = sigma*pow(fvm_node->volume()*_z_width, 1.0/3.0)*SolverSpecify::PseudoTimeCMOSTime/_z_width/this->n_node();
+
+    const FVM_NodeData * node_data = fvm_node->node_data();
+    const unsigned int local_offset  = fvm_node->local_offset();
+    const unsigned int global_offset = fvm_node->global_offset();
+
+    AutoDScalar V(x[local_offset]);   V.setADValue(0, 1.0);              // psi
+    AutoDScalar f_V = -cap*(V-node_data->psi())/SolverSpecify::PseudoTimeStepMetal;
+
+    MatSetValue(*jac, global_offset, global_offset, f_V.getADValue(0), ADD_VALUES);
+  }
+
+  // the last operator is ADD_VALUES
+  add_value_flag = ADD_VALUES;
+}
+
+
+
+int MetalSimulationRegion::DDM2_Pseudo_Time_Step_Convergence_Test(PetscScalar * x)
+{
+
+  if(this->connect_to_low_resistance_solderpad()) return 0;
+
+  unsigned int unconvergend = 0;
+
+  const double sigma = this->get_conductance();
+  const_processor_node_iterator node_it = on_processor_nodes_begin();
+  const_processor_node_iterator node_it_end = on_processor_nodes_end();
+  for(; node_it!=node_it_end; ++node_it)
+  {
+    const FVM_Node * fvm_node = *node_it;
+
+    // C/T = \sigma*L, set T to 0.1ns
+    const double cap = sigma*pow(fvm_node->volume()*_z_width, 1.0/3.0)*SolverSpecify::PseudoTimeCMOSTime/_z_width/this->n_node();
+    const FVM_NodeData * node_data = fvm_node->node_data();
+    const unsigned int local_offset  = fvm_node->local_offset();
+
+    PetscScalar V   =  x[local_offset];                         // electrostatic potential
+    PetscScalar fV_abs = std::abs(-cap*(V-node_data->psi())/SolverSpecify::PseudoTimeStepMetal);
+    PetscScalar V_rel  = std::abs(cap*(V-node_data->psi()))/(std::abs(V) + std::abs(node_data->psi()) + 1e-10);
+    if( fV_abs > SolverSpecify::PseudoTimeTolRelax*0.5*(SolverSpecify::elec_continuity_abs_toler+SolverSpecify::hole_continuity_abs_toler) &&
+        V_rel > SolverSpecify::relative_toler)
+    {
+      unconvergend++;
+    }
+  }
+
+  return unconvergend;
+}
+
 
 
 void MetalSimulationRegion::DDM2_Update_Solution(PetscScalar *lxx)

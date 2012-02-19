@@ -33,7 +33,7 @@
 #include "physical_unit.h"
 #include "PMI.h"
 
-#ifdef CYGWIN
+#ifdef WINDOWS
   class HINSTANCE__; // Forward or never
   typedef HINSTANCE__* HINSTANCE;
 #endif
@@ -166,7 +166,7 @@ protected:
   /**
    * pointer to dynamic loaded library file
    */
-#ifdef CYGWIN
+#ifdef WINDOWS
   HINSTANCE                  dll_file;
 #else
   void                      *dll_file;

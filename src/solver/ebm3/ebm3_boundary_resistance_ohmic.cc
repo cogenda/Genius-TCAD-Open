@@ -61,7 +61,7 @@ void IF_Metal_OhmicBC::EBM3_Jacobian( PetscScalar * x, Mat *jac, InsertMode &add
 /*---------------------------------------------------------------------
  * do pre-process to jacobian matrix for EBM3 solver
  */
-void IF_Metal_OhmicBC::EBM3_Function_Preprocess(Vec f, std::vector<PetscInt> &src_row,  std::vector<PetscInt> &dst_row, std::vector<PetscInt> &clear_row)
+void IF_Metal_OhmicBC::EBM3_Function_Preprocess(PetscScalar *,Vec f, std::vector<PetscInt> &src_row,  std::vector<PetscInt> &dst_row, std::vector<PetscInt> &clear_row)
 {
 
   const SimulationRegion * semiconductor_region = bc_regions().first;
@@ -236,8 +236,8 @@ void IF_Metal_OhmicBC::_EBM3_Function_Infinite_Recombination ( PetscScalar * x, 
       PetscScalar Ev =  -(e*V_semiconductor + semiconductor_node_data->affinity() + Eg);
 
       // the quasi-fermi potential equals to electrode Vapp
-      PetscScalar phin = V_resistance + resistance_node_data->affinity();
-      PetscScalar phip = V_resistance + resistance_node_data->affinity();
+      PetscScalar phin = V_resistance + resistance_node_data->affinity()/e;
+      PetscScalar phip = V_resistance + resistance_node_data->affinity()/e;
 
       PetscScalar etan = (-e*phin-Ec)/kb/T_semiconductor;
       PetscScalar etap = (Ev+e*phip)/kb/T_semiconductor;
@@ -253,8 +253,8 @@ void IF_Metal_OhmicBC::_EBM3_Function_Infinite_Recombination ( PetscScalar * x, 
       PetscScalar f_psi =  V_semiconductor - kb*T_semiconductor/e*boost::math::asinh(semiconductor_node_data->Net_doping()/(2*nie))
                            + Eg/(2*e)
                            + kb*T_semiconductor*log(Nc/Nv)/(2*e)
-                           + semiconductor_node_data->affinity()
-                           - (V_resistance + resistance_node_data->affinity()) ;
+                           + semiconductor_node_data->affinity()/e
+                           - (V_resistance + resistance_node_data->affinity()/e) ;
       y.push_back(f_psi);
 
       PetscScalar  electron_density;
@@ -326,7 +326,7 @@ void IF_Metal_OhmicBC::_EBM3_Function_Infinite_Recombination ( PetscScalar * x, 
         // area of out surface of control volume related with neighbor node
         PetscScalar cv_boundary = semiconductor_node->cv_surface_area ( nb_node->root_node() );
         PetscScalar dEdt;
-        if ( SolverSpecify::TS_type==SolverSpecify::BDF2 && SolverSpecify::BDF2_restart==false ) //second order
+        if ( SolverSpecify::TS_type==SolverSpecify::BDF2 && SolverSpecify::BDF2_LowerOrder==false ) //second order
         {
           PetscScalar r = SolverSpecify::dt_last/ ( SolverSpecify::dt_last + SolverSpecify::dt );
           dEdt = ( ( 2-r ) / ( 1-r ) * ( V_semiconductor-V_nb )
@@ -399,7 +399,7 @@ void IF_Metal_OhmicBC::_EBM3_Function_Infinite_Recombination ( PetscScalar * x, 
 /*---------------------------------------------------------------------
  * do pre-process to jacobian matrix for EBM3 solver
  */
-void IF_Metal_OhmicBC::EBM3_Jacobian_Preprocess(Mat *jac, std::vector<PetscInt> &src_row,  std::vector<PetscInt> &dst_row, std::vector<PetscInt> &clear_row)
+void IF_Metal_OhmicBC::EBM3_Jacobian_Preprocess(PetscScalar * ,Mat *jac, std::vector<PetscInt> &src_row,  std::vector<PetscInt> &dst_row, std::vector<PetscInt> &clear_row)
 {
   const SimulationRegion * semiconductor_region = bc_regions().first;
   const SimulationRegion * metal_region = bc_regions().second;
@@ -639,8 +639,8 @@ void IF_Metal_OhmicBC::_EBM3_Jacobian_Infinite_Recombination ( PetscScalar * x, 
       AutoDScalar Ev =  -(e*V_semiconductor + semiconductor_node_data->affinity() + Eg);
 
       // the quasi-fermi potential equals to electrode Vapp
-      AutoDScalar phin = V_resistance + resistance_node_data->affinity();
-      AutoDScalar phip = V_resistance + resistance_node_data->affinity();
+      AutoDScalar phin = V_resistance + resistance_node_data->affinity()/e;
+      AutoDScalar phip = V_resistance + resistance_node_data->affinity()/e;
 
       AutoDScalar etan = (-e*phin-Ec)/kb/T_semiconductor;
       AutoDScalar etap = (Ev+e*phip)/kb/T_semiconductor;
@@ -655,8 +655,8 @@ void IF_Metal_OhmicBC::_EBM3_Jacobian_Infinite_Recombination ( PetscScalar * x, 
       f_phi = V_semiconductor - kb*T_semiconductor/e*adtl::asinh(semiconductor_node_data->Net_doping()/(2*nie))
               + Eg/(2*e)
               + kb*T_semiconductor*log(Nc/Nv)/(2*e)
-              + semiconductor_node_data->affinity()
-              - V_resistance + resistance_node_data->affinity();
+              + semiconductor_node_data->affinity()/e
+              - (V_resistance + resistance_node_data->affinity()/e);
 
       AutoDScalar  electron_density;
       AutoDScalar  hole_density;
@@ -728,7 +728,7 @@ void IF_Metal_OhmicBC::_EBM3_Jacobian_Infinite_Recombination ( PetscScalar * x, 
         // area of out surface of control volume related with neighbor node
         PetscScalar cv_boundary = semiconductor_node->cv_surface_area ( nb_node->root_node() );
         AutoDScalar dEdt;
-        if ( SolverSpecify::TS_type==SolverSpecify::BDF2 && SolverSpecify::BDF2_restart==false ) //second order
+        if ( SolverSpecify::TS_type==SolverSpecify::BDF2 && SolverSpecify::BDF2_LowerOrder==false ) //second order
         {
           PetscScalar r = SolverSpecify::dt_last/ ( SolverSpecify::dt_last + SolverSpecify::dt );
           dEdt = ( ( 2-r ) / ( 1-r ) * ( V_semiconductor-V_nb )

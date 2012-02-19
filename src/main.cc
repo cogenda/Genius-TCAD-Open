@@ -38,7 +38,7 @@
 
 
 
-#ifdef CYGWIN
+#ifdef WINDOWS
   #include <io.h>      // for windows _access function
 #else
   #include <unistd.h>  // for POSIX access function
@@ -46,7 +46,7 @@
 
 static void show_logo();
 
-#ifdef PETSC_VERSION_DEV
+#if PETSC_VERSION_GE(3,2,0)
 static PetscErrorCode genius_error_handler(MPI_Comm comm, int line, const char *func, const char *file, const char *dir,PetscErrorCode n, PetscErrorType p, const char *mess,void *ctx);
 #else
 static PetscErrorCode genius_error_handler(int line, const char *func, const char *file, const char *dir,PetscErrorCode n, int p, const char *mess,void *ctx);
@@ -96,18 +96,33 @@ int main(int argc, char ** args)
   }
   Genius::set_genius_dir(getenv("GENIUS_DIR"));
 
+  // performace log flag
+  PetscBool     log_flg;
+  PetscOptionsHasName(PETSC_NULL,"-p", &log_flg);
+  if(!log_flg)
+    perflog.disable_logging();
+
   // get the name of user input file by PETSC routine
-  PetscBool     flg;
-  char input_file[1024];
-  PetscOptionsGetString(PETSC_NULL, "-i", input_file, 1023, &flg);
-  // no input file? exit...
-  if( !flg )
   {
-    PetscPrintf(PETSC_COMM_WORLD,"ERROR: I want an input file to tell me what to do.\n");
-    PetscFinalize();
-    exit(0);
+    PetscBool     file_flg;
+    char *petsc_arg_buffer = new char[1024];
+    PetscOptionsGetString(PETSC_NULL, "-i", petsc_arg_buffer, 1023, &file_flg);
+    // no input file? exit...
+    if( !file_flg )
+    {
+      PetscPrintf(PETSC_COMM_WORLD,"ERROR: I want an input file to tell me what to do.\n");
+      PetscFinalize();
+      exit(0);
+    }
+    Genius::set_input_file(petsc_arg_buffer);
+    delete [] petsc_arg_buffer;
   }
-  Genius::set_input_file(input_file);
+
+  {
+    PetscBool     experiment_code_flg;
+    PetscOptionsHasName(PETSC_NULL,"-e", &experiment_code_flg);
+    if(experiment_code_flg) Genius::set_experiment_code(false);
+  }
 
   // prepare log system
   std::ofstream logfs;
@@ -120,10 +135,12 @@ int main(int argc, char ** args)
     genius_log.addStream("file", logfs.rdbuf());
   }
 
+  MESSAGE<<"Genius boot with " << Genius::n_processors() << " MPI thread.\n\n";  RECORD();
+
   // test if input file can be opened on processor 0 for read
   if ( Genius::processor_id() == 0 )
   {
-#ifdef CYGWIN
+#ifdef WINDOWS
     if ( _access( Genius::input_file(),  04 ) == -1 )
 #else
     if ( access( Genius::input_file(),  R_OK ) == -1 )
@@ -153,7 +170,7 @@ int main(int argc, char ** args)
   std::string pattern_file = Genius::genius_dir() +  "/lib/GeniusSyntax.xml";
 
   // test if pattern file can be open for read
-#ifdef CYGWIN
+#ifdef WINDOWS
   if ( _access( pattern_file.c_str(),  04 ) == -1 )
 #else
   if (  access( pattern_file.c_str(),  R_OK ) == -1 )
@@ -216,13 +233,25 @@ int main(int argc, char ** args)
   int    min = static_cast<int>(elapsed_time/60);
   double sec = elapsed_time - min*60;
   std::stringstream time_ss;
-  time_ss<<"Genius finished. Totol time is "
+  time_ss<<"Genius finished. Simulation time is "
   << min <<" min "
   << std::setiosflags(std::ios::fixed) <<  std::setprecision(3)
   << sec<<" second."
   <<" Good bye." << std::endl;
 
   MESSAGE<<time_ss.str(); RECORD();
+
+  // performace log
+  if(log_flg)
+  {
+    std::string perf_info = perflog.get_log();
+    std::vector<char> perf_info_char(perf_info.size());
+    std::copy(perf_info.begin(), perf_info.end(), perf_info_char.begin());
+    Parallel::allgather(perf_info_char);
+    perf_info_char.push_back(0);
+    perf_info = std::string(&perf_info_char[0]);
+    MESSAGE<<perf_info; RECORD();
+  }
 
   //finish log system
   if (Genius::processor_id() == 0)
@@ -289,7 +318,7 @@ void show_logo()
 }
 
 
-#ifdef PETSC_VERSION_DEV
+#if PETSC_VERSION_GE(3,2,0)
 PetscErrorCode genius_error_handler(MPI_Comm comm, int line, const char *func, const char *file, const char *dir,PetscErrorCode n, PetscErrorType p, const char *mess,void *ctx)
 #else
 PetscErrorCode genius_error_handler(int line, const char *func, const char *file, const char *dir,PetscErrorCode n, int p, const char *mess,void *ctx)

@@ -1,6 +1,7 @@
 __all__=['HTTPFrontEnd']
 
 from BaseHTTPServer import BaseHTTPRequestHandler, HTTPServer
+import SocketServer
 import re
 import os
 import socket
@@ -34,9 +35,11 @@ def findFreePort(begin, end):
 class GeniusRequest(BaseHTTPRequestHandler):
     server_version='GeniusHTTPService/0.1'
     def do_GET(self):
+        cur_thread = threading.current_thread()
         self.server.dispatcher.dispatch(self)
     
     def do_POST(self):
+        cur_thread = threading.current_thread()
         self.server.dispatcher.dispatch(self)
 
         
@@ -73,7 +76,7 @@ class Dispatcher:
             request.send_error(404)
 
 
-class HTTPFrontEnd(HTTPServer):
+class HTTPFrontEnd(SocketServer.ThreadingMixIn, HTTPServer):
     def __init__(self, GeniusCtrl, cmdQueue, serverName):
         self.GeniusCtrl = GeniusCtrl
         self.cmdQueue = cmdQueue
@@ -100,7 +103,7 @@ class HTTPFrontEnd(HTTPServer):
         map = [
                ('/status/log', self.doLog),
                ('/status(/(?P<cmd>quit|exit|reset|chdir|tmpdir))', self.doStatusCmd),
-               ('/status(/(?P<cmd>name|pwd|wait))?', self.doStatusQuery),
+               ('/status(/(?P<cmd>name|pwd|wait))?(\?(?P<arg>.*))?', self.doStatusQuery),
                ('/deck(/(?P<type>file|text))', self.doRunDeck),
                ('/solution', self.doSolution),
                ('/struct(/(?P<format>xml|text))', self.doStructQuery),
@@ -248,6 +251,7 @@ class HTTPFrontEnd(HTTPServer):
 
         if param.has_key('cmd'):
             cmd = param['cmd']
+            arg = param.get('arg', None)
 
             if cmd=='name':
                 request.send_response(200)
@@ -262,8 +266,18 @@ class HTTPFrontEnd(HTTPServer):
                 request.wfile.write(os.getcwd())
                 return
             elif cmd=='wait':
+                # /status/wait          timeout=0
+                # /status/wait?5        timeout=5
+                try:
+                    timeout = int(arg)
+                except:
+                    timeout = None
+
                 gCmd = self.cmdQueue.addCmd('nop')
-                gCmd.finished.wait()
+                gCmd.finished.wait(timeout)
+                while not gCmd.finished.is_set():
+                    request.send_response(100)
+                    gCmd.finished.wait(timeout)
                 request.send_response(200)
                 request.send_header('Content-Type', 'text/plain')
                 request.end_headers()

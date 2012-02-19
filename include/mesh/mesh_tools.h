@@ -111,6 +111,11 @@ namespace MeshTools
   Sphere  bounding_sphere (const MeshBase& mesh);
 
   /**
+   * merge two bounding sphere
+   */
+  Sphere  bounding_sphere (const Sphere& s1, const Sphere& s2);
+
+  /**
    * @returns two points defining a cartesian box that bounds the
    * elements belonging to processor pid.  If no processor id is specified
    * the bounding box for the whole mesh is returned.

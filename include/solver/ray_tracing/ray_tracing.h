@@ -37,6 +37,7 @@
 
 class ObjectTree;
 class LightThread;
+class LightLenses;
 
 /**
  * Ray tracing program  to calculate photogeneration carriers, which is
@@ -116,6 +117,22 @@ private:
    */
   double get_refractive_index_im(unsigned int sub_id) const
   {return _region_refractive_index.find(sub_id)->second.second;}
+
+
+  /**
+   * carrier density in each semiconductor elem
+   */
+  std::map<unsigned int, std::pair<double, double> > _elem_carrier_density;
+
+  /**
+   * build _elem_carrier_density
+   */
+  void build_elem_carrier_density();
+
+  /**
+   * @return free carrier absorption of given elem
+   */
+  double get_free_carrier_absorption(const Elem*, double) const;
 
   /**
    * record all the elements which contains this Node as its vertex
@@ -279,15 +296,31 @@ private:
   void create_rays();
 
   /**
+   * lenses system
+   */
+  LightLenses * _lenses;
+
+  /**
+   * create the llenses
+   */
+  void define_lenses();
+
+  /**
    * do ray tracing of a single ray
    */
   void ray_tracing(LightThread *);
 
   /**
    * save the energy deposit. for parallel simulation, we must gather this vector
-   * from all the processors (call Parallel::sum(_energy_deposit_in_elem))
+   * from all the processors (call Parallel::sum(_band_absorption_energy_in_elem))
    */
-  std::vector<double> _energy_deposit_in_elem;
+  std::vector<double> _band_absorption_energy_in_elem;
+
+  /**
+   * save the energy deposit. for parallel simulation, we must gather this vector
+   * from all the processors (call Parallel::sum(_total_absorption_energy_in_elem))
+   */
+  std::vector<double> _total_absorption_energy_in_elem;
 
   /**
    * convert energy to optical Generation

@@ -90,5 +90,10 @@ if __name__=='__main__':
         envpath = os.environ['PATH']
         envpath+=';'+selfdir
         os.environ['PATH']=envpath
+    else:
+        sys.stdin.close()
+        try: os.close(0)
+        except OSError: pass
 
     main()
+

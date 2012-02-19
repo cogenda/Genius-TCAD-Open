@@ -155,8 +155,8 @@ void IF_Metal_OhmicBC::DDMAC_Fill_Matrix_Vector( Mat A, Vec b, const Mat J, cons
       AutoDScalar Ev =  -(e*V + semiconductor_node_data->affinity() + Eg);
 
       // the quasi-fermi potential equals to electrode Vapp
-      AutoDScalar phin = V_resistance + resistance_node_data->affinity();
-      AutoDScalar phip = V_resistance + resistance_node_data->affinity();
+      AutoDScalar phin = V_resistance + resistance_node_data->affinity()/e;
+      AutoDScalar phip = V_resistance + resistance_node_data->affinity()/e;
 
       AutoDScalar etan = (-e*phin-Ec)/kb/T;
       AutoDScalar etap = (Ev+e*phip)/kb/T;
@@ -171,8 +171,8 @@ void IF_Metal_OhmicBC::DDMAC_Fill_Matrix_Vector( Mat A, Vec b, const Mat J, cons
       ff1 = V - kb*T/e*adtl::asinh(semiconductor_node_data->Net_doping()/(2*nie))
             + Eg/(2*e)
             + kb*T*log(Nc/Nv)/(2*e)
-            + semiconductor_node_data->affinity()
-            - V_resistance + resistance_node_data->affinity();
+            + semiconductor_node_data->affinity()/e
+            - (V_resistance + resistance_node_data->affinity()/e);
 
       AutoDScalar  electron_density;
       AutoDScalar  hole_density;

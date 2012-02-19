@@ -67,6 +67,11 @@ void GDMLIO::write_gdml_surface (const std::string& filename)
     double x_len = (bbox.second.x() - bbox.first.x())/um;
     double y_len = (bbox.second.y() - bbox.first.y())/um;
     double z_len = (bbox.second.z() - bbox.first.z())/um;
+    //Point center(x_c, y_c, z_c);
+
+    x_len = 2*(std::abs(x_c) + x_len);
+    y_len = 2*(std::abs(y_c) + y_len);
+    z_len = 2*(std::abs(z_c) + z_len);
 
     //pick boundary nodes, write into define/position
     std::vector<unsigned int>       el;
@@ -89,6 +94,7 @@ void GDMLIO::write_gdml_surface (const std::string& filename)
 
     for(std::set<const Node *>::iterator it=_boundary_nodes.begin(); it!=_boundary_nodes.end(); ++it)
       {
+        //Point p((*it)->x()/um, (*it)->y()/um, (*it)->z()/um);
         _out << "  <position name=\"v" << (*it)->id() << "\" unit=\"micron\" "
         << "x=\"" << (*it)->x()/um <<"\" "
         << "y=\"" << (*it)->y()/um <<"\" "
@@ -101,6 +107,8 @@ void GDMLIO::write_gdml_surface (const std::string& filename)
     << "y=\"" << y_c << "\" "
     << "z=\"" << z_c << "\" "
     << "unit=\"micron\"/>" <<std::endl;
+
+
 
     // end defind section
     _out << "</define>" << std::endl << std::endl;
@@ -125,14 +133,44 @@ void GDMLIO::write_gdml_surface (const std::string& filename)
       }
     }
     // two atoms for Air
-    atom_refs.insert("Nitrogen");
-    atom_refs.insert("Oxygen");
+    atom_refs.insert("N"); // Nitrogen
+    atom_refs.insert("O"); // Oxygen
 
     // write all the atoms
     for(std::set<std::string>::iterator it=atom_refs.begin(); it!=atom_refs.end(); ++it)
       {
-        std::map<std::string, Atom>::iterator atom_it = _atoms.find(*it);
-        write_gdml_element(atom_it->first);
+        std::map<std::string, Atom>::const_iterator atom_it = _atoms.find(*it);
+
+        const std::string name = atom_it->second.name;
+        const std::string formula = atom_it->second.formula;
+        int Z = atom_it->second.Z;
+        double atom_value = atom_it->second.atom_value;
+
+        // if this element has isotope
+        if(atom_it->second.isotope_info.size())
+        {
+          for(unsigned int n=0; n<atom_it->second.isotope_info.size(); ++n)
+          {
+            const Atom::Isotope & isotope =  atom_it->second.isotope_info[n];
+            _out << "  <isotope name=\"" << isotope.isotope_name <<"\" Z=\"" << Z <<"\" N=\"" << isotope.nucleons <<"\">" << std::endl;
+            _out << "    <atom type=\"A\" value=\"" << isotope.atom_value << "\"/>" << std::endl;
+            _out << "  </isotope>" <<std::endl;
+          }
+
+          _out << "  <element name=\"" << name <<"\" >" <<std::endl;
+          for(unsigned int n=0; n<atom_it->second.isotope_info.size(); ++n)
+          {
+            const Atom::Isotope & isotope =  atom_it->second.isotope_info[n];
+            _out << "    <fraction ref=\"" << isotope.isotope_name <<"\" n=\"" << isotope.fraction <<"\" />" <<std::endl;
+          }
+          _out << "  </element>" <<std::endl;
+        }
+        else
+        {
+          _out << "  <element name=\"" << name << "\" formula=\"" << formula <<"\" Z=\"" << Z << "\">" <<std::endl;
+          _out << "  <atom value=\"" << atom_value <<"\" />" << std::endl;
+          _out << "  </element>" <<std::endl;
+        }
       }
 
     // write all the materials
@@ -151,21 +189,20 @@ void GDMLIO::write_gdml_surface (const std::string& filename)
       for(unsigned int n=0; n<atoms.size(); ++n)
       {
         const std::string & atom_name = atoms[n];
-        genius_assert(_atoms.find(atom_name)!=_atoms.end());
-        molecule_value += fraction[n]*_atoms[atom_name].atom_value;
+        molecule_value += fraction[n]*atom_value(atom_name);
       }
 
       for(unsigned int n=0; n<atoms.size(); ++n)
       {
         const std::string & atom_name = atoms[n];
-        _out << "  <fraction n=\""<< fraction[n]*_atoms[atom_name].atom_value/molecule_value <<"\" ref=\"" << atom_name <<"\" />" <<std::endl;
+        _out << "  <fraction n=\""<< fraction[n]*atom_value(atom_name)/molecule_value <<"\" ref=\"" << atom_name <<"\" />" <<std::endl;
       }
 
       _out << "  </material> " <<std::endl;
     }
 
     // write material "air", for volume "Word"
-    _out << "  <material formula=\" \" name=\"air\" >" <<std::endl;
+    _out << "  <material formula=\"Air\" name=\"air\" >" <<std::endl;
     _out << "  <D value=\"1.290\" unit=\"mg/cm3\"/>" <<std::endl;
     _out << "  <fraction n=\"0.7\" ref=\"Nitrogen\" />" <<std::endl;
     _out << "  <fraction n=\"0.3\" ref=\"Oxygen\" />" <<std::endl;
@@ -182,7 +219,7 @@ void GDMLIO::write_gdml_surface (const std::string& filename)
     {
       const SimulationRegion * region = system.region(r);
 
-      _out << "  <tessellated name=\"Region_" << region->name() << "\">" << std::endl;
+      _out << "  <tessellated name=\"Solid_" << region->name() << "\">" << std::endl;
 
       for(unsigned int n=0; n<sl.size(); n++)
       {
@@ -191,20 +228,11 @@ void GDMLIO::write_gdml_surface (const std::string& filename)
 
         AutoPtr<Elem> boundary_side = elem->build_side(sl[n]);
 
-        /*
-        Point p1 = *boundary_side->get_node(0);
-        Point p2 = *boundary_side->get_node(1);
-        Point p3 = *boundary_side->get_node(2);
-        Point cross = ((p2 - p1).cross(p3 - p2)).unit();
-        Point norm = elem->outside_unit_normal(sl[n]);
-        genius_assert( norm*cross > 0 );
-        */
-
         switch(boundary_side->type())
         {
             case TRI3      :
             case TRI3_FVM  :
-            _out << "  <triangular   "
+            _out << "    <triangular   "
             << "vertex1=\"v" << boundary_side->get_node(0)->id()<<"\" "
             << "vertex2=\"v" << boundary_side->get_node(1)->id()<<"\" "
             << "vertex3=\"v" << boundary_side->get_node(2)->id()<<"\" "
@@ -212,7 +240,7 @@ void GDMLIO::write_gdml_surface (const std::string& filename)
             break;
             case QUAD4 :
             case QUAD4_FVM :
-            _out << "  <quadrangular "
+            _out << "    <quadrangular "
             << "vertex1=\"v" << boundary_side->get_node(0)->id()<<"\" "
             << "vertex2=\"v" << boundary_side->get_node(1)->id()<<"\" "
             << "vertex3=\"v" << boundary_side->get_node(2)->id()<<"\" "
@@ -230,12 +258,13 @@ void GDMLIO::write_gdml_surface (const std::string& filename)
       _out << "  </tessellated>" << std::endl;
     }
 
-    //write solid world, 2*bbox
+    //write solid world
     _out << "  <box name=\"world\" "
-    << "x=\"" << 2*x_len <<"\" "
-    << "y=\"" << 2*y_len <<"\" "
-    << "z=\"" << 2*z_len <<"\" "
-    << "lunit=\"micron\" />" <<std::endl;
+         << "x=\"" << x_len <<"\" "
+         << "y=\"" << y_len <<"\" "
+         << "z=\"" << z_len <<"\" "
+         << "lunit=\"micron\" />" <<std::endl;
+
 
     //end solids section
     _out << "</solids>" << std::endl << std::endl;
@@ -248,21 +277,21 @@ void GDMLIO::write_gdml_surface (const std::string& filename)
     {
       const SimulationRegion * region = system.region(r);
 
-      _out << "  <volume name=\"Volume_" << region->name() << "\">" << std::endl;
-      _out << "  <materialref ref=\"" << region->name() + "_" + region->material() <<"\"/>" << std::endl;
-      _out << "  <solidref ref=\"Region_" << region->name() <<"\"/>" << std::endl;
+      _out << "  <volume name=\"" << region->name() << "\">" << std::endl;
+      _out << "    <materialref ref=\"" << region->name() + "_" + region->material() <<"\"/>" << std::endl;
+      _out << "    <solidref ref=\"Solid_" << region->name() <<"\"/>" << std::endl;
       _out << "  </volume>" << std::endl;
     }
 
     _out << "  <volume name=\"World\" >" << std::endl;
-    _out << "  <materialref ref=\"air\"/>" << std::endl;
-    _out << "  <solidref ref=\"world\"/>" << std::endl;
+    _out << "    <materialref ref=\"air\"/>" << std::endl;
+    _out << "    <solidref ref=\"world\"/>" << std::endl;
 
     for( unsigned int r=0; r<system.n_regions(); r++)
     {
       const SimulationRegion * region = system.region(r);
       _out << "    <physvol>" << std::endl;
-      _out << "       <volumeref ref=\"Volume_" << region->name() << "\"/>" << std::endl;
+      _out << "       <volumeref ref=\"" << region->name() << "\"/>" << std::endl;
       _out << "    </physvol>" << std::endl;
     }
     _out << "  </volume>" << std::endl;
@@ -749,76 +778,63 @@ void GDMLIO::cell_average_doping(const Elem *elem, double &doping_Na, double &do
 }
 
 
-void GDMLIO::write_gdml_element(const std::string &name)
-{
-  std::map<std::string, Atom>::const_iterator atom_it = _atoms.find(name);
-
-  const std::string formula = atom_it->second.formula;
-  int Z = atom_it->second.Z;
-  double atom_value = atom_it->second.atom_value;
-
-  // if this element has isotope
-  if(atom_it->second.isotope_info.size())
-  {
-    for(unsigned int n=0; n<atom_it->second.isotope_info.size(); ++n)
-    {
-      const Atom::Isotope & isotope =  atom_it->second.isotope_info[n];
-      _out << "  <isotope name=\"" << isotope.isotope_name <<"\" Z=\"" << Z <<"\" N=\"" << isotope.nucleons <<"\">" << std::endl;
-      _out << "    <atom type=\"A\" value=\"" << isotope.atom_value << "\"/>" << std::endl;
-      _out << "  </isotope>" <<std::endl;
-    }
-
-    _out << "  <element name=\"" << name <<"\" >" <<std::endl;
-    for(unsigned int n=0; n<atom_it->second.isotope_info.size(); ++n)
-    {
-      const Atom::Isotope & isotope =  atom_it->second.isotope_info[n];
-      _out << "    <fraction ref=\"" << isotope.isotope_name <<"\" n=\"" << isotope.fraction <<"\" />" <<std::endl;
-    }
-    _out << "  </element>" <<std::endl;
-  }
-  else
-  {
-    _out << "  <element name=\"" << name << "\" formula=\"" << formula <<"\" Z=\"" << Z << "\">" <<std::endl;
-    _out << "  <atom value=\"" << atom_value <<"\" />" << std::endl;
-    _out << "  </element>" <<std::endl;
-  }
-}
-
 
 
 void GDMLIO::set_atoms()
 {
   _atoms.clear();
 
-  _atoms["Hydrogen"  ] = Atom("Hydrogen", "H", 1, 1.00797);
+  _atoms["H"  ] = Atom("Hydrogen", "H", 1, 1.00797);
 
-  _atoms["Boron"     ] = Atom("Boron",    "B", 5, 10.811);
-  _atoms["Boron"     ].add_isotope("B10", 10, 10.0, 0.199);
-  _atoms["Boron"     ].add_isotope("B11", 11, 11.0, 0.801);
+  _atoms["B"  ] = Atom("Boron",    "B", 5, 10.811);
+  _atoms["B"  ].add_isotope("B10", 10, 10.0, 0.199);
+  _atoms["B"  ].add_isotope("B11", 11, 11.0, 0.801);
 
-  _atoms["Carbon"    ] = Atom("Carbon",   "C", 6, 12.01115);
-  _atoms["Nitrogen"  ] = Atom("Nitrogen", "N", 7, 14.01);
-  _atoms["Oxygen"    ] = Atom("Oxygen",   "O", 8, 16.0);
+  _atoms["C"  ] = Atom("Carbon",   "C", 6, 12.01115);
+  _atoms["N"  ] = Atom("Nitrogen", "N", 7, 14.01);
+  _atoms["O"  ] = Atom("Oxygen",   "O", 8, 16.0);
+  _atoms["F"  ] = Atom("Fluorine", "F", 9, 18.998);
 
-  _atoms["Aluminum"  ] = Atom("Aluminum",   "Al", 13, 26.98);
-  _atoms["Silicon"   ] = Atom("Silicon",    "Si", 14, 28.086);
-  _atoms["Phosphorus"] = Atom("Phosphorus", "P",  15, 30.9738);
+  _atoms["Al" ] = Atom("Aluminum",   "Al", 13, 26.98);
+  _atoms["Si" ] = Atom("Silicon",    "Si", 14, 28.086);
+  _atoms["P"  ] = Atom("Phosphorus", "P",  15, 30.9738);
 
-  _atoms["Titanium"  ] = Atom("Titanium",  "Tl", 22, 47.9);
-  _atoms["Copper"    ] = Atom("Copper",    "Cu", 29, 63.54);
-  _atoms["Gallium"   ] = Atom("Gallium",   "Ga", 31, 69.72);
-  _atoms["Germanium" ] = Atom("Germanium", "Ge", 32, 72.59);
-  _atoms["Arsenic"   ] = Atom("Arsenic",   "As", 33, 74.922);
-  _atoms["Silver"    ] = Atom("Silver",    "Ag", 47, 107.87);
-  _atoms["Cadmium"   ] = Atom("Cadmium",   "Cd", 48, 112.40);
-  _atoms["Indium"    ] = Atom("Indium",    "In", 49, 114.82);
-  _atoms["Antimony"  ] = Atom("Antimony",  "Sb", 51, 121.75);
-  _atoms["Tellurium" ] = Atom("Tellurium", "Te", 52, 127.6);
+  _atoms["Ti" ] = Atom("Titanium",  "Ti", 22, 47.9);
+  _atoms["Ni" ] = Atom("Nickle",    "Ni", 28, 58.69);
+  _atoms["Cu" ] = Atom("Copper",    "Cu", 29, 63.54);
+  _atoms["Ga" ] = Atom("Gallium",   "Ga", 31, 69.72);
+  _atoms["Ge" ] = Atom("Germanium", "Ge", 32, 72.59);
+  _atoms["As" ] = Atom("Arsenic",   "As", 33, 74.922);
+  _atoms["Ag" ] = Atom("Silver",    "Ag", 47, 107.87);
+  _atoms["Cd" ] = Atom("Cadmium",   "Cd", 48, 112.40);
+  _atoms["In" ] = Atom("Indium",    "In", 49, 114.82);
+  _atoms["Sn" ] = Atom("Tin",       "Sn", 50, 118.71);
+  _atoms["Sb" ] = Atom("Antimony",  "Sb", 51, 121.75);
+  _atoms["Te" ] = Atom("Tellurium", "Te", 52, 127.6);
 
-  _atoms["Hafnium"   ] = Atom("Hafnium",   "Hf", 72, 178.49);
-  _atoms["Gold"      ] = Atom("Gold",      "Au", 79, 196.97);
-  _atoms["Mercury"   ] = Atom("Mercury",   "Hg", 80, 200.59);
+  _atoms["Hf" ] = Atom("Hafnium",   "Hf", 72, 178.49);
+  _atoms["Ta" ] = Atom("Tantalum",  "Ta", 73, 180.95);
+  _atoms["W"  ] = Atom("Wolfram",   "W",  74, 183.85);
+  _atoms["Au" ] = Atom("Gold",      "Au", 79, 196.97);
+  _atoms["Hg" ] = Atom("Mercury",   "Hg", 80, 200.59);
+  _atoms["Pb" ] = Atom("Lead",      "Pb", 82, 207.2);
 
 }
 
+
+double GDMLIO::atom_value(const std::string &name)
+{
+  if( _atoms.find(name) != _atoms.end() )
+    return _atoms.find(name)->second.atom_value;
+  else
+  {
+    for(std::map<std::string, Atom>::const_iterator it = _atoms.begin(); it!=_atoms.end(); ++it)
+    {
+      if( it->second.name == name )
+        return it->second.atom_value;
+    }
+  }
+
+  return 1.0;
+}
 

@@ -30,11 +30,12 @@
 // Local includes
 #include "mesh_base.h"
 #include "metis_partitioner.h" // for default partitioning
+//#include "parmetis_partitioner.h" // for parallel partitioning
 #include "elem.h"
 #include "boundary_info.h"
 #include "point_locator_base.h"
 #include "surface_locator_hub.h"
-
+#include "perf_log.h"
 
 // ------------------------------------------------------------
 // MeshBase class member functions
@@ -44,6 +45,7 @@ MeshBase::MeshBase (unsigned int d) :
     _n_sbd          (1),
     _n_parts        (1),
     _dim            (d),
+    _mesh_dim       (0),
     _is_prepared    (false),
     _point_locator  (NULL),
     _surface_locator(NULL)
@@ -60,6 +62,7 @@ MeshBase::MeshBase (const MeshBase& other_mesh) :
     _n_sbd          (other_mesh._n_sbd),
     _n_parts        (other_mesh._n_parts),
     _dim            (other_mesh._dim),
+    _mesh_dim       (other_mesh._mesh_dim),
     _is_prepared    (other_mesh._is_prepared),
     _point_locator  (NULL),
     _surface_locator(NULL)
@@ -77,6 +80,8 @@ MeshBase::~MeshBase()
 
 void MeshBase::prepare_for_use (const bool skip_renumber_nodes_and_elements)
 {
+  this->count_mesh_dimension();
+
   // Renumber the nodes and elements so that they in contiguous
   // blocks.  By default, skip_renumber_nodes_and_elements is false,
   // however we may skip this step by passing
@@ -109,6 +114,18 @@ void MeshBase::prepare_for_use (const bool skip_renumber_nodes_and_elements)
 }
 
 
+void MeshBase::count_mesh_dimension()
+{
+  const_element_iterator       el  = this->elements_begin();
+  const const_element_iterator end = this->elements_end();
+
+  for (; el!=end; ++el)
+    _mesh_dim = std::max(_mesh_dim, (*el)->dim());
+
+  //Parallel::max(_mesh_dim);
+}
+
+
 
 unsigned int MeshBase::n_active_elem () const
 {
@@ -135,6 +152,9 @@ void MeshBase::clear ()
 
   // Reset the number of partitions
   _n_parts = 1;
+
+  // clear _mesh_dim
+  _mesh_dim = 0;
 
   // Reset the _is_prepared flag
   _is_prepared = false;
@@ -274,8 +294,23 @@ std::ostream& operator << (std::ostream& os, const MeshBase& m)
 
 void MeshBase::partition (const unsigned int n_parts)
 {
+  START_LOG("partition()", "Mesh");
+
+//#ifdef PETSC_HAVE_PARMETIS
+//  ParmetisPartitioner partitioner;
+//  partitioner.partition (*this, n_parts);
+//#else
+//  MetisPartitioner partitioner;
+//  partitioner.partition (*this, n_parts);
+//#endif
+
+  std::vector<std::vector<unsigned int> > cluster;
+  this->partition_cluster(cluster);
+
   MetisPartitioner partitioner;
-  partitioner.partition (*this, n_parts);
+  partitioner.partition (*this, &cluster, n_parts);
+
+  STOP_LOG("partition()", "Mesh");
 }
 
 

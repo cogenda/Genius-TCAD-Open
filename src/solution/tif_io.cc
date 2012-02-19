@@ -82,8 +82,8 @@ void TIFIO::read (const std::string& filename)
     }
 
     // map bc_index to bc label
-    std::map<const std::string, short int> bd_map;
-    typedef std::map<const std::string, short int>::iterator Bd_It;
+    std::map<std::string, std::pair<short int, bool> > bd_map;
+    typedef std::map<std::string, std::pair<short int, bool> >::iterator Bd_It;
 
 
     // fill region label and region material
@@ -102,7 +102,7 @@ void TIFIO::read (const std::string& filename)
         edge.bc_index = r;
       }
 
-      bd_map[(*tif_region_it).name + "_Neumann"] = r;
+      bd_map[(*tif_region_it).name + "_Neumann"] = std::make_pair(r, false);
     }
 
     // process explicit defined boundarys. assign bc_index to these boundary edges
@@ -119,7 +119,7 @@ void TIFIO::read (const std::string& filename)
       for(unsigned int i=0; i<(*tif_interface_it).boundary.size(); ++i)
         TIF::edge_array[ (*tif_interface_it).boundary[i] ].bc_index = bc_index;
 
-      bd_map[(*tif_interface_it).name] = bc_index;
+      bd_map[(*tif_interface_it).name] = std::make_pair(bc_index, true);
     }
 
 
@@ -234,12 +234,12 @@ void TIFIO::read (const std::string& filename)
 
         // if the label already exist
         if( bd_map.find(bd_label) != bd_map.end() )
-          bd_index = (*bd_map.find(bd_label)).second;
+          bd_index = (*bd_map.find(bd_label)).second.first;
         else
         {
           //else, increase bd_index, insert it into bd_map
           bd_index = sbd_id + 1;
-          bd_map.insert(std::pair<const std::string, short int>(bd_label,bd_index));
+          bd_map[bd_label] = std::make_pair(bd_index, false);
         }
 
         // add pair-element to boundary with new bd_index
@@ -281,12 +281,12 @@ void TIFIO::read (const std::string& filename)
 
         // if the label already exist
         if( bd_map.find(bd_label) != bd_map.end() )
-          bd_index = (*bd_map.find(bd_label)).second;
+          bd_index = (*bd_map.find(bd_label)).second.first;
         else
         {
           //else, increase bd_index, insert it into bd_map
           bd_index = TIF::interface_array.size() + TIF::region_array.size() + bd_map.size() + 1;
-          bd_map.insert(std::pair<const std::string, short int>(bd_label,bd_index));
+          bd_map[bd_label] = std::make_pair(bd_index, false);
         }
 
         // add pair-element to boundary with new bd_index
@@ -305,7 +305,7 @@ void TIFIO::read (const std::string& filename)
     Bd_It bd_it = bd_map.begin();
     for(; bd_it != bd_map.end(); ++bd_it)
     {
-      mesh.boundary_info->set_label_to_id( (*bd_it).second, (*bd_it).first );
+      mesh.boundary_info->set_label_to_id( (*bd_it).second.first, (*bd_it).first, (*bd_it).second.second );
     }
 
     // magic number, for 2D mesh, should < 2008
@@ -462,13 +462,14 @@ void TIFIO::read (const std::string& filename)
             }
           }
         }
-
+#if 0
         // after import previous solutions, we re-init region here
         if(psi!=invalid_uint && elec_density!=invalid_uint && hole_density!=invalid_uint )
           region->reinit_after_import();
         else // or we have to set initial value to semiconductor node
           region->init(system.T_external());
-
+#endif
+        region->init(system.T_external());
         break;
       }
     case InsulatorRegion     :
@@ -502,12 +503,13 @@ void TIFIO::read (const std::string& filename)
               node_data->T()   = system.T_external();
           }
         }
-
+#if 0
         if(psi!=invalid_uint)
           region->reinit_after_import();
         else
           region->init(system.T_external());
-
+#endif
+        region->init(system.T_external());
         break;
       }
     case ElectrodeRegion     :
@@ -541,12 +543,13 @@ void TIFIO::read (const std::string& filename)
               node_data->T()   = system.T_external();
           }
         }
-
+#if 0
         if(psi!=invalid_uint)
           region->reinit_after_import();
         else
           region->init(system.T_external());
-
+#endif
+        region->init(system.T_external());
         break;
       }
     case MetalRegion     :
@@ -580,12 +583,13 @@ void TIFIO::read (const std::string& filename)
               node_data->T()   = system.T_external();
           }
         }
-
+#if 0
         if(psi!=invalid_uint)
           region->reinit_after_import();
         else
           region->init(system.T_external());
-
+#endif
+        region->init(system.T_external());
         break;
       }
     case VacuumRegion     :
@@ -601,6 +605,8 @@ void TIFIO::read (const std::string& filename)
     default: genius_error();
     }
   }
+
+  system.init_region_post_process();
 
   // we can free TIF data now
   TIF::clear();

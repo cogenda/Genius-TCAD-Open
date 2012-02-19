@@ -95,7 +95,7 @@ void ANNSession::broadcast(unsigned int root)
 
 void ANNSession::setup()
 {
-  assert(_tree_built==false);
+  if(_tree_built) return;
   assert(_kdTree==NULL);
 
   _databuf = new ANNcoord[_dim*_pts.size()];
@@ -173,32 +173,42 @@ void Interpolation3D_nbtet::clear()
 void Interpolation3D_nbtet::broadcast(unsigned int root)
 {
   _ann.broadcast(root);
-  Parallel::broadcast(_field, root);
+
+  std::vector<int> groups;
+  std::map<int, std::vector<double> >::iterator it=_field.begin();
+  for(; it!=_field.end(); ++it)
+    groups.push_back(it->first);
+  Parallel::broadcast(groups, root);
+
+  for(unsigned int n=0; n<groups.size(); ++n)
+  {
+    std::vector<double> & limits = _field[groups[n]];
+    Parallel::broadcast(limits, root);
+  }
 }
 
 void Interpolation3D_nbtet::add_scatter_data(const Point & pt, int group, double value)
 {
-  assert(group==0); // we currently support 1 group only
   _ann.addPoint(pt);
 
   InterpolationType type = _interpolation_type[group];
-  _field.push_back(scaleValue(type, value));
+  _field[group].push_back(scaleValue(type, value));
 }
 
 void Interpolation3D_nbtet::setup(int group)
 {
-  assert(group==0);
   _ann.setup();
 }
 
 double Interpolation3D_nbtet::get_interpolated_value(const Point & pt, int group) const
 {
-  assert(group==0); // we currently support 1 group only
-
   double toler;
   unsigned int maxpt = 20;
   int ia, ib, ic, id;
   Point tetp[4];
+
+  assert(_field.find(group)!=_field.end());
+  const std::vector<double> & field = _field.find(group)->second;
   ANNResultType ann_res = _ann.search(pt,maxpt);
 
   assert(ann_res.size()==maxpt);
@@ -282,7 +292,7 @@ double Interpolation3D_nbtet::get_interpolated_value(const Point & pt, int group
           // in the first pass, we require strictly that the point is in the tetrahedron
           if (vol_a>=0 && vol_b>=0 && vol_c>=0 && vol_d>=0)
           {
-            return unscaleValue(type, (vol_a*_field[ia] + vol_b*_field[ib] + vol_c*_field[ic] + vol_d*_field[id])/vol);
+            return unscaleValue(type, (vol_a*field[ia] + vol_b*field[ib] + vol_c*field[ic] + vol_d*field[id])/vol);
           }
         }
         else
@@ -291,7 +301,7 @@ double Interpolation3D_nbtet::get_interpolated_value(const Point & pt, int group
           double extrap_tol = -1e-2*vol;
           if (vol_a>extrap_tol && vol_b>extrap_tol && vol_c>extrap_tol && vol_d>extrap_tol)
           {
-            return unscaleValue(type, (vol_a*_field[ia] + vol_b*_field[ib] + vol_c*_field[ic] + vol_d*_field[id])/vol);
+            return unscaleValue(type, (vol_a*field[ia] + vol_b*field[ib] + vol_c*field[ic] + vol_d*field[id])/vol);
           }
         }
       }
@@ -300,7 +310,7 @@ double Interpolation3D_nbtet::get_interpolated_value(const Point & pt, int group
   if((pt-tetp[0]).size()<1e10) // FIXME: should have a more reasonable threshold here.
   {
     //MESSAGE << "Interpolation: warning: using nearest data point at line " << ia << std::endl; RECORD();
-    return unscaleValue(type, _field[ia]);
+    return unscaleValue(type, field[ia]);
   }
   else
   {
