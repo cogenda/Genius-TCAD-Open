@@ -81,6 +81,37 @@ void FVM_Node::set_ghost_node_area(unsigned int sub_id, Real area)
 }
 
 
+
+Real FVM_Node::total_cv_surface_area() const
+{
+  Real total_surface_area = 0.0;
+  std::map< const Node *, Real >::const_iterator cv_it = _cv_surface_area.begin();
+  for(; cv_it != _cv_surface_area.end(); ++cv_it)
+  {
+    total_surface_area += cv_it->second;
+  }
+  return total_surface_area;
+}
+
+
+void FVM_Node::truncate_cv_surface_area()
+{
+  std::map< const Node *, Real >::iterator cv_it = _cv_surface_area.begin();
+  for(; cv_it != _cv_surface_area.end(); ++cv_it)
+  {
+    if(cv_it->second < 0.0)
+    {
+      Real cv = std::abs(cv_it->second);
+      // force to positive
+      cv_it->second = cv;
+      // also update my neighbor
+      FVM_Node * neighbor_fvm_node = _node_neighbor.find(cv_it->first)->second;
+      neighbor_fvm_node->_cv_surface_area.find(_node)->second = cv;
+    }
+  }
+}
+
+
 bool FVM_Node::on_boundary() const
 {
   genius_error();
@@ -128,7 +159,7 @@ Real FVM_Node::laplace_unit() const
     r+= it->second/this->distance(node);
   }
 
-  return r;
+  return r/this->volume();
 }
 
 
@@ -143,7 +174,7 @@ Real FVM_Node::sup_laplace_unit() const
     r+= std::abs(it->second)/this->distance(node);
   }
 
-  return r;
+  return r/this->volume();
 }
 
 
@@ -523,3 +554,16 @@ void FVM_Node::operator += (const FVM_Node &other_node)
   }
 
 }
+
+
+void FVM_Node::print(std::ostream& os) const
+{
+  os << "FVM_Node id " << this->root_node()->id() << ", region " << _subdomain_id << ", volume " << this->volume() << std::endl;
+  std::map< const Node *, Real >::const_iterator cv_it = _cv_surface_area.begin();
+  for(; cv_it != _cv_surface_area.end(); ++cv_it)
+  {
+    os << "  Neighbor " << cv_it->first->id() << ", surface area " << cv_it->second << std::endl;
+  }
+  os << "Total surface area " << this->total_cv_surface_area() << std::endl;
+}
+

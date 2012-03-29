@@ -93,12 +93,19 @@ public:
   /**
    * set the effect waveform
    */
-  void set_effect_waveform(const std::string & str)
+  bool set_effect_waveform(const std::string & str)
   {
     if(_waveforms.find(str)!=_waveforms.end())
+    {
       current_waveform = _waveforms[str];
+      return true;
+    }
     else
+    {
       current_waveform = 0;
+      return false;
+    }
+    return false;
   }
 
 private:

@@ -239,8 +239,26 @@ void SimulationSystem::reinit_region_after_import()
 void SimulationSystem::init_region_post_process()
 {
   if( this->empty() ) return;
+#if 0
+  // check fvm cell quality
+  std::vector<Real> region_cell_quality;
+  for(unsigned int r=0; r<_simulation_regions.size(); r++)
+    region_cell_quality.push_back(_simulation_regions[r]->fvm_cell_quality());
+  Parallel::min(region_cell_quality);
 
-  // apply field source to system again
+  for(unsigned int r=0; r<_simulation_regions.size(); r++)
+  {
+    Real fvm_cell_quality = region_cell_quality[r];
+    std::string region = _simulation_regions[r]->name();
+    if(fvm_cell_quality < 1e-4)
+    {
+      MESSAGE << "Warning: Voronoi cell quality " << fvm_cell_quality << " (the ratio of min/max surface area) of region " << region << " is poor. "
+          << "It may cause inaccurate result or even convergence difficults. Try to improve mesh quality if possible!" << std::endl<< std::endl;
+      RECORD();
+    }
+  }
+#endif
+  // apply field source to system
   _field_source->update_system();
 }
 

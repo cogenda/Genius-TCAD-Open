@@ -381,7 +381,7 @@ void PoissonSolver::build_petsc_sens_jacobian(Vec x, Mat *, Mat *)
 
   STOP_LOG("Poissin_Jacobian()", "PoissonSolver");
 
-  //MatView(J,PETSC_VIEWER_DRAW_WORLD);
+  //MatView(J,PETSC_VIEWER_STDOUT_WORLD);
   //getchar();
   //genius_assert(0);
 
@@ -431,7 +431,7 @@ void PoissonSolver::potential_damping(Vec x, Vec y, Vec w, PetscBool *changed_y,
   // for parallel situation, we should find the dv_max in global.
   Parallel::max( dV_max );
 
-  if( dV_max > 1e-6 )
+  if( dV_max > 1e-6*kb*T/e )
   {
     // compute logarithmic potential damping factor f;
     PetscScalar Vut = kb*T/e * SolverSpecify::potential_update;

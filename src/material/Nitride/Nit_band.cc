@@ -78,7 +78,7 @@ public:
                             const PetscScalar &t_ins, const PetscScalar &E_ins) const
   { return (AFFINITY + BANDGAP - affinity_semi -  Eg_semi) - HCI_BARLP*pow(E_ins, 0.5) - HCI_TUNLP*pow(E_ins, 2.0/3.0) ; }
 
-  PetscScalar J_FN_Tunneling(const PetscScalar &E_ins) const
+  PetscScalar J_FN_Tunneling(const PetscScalar &E_ins, const PetscScalar &alpha) const
   { return 0.0; }
 
 

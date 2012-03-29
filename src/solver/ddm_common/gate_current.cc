@@ -19,7 +19,6 @@
 /*                                                                              */
 /********************************************************************************/
 
-//  $Id: ddm1_boundary_is_interface.cc,v 1.5 2008/07/09 05:58:16 gdiso Exp $
 
 
 #include "simulation_system.h"
@@ -69,11 +68,23 @@ void InsulatorSemiconductorInterfaceBC::_gate_current()
     const FVM_Node * semiconductor_node = get_region_fvm_node(node_it->first, semiconductor_region);    assert(semiconductor_node);
     assert(semiconductor_node->on_processor());
 
+    PetscScalar T_semi = semiconductor_node->node_data()->T();
     PetscScalar Affinity_semi = semiconductor_node->node_data()->affinity();
     PetscScalar Eg_semi = semiconductor_node->node_data()->Eg();
     PetscScalar V_semi = semiconductor_node->node_data()->psi();
     PetscScalar n_semi = semiconductor_node->node_data()->n();
     PetscScalar p_semi = semiconductor_node->node_data()->p();
+    PetscScalar Ec_semi = semiconductor_node->node_data()->Ec();
+    PetscScalar Efn_semi = semiconductor_node->node_data()->qFn();
+
+
+    // barraier (of conduction band)
+    const FVM_Node * insulator_node = get_region_fvm_node(node_it->first, insulator_region);    assert(insulator_node);
+    assert(insulator_node->on_processor());
+    PetscScalar Affinity_ins = insulator_node->node_data()->affinity();
+
+    PetscScalar Eb = Affinity_semi-Affinity_ins;
+
 
     // injection end, at gate side
     SimulationRegion * region = node_it->second.region;
@@ -98,10 +109,18 @@ void InsulatorSemiconductorInterfaceBC::_gate_current()
     double injection_distance = (*(semiconductor_node->root_node())-point_injection).size();
     PetscScalar E_insulator = (V_gate - V_semi)/injection_distance;
 
+    PetscScalar I_DIR = 0.0;
+    if( semiconductor_region->advanced_model().DIRTunneling )
+    {
+      PetscScalar alpha = std::max(1e-4, std::min(1.0, (V_gate - V_semi)/((Ec_semi+Eb-Efn_semi)/e)));
+      PetscScalar J_DIR = insulator_region->material()->band->J_FN_Tunneling(E_insulator, alpha);
+      I_DIR = (E_insulator > 0 ? -J_DIR : J_DIR)*semiconductor_node->outside_boundary_surface_area()*current_scale;
+    }
+
     PetscScalar I_FN = 0.0;
     if( semiconductor_region->advanced_model().FNTunneling )
     {
-      PetscScalar J_FN = insulator_region->material()->band->J_FN_Tunneling(E_insulator);
+      PetscScalar J_FN = insulator_region->material()->band->J_FN_Tunneling(E_insulator, 1.0);
       I_FN = (E_insulator > 0 ? -J_FN : J_FN)*semiconductor_node->outside_boundary_surface_area()*current_scale;
     }
 
@@ -132,25 +151,25 @@ void InsulatorSemiconductorInterfaceBC::_gate_current()
     {
       case  ChargedContact :
       {
-        I_to_FGate[bc] += Ip - In + I_FN;
+        I_to_FGate[bc] += Ip - In + I_FN + I_DIR;
 
         BoundaryCondition * charge_integral_bc = bc->inter_connect_hub();
         // only do this when transient simulation is on
         if(SolverSpecify::TimeDependent == true)
         {
-          Qf_to_FGate[charge_integral_bc] += (Ip - In + I_FN)*SolverSpecify::dt;
+          Qf_to_FGate[charge_integral_bc] += (Ip - In + I_FN + I_DIR)*SolverSpecify::dt;
         }
         break;
       }
 
       case GateContact     :
       {
-        bc->ext_circuit()->Iapp() += (Ip - In + I_FN);
+        bc->ext_circuit()->Iapp() += (Ip - In + I_FN + I_DIR);
         break;
       }
     }
 
-    I += -(Ip - In + I_FN);
+    I += -(Ip - In + I_FN + I_DIR);
   }
 
   // sync current/ charge

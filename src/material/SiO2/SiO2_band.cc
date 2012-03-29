@@ -107,11 +107,15 @@ public:
   }
 
 
-  PetscScalar J_FN_Tunneling(const PetscScalar &E_ins) const
+  PetscScalar J_FN_Tunneling(const PetscScalar &E_ins, const PetscScalar &alpha) const
   {
     PetscScalar E = fabs(E_ins) + 1*V/cm;
     if( FN_B/E > 30.0 ) return 0.0;
-    return FN_A*E_ins*E_ins*exp( - FN_B/E );
+
+    if(alpha == 1.0)
+      return FN_A*E_ins*E_ins*exp( - FN_B/E );
+    else
+      return FN_A*E_ins*E_ins/std::pow(1.0-sqrt(1.0-alpha), 2.0)*exp( - FN_B/E*(1-std::pow(1.0-alpha, 1.5)) );
   }
 
 public:

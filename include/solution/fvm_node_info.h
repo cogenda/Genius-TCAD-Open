@@ -162,22 +162,25 @@ public:
   void set_ghost_node_area(unsigned int sub_id, Real area);
 
   /**
-   * assign neighbor related cv surface area
+   * assign neighbor related control volume surface area
    */
-  Real & cv_surface_area(const Node * neighbor)
-  {
-    genius_assert(this->is_neighbor(neighbor));
-    return _cv_surface_area[neighbor];
-  }
+  Real & cv_surface_area(const Node * neighbor)  { return _cv_surface_area[neighbor]; }
 
   /**
-   * get neighbor related cv surface area
+   * get neighbor related control volume surface area
    */
-  Real cv_surface_area(const Node * neighbor) const
-  {
-    genius_assert(this->is_neighbor(neighbor));
-    return _cv_surface_area.find(neighbor)->second;
-  }
+  Real cv_surface_area(const Node * neighbor) const  { return _cv_surface_area.find(neighbor)->second; }
+
+  /**
+   * get total control volume surface area
+   */
+  Real total_cv_surface_area() const;
+
+  /**
+   * truncate control volume surface area to positive
+   */
+  void truncate_cv_surface_area();
+
 
   typedef std::map< FVM_Node *, std::pair<unsigned int, Real> >::const_iterator fvm_ghost_node_iterator;
 
@@ -478,6 +481,21 @@ public:
    * combine several FVM_Node with same root node
    */
   void operator += (const FVM_Node &other_node);
+
+
+  /**
+   * Formatted print to \p std::cout.
+   */
+  void print(std::ostream& os) const;
+
+  /**
+   * Formatted print
+   */
+  friend std::ostream& operator << (std::ostream& os, const FVM_Node & fn)
+  {
+    fn.print(os);
+    return os;
+  }
 
 
 private:

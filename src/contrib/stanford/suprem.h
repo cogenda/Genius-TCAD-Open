@@ -39,9 +39,14 @@ public:
    */
   virtual ~SupremTIF()  {}
 
+  /// read suprem file into meta data structure
+  virtual bool read();
 
-  /** read suprem file into meta data structure*/
-  bool read();
+  /// return the acceptor in sol_data
+  virtual double acceptor(unsigned int data_index) const;
+
+  /// return the donor in sol_data
+  virtual double donor(unsigned int data_index) const;
 
 private:
 
@@ -70,6 +75,13 @@ private:
 
 
   void _init_index_string_map();
+
+
+  /// index of acceptor in sol_data
+  unsigned int _acceptor_index;
+
+  /// index of donor in sol_data
+  unsigned int _donor_index;
 
 };
 

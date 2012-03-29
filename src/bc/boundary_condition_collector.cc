@@ -196,6 +196,9 @@ int  BoundaryConditionCollector::bc_setup()
   // set the boundary condition index <--> boundary id map
   build_bc_index_to_bd_id_map ( _mesh.boundary_info->get_boundary_ids() );
 
+  // find boundary id and the region pair it belongs to
+  _mesh.boundary_info->get_subdomains_bd_on(_boundary_subdomain_map);
+
   // setup each boundary condition from user's input
   for ( _decks.begin(); !_decks.end(); _decks.next() )
   {
@@ -285,15 +288,13 @@ int  BoundaryConditionCollector::bc_setup()
 
 
   // set remaining bcs
-  std::map<short int,  std::pair<unsigned int, unsigned int > > boundary_subdomain_map;
-  _mesh.boundary_info->get_subdomains_bd_on(boundary_subdomain_map);
   for ( unsigned int i=0; i<_bcs.size(); i++ )
     if ( _bcs[i] == NULL ) // not initialized?
     {
       short int boundary_id = get_bd_id_by_bc_index ( i );
       std::string label = _mesh.boundary_info->get_label_by_id ( boundary_id );
 
-      const std::pair<unsigned int, unsigned int > & sub_ids = boundary_subdomain_map[boundary_id];
+      const std::pair<unsigned int, unsigned int > & sub_ids = _boundary_subdomain_map[boundary_id];
       unsigned int sub_id1 = sub_ids.first, sub_id2=sub_ids.second;
 
       // on the region outer boundary
@@ -458,7 +459,7 @@ int  BoundaryConditionCollector::bc_setup()
 
     // set regions this bc may have
     {
-      const std::pair<unsigned int, unsigned int > & sub_ids = boundary_subdomain_map[boundary_id];
+      const std::pair<unsigned int, unsigned int > & sub_ids = _boundary_subdomain_map[boundary_id];
       SimulationRegion * r1 = sub_ids.first  != invalid_uint ? _system.region(sub_ids.first)  : NULL;
       SimulationRegion * r2 = sub_ids.second != invalid_uint ? _system.region(sub_ids.second) : NULL;
       if( r1 && r2 && r1->type() > r2->type() ) std::swap(r1, r2);
@@ -589,13 +590,30 @@ int BoundaryConditionCollector::Set_BC_NeumannBoundary ( const Parser::Card &c )
   std::string Identifier;
   unsigned int bc_index = get_bc_from_card ( c, Identifier );
 
+  short int boundary_id = get_bd_id_by_bc_index(bc_index);
+  const std::pair<unsigned int, unsigned int > & sub_ids = _boundary_subdomain_map[boundary_id];
+  if( sub_ids.first == invalid_uint || sub_ids.second != invalid_uint )
+  {
+    MESSAGE<<"ERROR at " <<c.get_fileline()
+           << " Boundary: ID="<< Identifier << " Neumann BC should be set to region boundary face."
+           <<std::endl;
+    RECORD();
+    genius_error();
+  }
+
   // build the boundary condition parameter for this boundary
   _bcs[bc_index] = new NeumannBC ( _system, Identifier );
   _bcs[bc_index]->T_external()    = c.get_real ( "ext.temp", _system.T_external() /K ) *K;
   _bcs[bc_index]->scalar("heat.transfer") = c.get_real ( "heat.transfer",0.0 ) *J/s/pow ( cm,2 ) /K;
   _bcs[bc_index]->z_width()       = c.get_real ( "z.width", _bcs[bc_index]->z_width() /um ) *um;
-  _bcs[bc_index]->reflection()    = c.get_bool ( "reflection", false );
 
+  // optical parameter
+  _bcs[bc_index]->flag("reflection")      = c.get_bool ( "reflection", false );
+  if ( c.is_parameter_exist ( "coatings" ) )// for anti-reflection coatings
+  {
+    _bcs[bc_index]->flag("reflection") = false;
+    _bcs[bc_index]->scalar_array("coatings") = c.get_array<double>("coatings");
+  }
   return 0;
 }
 
@@ -614,7 +632,7 @@ int BoundaryConditionCollector::Set_BC_OhmicContact ( const Parser::Card &c )
   _bcs[bc_index]->ext_circuit()->C() = c.get_real ( "cap",0.0 ) *C/V;
   _bcs[bc_index]->ext_circuit()->L() = c.get_real ( "ind",0.0 ) *V*s/A;
   _bcs[bc_index]->z_width() = c.get_real ( "z.width", _bcs[bc_index]->z_width() /um ) *um;
-  _bcs[bc_index]->reflection()    = c.get_bool ( "reflection", true );
+
   if ( c.is_parameter_exist ( "potential" ) )
     _bcs[bc_index]->ext_circuit()->potential() = c.get_real ( "potential", 0.0 ) *V;
 
@@ -623,6 +641,15 @@ int BoundaryConditionCollector::Set_BC_OhmicContact ( const Parser::Card &c )
     _bcs[bc_index]->electrode_label() = c.get_string("electrode_id", "");
     _bcs[bc_index]->set_boundary_type(INTERFACE);
   }
+
+  // optical parameter
+  _bcs[bc_index]->flag("reflection")    = c.get_bool ( "reflection", true ); // for reflection boundary
+  if ( c.is_parameter_exist ( "coatings" ) )// for anti-reflection coatings
+  {
+    _bcs[bc_index]->flag("reflection") = false;
+    _bcs[bc_index]->scalar_array("coatings") = c.get_array<double>("coatings");
+  }
+
   return 0;
 }
 
@@ -668,7 +695,7 @@ int BoundaryConditionCollector::Set_BC_SchottkyContact ( const Parser::Card &c )
   _bcs[bc_index]->ext_circuit()->C() = c.get_real ( "cap",0.0 ) *C/V;
   _bcs[bc_index]->ext_circuit()->L() = c.get_real ( "ind",0.0 ) *V*s/A;
   _bcs[bc_index]->z_width() = c.get_real ( "z.width", _bcs[bc_index]->z_width() /um ) *um;
-  _bcs[bc_index]->reflection()    = c.get_bool ( "reflection", true );
+
   if ( c.is_parameter_exist ( "potential" ) )
     _bcs[bc_index]->ext_circuit()->potential() = c.get_real ( "potential", 0.0 ) *V;
 
@@ -676,6 +703,14 @@ int BoundaryConditionCollector::Set_BC_SchottkyContact ( const Parser::Card &c )
   {
     _bcs[bc_index]->electrode_label() = c.get_string("electrode_id", "");
     _bcs[bc_index]->set_boundary_type(INTERFACE);
+  }
+
+  // optical parameter
+  _bcs[bc_index]->flag("reflection")    = c.get_bool ( "reflection", true );
+  if ( c.is_parameter_exist ( "coatings" ) )// for anti-reflection coatings
+  {
+    _bcs[bc_index]->flag("reflection") = false;
+    _bcs[bc_index]->scalar_array("coatings") = c.get_array<double>("coatings");
   }
 
   return 0;

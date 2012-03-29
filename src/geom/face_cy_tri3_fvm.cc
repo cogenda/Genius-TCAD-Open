@@ -24,7 +24,7 @@
 #include "edge_edge2_fvm.h"
 #include <TNT/jama_lu.h>
 
-#define DEBUG
+//#define DEBUG
 
 /*
  *   TRI3:  2               TRI3:  C

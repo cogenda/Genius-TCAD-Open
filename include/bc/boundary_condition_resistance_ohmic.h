@@ -453,6 +453,10 @@ public:
    */
   virtual void DDM1_Half_Implicit_Current(PetscScalar * x, Mat A, Vec r, InsertMode &add_value_flag);
 
+  /**
+   * function for update solution value for half implicit current continuity equation.
+   */
+  virtual void DDM1_Half_Implicit_Current_Update_Solution(PetscScalar *);
 
   /**
    * function for preprocess build RHS and matrix for half implicit poisson correction equation.

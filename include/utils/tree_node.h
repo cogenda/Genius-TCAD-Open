@@ -54,6 +54,7 @@ public:
    */
   TreeNode (const MeshBase& m,
 	    const unsigned int tbs,
+            const unsigned int mlevel,
 	    const TreeNode<N> *p = NULL);
 
   /**
@@ -195,6 +196,11 @@ private:
   const unsigned int tgt_bin_size;
 
   /**
+   * The maximum level
+   */
+  const unsigned int max_level;
+
+  /**
    * Pointer to this node's parent.
    */
   const TreeNode<N> *parent;
@@ -246,9 +252,11 @@ template <unsigned int N>
 inline
 TreeNode<N>::TreeNode (const MeshBase& m,
 		       const unsigned int tbs,
+                       const unsigned int mlevel,
 		       const TreeNode<N>* p) :
   mesh           (m),
   tgt_bin_size   (tbs),
+  max_level      (mlevel),
   parent         (p),
   contains_ifems (false)
 {

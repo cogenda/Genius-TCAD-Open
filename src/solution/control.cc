@@ -95,9 +95,6 @@
 #include "cgns_hook.h"
 #endif
 
-#ifdef ENABLE_VISIT
- #include "visit_hook.h"
-#endif
 
 #include "extend_to_3d.h"
 #ifdef HAVE_X11
@@ -383,10 +380,15 @@ int SolverControl::set_method ( const Parser::Card & c )
   }
 
 
-  // set linear solver type
+  // set linear solver type for half implicit method
+  SolverSpecify::LS_CARRIER = SolverSpecify::linear_solver_type(c.get_string("ls.carrier", "gmres"));
+  SolverSpecify::LS_CURRENT = SolverSpecify::linear_solver_type(c.get_string("ls.current", c.get_string("ls", "bcgs")));
   SolverSpecify::LS_POISSON = SolverSpecify::linear_solver_type(c.get_string("ls.poisson", "gmres"));
-  // set preconditioner type
+  // set preconditioner type for half implicit method
+  SolverSpecify::PC_CARRIER = SolverSpecify::preconditioner_type(c.get_string("pc.carrier", "asm"));
+  SolverSpecify::PC_CURRENT = SolverSpecify::preconditioner_type(c.get_string("pc.current", c.get_string("pc", "asm")));
   SolverSpecify::PC_POISSON = SolverSpecify::preconditioner_type(c.get_string("pc.poisson", "asm"));
+
   // linearize error
   SolverSpecify::LinearizeErrorThreshold = c.get_real("halfimplicit.let", 1.0);
   SolverSpecify::ArtificialCarrier = c.get_bool("halfimplicit.artificialcarrier", true);
@@ -483,8 +485,11 @@ int SolverControl::set_model ( const Parser::Card & c )
   // hot carrier injection
   model.HotCarrierInjection    = c.get_bool("hotcarrier", false);
 
-  // hot carrier injection
-  model.FNTunneling            = c.get_bool("fntunneling", false);
+  // FN  tunneling
+  model.FNTunneling            = c.get_bool("fn.tunneling", false, "fntunneling");
+
+  // direct tunneling
+  model.DIRTunneling            = c.get_bool("dir.tunneling", false);
 
   // band to band tunneling
   model.BandBandTunneling = false;
@@ -662,8 +667,8 @@ int SolverControl::do_solve( const Parser::Card & c )
 
         SolverSpecify::OpToSteady          = c.get_bool("op.steadystate", true);
 
-        SolverSpecify::TStep         = c.get_real("tstep", 1e-10)*s;
-        SolverSpecify::TStepMax      = c.get_real("tstepmax", 1e-6)*s;
+        SolverSpecify::TStep               = c.get_real("tstep", 1e-10)*s;
+        SolverSpecify::TStepMax            = c.get_real("tstepmax", 1e-7)*s;
         // pseudo time method
         SolverSpecify::PseudoTimeMethod            = c.get_bool("pseudotime", false);
         SolverSpecify::PseudoTimeCMOS              = c.get_bool("pseudotime.cmos", true);
@@ -807,10 +812,16 @@ int SolverControl::do_solve( const Parser::Card & c )
         SolverSpecify::GminInit      = c.get_real("gmin.init", 1e-6);
         SolverSpecify::Gmin          = c.get_real("gmin", 1e-12);
         // set the modulate envelop of light source
-        std::string waveform = c.get_string("optical.modulate", "");
-        FieldSource * field_source = system().get_field_source();
-        field_source->set_effect_waveform(waveform);
-
+        if(c.is_parameter_exist("optical.modulate"))
+        {
+          std::string waveform = c.get_string("optical.modulate", "");
+          FieldSource * field_source = system().get_field_source();
+          if(!field_source->set_effect_waveform(waveform))
+          {
+            MESSAGE<<"ERROR at " <<c.get_fileline()<< " SOLVE: optical.modulate specifies empty envelop."<<std::endl; RECORD();
+            genius_error();
+          }
+        }
         break;
       }
       case SolverSpecify::TRACE       :
@@ -851,9 +862,16 @@ int SolverControl::do_solve( const Parser::Card & c )
         SolverSpecify::PatG      = c.get_bool("particle.gen", false);
 
         // set the modulate envelop of light source
-        std::string waveform = c.get_string("optical.modulate", "");
-        FieldSource * field_source = system().get_field_source();
-        field_source->set_effect_waveform(waveform);
+        if(c.is_parameter_exist("optical.modulate"))
+        {
+          std::string waveform = c.get_string("optical.modulate", "");
+          FieldSource * field_source = system().get_field_source();
+          if(!field_source->set_effect_waveform(waveform))
+          {
+            MESSAGE<<"ERROR at " <<c.get_fileline()<< " SOLVE: optical.modulate specifies empty envelop."<<std::endl; RECORD();
+            genius_error();
+          }
+        }
 
         break;
       }
@@ -931,9 +949,16 @@ int SolverControl::do_solve( const Parser::Card & c )
         SolverSpecify::SourceCoupled = c.get_bool("source.coupled", false);
 
         // set the waveform of light source
-        std::string waveform = c.get_string("optical.modulate", "");
-        FieldSource * field_source = system().get_field_source();
-        field_source->set_effect_waveform(waveform);
+        if(c.is_parameter_exist("optical.modulate"))
+        {
+          std::string waveform = c.get_string("optical.modulate", "");
+          FieldSource * field_source = system().get_field_source();
+          if(!field_source->set_effect_waveform(waveform))
+          {
+            MESSAGE<<"ERROR at " <<c.get_fileline()<< " SOLVE: optical.modulate specifies empty envelop."<<std::endl; RECORD();
+            genius_error();
+          }
+        }
 
         break;
       }
@@ -1251,7 +1276,7 @@ int SolverControl::do_export( const Parser::Card & c )
     system().export_cgns(cgns_filename);
   }
 
-  // if export to CGNS format is required
+  // if export to DF-ISE format is required
   if(c.is_parameter_exist("isefile"))
   {
     std::string ise_filename = c.get_string("isefile", "");

@@ -29,6 +29,7 @@
 #include "elem_intersection.h"
 
 class Elem;
+class ARCoatings;
 
 /**
  * class to define a light
@@ -113,13 +114,21 @@ public:
   { return _power; }
 
   /**
+   * set the light as reflection by mirror
+   */
+  LightThread * reflection(const Point & in_p, const Point & norm) const;
+
+  /**
    * generate reflection and transmission light at interface
    * @param in_p incident point
    * @param norm the norm of interface, form material 2 to material 1
    * @param n1   refraction index of material 1
    * @param n2   refraction index of material 2
+   * @param arc  anti-reflection coating
+   * @param inv  the layer order of anti-reflection coating seen by the light
    */
-  std::pair<LightThread *, LightThread *> interface_light_gen_linear_polarized(const Point & in_p, const Point & norm, double n1, double n2);
+  std::pair<LightThread *, LightThread *> interface_light_gen_linear_polarized
+      (const Point & in_p, const Point & norm, double n1, double n2, const ARCoatings *arc=0, bool inv=false) const;
 
   /**
    * pointer to the elem this light hit
@@ -167,6 +176,15 @@ private:
    * current power of this thread
    */
   double _power;
+
+  /// light refraction on simple interface
+  std::pair<LightThread *, LightThread *> _interface_light_gen_linear_polarized_simple
+      (const Point & in_p, const Point & norm, double n1, double n2 ) const;
+
+  /// light refraction on stacked interface
+  std::pair<LightThread *, LightThread *> _interface_light_gen_linear_polarized_stack
+      (const Point & in_p, const Point & norm, double n1, double n2, const ARCoatings *arc, bool inv ) const;
+
 
 };
 

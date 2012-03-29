@@ -95,11 +95,6 @@ void Plane::plane_parameter(Real &A, Real &B, Real &C, Real &D) const
   B = _normal[1];
   C = _normal[2];
   D = -_normal*_point;
-  Real n = A*A+B*B+C*C+D*D;
-  A /= n;
-  B /= n;
-  C /= n;
-  D /= n;
 }
 
 

@@ -26,7 +26,7 @@
 #include <set>
 #include <string>
 #include <iostream>
-
+#include <typeinfo>
 
 #include <cassert>
 #include <cstdarg>

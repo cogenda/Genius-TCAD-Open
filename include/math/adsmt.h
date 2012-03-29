@@ -1,10 +1,11 @@
 #ifndef __adsmt_h__
 #define __adsmt_h__
 
-#include <vector>
 #include <cassert>
+#include <vector>
 #include <iostream>
 #include <cmath>
+#include <cstring>
 #include <limits>
 
 #include "asinh.hpp" // for asinh

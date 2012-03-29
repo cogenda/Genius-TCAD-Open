@@ -136,7 +136,7 @@ public:
                       const PetscScalar &Ep, const PetscScalar &Et, const PetscScalar &Tn) const
   {
     PetscScalar mu0  = ElecMobLowField(Tl);
-    if(Ep < 1e3*V/cm)    return mu0;
+    if(Ep < 1*V/cm)    return mu0;
 
     PetscScalar vsat = VSATN_A - VSATN_B*Tl;
     return vsat/Ep*tanh(mu0*Ep/vsat);
@@ -146,7 +146,7 @@ public:
                       const AutoDScalar &Ep, const AutoDScalar &Et, const AutoDScalar &Tn) const
   {
     AutoDScalar mu0  = ElecMobLowField(Tl);
-    if(Ep < 1e3*V/cm)    return mu0;
+    if(Ep < 1*V/cm)    return mu0;
 
     AutoDScalar vsat = VSATN_A - VSATN_B*Tl;
     return vsat/Ep*tanh(mu0*Ep/vsat);
@@ -158,7 +158,7 @@ public:
                        const PetscScalar &Ep, const PetscScalar &Et, const PetscScalar &Tp) const
   {
     PetscScalar mu0  = HoleMobLowField(Tl);
-    if(Ep < 1e3*V/cm)    return mu0;
+    if(Ep < 1*V/cm)    return mu0;
 
     PetscScalar vsat = VSATP_A - VSATP_B*Tl;
     return vsat/Ep*tanh(mu0*Ep/vsat);
@@ -168,7 +168,7 @@ public:
                       const AutoDScalar &Ep, const AutoDScalar &Et, const AutoDScalar &Tp) const
   {
     AutoDScalar mu0  = HoleMobLowField(Tl);
-    if(Ep < 1e3*V/cm)    return mu0;
+    if(Ep < 1*V/cm)    return mu0;
 
     AutoDScalar vsat = VSATP_A - VSATP_B*Tl;
     return vsat/Ep*tanh(mu0*Ep/vsat);

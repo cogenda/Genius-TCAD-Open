@@ -183,6 +183,10 @@ public:
     }
   }
 
+  /**
+   * PETSC KSP can have an individual prefix
+   */
+  virtual std::string ksp_prefix() const { return "ddm_ac_"; }
 
 private:
 

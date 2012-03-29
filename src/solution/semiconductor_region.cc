@@ -279,7 +279,6 @@ void SemiconductorSimulationRegion::init(PetscScalar T_external)
   find_elem_on_insulator_interface();
   find_nearest_interface_normal();
   find_elem_touch_boundary();
-  check_fvm_cell();
 }
 
 
@@ -318,7 +317,6 @@ void SemiconductorSimulationRegion::reinit_after_import()
   find_elem_on_insulator_interface();
   find_nearest_interface_normal();
   find_elem_touch_boundary();
-  check_fvm_cell();
 }
 
 
@@ -505,7 +503,7 @@ void SemiconductorSimulationRegion::zero_node_current()
 }
 
 
-bool SemiconductorSimulationRegion::check_fvm_cell() const
+Real SemiconductorSimulationRegion::fvm_cell_quality() const
 {
   std::map<const FVM_Node *, std::map<const FVM_Node *, double> > truncated_partial_area_map;
 
@@ -558,15 +556,8 @@ bool SemiconductorSimulationRegion::check_fvm_cell() const
     fvm_cell_quality = std::min(fvm_cell_quality, min_area/max_area);
   }
 
-  Parallel::min(fvm_cell_quality);
+  return fvm_cell_quality;
 
-  if(fvm_cell_quality < 1e-4)
-  {
-    MESSAGE << "Warning: Voronoi cell quality " << fvm_cell_quality << " (the ratio of min/max surface area) of region " << this->name() << " is poor. "
-            << "It may cause inaccurate result or even convergence difficults. Try to improve mesh quality if possible!" << std::endl;
-    RECORD();
-  }
-  return true;
 
 }
 

@@ -129,9 +129,9 @@ class SolverControl  /DelayDtor/
 %End
 
 public:
-  SolverControl();
+  SolverControl() /Transfer/;
 
-  const SimulationSystem& system() const;
+  const SimulationSystem& system() const /NoCopy/;
 
 
   void setDecks(Parser::InputParser* p /Transfer/);

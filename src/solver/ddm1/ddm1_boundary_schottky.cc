@@ -122,7 +122,7 @@ void SchottkyContactBC::DDM1_Function(PetscScalar * x, Vec f, InsertMode &add_va
   }
 
   // data buffer for ADD_VALUES
-  std::vector<int> ix;
+  std::vector<PetscInt> ix;
   std::vector<PetscScalar> y;
 
   // for 2D mesh, z_width() is the device dimension in Z direction; for 3D mesh, z_width() is 1.0
@@ -254,23 +254,6 @@ void SchottkyContactBC::DDM1_Function(PetscScalar * x, Vec f, InsertMode &add_va
           }
           // conductor region which has an interface with Schottky Contact boundary to semiconductor region
           case ElectrodeRegion:
-          {
-            // psi of this node
-            PetscScalar V = x[local_offset];
-
-            // since the region is sorted, we know region[0] is semiconductor region
-            // as a result, x[fvm_nodes[0]->local_offset()] is psi for corresponding semiconductor region
-            //genius_assert( regions[0]->type()==SemiconductorRegion );
-            PetscScalar V_semi = x[fvm_nodes[0]->local_offset()];
-
-            // the psi of this node is equal to corresponding psi of semiconductor node
-            PetscScalar f_psi = V - V_semi;
-            // set governing equation to function vector
-            y.push_back( f_psi );
-            ix.push_back(global_offset);
-
-            break;
-          }
           // insulator region. if a corner where semiconductor region, insulator region and  conductor region meet.
           // the boundary for the corner point may be Schottky. (not a nice behavier)
           case InsulatorRegion:
@@ -291,6 +274,7 @@ void SchottkyContactBC::DDM1_Function(PetscScalar * x, Vec f, InsertMode &add_va
 
             break;
           }
+
           case VacuumRegion:
           break;
           default: genius_error(); //we should never reach here
@@ -565,9 +549,8 @@ void SchottkyContactBC::DDM1_Jacobian_Preprocess(PetscScalar *, Mat *jac, std::v
     // search all the fvm_node which has *node_it as root node
     BoundaryCondition::region_node_iterator  rnode_it     = region_node_begin(*node_it);
     BoundaryCondition::region_node_iterator  end_rnode_it = region_node_end(*node_it);
-
     // should clear all the rows related with this boundary condition
-    for(unsigned int i=0 ; rnode_it!=end_rnode_it; ++i, ++rnode_it  )
+    for(; rnode_it!=end_rnode_it; ++rnode_it  )
     {
       const FVM_Node *  fvm_node = (*rnode_it).second.second ;
 
@@ -668,7 +651,7 @@ void SchottkyContactBC::DDM1_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add
             AutoDScalar Fp = semi_region->material()->band->SchottyJsp(p, T, Work_Function - node_data->affinity() + deltaVB) * S;
 
             // schottky boundary condition of poisson's equation
-            AutoDScalar ff = V + Work_Function - deltaVB - Ve;
+            AutoDScalar f_psi = V + Work_Function - deltaVB - Ve;
 
             // the insert position
             PetscInt row[3], col[4];
@@ -678,7 +661,7 @@ void SchottkyContactBC::DDM1_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add
             col[3] = this->global_offset(); // the position of electrode equation
 
             // set Jacobian of governing equation ff
-            MatSetValues(*jac, 1, &row[0], 4, &col[0], ff.getADValue(), ADD_VALUES);
+            MatSetValues(*jac, 1, &row[0], 4, &col[0], f_psi.getADValue(), ADD_VALUES);
 
             // process the Jacobian of Schottky current
             MatSetValues(*jac, 1, &row[1], 4, &col[0], Fn.getADValue(), ADD_VALUES);

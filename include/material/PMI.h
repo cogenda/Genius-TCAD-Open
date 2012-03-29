@@ -1344,7 +1344,7 @@ class PMII_BandStructure : public PMII_Server
   /**
    * Fowler-Nordheim tunneling
    */
-  virtual PetscScalar J_FN_Tunneling(const PetscScalar &E_ins) const = 0;
+  virtual PetscScalar J_FN_Tunneling(const PetscScalar &E_ins, const PetscScalar &alpha) const = 0;
 
 };
 

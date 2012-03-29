@@ -21,8 +21,10 @@
 
 #include <cmath>
 #include <cstdio>
+#include <cstring>
 #include <map>
 #include <set>
+#include <string>
 #include <iostream>
 #include <fstream>
 

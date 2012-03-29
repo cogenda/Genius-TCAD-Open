@@ -1026,7 +1026,7 @@ void DDM1RSolver::build_petsc_sens_jacobian(Vec x, Mat *, Mat *)
   //scaling the matrix
   MatDiagonalScale(J, L, PETSC_NULL);
 
-  //MatView(J, PETSC_VIEWER_STDOUT_SELF);
+  //MatView(J, PETSC_VIEWER_STDOUT_WORLD);
   //getchar();
 
   if(!jacobian_matrix_first_assemble)

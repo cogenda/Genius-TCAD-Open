@@ -45,7 +45,7 @@ void TreeNode<N>::insert (const Node* nd)
     nodes.push_back (nd);
 
     // Refine ourself if we reach the target bin size for a TreeNode.
-    if (nodes.size() == tgt_bin_size)
+    if (nodes.size() >= tgt_bin_size && this->level() < max_level)
       this->refine();
   }
 
@@ -112,7 +112,7 @@ void TreeNode<N>::insert (const Elem* elem)
 #endif
 
     // Refine ourself if we reach the target bin size for a TreeNode.
-    if (elements.size() == tgt_bin_size)
+    if (elements.size() >= tgt_bin_size && this->level() < max_level)
       this->refine();
 
   }
@@ -164,7 +164,7 @@ void TreeNode<N>::insert (const Elem* elem, const Point * b1, const Point *b2)
 #endif
 
     // Refine ourself if we reach the target bin size for a TreeNode.
-    if (elements.size() == tgt_bin_size)
+    if (elements.size() >= tgt_bin_size && this->level() < max_level)
       this->refine();
 
   }
@@ -195,7 +195,7 @@ void TreeNode<N>::refine ()
   for (unsigned int c=0; c<N; c++)
   {
     // Create the child and set its bounding box.
-    children[c] = new TreeNode<N> (mesh, tgt_bin_size, this);
+    children[c] = new TreeNode<N> (mesh, tgt_bin_size, max_level, this);
     children[c]->set_bounding_box(this->create_bounding_box(c));
 
     // Pass off our nodes to our children
@@ -207,6 +207,7 @@ void TreeNode<N>::refine ()
       children[c]->insert(elements[e]);
   }
 
+
   // We don't need to store nodes or elements any more,
   // they have been added to the children.
   // Note that we cannot use std::vector<>::clear() here
@@ -217,6 +218,7 @@ void TreeNode<N>::refine ()
 
   assert (nodes.capacity()    == 0);
   assert (elements.capacity() == 0);
+
 }
 
 

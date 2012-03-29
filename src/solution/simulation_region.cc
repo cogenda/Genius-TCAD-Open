@@ -228,6 +228,22 @@ void SimulationRegion::prepare_for_use()
     }
   }
 
+
+
+  // fix FVM_Node if laplace operator < 0.0
+  std::map<unsigned int, FVM_Node *>::iterator nodes_it = _region_node.begin();
+  for(; nodes_it != _region_node.end(); ++nodes_it)
+  {
+    FVM_Node * fvm_node = (*nodes_it).second;
+    // skip not on processor fvm_node
+    if( !fvm_node->on_processor() ) continue;
+
+    if( fvm_node->laplace_unit() < 0.0 )
+    {
+      fvm_node->truncate_cv_surface_area();
+    }
+  }
+
   // for efficient reason, let each element hold pointer to corresponding FVM_Node
   // since _region_cell is <const Elem *>, we do const_cast here
   {
@@ -260,6 +276,7 @@ void SimulationRegion::prepare_for_use()
         }
     }
   }
+
 
 
   // build region edges
@@ -399,6 +416,23 @@ void SimulationRegion::prepare_for_use_parallel()
   STOP_LOG("prepare_for_use_parallel()", "SimulationRegion");
 }
 
+
+Real SimulationRegion::fvm_cell_quality() const
+{
+#if 0
+  const_processor_node_iterator node_it = on_processor_nodes_begin();
+  const_processor_node_iterator node_it_end = on_processor_nodes_end();
+  for(; node_it!=node_it_end; ++node_it)
+  {
+    const FVM_Node * fvm_node = *node_it;
+    if( fvm_node->total_cv_surface_area() < 0.0 )
+    {
+      std::cout<< *fvm_node << std::endl;
+    }
+  }
+#endif
+  return 1.0;
+}
 
 
 

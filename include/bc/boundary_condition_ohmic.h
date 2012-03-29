@@ -69,17 +69,6 @@ public:
   virtual void set_boundary_type(BoundaryType type)
   { _bd_type = type; }
 
-  /**
-   * @return the reflection flag of this boundary
-   */
-  virtual bool reflection() const
-  {return _reflection;}
-
-  /**
-   * @return writable reference to reflection flag of this boundary
-   */
-  virtual bool & reflection()
-  {return _reflection;}
 
   /**
    * @return true when it has external circuit
@@ -104,11 +93,6 @@ private:
    * the boundary type, can be interface or boundary.
    */
   BoundaryType  _bd_type;
-
-  /**
-   * full reflection flag......just used in ray tracing
-   */
-  bool _reflection;
 
 private:
   // current buffer

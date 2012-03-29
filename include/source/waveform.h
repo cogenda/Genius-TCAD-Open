@@ -335,7 +335,7 @@ public:
    */
   double waveform(double t)
   {
-    return _amplitude*exp(-(t-_t0)*(t-_t0)/(2.0*_tao*_tao));
+    return _amplitude*exp(-(t-_t0)*(t-_t0)/(_tao*_tao));
   }
 
 };

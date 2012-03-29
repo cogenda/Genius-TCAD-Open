@@ -5,7 +5,7 @@
 
 GLOBAL    T=300 DopingScale=2e17  Z.Width=1.0
 
-MESH       Type=S_TRI3   Triangle="pzA"
+MESH       Type=S_QUAD4
 X.MESH     WIDTH=3.0  N.SPACES=30
 Y.MESH     DEPTH=0.2  N.SPACES=20
 Y.MESH     DEPTH=0.3  N.SPACES=10
@@ -35,7 +35,7 @@ boundary Type=SchottkyContact   ID=GATE   Res=0 Cap=0 Ind=0 Workfunction=4.9
 # drive command, specify the solving process.
 
 #specify DDM method,this is the default solver.
-METHOD   Type = DDML1   NS=LineSearch LS=GMRES Damping=Potential
+METHOD   Type = DDML1   NS=Basic LS=GMRES Damping=Potential
 #compute equilibrium state
 SOLVE    Type=EQUILIBRIUM 
 

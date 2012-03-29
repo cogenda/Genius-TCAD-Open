@@ -329,6 +329,15 @@ Co
         color    = 0xcdc9c9ff
 }
 
+
+Ni
+{
+        property = Resistance
+        alias    = Nickel
+        color    = 0xeeeed0ff
+}
+
+
 W
 {
         property = Resistance
@@ -364,6 +373,14 @@ TiSi2
         alias    = Silicide
         color    = 0xcdc8b1ff
 }
+
+SRO
+{
+        property = Resistance
+        alias    = SrRuO3
+        color    = 0xcb5610ff
+}
+
 
 #-----------------------------------------------------
 # Insulator
@@ -408,6 +425,16 @@ Oxynitride
         alias    = OxyNit
         color    = 0xa03a3aff
 }
+
+
+PZT
+{
+# mole dependence: PbZr(x)Ti(1-x)O3
+        property = Insulator
+        alias    = PbZrTiO3
+        color    = 0x057d05ff
+}
+
 
 Air
 {

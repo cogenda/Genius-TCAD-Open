@@ -116,7 +116,7 @@ public:
 // }}}
 
 // {{{ class SimulationSystem
-class SimulationSystem /NoDefaultCtors/
+class SimulationSystem /NoDefaultCtors, DelayDtor/
 {
 %TypeHeaderCode
 #include "simulation_system.h"
@@ -125,8 +125,8 @@ class SimulationSystem /NoDefaultCtors/
 
 public:
   unsigned int n_regions() const;
-  SimulationRegion* region(unsigned int n);
-  SimulationRegion* region(const std::string &region_lable);
+  SimulationRegion* region(unsigned int n) /Transfer/;
+  SimulationRegion* region(const std::string &region_lable) /Transfer/;
 
   unsigned int n_bcs() const;
 %MethodCode
@@ -138,12 +138,12 @@ public:
     sipRes = sipCpp->get_bcs()->n_electrode_bcs();
 %End
 
-  BoundaryCondition* get_bc(unsigned int n);
+  BoundaryCondition* get_bc(unsigned int n) /Transfer/;
 %MethodCode
     sipRes = sipCpp->get_bcs()->get_bc(a0);
 %End
 
-  BoundaryCondition* get_bc(const std::string &label);
+  BoundaryCondition* get_bc(const std::string &label) /Transfer/;
 %MethodCode
     sipRes = sipCpp->get_bcs()->get_bc(*a0);
 %End

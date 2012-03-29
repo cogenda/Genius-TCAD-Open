@@ -143,6 +143,12 @@ public:
   virtual bool all_neighbor_elements_involved(const SimulationRegion * ) const
   { return false; }
 
+
+  /**
+   * PETSC SNES can have an individual prefix
+   */
+  virtual std::string snes_prefix() const { return "poisson_"; }
+
   /**
    * wrap function for evaluating the residual of function f at x
    */

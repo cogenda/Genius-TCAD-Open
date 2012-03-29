@@ -50,7 +50,7 @@ public:
   PetscScalar HCI_Probability_Insulator_p(const PetscScalar &, const PetscScalar &) const
   { return 0.0;  }
 
-  PetscScalar J_FN_Tunneling(const PetscScalar &E_ins) const
+  PetscScalar J_FN_Tunneling(const PetscScalar &E_ins, const PetscScalar &alpha) const
   { return 0.0; }
 
   GSS_Air_BandStructure(const PMII_Environment &env):PMII_BandStructure(env)

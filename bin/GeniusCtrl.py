@@ -7,6 +7,7 @@ import time
 import re
 import string
 import GeniusLib
+import sip
 
 class GeniusError(Exception):
     def __init__(self, msg=None):
@@ -122,7 +123,9 @@ class CmdQueryStruct(GeniusCommand):
     def do(self):
         GeniusCtrl.Genius.log('Query device structure.')
         control = GeniusCtrl.SolverControl
-        simuSys = GeniusLib.SimulationSystem(control.system())
+        _simuSys = control.system()
+        sip.transferto(_simuSys, None) ## temporary workaround
+        simuSys = GeniusLib.SimulationSystem(_simuSys)
         if simuSys:
             if re.match('xml', self.queryStr, re.I):
                 self.result = simuSys.toXML()
@@ -398,7 +401,6 @@ class GeniusCtrlClass:
                     self.log(str(e)+'\n')
                 finally:
                     cmd.finished.set()
-            
 
     def setCmdQueue(self, queue):
         self._cmdQueue=queue

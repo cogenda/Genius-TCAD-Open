@@ -53,6 +53,7 @@ struct AdvancedModel
     Mob_Force = ModelSpecify::ESimple;
 
     HotCarrierInjection = false;
+    DIRTunneling = false;
     FNTunneling = false;
     BandBandTunneling = false;
 
@@ -125,6 +126,16 @@ struct AdvancedModel
    * specify if hot carrier injection should be supported
    */
   bool HotCarrierInjection;
+
+
+  //-----------------------------------------------------------
+  // parameters for direct tunneling
+  //-----------------------------------------------------------
+
+  /**
+   * specify if direct tunneling should be supported
+   */
+  bool    DIRTunneling;
 
 
   //-----------------------------------------------------------

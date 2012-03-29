@@ -88,6 +88,11 @@ private:
  std::ofstream   _out;
 
  /**
+  * write the head of file
+  */
+ void  _write_gnuplot_head();
+
+ /**
   * if we are in mixA mode
   */
  bool            _mixA;

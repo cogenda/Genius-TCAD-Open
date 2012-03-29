@@ -274,6 +274,11 @@ public:
    */
   virtual void clear();
 
+  /**
+   * @return the quality if each fvm cell in (0-poor, 1-fine]
+   */
+  virtual Real fvm_cell_quality() const;
+
 
   typedef std::vector<const Elem*>::iterator             element_iterator;
 

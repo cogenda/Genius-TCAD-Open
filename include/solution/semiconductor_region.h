@@ -104,6 +104,11 @@ public:
   virtual void clear();
 
   /**
+   * @return the quality if each fvm cell
+   */
+  virtual Real fvm_cell_quality() const;
+
+  /**
    * @return the pointer to material data
    */
   Material::MaterialSemiconductor * material() const
@@ -255,10 +260,6 @@ public:
   bool is_elem_touch_boundary(const Elem * elem) const
   { return _elem_touch_boundary.find(elem) != _elem_touch_boundary.end(); }
 
-  /**
-   * @return true if each fvm_node has at least two connection to other fvm_node
-   */
-  bool check_fvm_cell() const;
 
 private:
 

@@ -372,6 +372,13 @@ public:
   SolData_t & sol_data(unsigned int n)
   { return _sol_data[n]; }
 
+
+public:
+  /// return the acceptor in sol_data
+  virtual double acceptor(unsigned int index) const = 0;
+  /// return the donor in sol_data
+  virtual double donor(unsigned int index) const = 0;
+
 protected:
 
   const std::string      _file;

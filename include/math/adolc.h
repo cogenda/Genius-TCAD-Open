@@ -47,6 +47,8 @@
 
 
 #include <cassert>
+#include <cstdlib>
+#include <cstring>
 #include <vector>
 #include <cmath>
 #include <limits>

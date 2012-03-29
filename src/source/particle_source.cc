@@ -349,26 +349,25 @@ void Particle_Source_Analytic::update_system()
 
 Particle_Source_Track::Particle_Source_Track(SimulationSystem &system, const Parser::Card &c):Particle_Source(system)
 {
-  MESSAGE<<"Setting Radiation Source from particle track..."; RECORD();
-
   genius_assert(c.key() == "PARTICLE");
+  genius_assert(c.is_enum_value("profile", "track"));
 
-  if(c.is_enum_value("profile","track"))
-    _read_particle_profile_track(c.get_string("profile.file", ""));
-
+  // get parameters for the particle track
   _t0     = c.get_real("t0", 0.0)*s;
   _t_max  = c.get_real("tmax", 0.0)*s;
   _t_char = c.get_real("t.char", 2e-12)*s;
   _quan_eff = c.get_real("quan.eff", 3.6)*eV;
 
-  _lateral_char = c.get_real("lateral.char", 0.1)*um;
+  std::string track_file = c.get_string("profile.file", "");
 
+  MESSAGE<<"Setting Radiation Source from particle event file " << track_file << "..."; RECORD();
+  _read_particle_profile_track(track_file, c.get_real("lateral.char", 0.1));
   MESSAGE<<"ok\n"<<std::endl; RECORD();
 }
 
 
 
-void Particle_Source_Track::_read_particle_profile_track(const std::string &file)
+void Particle_Source_Track::_read_particle_profile_track(const std::string & file, Real lateral_char)
 {
   std::vector<double> meta_data;
   if(Genius::processor_id()==0)
@@ -392,8 +391,10 @@ void Particle_Source_Track::_read_particle_profile_track(const std::string &file
       ss >> particle;
       if(particle.empty()) continue;
 
-      double p1[3], p2[3], energy;
-      ss >>  p1[0] >> p1[1] >> p1[2] >> p2[0] >> p2[1] >> p2[2] >> energy ;
+      double p1[3], p2[3], energy, sigma=lateral_char;
+      ss >>  p1[0] >> p1[1] >> p1[2] >> p2[0] >> p2[1] >> p2[2] >> energy;
+      if(!ss.eof()) { ss >> sigma;}
+
       meta_data.push_back(p1[0]*um);
       meta_data.push_back(p1[1]*um);
       meta_data.push_back(p1[2]*um);
@@ -401,22 +402,24 @@ void Particle_Source_Track::_read_particle_profile_track(const std::string &file
       meta_data.push_back(p2[1]*um);
       meta_data.push_back(p2[2]*um);
       meta_data.push_back(energy*1e6*eV);
+      meta_data.push_back(sigma*um);
     }
 
     in.close();
   }
 
   Parallel::broadcast(meta_data);
-  for(unsigned int n=0; n<meta_data.size()/7; ++n)
+  for(unsigned int n=0; n<meta_data.size()/8; ++n)
   {
     track_t track;
-    track.start.x() = meta_data[7*n+0];
-    track.start.y() = meta_data[7*n+1];
-    track.start.z() = meta_data[7*n+2];
-    track.end.x()   = meta_data[7*n+3];
-    track.end.y()   = meta_data[7*n+4];
-    track.end.z()   = meta_data[7*n+5];
-    track.energy    = meta_data[7*n+6];
+    track.start.x()    = meta_data[8*n+0];
+    track.start.y()    = meta_data[8*n+1];
+    track.start.z()    = meta_data[8*n+2];
+    track.end.x()      = meta_data[8*n+3];
+    track.end.y()      = meta_data[8*n+4];
+    track.end.z()      = meta_data[8*n+5];
+    track.energy       = meta_data[8*n+6];
+    track.lateral_char = meta_data[8*n+7];
     _tracks.push_back(track);
   }
 
@@ -443,13 +446,14 @@ void Particle_Source_Track::update_system()
 
     const Point track_dir = (track.end - track.start).unit(); // track direction
     const double ed = track.energy/(track.end - track.start).size(); // linear energy density
+    const double lateral_char = track.lateral_char;
     // find the nodes that near the track
     std::multimap<const Node *, std::pair<FVM_Node *, double> > impacted_fvm_nodes;
     for(unsigned int r=0; r<_system.n_regions(); r++)
     {
       const SimulationRegion * region = _system.region(r);
 
-      Real radii = 5*_lateral_char;
+      Real radii = 5*lateral_char;
       std::vector<const Node *> nn = nn_locator->nearest_nodes(track.start, track.end, radii, r);
       for(unsigned int n=0; n<nn.size(); ++n)
       {
@@ -459,9 +463,9 @@ void Particle_Source_Track::update_system()
 
         Point loc_pp = track.start + (loc-track.start)*track_dir*track_dir;
         Real r = (loc-loc_pp).size();
-        double e_r = exp(-r*r/(_lateral_char*_lateral_char));
-        double e_z = Erf((loc_pp-track.start)*track_dir/_lateral_char) - Erf((loc_pp-track.end)*track_dir/_lateral_char);
-        double energy = ed/(2*pi*_lateral_char*_lateral_char)*e_r*e_z;
+        double e_r = exp(-r*r/(lateral_char*lateral_char));
+        double e_z = Erf((loc_pp-track.start)*track_dir/lateral_char) - Erf((loc_pp-track.end)*track_dir/lateral_char);
+        double energy = ed/(2*pi*lateral_char*lateral_char)*e_r*e_z;
         impacted_fvm_nodes.insert(std::make_pair(nn[n], std::make_pair(fvm_node, energy)));
       }
     }

@@ -34,10 +34,11 @@
 // constructor
 template <unsigned int N>
 Tree<N>::Tree (const MeshBase& m,
-               const unsigned int level,
+               const unsigned int tbs,
+               const unsigned int mlevel,
                const Trees::BuildType bt) :
     TreeBase(m),
-    root(m,level),
+    root(m,tbs, mlevel),
     build_type(bt)
 {
   // Set the root node bounding box equal to the bounding

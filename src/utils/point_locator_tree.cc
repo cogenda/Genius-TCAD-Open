@@ -102,7 +102,7 @@ void PointLocatorTree::init (const Trees::BuildType build_type)
       if (this->_master == NULL)
         {
 	  if (this->_mesh.mesh_dimension() == 3)
-	    _tree = new Trees::OctTree (this->_mesh, 100, build_type); // max 20 elements in each tree node
+	    _tree = new Trees::OctTree (this->_mesh, 100, 10, build_type); // max 20 elements in each tree node
 	  else
 	    {
 	      // A 1D/2D mesh in 3D space needs special consideration.
@@ -125,9 +125,9 @@ void PointLocatorTree::init (const Trees::BuildType build_type)
 	      }
 
 	      if (is_planar_xy)
-		_tree = new Trees::QuadTree (this->_mesh, 100, build_type);
+		_tree = new Trees::QuadTree (this->_mesh, 100, 10, build_type);
 	      else
-		_tree = new Trees::OctTree  (this->_mesh, 100, build_type);
+		_tree = new Trees::OctTree  (this->_mesh, 100, 10, build_type);
 	    }
 	}
 

@@ -262,6 +262,11 @@ private:
   std::map<unsigned int, short int> _bc_index_to_bd_id;
 
   /**
+   * map boundary id to its regions
+   */
+  std::map<short int,  std::pair<unsigned int, unsigned int > > _boundary_subdomain_map;
+
+  /**
    * @return all the interfaces between region r1 and region r2
    */
   std::vector<std::string> _find_interface_by_2_regions(const std::string &r1, const std::string &r2) const;

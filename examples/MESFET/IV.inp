@@ -26,7 +26,7 @@ Model Region=MESFET H.Mob=true Mob.force=ESimple
 # set gate bias, we change the drain voltage. 
 #ATTACH   Electrode=GATE    VApp=VGATE
 
-METHOD   Type=EBML3    NS=Basic LS=GMRES
-SOLVE    Type=DCSWEEP  VScan=DRAIN  out=iv0 VStart=0.0 VStep=0.02 VStop=2 
+METHOD   Type=DDML1    NS=Basic LS=LU
+SOLVE    Type=DCSWEEP  VScan=DRAIN  out.prefix=iv0 VStart=0.0 VStep=0.02 VStop=2 
 
 END

@@ -85,6 +85,12 @@ public:
 
 
   /**
+   * PETSC KSP can have an individual prefix
+   */
+  virtual std::string ksp_prefix() const = 0;
+
+
+  /**
    * virtual function for building the RHS vector
    */
   virtual void build_rhs(Vec ) {}
@@ -178,6 +184,18 @@ protected:
    * Enum statitng with type of preconditioner to use.
    */
   SolverSpecify::PreconditionerType _preconditioner_type;
+
+
+  /**
+   * all the petsc options, will be delete when this class is destroied.
+   */
+  std::map<std::string, std::string> petsc_options;
+
+  /**
+   * apply and buffer petsc options
+   */
+  int set_petsc_option(const std::string &key, const std::string &value, bool has_prefix=true);
+
 
 };
 

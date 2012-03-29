@@ -675,6 +675,12 @@ int MeshGeneratorTri3::set_region_rectangle(const Parser::Card &c)
   region.iymax = c.get_int("iy.max",IY-1,"iy.bottom");
   region.label = c.get_string("label","") ;
 
+  if(!c.is_parameter_exist("material"))
+  {
+    MESSAGE<<"ERROR at " <<c.get_fileline()<< " REGION: Material should be given for each region!\n";
+    RECORD();
+  }
+
   region.material= c.get_string("material","") ;
 
   region.shape = 0;

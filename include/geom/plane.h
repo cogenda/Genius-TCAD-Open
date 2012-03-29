@@ -100,7 +100,7 @@ public:
 
   /**
    * Returns plane parameter as Ax+By+Cz+D=0
-   * normalize as A^2+B^2+C^2+D^2=1
+   * normalize as A^2+B^2+C^2=1
    */
   void plane_parameter(Real &A, Real &B, Real &C, Real &D) const;
 

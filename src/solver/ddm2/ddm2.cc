@@ -1110,7 +1110,7 @@ void DDM2Solver::build_petsc_sens_jacobian(Vec x, Mat *, Mat *)
   //VecReciprocal(L);
 
 
-  //MatView(J,PETSC_VIEWER_STDOUT_SELF );
+  //MatView(J,PETSC_VIEWER_STDOUT_WORLD );
   //getchar();
 
   if(!jacobian_matrix_first_assemble)

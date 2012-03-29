@@ -46,7 +46,7 @@ using PhysicalUnit::C;
 // init the static dummy member of BoundaryCondition class
 unsigned int BoundaryCondition::_solver_index=0;
 PetscScalar BoundaryCondition::_dummy_ = 0;
-bool BoundaryCondition::_bool_dummy_ = false;
+
 
 
 
@@ -290,6 +290,15 @@ void BoundaryCondition::insert(const Node * node, SimulationRegion *r, FVM_Node 
 }
 
 
+std::pair<unsigned int, unsigned int> BoundaryCondition::bc_subdomains() const
+{
+  std::pair<unsigned int, unsigned int> subdomains;
+  subdomains.first = _bc_regions.first ? _bc_regions.first->subdomain_id() : invalid_uint;
+  subdomains.second = _bc_regions.second ? _bc_regions.second->subdomain_id() : invalid_uint;
+  return subdomains;
+}
+
+
 FVM_Node * BoundaryCondition::get_region_fvm_node(const Node * n, const SimulationRegion * region) const
 {
   const_region_node_iterator reg_it     = region_node_begin(n);
@@ -383,18 +392,38 @@ void BoundaryCondition::set_boundary_info_to_fvm_node()
 }
 
 
-PetscScalar BoundaryCondition::scalar(const std::string & name) const
+double BoundaryCondition::scalar(const std::string & name) const
 {
   genius_assert(_real_parameters.find(name) != _real_parameters.end());
   return _real_parameters.find(name)->second;
 }
 
-
-PetscScalar & BoundaryCondition::scalar(const std::string & name)
+double & BoundaryCondition::scalar(const std::string & name)
 {
   return _real_parameters[name];
 }
 
+bool BoundaryCondition::has_scalar(const std::string & name) const
+{
+  return _real_parameters.find(name) != _real_parameters.end();
+}
+
+
+std::vector<double> BoundaryCondition::scalar_array(const std::string & name) const
+{
+  genius_assert(_real_array_parameters.find(name) != _real_array_parameters.end());
+  return _real_array_parameters.find(name)->second;
+}
+
+std::vector<double> & BoundaryCondition::scalar_array(const std::string & name)
+{
+  return _real_array_parameters[name];
+}
+
+bool BoundaryCondition::has_scalar_array(const std::string & name) const
+{
+  return _real_array_parameters.find(name) != _real_array_parameters.end();
+}
 
 
 bool BoundaryCondition::flag(const std::string & name) const
@@ -403,10 +432,14 @@ bool BoundaryCondition::flag(const std::string & name) const
   return _bool_parameters.find(name)->second;
 }
 
-
 bool & BoundaryCondition::flag(const std::string & name)
 {
   return _bool_parameters[name];
+}
+
+bool BoundaryCondition::has_flag(const std::string & name) const
+{
+  return _bool_parameters.find(name) != _bool_parameters.end();
 }
 
 
@@ -453,7 +486,7 @@ NeumannBC::NeumannBC(SimulationSystem  & system, const std::string & label): Bou
 {
   MESSAGE<<"  Initializing \""<< label <<"\" as Neumann BC..."<<std::endl; RECORD();
   scalar("heat.transfer") = 0.0*J/s/pow(cm,2)/K;
-  _reflection    = false;
+  flag("reflection") = false;
 }
 
 
@@ -465,7 +498,7 @@ OhmicContactBC::OhmicContactBC(SimulationSystem  & system, const std::string & l
 
   MESSAGE<<"  Initializing \""<< label <<"\" as Ohmic Contact BC..."<<std::endl; RECORD();
   scalar("heat.transfer") = 1e3*J/s/pow(cm,2)/K;
-  _reflection    = true;
+  flag("reflection") = false;
 }
 
 
@@ -488,7 +521,7 @@ SchottkyContactBC::SchottkyContactBC(SimulationSystem  & system, const std::stri
   MESSAGE<<"  Initializing \""<< label <<"\" as Schottky Contact BC..."<<std::endl; RECORD();
   scalar("heat.transfer") = 1e3*J/s/pow(cm,2)/K;
   scalar("workfunction")  = 0.0;
-  _reflection    = true;
+  flag("reflection") = false;
 }
 
 
@@ -601,11 +634,11 @@ std::string NeumannBC::boundary_condition_in_string() const
   std::stringstream ss;
 
   ss <<"BOUNDARY "
-  <<"string<id>="<<this->label()<<" "
-  <<"enum<type>=Neumann "
-  <<"real<ext.temp>="<<T_external()/K<<" "
-  <<"real<heat.transfer>="<<scalar("heat.transfer")/(J/s/pow(cm,2)/K)<<" "
-  <<"bool<reflection>="<<( _reflection ? "true" : "false" )<<" ";
+     <<"string<id>="<<this->label()<<" "
+     <<"enum<type>=Neumann "
+     <<"real<ext.temp>="<<T_external()/K<<" "
+     <<"real<heat.transfer>="<<scalar("heat.transfer")/(J/s/pow(cm,2)/K)<<" "
+     <<"bool<reflection>="<<( flag("reflection") ? "true" : "false" )<<" ";
 
   if(system().mesh().mesh_dimension () == 2)
     ss<<"real<z.width>="<<z_width()/um;
@@ -635,7 +668,8 @@ std::string OhmicContactBC::boundary_condition_in_string() const
   if(_bd_type == BOUNDARY)
   {
     ss <<"real<ext.temp>="<<T_external()/K<<" "
-       <<"real<heat.transfer>="<<scalar("heat.transfer")/(J/s/pow(cm,2)/K)<<" ";
+       <<"real<heat.transfer>="<<scalar("heat.transfer")/(J/s/pow(cm,2)/K)<<" "
+       <<"bool<reflection>="<<( flag("reflection") ? "true" : "false" )<<" ";
   }
   else
   {
@@ -644,6 +678,7 @@ std::string OhmicContactBC::boundary_condition_in_string() const
       ss << "string<electrode_id>=" << this->electrode_label() << " ";
     }
   }
+
   if(system().mesh().mesh_dimension () == 2)
     ss<<"real<z.width>="<<z_width()/um;
   ss<<std::endl;
@@ -694,7 +729,8 @@ std::string SchottkyContactBC::boundary_condition_in_string() const
   if(_bd_type == BOUNDARY)
   {
     ss <<"real<ext.temp>="<<T_external()/K<<" "
-       <<"real<heat.transfer>="<<scalar("heat.transfer")/(J/s/pow(cm,2)/K)<<" ";
+       <<"real<heat.transfer>="<<scalar("heat.transfer")/(J/s/pow(cm,2)/K)<<" "
+       <<"bool<reflection>="<<( flag("reflection") ? "true" : "false" )<<" ";
   }
   else
   {
@@ -703,6 +739,7 @@ std::string SchottkyContactBC::boundary_condition_in_string() const
       ss << "string<electrode_id>=" << this->electrode_label() << " ";
     }
   }
+
   if(system().mesh().mesh_dimension () == 2)
     ss<<"real<z.width>="<<z_width()/um;
   ss<<std::endl;

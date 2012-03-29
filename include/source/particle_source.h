@@ -213,18 +213,12 @@ private:
     Point        end;
     std::string  material;
     double       energy;
+    double       lateral_char;
   };
 
   std::vector<track_t> _tracks;
 
-  void _read_particle_profile_track(const std::string &file);
-
-  /**
-   * lateral char. length
-   */
-  double _lateral_char;
-
-
+  void _read_particle_profile_track(const std::string &, Real );
 };
 
 

@@ -48,7 +48,7 @@ public:
   /**
    * Constructor.
    */
-  Tree (const MeshBase& m, const unsigned int level, Trees::BuildType bt=Trees::NODES);
+  Tree (const MeshBase& m, const unsigned int tbs, const unsigned int mlevel=100, Trees::BuildType bt=Trees::NODES);
 
   /**
    * Copy-constructor.
@@ -108,10 +108,12 @@ private:
    */
   TreeNode<N> root;
 
+
   /**
    * How the tree is built.
    */
   const Trees::BuildType build_type;
+
 
   /**
    * for surface elem mode, record surface elem here

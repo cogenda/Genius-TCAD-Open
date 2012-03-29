@@ -277,9 +277,24 @@ bool SilvacoTIF::read()
 
   _find_solution_region_by_material();
 
+  _acceptor_index = _sol_head.solution_index("Acceptor");
+  _donor_index    = _sol_head.solution_index("Donor");
+
   return true;
 }
 
+
+
+double SilvacoTIF::acceptor(unsigned int data_index) const
+{
+  return _sol_data[data_index].data_array[_acceptor_index];
+}
+
+
+double SilvacoTIF::donor(unsigned int data_index) const
+{
+  return _sol_data[data_index].data_array[_donor_index];
+}
 
 
 void SilvacoTIF::export_scatter_doping_data() const

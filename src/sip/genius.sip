@@ -1,4 +1,4 @@
-%Module genius 0
+%Module(name=genius, version=0)
 
 %Include types.sip
 

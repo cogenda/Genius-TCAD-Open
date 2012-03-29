@@ -310,7 +310,7 @@ namespace Material
   int material_weight(const std::string & mat_name)
   {
     if( IsSemiconductor(mat_name) ) return 4;
-    if( IsResistance(mat_name) )    return 2;
+    //if( IsResistance(mat_name) )    return 1;
     return 1;
   }
 

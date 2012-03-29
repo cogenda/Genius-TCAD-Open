@@ -87,6 +87,11 @@ public:
   { return 2; }
 
 
+  /**
+   * PETSC KSP can have an individual prefix
+   */
+  virtual std::string ksp_prefix() const { return "FEM_"; }
+
 private:
 
   /**

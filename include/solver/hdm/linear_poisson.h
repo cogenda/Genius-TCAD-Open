@@ -138,8 +138,14 @@ public:
    */
   virtual void build_matrix(Mat , Mat );
 
+  /**
+   * PETSC KSP can have an individual prefix
+   */
+  virtual std::string ksp_prefix() const { return "poisson_linear_"; }
 
-private:
+protected:
+
+
   /**
    * write solution to system
    */

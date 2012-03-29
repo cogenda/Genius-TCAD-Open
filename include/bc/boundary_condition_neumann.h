@@ -62,18 +62,6 @@ public:
     { return BOUNDARY; }
 
   /**
-   * @return the reflection flag of this boundary
-   */
-  virtual bool reflection() const
-    {return _reflection;}
-
-  /**
-   * @return writable reference to reflection flag of this boundary
-   */
-  virtual bool & reflection()
-  {return _reflection;}
-
-  /**
    * indicate that this bc is an electrode
    * @return false
    */
@@ -90,13 +78,6 @@ public:
    * @return the string which indicates the boundary condition
    */
   virtual std::string boundary_condition_in_string() const;
-
-private:
-
-  /**
-   * full reflection flag......just used in ray tracing
-   */
-  bool _reflection;
 
 
 public:

@@ -174,6 +174,10 @@ public:
   void set_preconditioner_type (const SolverSpecify::PreconditionerType pct)
   { _preconditioner_type = pct; }
 
+  /**
+   * PETSC SNES can have an individual prefix
+   */
+  virtual std::string snes_prefix() const = 0;
 
   /**
    * pure virtual function for evaluating the residual of function f at x
@@ -319,6 +323,17 @@ protected:
    * Enum statitng with type of preconditioner to use.
    */
   SolverSpecify::PreconditionerType _preconditioner_type;
+
+
+  /**
+   * all the petsc options, will be delete when this class is destroied.
+   */
+  std::map<std::string, std::string> petsc_options;
+
+  /**
+   * apply and buffer petsc options
+   */
+  int set_petsc_option(const std::string &key, const std::string &value, bool has_prefix=true);
 
 };
 

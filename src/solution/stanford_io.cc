@@ -325,8 +325,6 @@ void STIFIO::read (const std::string& filename)
     }
   }
 
-  unsigned int donor        = tif_reader->sol_head().solution_index("Donor");
-  unsigned int acceptor     = tif_reader->sol_head().solution_index("Acceptor");
 
   for(unsigned int r=0; r<system.n_regions(); r++)
   {
@@ -350,10 +348,9 @@ void STIFIO::read (const std::string& filename)
           unsigned int data_index = solution_map.find(key)->second;
 
           // doping
-          if(donor!=invalid_uint && acceptor!=invalid_uint)
           {
-            node_data->Na()   = tif_reader->sol_data(data_index).data_array[acceptor] * pow(cm, -3);
-            node_data->Nd()   = tif_reader->sol_data(data_index).data_array[donor   ] * pow(cm, -3);
+            node_data->Na()   = tif_reader->acceptor(data_index) * pow(cm, -3);
+            node_data->Nd()   = tif_reader->donor(data_index) * pow(cm, -3);
           }
         }
         region->init(system.T_external());

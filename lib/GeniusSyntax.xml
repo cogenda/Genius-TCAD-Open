@@ -70,6 +70,9 @@
     <parameter name="reflection" type="bool" default="false">
       <description></description>
     </parameter>
+    <parameter name="coatings" type="num[]" default="">
+      <description>anti-reflection coatings</description>
+    </parameter>
     <parameter name="res" type="num" default="0">
       <description></description>
     </parameter>
@@ -986,6 +989,70 @@
       <enum>tfqmr</enum>
       <enum>umfpack</enum>
     </parameter>
+    <parameter name="ls.carrier" type="enum" default="bcgs">
+      <description></description>
+      <enum>bcgs</enum>
+      <enum>bcgsl</enum>
+      <enum>bicg</enum>
+      <enum>bicgstable</enum>
+      <enum>cg</enum>
+      <enum>cgn</enum>
+      <enum>cgs</enum>
+      <enum>chebyshev</enum>
+      <enum>cr</enum>
+      <enum>dgmres</enum>
+      <enum>fgmres</enum>
+      <enum>gmres</enum>
+      <enum>gss</enum>
+      <enum>jacobian</enum>
+      <enum>lsqr</enum>
+      <enum>lu</enum>
+      <enum>minres</enum>
+      <enum>mumps</enum>
+      <enum>pastix</enum>
+      <enum>qmr</enum>
+      <enum>richardson</enum>
+      <enum>sor_backward</enum>
+      <enum>sor_forward</enum>
+      <enum>ssor</enum>
+      <enum>superlu</enum>
+      <enum>superlu_dist</enum>
+      <enum>tcqmr</enum>
+      <enum>tfqmr</enum>
+      <enum>umfpack</enum>
+    </parameter>
+    <parameter name="ls.current" type="enum" default="bcgs">
+      <description></description>
+      <enum>bcgs</enum>
+      <enum>bcgsl</enum>
+      <enum>bicg</enum>
+      <enum>bicgstable</enum>
+      <enum>cg</enum>
+      <enum>cgn</enum>
+      <enum>cgs</enum>
+      <enum>chebyshev</enum>
+      <enum>cr</enum>
+      <enum>dgmres</enum>
+      <enum>fgmres</enum>
+      <enum>gmres</enum>
+      <enum>gss</enum>
+      <enum>jacobian</enum>
+      <enum>lsqr</enum>
+      <enum>lu</enum>
+      <enum>minres</enum>
+      <enum>mumps</enum>
+      <enum>pastix</enum>
+      <enum>qmr</enum>
+      <enum>richardson</enum>
+      <enum>sor_backward</enum>
+      <enum>sor_forward</enum>
+      <enum>ssor</enum>
+      <enum>superlu</enum>
+      <enum>superlu_dist</enum>
+      <enum>tcqmr</enum>
+      <enum>tfqmr</enum>
+      <enum>umfpack</enum>
+    </parameter>
     <parameter name="ls.poisson" type="enum" default="bcgs">
       <description></description>
       <enum>bcgs</enum>
@@ -1029,6 +1096,48 @@
       <enum>trustregion</enum>
     </parameter>
     <parameter name="pc" type="enum" default="ilu">
+      <description></description>
+      <enum>amg</enum>
+      <enum>asm</enum>
+      <enum>asmilu0</enum>
+      <enum>asmilu1</enum>
+      <enum>asmilu2</enum>
+      <enum>asmilu3</enum>
+      <enum>asmlu</enum>
+      <enum>bjacobian</enum>
+      <enum>cholesky</enum>
+      <enum>icc</enum>
+      <enum>identity</enum>
+      <enum>ilu</enum>
+      <enum>ilut</enum>
+      <enum>jacobian</enum>
+      <enum>lu</enum>
+      <enum>parms</enum>
+      <enum>sor</enum>
+      <enum>ssor</enum>
+    </parameter>
+    <parameter name="pc.carrier" type="enum" default="ilu">
+      <description></description>
+      <enum>amg</enum>
+      <enum>asm</enum>
+      <enum>asmilu0</enum>
+      <enum>asmilu1</enum>
+      <enum>asmilu2</enum>
+      <enum>asmilu3</enum>
+      <enum>asmlu</enum>
+      <enum>bjacobian</enum>
+      <enum>cholesky</enum>
+      <enum>icc</enum>
+      <enum>identity</enum>
+      <enum>ilu</enum>
+      <enum>ilut</enum>
+      <enum>jacobian</enum>
+      <enum>lu</enum>
+      <enum>parms</enum>
+      <enum>sor</enum>
+      <enum>ssor</enum>
+    </parameter>
+    <parameter name="pc.current" type="enum" default="ilu">
       <description></description>
       <enum>amg</enum>
       <enum>asm</enum>
@@ -1160,14 +1269,19 @@
     <parameter name="hotcarrier" type="bool" default="false">
       <description></description>
     </parameter>
+    <parameter name="dir.tunneling" type="bool" default="false">
+      <description></description>
+    </parameter>
+    <parameter name="fn.tunneling" type="bool" default="false">
+      <description></description>
+    </parameter>
     <parameter name="fntunneling" type="bool" default="false">
       <description></description>
     </parameter>
     <parameter name="h.mob" type="bool" default="true">
       <description></description>
     </parameter>
-    <parameter name="h.mob.selfconsistent" type="bool"
-    default="true">
+    <parameter name="h.mob.selfconsistent" type="bool" default="true">
       <description></description>
     </parameter>
     <parameter name="highfieldmobility" type="bool" default="true">

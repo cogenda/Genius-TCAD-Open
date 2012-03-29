@@ -135,6 +135,12 @@ public:
    */
   virtual bool pseudo_time_step_convergence_test()=0;
 
+
+  /**
+   * PETSC SNES can have an individual prefix
+   */
+  virtual std::string snes_prefix() const { return "ddm_"; }
+
   /**
    * snes monitor, do nothing
    */

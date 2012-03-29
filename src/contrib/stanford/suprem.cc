@@ -170,6 +170,18 @@ bool SupremTIF::read()
 }
 
 
+double SupremTIF::acceptor(unsigned int data_index) const
+{
+  return _sol_data[data_index].data_array[_acceptor_index];
+}
+
+
+double SupremTIF::donor(unsigned int data_index) const
+{
+  return _sol_data[data_index].data_array[_donor_index];
+}
+
+
 void SupremTIF::_init_index_string_map()
 {
   {

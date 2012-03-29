@@ -38,6 +38,7 @@
 class ObjectTree;
 class LightThread;
 class LightLenses;
+class ARCoatings;
 
 /**
  * Ray tracing program  to calculate photogeneration carriers, which is
@@ -185,9 +186,9 @@ private:
   std::map<const Elem *, std::vector<std::pair<const Elem*, unsigned int> >, lt_edge> _boundary_edge_to_elem_side_map;
 
   /**
-   * record all the full reflect surface (electrode surface and neumann surface with Reflection parameter is ture)
+   * map elem-side to boundary condition
    */
-  std::multimap<const Elem *, unsigned int> _full_reflect_surface;
+  std::map< std::pair<const Elem *, unsigned int>, const BoundaryCondition * >  _elem_to_surface_map;
 
   /**
    * build boundary/interface node/edge map and _full_reflect_surface map
@@ -195,9 +196,30 @@ private:
   void build_boundary_elems_map();
 
   /**
+   * anti-reflection coatings
+   */
+  std::map<short int, ARCoatings *>  _arc_surface;
+
+  /**
+   * build anti-reflection coating surface
+   */
+  void build_anti_reflection_coating_surface_map();
+
+
+  /**
+   * @return true if the elem-side is a boundary surface
+   */
+  bool is_surface(const Elem *, unsigned int) const;
+
+  /**
    * @return true if the elem-side is full reflection
    */
   bool is_full_reflect_surface(const Elem *, unsigned int) const;
+
+  /**
+   * @return anti-reflection coating surface, NULL for normal surface
+   */
+  const ARCoatings * is_anti_reflection_coating_surface(const Elem *, unsigned int) const;
 
   /**
    * find the first elem ray hit among elements in vector

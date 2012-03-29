@@ -182,6 +182,12 @@ public:
     { return _bc_regions; }
 
 
+  /**
+   * @return the (max) two involved regions
+   */
+  std::pair<unsigned int, unsigned int> bc_subdomains() const;
+
+
   typedef std::vector<const Node *>::const_iterator const_node_iterator;
 
 
@@ -422,19 +428,6 @@ private:
   // members for bc parameters
 public:
 
-
-  /**
-   * @return a flag to show whether a boundary is full reflection
-   * default is false
-   */
-  virtual bool reflection() const    { return false; }
-
-  /**
-   * @return writable reference to a reflection flag
-   * however, we should never reach here
-   */
-  virtual bool & reflection()  { genius_error(); return _bool_dummy_;}
-
   /**
    * @return the temperature of external entironment.
    */
@@ -508,12 +501,32 @@ public:
   /**
    * get scalar parameter
    */
-  PetscScalar scalar(const std::string & ) const;
+  double scalar(const std::string & ) const;
 
   /**
    * set scalar parameter
    */
-  PetscScalar & scalar(const std::string & );
+  double & scalar(const std::string & );
+
+  /**
+   * @return true when scalar parameter exist
+   */
+  bool has_scalar(const std::string & ) const;
+
+  /**
+   * get scalar-array parameter
+   */
+  std::vector<double> scalar_array(const std::string & ) const;
+
+  /**
+   * set scalar-array parameter
+   */
+  std::vector<double> & scalar_array(const std::string & );
+
+  /**
+   * @return true when scalar-array parameter exist
+   */
+  bool has_scalar_array(const std::string & ) const;
 
   /**
    * get booling flag
@@ -524,6 +537,11 @@ public:
    * set booling flag
    */
   bool & flag(const std::string & );
+
+  /**
+   * @return true when bool parameter exist
+   */
+  bool has_flag(const std::string & ) const;
 
 
 private:
@@ -544,23 +562,26 @@ private:
   PetscScalar   _T_Ext;
 
 
-  std::map<std::string, PetscScalar>  _real_parameters;
+  /**
+   * general real parameter
+   */
+  std::map<std::string, double>  _real_parameters;
 
+  /**
+   * general real-array parameter
+   */
+  std::map<std::string, std::vector<double> > _real_array_parameters;
 
+  /**
+   * general bool parameter
+   */
   std::map<std::string, bool>  _bool_parameters;
 
 
   /**
-   * dummy to prevent compile problem
+   * dummy to prevent compiler problem
    */
   static PetscScalar _dummy_;
-
-  /**
-   * the same purpose with dummy
-   */
-  static bool _bool_dummy_;
-
-
 
 
   // members for inter connect

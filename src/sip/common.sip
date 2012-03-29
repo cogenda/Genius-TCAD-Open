@@ -113,7 +113,7 @@ PetscErrorCode genius_error_handler(int line, const char *func, const char *file
   }
 %End
 
-  void log(const char *msg /in/);
+  void log(const char *msg /In/);
 %MethodCode
     Py_BEGIN_ALLOW_THREADS
     MESSAGE << a0;

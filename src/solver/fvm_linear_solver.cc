@@ -108,7 +108,7 @@ void FVM_LinearSolver::setup_linear_data()
 #if defined(PETSC_HAVE_MPI_WIN_CREATE) && defined(AIX)
   //NOTE Scatter with default settings will crash on AIX6.1 with POE. vecscatter_window can be a workaround here.
   // this line should before VecScatterCreate
-  ierr = PetscOptionsSetValue("-vecscatter_window","1"); genius_assert(!ierr);
+  ierr = set_petsc_option("-vecscatter_window","1"); genius_assert(!ierr);
 #endif
   ierr = VecScatterCreate(x, gis, lx, lis, &scatter); genius_assert(!ierr);
 
@@ -162,6 +162,8 @@ void FVM_LinearSolver::setup_linear_data()
   // get petsc preconditional context
   ierr = KSPGetPC(ksp, &pc); genius_assert(!ierr);
 
+  ierr = KSPSetOptionsPrefix(ksp, this->ksp_prefix().c_str()); genius_assert(!ierr);
+
   // Set user-specified linear solver and preconditioner types
   set_petsc_linear_solver_type();
   set_petsc_preconditioner_type();
@@ -190,6 +192,12 @@ void FVM_LinearSolver::clear_linear_data()
   ierr = ISDestroy(PetscDestroyObject(lis));             genius_assert(!ierr);
   ierr = VecScatterDestroy(PetscDestroyObject(scatter)); genius_assert(!ierr);
   ierr = MatDestroy(PetscDestroyObject(A));              genius_assert(!ierr);
+  ierr = KSPDestroy(PetscDestroyObject(ksp));            genius_assert(!ierr);
+
+  // clear petsc options
+  std::map<std::string, std::string>::const_iterator it = petsc_options.begin();
+  for(; it != petsc_options.end(); ++it)
+    PetscOptionsClearValue(it->first.c_str());
 }
 
 
@@ -198,8 +206,7 @@ void FVM_LinearSolver::clear_linear_data()
  */
 FVM_LinearSolver::~FVM_LinearSolver()
 {
-  PetscErrorCode ierr;
-  ierr = KSPDestroy(PetscDestroyObject(ksp));          genius_assert(!ierr);
+  
 }
 
 
@@ -265,7 +272,7 @@ void FVM_LinearSolver::set_petsc_linear_solver_type()
     case SolverSpecify::BCGSL:
       MESSAGE<< "Using BCGS(l) linear solver..."<<std::endl;  RECORD();
       ierr = KSPSetType (ksp, (char*) KSPBCGSL);      genius_assert(!ierr);
-      //ierr = PetscOptionsSetValue("-ksp_bcgsl_ell", "4");  genius_assert(!ierr);
+      //ierr = set_petsc_option("-ksp_bcgsl_ell", "4");  genius_assert(!ierr);
       return;
 
     case SolverSpecify::MINRES:
@@ -277,7 +284,7 @@ void FVM_LinearSolver::set_petsc_linear_solver_type()
       ierr = KSPSetType (ksp, (char*) KSPGMRES);      genius_assert(!ierr);
       // for GMRES method, we need to enlarge restart step (default is 30)
       ierr = KSPGMRESSetRestart(ksp, 60);            genius_assert(!ierr);
-      //ierr = PetscOptionsSetValue("-ksp_gmres_modifiedgramschmidt", "1");  genius_assert(!ierr);
+      //ierr = set_petsc_option("-ksp_gmres_modifiedgramschmidt", "1");  genius_assert(!ierr);
       return;
 
     case SolverSpecify::FGMRES:
@@ -324,8 +331,8 @@ void FVM_LinearSolver::set_petsc_linear_solver_type()
             ierr = KSPSetType (ksp, (char*) KSPPREONLY); genius_assert(!ierr);
             ierr = PCSetType  (pc, (char*) PCLU); genius_assert(!ierr);
             ierr = PCFactorSetMatSolverPackage (pc, "mumps"); genius_assert(!ierr);
-            //ierr = PetscOptionsSetValue("-mat_mumps_icntl_14", "80");  genius_assert(!ierr);
-            //ierr = PetscOptionsSetValue("-mat_mumps_icntl_23","4000");
+            //ierr = set_petsc_option("-mat_mumps_icntl_14", "80", false);  genius_assert(!ierr);
+            //ierr = set_petsc_option("-mat_mumps_icntl_23","4000", false);
 #else
             MESSAGE<< "Warning:  no MUMPS solver configured, use BCGS instead!" << std::endl;
             RECORD();
@@ -519,9 +526,9 @@ void FVM_LinearSolver::set_petsc_preconditioner_type()
 
       //ierr = PCFactorSetMatOrderingType(pc, MATORDERING_ND); genius_assert(!ierr);
       //ierr = PCFactorSetMatOrderingType(pc, MATORDERING_RCM);
-      //ierr = PetscOptionsSetValue("-pc_factor_nonzeros_along_diagonal", 0); genius_assert(!ierr);
+      //ierr = set_petsc_option("-pc_factor_nonzeros_along_diagonal", "0"); genius_assert(!ierr);
       ierr = PCFactorSetAllowDiagonalFill(pc);genius_assert(!ierr);
-      //ierr = PetscOptionsSetValue("-pc_factor_diagonal_fill", 0);
+      //ierr = set_petsc_option("-pc_factor_diagonal_fill", "0");
       return;
 #endif
       }
@@ -534,10 +541,10 @@ void FVM_LinearSolver::set_petsc_preconditioner_type()
         RECORD();
         ierr = PCSetType (pc, (char*) PCILU);     genius_assert(!ierr);
         ierr = PCFactorSetMatSolverPackage (pc, "superlu"); genius_assert(!ierr);
-        ierr = PetscOptionsSetValue("-mat_superlu_rowperm","LargeDiag"); genius_assert(!ierr);
-        ierr = PetscOptionsSetValue("-mat_superlu_ilu_droptol","1e-4"); genius_assert(!ierr);
-        ierr = PetscOptionsSetValue("-mat_superlu_ilu_filltol","1e-2"); genius_assert(!ierr);
-        ierr = PetscOptionsSetValue("-mat_superlu_ilu_fillfactor","30"); genius_assert(!ierr);
+        ierr = set_petsc_option("-mat_superlu_rowperm","LargeDiag", false); genius_assert(!ierr);
+        ierr = set_petsc_option("-mat_superlu_ilu_droptol","1e-4", false); genius_assert(!ierr);
+        ierr = set_petsc_option("-mat_superlu_ilu_filltol","1e-2", false); genius_assert(!ierr);
+        ierr = set_petsc_option("-mat_superlu_ilu_fillfactor","30", false); genius_assert(!ierr);
         return;
 #else
         MESSAGE << "Warning:  no ILUT preconditioner configured, use ILU0 instead!" << std::endl;
@@ -552,14 +559,14 @@ void FVM_LinearSolver::set_petsc_preconditioner_type()
         MESSAGE<< "Using ASM + SuperLU ILUT preconditioner..."<<std::endl;
         RECORD();
         ierr = PCSetType (pc, (char*) PCASM);       genius_assert(!ierr);
-        ierr = PetscOptionsSetValue("-sub_pc_type","ilu"); genius_assert(!ierr);
-        ierr = PetscOptionsSetValue("-sub_pc_factor_mat_solver_package","superlu"); genius_assert(!ierr);
-        ierr = PetscOptionsSetValue("-mat_superlu_rowperm","LargeDiag"); genius_assert(!ierr);
-        ierr = PetscOptionsSetValue("-mat_superlu_ilu_droptol","1e-4"); genius_assert(!ierr);
-        ierr = PetscOptionsSetValue("-mat_superlu_ilu_filltol","1e-2"); genius_assert(!ierr);
-        ierr = PetscOptionsSetValue("-mat_superlu_ilu_fillfactor","30"); genius_assert(!ierr);
-        //ierr = PetscOptionsSetValue("-mat_superlu_ilu_milu","2"); genius_assert(!ierr);
-        //ierr = PetscOptionsSetValue("-mat_superlu_replacetinypivot","1"); genius_assert(!ierr);
+        ierr = set_petsc_option("-sub_pc_type","ilu"); genius_assert(!ierr);
+        ierr = set_petsc_option("-sub_pc_factor_mat_solver_package","superlu"); genius_assert(!ierr);
+        ierr = set_petsc_option("-mat_superlu_rowperm","LargeDiag", false); genius_assert(!ierr);
+        ierr = set_petsc_option("-mat_superlu_ilu_droptol","1e-4", false); genius_assert(!ierr);
+        ierr = set_petsc_option("-mat_superlu_ilu_filltol","1e-2", false); genius_assert(!ierr);
+        ierr = set_petsc_option("-mat_superlu_ilu_fillfactor","30", false); genius_assert(!ierr);
+        //ierr = set_petsc_option("-mat_superlu_ilu_milu","2", false); genius_assert(!ierr);
+        //ierr = set_petsc_option("-mat_superlu_replacetinypivot","1", false); genius_assert(!ierr);
         return;
 #else
         MESSAGE << "Warning:  no ILUT preconditioner configured, use ILU0 instead!" << std::endl;
@@ -621,23 +628,25 @@ void FVM_LinearSolver::set_petsc_preconditioner_type()
       if (Genius::n_processors() > 1)
       {
         ierr = PCSetType (pc, (char*) PCASM);       genius_assert(!ierr);
-        ierr = PetscOptionsSetValue("-sub_pc_type","ilu"); genius_assert(!ierr);
-        ierr = PetscOptionsSetValue("-sub_pc_factor_reuse_fill","1"); genius_assert(!ierr);
-        ierr = PetscOptionsSetValue("-sub_pc_factor_reuse_ordering","1"); genius_assert(!ierr);
+        MESSAGE<< "Using ASM + ILU preconditioner..."<<std::endl;    RECORD();
+        ierr = set_petsc_option("-sub_pc_type","ilu"); genius_assert(!ierr);
+        ierr = set_petsc_option("-sub_pc_factor_reuse_fill","1"); genius_assert(!ierr);
+        ierr = set_petsc_option("-sub_pc_factor_reuse_ordering","1"); genius_assert(!ierr);
         switch ( _preconditioner_type )
         {
-          case SolverSpecify::ASMILU0_PRECOND: PetscOptionsSetValue("-sub_pc_factor_levels","0"); break;
-          case SolverSpecify::ASMILU1_PRECOND: PetscOptionsSetValue("-sub_pc_factor_levels","1"); break;
-          case SolverSpecify::ASMILU2_PRECOND: PetscOptionsSetValue("-sub_pc_factor_levels","2"); break;
-          case SolverSpecify::ASMILU3_PRECOND: PetscOptionsSetValue("-sub_pc_factor_levels","3"); break;
+          case SolverSpecify::ASMILU0_PRECOND: set_petsc_option("-sub_pc_factor_levels","0"); break;
+          case SolverSpecify::ASMILU1_PRECOND: set_petsc_option("-sub_pc_factor_levels","1"); break;
+          case SolverSpecify::ASMILU2_PRECOND: set_petsc_option("-sub_pc_factor_levels","2"); break;
+          case SolverSpecify::ASMILU3_PRECOND: set_petsc_option("-sub_pc_factor_levels","3"); break;
         }
-        ierr = PetscOptionsSetValue("-sub_pc_factor_shift_type","NONZERO"); genius_assert(!ierr);
+        ierr = set_petsc_option("-sub_pc_factor_shift_type","NONZERO"); genius_assert(!ierr);
         ierr = PCFactorSetReuseFill(pc, PETSC_TRUE);genius_assert(!ierr);
         ierr = PCFactorSetReuseOrdering(pc, PETSC_TRUE); genius_assert(!ierr);
       }
       else
       {
         ierr = PCSetType (pc, (char*) PCILU);       genius_assert(!ierr);
+        MESSAGE<< "Using ILU preconditioner..."<<std::endl;    RECORD();
         ierr = PCFactorSetReuseFill(pc, PETSC_TRUE);genius_assert(!ierr);
         ierr = PCFactorSetReuseOrdering(pc, PETSC_TRUE); genius_assert(!ierr);
         ierr = PCFactorSetColumnPivot(pc, 1.0); genius_assert(!ierr);
@@ -645,10 +654,10 @@ void FVM_LinearSolver::set_petsc_preconditioner_type()
         ierr = PCFactorSetAllowDiagonalFill(pc);genius_assert(!ierr);
         switch ( _preconditioner_type )
         {
-          case SolverSpecify::ASMILU0_PRECOND: PetscOptionsSetValue("-pc_factor_levels","0"); break;
-          case SolverSpecify::ASMILU1_PRECOND: PetscOptionsSetValue("-pc_factor_levels","1"); break;
-          case SolverSpecify::ASMILU2_PRECOND: PetscOptionsSetValue("-pc_factor_levels","2"); break;
-          case SolverSpecify::ASMILU3_PRECOND: PetscOptionsSetValue("-pc_factor_levels","3"); break;
+          case SolverSpecify::ASMILU0_PRECOND: set_petsc_option("-pc_factor_levels","0"); break;
+          case SolverSpecify::ASMILU1_PRECOND: set_petsc_option("-pc_factor_levels","1"); break;
+          case SolverSpecify::ASMILU2_PRECOND: set_petsc_option("-pc_factor_levels","2"); break;
+          case SolverSpecify::ASMILU3_PRECOND: set_petsc_option("-pc_factor_levels","3"); break;
         }
       }
       return;
@@ -658,13 +667,17 @@ void FVM_LinearSolver::set_petsc_preconditioner_type()
     {
       ierr = PCSetType (pc, (char*) PCASM);       genius_assert(!ierr);
 #ifdef PETSC_HAVE_MUMPS
-        ierr = PetscOptionsSetValue("-sub_ksp_type","preonly"); genius_assert(!ierr);
-        ierr = PetscOptionsSetValue("-sub_pc_type","lu"); genius_assert(!ierr);
-        ierr = PetscOptionsSetValue("-sub_pc_factor_mat_solver_package","mumps"); genius_assert(!ierr);
+        MESSAGE<< "Using ASM + LU(MUMPS) preconditioner..."<<std::endl;    RECORD();
+        ierr = set_petsc_option("-sub_ksp_type","preonly"); genius_assert(!ierr);
+        ierr = set_petsc_option("-sub_pc_type","lu"); genius_assert(!ierr);
+        ierr = set_petsc_option("-sub_pc_factor_mat_solver_package","mumps"); genius_assert(!ierr);
 #else
-        ierr = PetscOptionsSetValue("-sub_pc_type","ilu"); genius_assert(!ierr);
+        MESSAGE<< "Using ASM + ILU preconditioner..."<<std::endl;    RECORD();
+        ierr = set_petsc_option("-sub_pc_type","ilu"); genius_assert(!ierr);
 #endif
-        ierr = PetscOptionsSetValue("-sub_pc_factor_shift_type","NONZERO"); genius_assert(!ierr);
+        ierr = set_petsc_option("-sub_pc_factor_reuse_fill","1"); genius_assert(!ierr);
+        ierr = set_petsc_option("-sub_pc_factor_reuse_ordering","1"); genius_assert(!ierr);
+        ierr = set_petsc_option("-sub_pc_factor_shift_type","NONZERO"); genius_assert(!ierr);
         return;
     }
 
@@ -728,6 +741,19 @@ void FVM_LinearSolver::set_petsc_preconditioner_type()
   }
 }
 
+
+
+int FVM_LinearSolver::set_petsc_option(const std::string &key, const std::string &value, bool has_prefix)
+{
+  // insert ksp_prefix to the key
+  std::string ukey;
+  if(has_prefix)
+    ukey = std::string("-") + this->ksp_prefix() + key.substr(1) ;
+  else
+    ukey = key;
+  petsc_options[ukey] = value;
+  return PetscOptionsSetValue(ukey.c_str(), value.c_str());
+}
 
 
 
@@ -850,6 +876,7 @@ double FVM_LinearSolver::condition_number_of_matrix()
   return 1.0;
 #endif
 }
+
 
 
 

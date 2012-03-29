@@ -226,7 +226,7 @@ void DDMMonitorHook::post_iteration(void * f, void * x, void * dx, void * w, boo
 
 #endif
 
-#if 1
+#if 0
   const FVM_NonlinearSolver & nonlinear_solver = dynamic_cast<FVM_NonlinearSolver &>(_solver);
 
   std::string matrix_prefix = SolverSpecify::out_prefix+".monitor";
@@ -970,9 +970,9 @@ void DDMMonitorHook::solution_to_vtk_poisson(void * _f, void * _x, void * _dx, v
             Nd.push_back( fvm_node->node_data()->Total_Nd()/concentration_scale );
             net_doping.push_back( fvm_node->node_data()->Net_doping()/concentration_scale );
 
-            fpsi.push_back( ff[fvm_node->local_offset()+0] );
-            psi.push_back( xx[fvm_node->local_offset()+0]/V );
-            dpsi.push_back( -dxx[fvm_node->local_offset()+0]/V );
+            fpsi.push_back( ff[fvm_node->local_offset()] );
+            psi.push_back( xx[fvm_node->local_offset()]/V );
+            dpsi.push_back( -dxx[fvm_node->local_offset()]/V );
             break;
           }
           case InsulatorRegion :

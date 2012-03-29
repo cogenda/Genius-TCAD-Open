@@ -148,7 +148,7 @@ void SchottkyContactBC::DDM2_Function(PetscScalar * x, Vec f, InsertMode &add_va
 
 
   // data buffer for INSERT_VALUES
-  std::vector<int> iy;
+  std::vector<PetscInt> iy;
   std::vector<PetscScalar> y;
 
   // for 2D mesh, z_width() is the device dimension in Z direction; for 3D mesh, z_width() is 1.0
@@ -180,7 +180,8 @@ void SchottkyContactBC::DDM2_Function(PetscScalar * x, Vec f, InsertMode &add_va
     {
       regions.push_back( (*rnode_it).second.first );
       fvm_nodes.push_back( (*rnode_it).second.second );
-
+      const unsigned int global_offset = fvm_nodes[i]->global_offset();
+      const unsigned int local_offset = fvm_nodes[i]->local_offset();
       switch ( regions[i]->type() )
       {
           // Semiconductor Region of course owns Schottky Contact BC
@@ -206,16 +207,18 @@ void SchottkyContactBC::DDM2_Function(PetscScalar * x, Vec f, InsertMode &add_va
             PetscScalar Fn = semi_region->material()->band->SchottyJsn(n, T, Work_Function - node_data->affinity() - deltaVB) * S;
             PetscScalar Fp = semi_region->material()->band->SchottyJsp(p, T, Work_Function - node_data->affinity() + deltaVB) * S;
 
-            PetscScalar ff = V + Work_Function - deltaVB - Ve;
+            PetscScalar f_psi = V + Work_Function - deltaVB - Ve;
 
             // set governing equation to boundary condition of poisson's equation
             // we buffer this operator
-            iy.push_back(fvm_nodes[i]->global_offset()+0);
-            y.push_back( ff);
+            iy.push_back(global_offset+0);
+            y.push_back( f_psi);
 
             // add Schottky current to continuity equations
-            VecSetValue(f, fvm_nodes[i]->global_offset()+1, Fn, ADD_VALUES);
-            VecSetValue(f, fvm_nodes[i]->global_offset()+2,-Fp, ADD_VALUES);
+            iy.push_back(global_offset+1);
+            y.push_back( Fn);
+            iy.push_back(global_offset+2);
+            y.push_back(-Fp);
 
             // process governing equation of T, which should consider heat exchange to entironment
 
@@ -224,7 +227,8 @@ void SchottkyContactBC::DDM2_Function(PetscScalar * x, Vec f, InsertMode &add_va
             if( node_on_boundary(*node_it) || has_associated_region(*node_it, VacuumRegion))
             {
               PetscScalar fT = Heat_Transfer*(T_external()-T)*S;
-              VecSetValue(f, fvm_nodes[i]->global_offset()+3, fT, ADD_VALUES);
+              iy.push_back(global_offset+3);
+              y.push_back( fT);
             }
 
             // compute the current flow out of schottky electrode
@@ -306,18 +310,17 @@ void SchottkyContactBC::DDM2_Function(PetscScalar * x, Vec f, InsertMode &add_va
             // then we can set the node temperature of insulator/conductor region equal to node temperature at semiconductor region
 
             // the psi of this node is equal to corresponding psi of semiconductor node
-            PetscScalar ff1 = V - V_semi;
+            PetscScalar f_psi = V - V_semi;
             // the T of this node is equal to corresponding T of semiconductor node
-            PetscScalar ff2 = T - T_semi;
+            PetscScalar f_T = T - T_semi;
 
             // set governing equation to function vector
             // we buffer this operator
-            iy.push_back(fvm_nodes[i]->global_offset()+0);
-            y.push_back( ff1 );
+            y.push_back( f_psi );
+            iy.push_back(global_offset+0);
 
-            iy.push_back(fvm_nodes[i]->global_offset()+1);
-            y.push_back( ff2 );
-
+            y.push_back( f_T );
+            iy.push_back(global_offset+1);
             break;
           }
           case VacuumRegion:
@@ -729,7 +732,7 @@ void SchottkyContactBC::DDM2_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add
             AutoDScalar Fp = semi_region->material()->band->SchottyJsp(p, T, Work_Function - node_data->affinity() + deltaVB) * S;
 
             // schottky boundary condition of poisson's equation
-            AutoDScalar ff = V + Work_Function - deltaVB - Ve;
+            AutoDScalar f_psi = V + Work_Function - deltaVB - Ve;
 
             // the insert position
             std::vector<PetscInt> row, col;
@@ -741,7 +744,7 @@ void SchottkyContactBC::DDM2_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add
             col.push_back(this->global_offset()); // the position of electrode equation
 
             // set Jacobian of governing equation ff
-            MatSetValues(*jac, 1, &row[0], col.size(), &col[0],  ff.getADValue(), ADD_VALUES);
+            MatSetValues(*jac, 1, &row[0], col.size(), &col[0],  f_psi.getADValue(), ADD_VALUES);
             // process the Jacobian of Schottky current
             MatSetValues(*jac, 1, &row[1], col.size(), &col[0],  Fn.getADValue(), ADD_VALUES);
             MatSetValues(*jac, 1, &row[2], col.size(), &col[0], (-Fp).getADValue(), ADD_VALUES);
@@ -782,14 +785,14 @@ void SchottkyContactBC::DDM2_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add
 
             //for inter connect electrode
             if(this->is_inter_connect_bc())
-              MatSetValues(*jac, 1, &bc_global_offset, 4, &(col[0]), (R*current_emit*current_scale).getADValue(), ADD_VALUES);
+              MatSetValues(*jac, 1, &bc_global_offset, 5, &(col[0]), (R*current_emit*current_scale).getADValue(), ADD_VALUES);
             //for stand alone electrode
             else
             {
               if(ext_circuit()->is_voltage_driven())
-                MatSetValues(*jac, 1, &bc_global_offset, 4, &(col[0]), ((L/dt+R)*current_emit*current_scale).getADValue(), ADD_VALUES);
+                MatSetValues(*jac, 1, &bc_global_offset, 5, &(col[0]), ((L/dt+R)*current_emit*current_scale).getADValue(), ADD_VALUES);
               if(ext_circuit()->is_current_driven())
-                MatSetValues(*jac, 1, &bc_global_offset, 4, &(col[0]), (current_emit*current_scale).getADValue(), ADD_VALUES);
+                MatSetValues(*jac, 1, &bc_global_offset, 5, &(col[0]), (current_emit*current_scale).getADValue(), ADD_VALUES);
             }
 
             // displacement current
