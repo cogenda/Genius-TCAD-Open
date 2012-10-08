@@ -1404,6 +1404,7 @@ size_t Elem::memory_size (const ElemType t)
     case QUAD4        :      return sizeof(Quad4);
     case QUAD4_FVM    :      return sizeof(Quad4_FVM);
     case QUAD4_CY_FVM :      return sizeof(Quad4_CY_FVM);
+#ifdef COGENDA_COMMERCIAL_PRODUCT
     case TET4         :      return sizeof(Tet4);
     case TET4_FVM     :      return sizeof(Tet4_FVM);
     case PYRAMID5     :      return sizeof(Pyramid5);
@@ -1412,6 +1413,7 @@ size_t Elem::memory_size (const ElemType t)
     case PRISM6_FVM   :      return sizeof(Prism6_FVM);
     case HEX8         :      return sizeof(Hex8);
     case HEX8_FVM     :      return sizeof(Hex8_FVM);
+#endif
       default: genius_error();
   }
   genius_error();
