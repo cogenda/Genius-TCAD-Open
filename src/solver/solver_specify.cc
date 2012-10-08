@@ -80,6 +80,11 @@ namespace SolverSpecify
   NonLinearSolverType     NS;
 
   /**
+   * Determines when the preconditioner is rebuilt in the nonlinear solve
+   */
+  int     NSLagPCLU;
+
+  /**
    * linear solver scheme: LU, BCGS, GMRES ...
    */
   LinearSolverType        LS;
@@ -150,6 +155,11 @@ namespace SolverSpecify
    * which makes poisson's equation self-consistant
    */
   bool      ArtificialCarrier;
+
+  /**
+   * Poisson correction parameter
+   */
+  double    PoissonCorrectionParameter;
 
 
   //--------------------------------------------
@@ -340,6 +350,12 @@ namespace SolverSpecify
    * do operator point calculation before transient simulation, only for mixA solver
    */
   bool      tran_op;
+
+  /**
+   * false indicate TR based on DC state
+   * true indicate a previous TR simulation
+   */
+  bool      tran_histroy;
 
   /**
    * current time
@@ -607,11 +623,13 @@ namespace SolverSpecify
     Type              = EQUILIBRIUM;
     NS                = LineSearch;
 #ifdef PETSC_HAVE_MUMPS
-    LS                = MUMPS;
+    LS                = GMRES;
     PC                = LU_PRECOND;
+    NSLagPCLU         = 10;
 #else
     LS                = BCGSL;
     PC                = ASM_PRECOND;
+    NSLagPCLU         = 1;
 #endif
 
     out_append        = false;
@@ -624,6 +642,7 @@ namespace SolverSpecify
     LinearizeErrorThreshold   = 1.0;
     ReSolveCarrier    = false;
     ArtificialCarrier = true;
+    PoissonCorrectionParameter= 0.0;
 
     MaxIteration              = 30;
     potential_update          = 1.0;
@@ -653,6 +672,7 @@ namespace SolverSpecify
     BDF2_LowerOrder           = true;
     UIC                       = false;
     tran_op                   = true;
+    tran_histroy              = false;
     AutoStep                  = true;
     RejectStep                = true;
     Predict                   = true;

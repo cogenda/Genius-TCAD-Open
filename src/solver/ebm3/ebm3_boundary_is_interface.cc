@@ -253,7 +253,6 @@ void InsulatorSemiconductorInterfaceBC::EBM3_Function(PetscScalar * x, Vec f, In
         // force the potential equal to corresponding point in semiconductor
       case InsulatorRegion:
         {
-          genius_assert(i==1);
 
           unsigned int node_psi_offset = regions[i]->ebm_variable_offset(POTENTIAL);
           unsigned int node_Tl_offset  = regions[i]->ebm_variable_offset(TEMPERATURE);
@@ -378,10 +377,10 @@ void InsulatorSemiconductorInterfaceBC::EBM3_Jacobian_Reserve(Mat *jac, InsertMo
             FVM_Node::fvm_neighbor_node_iterator  gnb_it = ghost_fvm_node->neighbor_node_begin();
             for(; gnb_it != ghost_fvm_node->neighbor_node_end(); ++gnb_it)
             {
-              MatSetValue(*jac, global_offset+node_psi_offset, (*gnb_it).second->global_offset()+ghostregion_node_psi_offset, 0, ADD_VALUES);
+              MatSetValue(*jac, global_offset+node_psi_offset, (*gnb_it).first->global_offset()+ghostregion_node_psi_offset, 0, ADD_VALUES);
 
               if(regions[i]->get_advanced_model()->enable_Tl())
-                MatSetValue(*jac, global_offset+node_Tl_offset, (*gnb_it).second->global_offset()+ghostregion_node_Tl_offset, 0, ADD_VALUES);
+                MatSetValue(*jac, global_offset+node_Tl_offset, (*gnb_it).first->global_offset()+ghostregion_node_Tl_offset, 0, ADD_VALUES);
             }
 
           }
@@ -392,7 +391,6 @@ void InsulatorSemiconductorInterfaceBC::EBM3_Jacobian_Reserve(Mat *jac, InsertMo
         // Insulator-Semiconductor interface at Insulator side, we should add the rows to semiconductor region
       case InsulatorRegion:
         {
-          genius_assert(i==1);
 
           unsigned int global_offset   = fvm_nodes[i]->global_offset();
           unsigned int node_psi_offset = regions[i]->ebm_variable_offset(POTENTIAL);

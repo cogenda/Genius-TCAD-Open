@@ -26,13 +26,13 @@
 #include <set>
 #include <string>
 #include <iostream>
-
+#include <typeinfo>
 
 #include <cassert>
 #include <cstdarg>
 
 
-#include "genius_common.h"
+#include "config.h"
 
 
 

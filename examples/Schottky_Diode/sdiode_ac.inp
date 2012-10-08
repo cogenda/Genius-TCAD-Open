@@ -37,7 +37,7 @@ SOLVE     TYpe=DCSWEEP Vscan=Anode Vstart=0.0 Vstep=0.05 Vstop=0.6 out.prefix=sc
 
 # do AC sweep
 METHOD    Type=DDMAC  LS=GMRES PC=LU
-SOLVE     Type=ACSWEEP acscan=Anode  F.Start=1e4 F.stop=2e9 out=sch_ac
+SOLVE     Type=ACSWEEP acscan=Anode  F.Start=1e4 F.stop=2e9 out.prefix=sch_ac
 
 
 EXPORT    CGNSFILE=sch_diode.cgns VTKFILE=sch_diode.vtu

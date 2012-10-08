@@ -29,6 +29,7 @@
 #define __vsource_h__
 
 #include <string>
+#include <map>
 #include <cmath>
 
 #include "config.h"
@@ -70,6 +71,19 @@ public:
    * virtual function, @return vapp for a given time step
    */
   virtual double vapp(double t)=0;
+
+  /**
+   * @return the max value of vapp(t+delta_t)-vapp(t), delta_t in [0, dt]
+   */
+  virtual double dv_max(double t, double dt, double dt_min)
+  {
+    double v = vapp(t);
+    double dv = vapp(t+dt) - v;
+    for(double clock=t; clock < t+dt; clock+=dt_min)
+      if( std::abs(dv) < std::abs(vapp(clock) - v))
+        dv = vapp(clock) - v;
+    return dv;
+  }
 
   /**
    * @return const reference of label
@@ -124,6 +138,16 @@ public:
   double vapp(double t)
   { return t>=td? Vdc:0;}
 
+
+  /**
+   * @return the max value of vapp(t+delta_t)-vapp(t), delta_t in [0, dt]
+   */
+  double dv_max(double t, double dt, double dt_min)
+  {
+    if(t<td && t+dt >=td) return Vdc-0.0;
+    return 0.0;
+  }
+
 };
 
 
@@ -177,6 +201,43 @@ public:
    */
   double vapp(double t)
   { return t>=td ? V0+Vamp*exp(-alpha*(t-td))*sin(2*3.14159265358979323846*fre*(t-td)) : V0; }
+
+
+  /**
+   * @return the max value of vapp(t+delta_t)-vapp(t), delta_t in [0, dt]
+   */
+  double dv_max(double t, double dt, double dt_min)
+  {
+    int cycles = fre*(t-td);
+    double t1 = t;
+    double t2 = t+dt;
+    double ta1 = cycles/fre + 0.25/fre + td;
+    double ta2 = cycles/fre + 0.75/fre + td;
+    double ta3 = (cycles+1)/fre + 0.25/fre + td;
+    double ta4 = (cycles+1)/fre + 0.75/fre + td;
+
+    std::map<double, double> v_wave;
+    v_wave[t1 ] =  vapp(t1);
+    v_wave[t2 ] =  vapp(t2);
+    v_wave[ta1] =  vapp(ta1);
+    v_wave[ta2] =  vapp(ta2);
+    v_wave[ta3] =  vapp(ta3);
+    v_wave[ta4] =  vapp(ta4);
+
+    std::map<double, double>::iterator it1 = v_wave.find(t1);
+    std::map<double, double>::iterator it2 = v_wave.find(t2);
+
+    double v1 = it1->second;
+    double dv = it2->second - v1;
+    while(it1++ != it2)
+    {
+      if( std::abs(dv) < std::abs(it1->second - v1) )
+        dv = it1->second - v1;
+    }
+    return dv;
+  }
+
+
 };
 
 
@@ -257,6 +318,49 @@ public:
     }
   }
 
+
+  /**
+   * @return the max value of vapp(t+delta_t)-vapp(t), delta_t in [0, dt]
+   */
+  double dv_max(double t, double dt, double dt_min)
+  {
+    int cycles = (t-td)/pr;
+    double t1  = t;
+    double t2  = t+dt;
+    double ta1 = 0  + cycles*pr + td;
+    double ta2 = tr + cycles*pr + td;
+    double ta3 = tr + pw + cycles*pr + td;
+    double ta4 = tr + pw + tf + cycles*pr + td;
+    double ta5 = 0  + (cycles+1)*pr + td;
+    double ta6 = tr + (cycles+1)*pr + td;
+    double ta7 = tr + pw + (cycles+1)*pr + td;
+    double ta8 = tr + pw + tf + (cycles+1)*pr + td;
+
+    std::map<double, double> v_wave;
+    v_wave[t1 ] =  vapp(t1);
+    v_wave[t2 ] =  vapp(t2);
+    v_wave[ta1] =  vapp(ta1);
+    v_wave[ta2] =  vapp(ta2);
+    v_wave[ta3] =  vapp(ta3);
+    v_wave[ta4] =  vapp(ta4);
+    v_wave[ta5] =  vapp(ta5);
+    v_wave[ta6] =  vapp(ta6);
+    v_wave[ta7] =  vapp(ta7);
+    v_wave[ta8] =  vapp(ta8);
+
+    std::map<double, double>::iterator it1 = v_wave.find(t1);
+    std::map<double, double>::iterator it2 = v_wave.find(t2);
+
+    double v1 = it1->second;
+    double dv = it2->second - v1;
+    while(it1++ != it2)
+    {
+      if( std::abs(dv) < std::abs(it1->second - v1) )
+        dv = it1->second - v1;
+    }
+    return dv;
+  }
+
 };
 
 
@@ -322,6 +426,34 @@ public:
     else
       return V1+(V2-V1)*(1-exp(-(t-td)/trc))+(V1-V2)*(1-exp(-(t-tfd)/tfc));
 
+  }
+
+
+  /**
+   * @return the max value of vapp(t+delta_t)-vapp(t), delta_t in [0, dt]
+   */
+  double dv_max(double t, double dt, double dt_min)
+  {
+    double t1 = (t-td);
+    double t2 = (t+dt-td);
+    double ta1 = tfd;
+
+    std::map<double, double> v_wave;
+    v_wave[t1 ] =  vapp(t1);
+    v_wave[t2 ] =  vapp(t2);
+    v_wave[ta1] =  vapp(ta1);
+
+    std::map<double, double>::iterator it1 = v_wave.find(t1);
+    std::map<double, double>::iterator it2 = v_wave.find(t2);
+
+    double v1 = it1->second;
+    double dv = it2->second - v1;
+    while(it1++ != it2)
+    {
+      if( std::abs(dv) < std::abs(it1->second - v1) )
+        dv = it1->second - v1;
+    }
+    return dv;
   }
 
 };

@@ -145,9 +145,9 @@ void SemiconductorSimulationRegion::HDM_Flux(const PetscScalar * x, Vec flux, Ve
     FVM_Node::fvm_neighbor_node_iterator  neighbor_end = node->neighbor_node_end();
     for(; neighbor_begin!=neighbor_end; ++neighbor_begin )
     {
-      const FVM_Node * neigbor_node = (*neighbor_begin).second;
-      Real d = (*(node->root_node()) - *(neigbor_node->root_node())).size();
-      Real S = node->cv_surface_area(neigbor_node->root_node());
+      const FVM_Node * neigbor_node = (*neighbor_begin).first;
+      Real d = node->distance(neigbor_node);
+      Real S = node->cv_surface_area(neigbor_node);
       VectorValue<double> dir = (*(neigbor_node->root_node()) - *(node->root_node())).unit();
       PetscScalar local_dt1, local_dt2;
 
@@ -312,7 +312,7 @@ void SemiconductorSimulationRegion::HDM_Source(const PetscScalar * lx, const Pet
     {
       const FVM_Node * neigbor_node = (*neighbor_begin).second;
       const FVM_NodeData * neigbor_node_data = neigbor_node->node_data();
-      Real S = node->cv_surface_area(neigbor_node->root_node());
+      Real S = node->cv_surface_area(neigbor_node);
       VectorValue<double> dir = (*(neigbor_node->root_node()) - *(node->root_node())).unit();
       PetscScalar VV         = neigbor_node_data->psi();
       PetscScalar nn         = lx[neigbor_node->local_offset()];

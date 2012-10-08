@@ -348,6 +348,12 @@ public:
   const std::vector<SolverSpecify::SolverType> & solve_history() const
   { return _solver_active_history; }
 
+
+  /**
+   * approx memory usage
+   */
+  virtual size_t memory_size() const;
+
 private:
 
   /**

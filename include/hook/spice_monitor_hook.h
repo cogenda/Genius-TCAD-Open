@@ -63,7 +63,7 @@ public:
   /**
    *  This is executed after each (nonlinear) iteration
    */
-  virtual void post_iteration(void * f, void * x, void * dx, void * w, bool & change_y, bool &change_w);
+  virtual void post_check(void * f, void * x, void * dx, void * w, bool & change_y, bool &change_w);
 
   /**
    * This is executed after the finalization of the solver

@@ -113,7 +113,7 @@ public:
   /**
    * @return limited time step by max allowd voltage/current change
    */
-  double limit_dt(double time, double dt, double v_change, double i_change) const;
+  double limit_dt(double time, double dt, double dt_min, double v_change, double i_change) const;
 
   /**
    * update Vapp or Iapp for all the electrode bcs to new time step

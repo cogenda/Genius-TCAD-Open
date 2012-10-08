@@ -64,13 +64,6 @@ public:
   virtual BoundaryType boundary_type() const
     { return BOUNDARY; }
 
-  /**
-   * indicate that this bc is an electrode
-   * @return false
-   */
-  virtual bool is_electrode() const
-    {return false;}
-
 
   /**
    * @return true iff this boundary has a current flow
@@ -162,6 +155,7 @@ public:
    */
   virtual void DDMAC_Fill_Matrix_Vector( Mat , Vec , const Mat , const double , InsertMode & )
   { /* no thing to do for AbsorbingBC boundary */ }
+
 
 };
 

@@ -406,6 +406,18 @@ Real Elem::hmax() const
 
 
 
+std::pair<Point, Real> Elem::bounding_sphere() const
+{
+  Point cp = centroid();
+  Real  R=0;
+  for (unsigned int n=0; n<this->n_vertices(); n++)
+    R = std::max(R, (cp-this->point(n)).size() );
+
+  return std::make_pair(cp, (1+1e-6)*R);
+}
+
+
+
 Real Elem::length(const unsigned int n1,
                   const unsigned int n2) const
 {
@@ -1377,6 +1389,35 @@ void Elem::pack_element (std::vector<int> &conn) const
   }
 
 }
+
+
+
+size_t Elem::memory_size (const ElemType t)
+{
+  switch (t)
+  {
+    case EDGE2        :      return sizeof(Edge2);
+    case EDGE2_FVM    :      return sizeof(Edge2_FVM);
+    case TRI3         :      return sizeof(Tri3);
+    case TRI3_FVM     :      return sizeof(Tri3_FVM);
+    case TRI3_CY_FVM  :      return sizeof(Tri3_CY_FVM);
+    case QUAD4        :      return sizeof(Quad4);
+    case QUAD4_FVM    :      return sizeof(Quad4_FVM);
+    case QUAD4_CY_FVM :      return sizeof(Quad4_CY_FVM);
+    case TET4         :      return sizeof(Tet4);
+    case TET4_FVM     :      return sizeof(Tet4_FVM);
+    case PYRAMID5     :      return sizeof(Pyramid5);
+    case PYRAMID5_FVM :      return sizeof(Pyramid5_FVM);
+    case PRISM6       :      return sizeof(Prism6);
+    case PRISM6_FVM   :      return sizeof(Prism6_FVM);
+    case HEX8         :      return sizeof(Hex8);
+    case HEX8_FVM     :      return sizeof(Hex8_FVM);
+      default: genius_error();
+  }
+  genius_error();
+  return 0;
+}
+
 
 
 unsigned int Elem::pack_size( ElemType t )

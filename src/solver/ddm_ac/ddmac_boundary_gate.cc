@@ -45,16 +45,10 @@ void GateContactBC::DDMAC_Fill_Matrix_Vector( Mat A, Vec b, const Mat J, const d
   PetscInt bc_global_offset_re = this->global_offset();
   PetscInt bc_global_offset_im = this->global_offset()+1;
 
-  PetscScalar R = ext_circuit()->R();             // resistance
-  PetscScalar C = ext_circuit()->C();             // capacitance
-  PetscScalar L = ext_circuit()->L();             // inductance
-
   const PetscScalar Work_Function = this->scalar("workfunction");
   const PetscScalar Heat_Transfer = this->scalar("heat.transfer");
 
   // impedance at frequency omega
-  std::complex <PetscScalar> Z1(R, omega*L);
-  std::complex <PetscScalar> Y2(0.0, omega*C);
   std::complex <PetscScalar> j(0.0, 1.0);
 
   // for 2D mesh, z_width() is the device dimension in Z direction; for 3D mesh, z_width() is 1.0
@@ -141,7 +135,7 @@ void GateContactBC::DDMAC_Fill_Matrix_Vector( Mat A, Vec b, const Mat J, const d
           FVM_Node::fvm_neighbor_node_iterator nb_it = fvm_nodes[i]->neighbor_node_begin();
           for(; nb_it != fvm_nodes[i]->neighbor_node_end(); ++nb_it)
           {
-            const FVM_Node *nb_node = (*nb_it).second;
+            const FVM_Node *nb_node = (*nb_it).first;
 
             // the psi of this node
             AutoDScalar  V = node_data->psi(); V.setADValue(0, 1.0);
@@ -152,12 +146,13 @@ void GateContactBC::DDMAC_Fill_Matrix_Vector( Mat A, Vec b, const Mat J, const d
             PetscScalar distance = (*(fvm_nodes[i]->root_node()) - *(nb_node->root_node())).size();
 
             // area of out surface of control volume related with neighbor node
-            PetscScalar cv_boundary = fvm_nodes[i]->cv_surface_area(nb_node->root_node());
+            PetscScalar cv_boundary = fvm_nodes[i]->cv_surface_area(nb_node);
             AutoDScalar D = node_data->eps()*(V-V_nb)/distance;
 
             // the 1/dt is replaced by j*omega.
-            std::complex <PetscScalar> dJdisp_dV  = Z1*cv_boundary*D.getADValue(0)*j*omega*current_scale;
-            std::complex <PetscScalar> dJdisp_dVn = Z1*cv_boundary*D.getADValue(1)*j*omega*current_scale;
+            std::complex <PetscScalar> mna_scaling = ext_circuit()->mna_ac_scaling(omega);
+            std::complex <PetscScalar> dJdisp_dV  = mna_scaling*cv_boundary*D.getADValue(0)*j*omega*current_scale;
+            std::complex <PetscScalar> dJdisp_dVn = mna_scaling*cv_boundary*D.getADValue(1)*j*omega*current_scale;
 
             // V
             MatSetValue(A, bc_global_offset_re, fvm_nodes[i]->global_offset(), dJdisp_dV.real(), ADD_VALUES);
@@ -216,14 +211,11 @@ void GateContactBC::DDMAC_Fill_Matrix_Vector( Mat A, Vec b, const Mat J, const d
   //           GND
   //
 
-  if(Genius::processor_id() == Genius::n_processors() -1)
+  if(Genius::is_last_processor())
   {
     // here we process the external circuit, we do not use AD here
 
-    // the external electrode equation is:
-    // f_ext = (L/dt+R)*current + (Ve-Vapp) + (L/dt+R)*C/dt*Ve - (L/dt+R)*C/dt*P - L/dt*(I+Ic);
-    // as a result, the K=d(f_ext)/d(Ve) in frequency domain is
-    std::complex <PetscScalar> K = Z1*Y2 + PetscScalar(1.0);
+    std::complex <PetscScalar> K = this->ext_circuit()->mna_ac_jacobian(omega);
 
     MatSetValue(A, bc_global_offset_re, bc_global_offset_re,  K.real(), ADD_VALUES);
     MatSetValue(A, bc_global_offset_re, bc_global_offset_im, -K.imag(), ADD_VALUES);
@@ -290,7 +282,7 @@ void GateContactBC::DDMAC_Update_Solution(const PetscScalar * lxx, const Mat, co
           FVM_Node::fvm_neighbor_node_iterator nb_it = fvm_node->neighbor_node_begin();
           for(; nb_it != fvm_node->neighbor_node_end(); ++nb_it)
           {
-            const FVM_Node *nb_node = (*nb_it).second;
+            const FVM_Node *nb_node = (*nb_it).first;
 
             // distance from nb node to this node
             PetscScalar distance = (*(fvm_node->root_node()) - *(nb_node->root_node())).size();
@@ -300,7 +292,7 @@ void GateContactBC::DDMAC_Update_Solution(const PetscScalar * lxx, const Mat, co
             std::complex<PetscScalar> Vn = std::complex<PetscScalar>(Vn_re, Vn_im);
 
             // area of out surface of control volume related with neighbor node
-            PetscScalar cv_boundary = fvm_node->cv_surface_area(nb_node->root_node());
+            PetscScalar cv_boundary = fvm_node->cv_surface_area(nb_node);
 
             Iac += node_data->eps()*(V-Vn)/distance*j*omega*cv_boundary*current_scale;
           }

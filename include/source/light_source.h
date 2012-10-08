@@ -210,4 +210,37 @@ class Light_Source_EMFEM2D : public Light_Source
 };
 
 
+/**
+ * set the uniform carrier generation
+ */
+class Light_Source_Uniform : public Light_Source
+{
+  public:
+
+    Light_Source_Uniform(SimulationSystem &system, const Parser::Card &c)
+    :Light_Source(system),_card(c)
+    {}
+
+    /**
+     * virtual destructor
+     */
+    virtual ~Light_Source_Uniform() {}
+
+    /**
+     * @return the type if light source
+     */
+    virtual std::string light_source_type() { return "light_source_uniform"; }
+
+    /**
+     * update OptG
+     */
+    virtual void update_system();
+
+  private:
+
+    const Parser::Card _card;
+
+};
+
+
 #endif

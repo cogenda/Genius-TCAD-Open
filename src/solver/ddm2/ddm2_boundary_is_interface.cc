@@ -210,7 +210,6 @@ void InsulatorSemiconductorInterfaceBC::DDM2_Function(PetscScalar * x, Vec f, In
           // force the potential equal to corresponding point in semiconductor
           case InsulatorRegion:
           {
-            genius_assert(i==1);
             genius_assert(fvm_nodes[i]->root_node()->processor_id() == fvm_nodes[0]->root_node()->processor_id() );
 
             // the governing equation of this fvm node
@@ -314,8 +313,8 @@ void InsulatorSemiconductorInterfaceBC::DDM2_Jacobian_Reserve(Mat *jac, InsertMo
             FVM_Node::fvm_neighbor_node_iterator  gnb_it = ghost_fvm_node->neighbor_node_begin();
             for(; gnb_it != ghost_fvm_node->neighbor_node_end(); ++gnb_it)
             {
-              MatSetValue(*jac, fvm_nodes[i]->global_offset()+0, (*gnb_it).second->global_offset()+0, 0, ADD_VALUES);
-              MatSetValue(*jac, fvm_nodes[i]->global_offset()+3, (*gnb_it).second->global_offset()+1, 0, ADD_VALUES);
+              MatSetValue(*jac, fvm_nodes[i]->global_offset()+0, (*gnb_it).first->global_offset()+0, 0, ADD_VALUES);
+              MatSetValue(*jac, fvm_nodes[i]->global_offset()+3, (*gnb_it).first->global_offset()+1, 0, ADD_VALUES);
             }
             break;
           }
@@ -323,8 +322,6 @@ void InsulatorSemiconductorInterfaceBC::DDM2_Jacobian_Reserve(Mat *jac, InsertMo
           // Insulator-Semiconductor interface at Insulator side, we should add the rows to semiconductor region
           case InsulatorRegion:
           {
-            genius_assert(i==1);
-
             // reserve for later operator
             MatSetValue(*jac, fvm_nodes[i]->global_offset()+0, fvm_nodes[0]->global_offset()+0, 0, ADD_VALUES);
             MatSetValue(*jac, fvm_nodes[i]->global_offset()+1, fvm_nodes[0]->global_offset()+3, 0, ADD_VALUES);

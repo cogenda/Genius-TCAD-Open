@@ -326,28 +326,6 @@ void FEM_LinearSolver::set_petsc_linear_solver_type(SolverSpecify::LinearSolverT
         switch (linear_solver_type)
         {
           case SolverSpecify::LU :
-            MESSAGE<< "Using LAPACK-LU linear solver..."<<std::endl;  RECORD();
-            break;
-          case SolverSpecify::UMFPACK :
-#ifdef PETSC_HAVE_UMFPACK
-            MESSAGE<< "Using UMFPACK linear solver..."<<std::endl;
-            RECORD();
-            ierr = PCFactorSetMatSolverPackage (pc, "umfpack"); genius_assert(!ierr);
-#else
-            MESSAGE << "Warning:  no UMFPACK solver configured, use default LU solver instead!" << std::endl;
-            RECORD();
-#endif
-            break;
-          case SolverSpecify::SuperLU :
-#ifdef PETSC_HAVE_SUPERLU
-            MESSAGE<< "Using SuperLU linear solver..."<<std::endl;
-            RECORD();
-            ierr = PCFactorSetMatSolverPackage (pc, "superlu"); genius_assert(!ierr);
-#else
-            MESSAGE << "Warning:  no SuperLU solver configured, use default LU solver instead!" << std::endl;
-            RECORD();
-#endif
-            break;
           case SolverSpecify::MUMPS :
 #ifdef PETSC_HAVE_MUMPS
             MESSAGE<< "Using MUMPS linear solver..."<<std::endl;
@@ -358,6 +336,29 @@ void FEM_LinearSolver::set_petsc_linear_solver_type(SolverSpecify::LinearSolverT
             RECORD();
 #endif
             break;
+
+          case SolverSpecify::UMFPACK :
+#ifdef PETSC_HAVE_UMFPACK
+            MESSAGE<< "Using UMFPACK linear solver..."<<std::endl;
+            RECORD();
+            ierr = PCFactorSetMatSolverPackage (pc, "umfpack"); genius_assert(!ierr);
+#else
+            MESSAGE << "Warning:  no UMFPACK solver configured, use default LU solver instead!" << std::endl;
+            RECORD();
+#endif
+            break;
+
+          case SolverSpecify::SuperLU :
+#ifdef PETSC_HAVE_SUPERLU
+            MESSAGE<< "Using SuperLU linear solver..."<<std::endl;
+            RECORD();
+            ierr = PCFactorSetMatSolverPackage (pc, "superlu"); genius_assert(!ierr);
+#else
+            MESSAGE << "Warning:  no SuperLU solver configured, use default LU solver instead!" << std::endl;
+            RECORD();
+#endif
+            break;
+
           case SolverSpecify::PASTIX:
 #ifdef PETSC_HAVE_PASTIX
             MESSAGE<< "Using PaStiX linear solver..."<<std::endl;
@@ -368,6 +369,7 @@ void FEM_LinearSolver::set_petsc_linear_solver_type(SolverSpecify::LinearSolverT
             RECORD();
 #endif
             break;
+
           case   SolverSpecify::SuperLU_DIST:
 #ifdef PETSC_HAVE_SUPERLU_DIST
             MESSAGE<< "Using SuperLU_DIST linear solver..."<<std::endl;

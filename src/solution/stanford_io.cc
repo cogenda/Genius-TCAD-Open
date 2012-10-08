@@ -34,7 +34,7 @@
 #include "mesh_communication.h"
 #include "simulation_region.h"
 #include "parallel.h"
-
+#include "material.h"
 
 using PhysicalUnit::cm;
 using PhysicalUnit::um;
@@ -310,19 +310,19 @@ void STIFIO::read (const std::string& filename)
   Parallel::broadcast(node_id_to_tif_index_map , 0);
   Parallel::broadcast(tif_region_to_mesh_region , 0);
 
+  // broadcast solution
+  tif_reader->broadcast_solution();
 
   // ok, we had got enough informations for set up each simulation region
   std::map<std::pair<int, int>, unsigned int> solution_map; // map <node_index, region_index> to data_index
   typedef std::map<std::pair<int, int>, unsigned int>::iterator Solution_It;
+
   for(unsigned int n=0; n<tif_reader->sol_data_array().size(); ++n)
   {
     int tif_region = tif_reader->sol_data(n).region_index;
-    if(tif_region_to_mesh_region.find(tif_region) != tif_region_to_mesh_region.end())
-    {
-      int region = tif_region_to_mesh_region.find(tif_region)->second;
-      std::pair<int, int> key = std::make_pair(tif_reader->sol_data(n).index, region);
-      solution_map.insert(std::make_pair(key, n));
-    }
+    int region = tif_region_to_mesh_region.find(tif_region)->second;
+    std::pair<int, int> key = std::make_pair(tif_reader->sol_data(n).index, region);
+    solution_map.insert(std::make_pair(key, n));
   }
 
 
@@ -334,6 +334,9 @@ void STIFIO::read (const std::string& filename)
     {
     case SemiconductorRegion :
       {
+        bool sigle   = Material::IsSingleCompSemiconductor(region->material());
+        bool complex = Material::IsComplexCompSemiconductor(region->material());
+
         SimulationRegion::local_node_iterator node_it = region->on_local_nodes_begin();
         SimulationRegion::local_node_iterator node_it_end = region->on_local_nodes_end();
         for(; node_it!=node_it_end; ++node_it)
@@ -345,12 +348,25 @@ void STIFIO::read (const std::string& filename)
           int tif_node_index = node_id_to_tif_index_map[fvm_node->root_node()->id()];
           int region_index = r;
           std::pair<int, int> key = std::make_pair(tif_node_index, region_index);
+          assert(solution_map.find(key) != solution_map.end());
           unsigned int data_index = solution_map.find(key)->second;
 
           // doping
           {
             node_data->Na()   = tif_reader->acceptor(data_index) * pow(cm, -3);
             node_data->Nd()   = tif_reader->donor(data_index) * pow(cm, -3);
+          }
+
+          // mole fraction
+          if(sigle)
+          {
+            node_data->mole_x()   = tif_reader->mole_x(data_index);
+          }
+
+          if(complex)
+          {
+            node_data->mole_x()   = tif_reader->mole_x(data_index);
+            node_data->mole_y()   = tif_reader->mole_y(data_index);
           }
         }
         region->init(system.T_external());

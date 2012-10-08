@@ -142,6 +142,10 @@ private:
 
   void _find_nearest_points_in_gate_region();
 
+  /// tunneling current dst
+  std::map<std::string, PetscScalar> I_to_BC;
+  std::map<std::string, PetscScalar> I_to_BC_Prev;
+
 public:
 
   //////////////////////////////////////////////////////////////////////////////////////////////
@@ -220,6 +224,7 @@ public:
   virtual void DDM1_Post_Process()
   { this->_gate_current(); }
 
+
   //////////////////////////////////////////////////////////////////////////////////
   //----------------Function and Jacobian evaluate for L2 DDM---------------------//
   //////////////////////////////////////////////////////////////////////////////////
@@ -284,6 +289,13 @@ public:
    */
   virtual void EBM3_Jacobian(PetscScalar * , Mat *, InsertMode &);
 
+  /**
+   * post process of EBM3 equation.
+   */
+  virtual void EBM3_Post_Process()
+  { this->_gate_current(); }
+
+
   //////////////////////////////////////////////////////////////////////////////////
   //--------------Matrix and RHS Vector evaluate for DDM AC Solver----------------//
   //////////////////////////////////////////////////////////////////////////////////
@@ -326,6 +338,7 @@ public:
   virtual void DDM1_Half_Implicit_Poisson_Correction(PetscScalar * x, Mat A, Vec r, InsertMode &add_value_flag);
 
 #endif
+
 
 };
 

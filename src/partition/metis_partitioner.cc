@@ -22,10 +22,11 @@
 // C++ Includes   -----------------------------------
 
 // Local Includes -----------------------------------
+#include "elem.h"
 #include "mesh_base.h"
 #include "metis_partitioner.h"
 #include "perf_log.h"
-#include "elem.h"
+#include "parallel.h"
 
 
 #if (defined(PETSC_HAVE_PARMETIS) || defined(PETSC_HAVE_METIS))
@@ -38,10 +39,10 @@ namespace Metis
 
   }
 }
-#else
-  #include "linear_partitioner.h"
+
 #endif
 
+#include "linear_partitioner.h"
 
 
 // ------------------------------------------------------------
@@ -60,88 +61,106 @@ void MetisPartitioner::_do_partition (MeshBase& mesh,
 
 #if (defined(PETSC_HAVE_PARMETIS) || defined(PETSC_HAVE_METIS))
 
-
-  const unsigned int n_cluster        = _clusters.size();
-
-  // build the graph
-  std::vector<int> xadj;          // the adjacency structure of the graph
-  std::vector<int> adjncy;        // the adjacency structure of the graph
-  std::vector<int> options(8);
-  std::vector<int> vwgt(n_cluster);  // the weights of the vertices
-  std::vector<int> part(n_cluster);  // here stores the partition vector of the graph
-
-  xadj.reserve(n_cluster+1);
-
-  int n = static_cast<int>(n_cluster);  // number of "nodes" (elements) in the graph
-  int ncon    = 1;                          // The number of balancing constraints. It should be at least 1.
-  int wgtflag = 2;                          // weights on vertices only, none on edges
-  int numflag = 0;                          // C-style 0-based numbering
-  int nparts  = static_cast<int>(n_pieces); // number of subdomains to create
-  int edgecut = 0;                          // the numbers of edges cut by the resulting partition
-
-  // Set the options
-  options[0] = 0; // use default options
-
-
-
-  // build the graph in CSR format.  Note that
-  // the edges in the graph will correspond to
-  // face neighbors
-  {
-
-    adjncy.reserve (n_cluster*6);
-
-    for (unsigned int n=0; n<n_cluster; ++n)
-    {
-      const Cluster * cluster = _clusters[n];
-
-      // The weight is used to define what a balanced graph is
-      vwgt[n] = 0;
-      for (unsigned int mn=0; mn<cluster->elems.size(); mn++)
-      {
-        const Elem * elem = cluster->elems[mn];
-        vwgt[n] += mesh.subdomain_weight( elem->subdomain_id () ) * elem->n_nodes();
-      }
-
-      // The beginning of the adjacency array for this elem
-      xadj.push_back(adjncy.size());
-
-      // Loop over the element's neighbors.  An element
-      // adjacency corresponds to a face neighbor
-      for (unsigned int ms=0; ms<cluster->neighbors.size(); ms++)
-      {
-        const Cluster * neighbor = _elem_cluster_map.find(cluster->neighbors[ms])->second;
-        adjncy.push_back (neighbor->id);
-      }
-    }
-
-    // The end of the adjacency array for the last elem
-    xadj.push_back(adjncy.size());
-
-  } // done building the graph
-
-
-  if (adjncy.empty())
-    adjncy.push_back(0);
-
   START_LOG("partition()", "MetisPartitioner");
 
-#ifdef PETSC_VERSION_DEV
-  // METIS-5 interface
-  Metis::METIS_PartGraphKway(&n, &ncon, &xadj[0], &adjncy[0], &vwgt[0], NULL/*vsize*/, NULL/*adjwgt*/,
-                             &nparts, NULL, NULL, NULL, &edgecut, &part[0]);
+  const unsigned int n_cluster        = _clusters.size();
+  std::vector<int> part(n_cluster);  // here stores the partition vector of the graph
+
+  int metis_error=0;
+
+  // only the first process do the partition
+  if(_serial_partition || Genius::is_first_processor())
+  {
+    // build the graph
+    std::vector<int> xadj;          // the adjacency structure of the graph
+    std::vector<int> adjncy;        // the adjacency structure of the graph
+    std::vector<int> options(8);
+    std::vector<int> vwgt(n_cluster);  // the weights of the vertices
+
+    xadj.reserve(n_cluster+1);
+
+    int n = static_cast<int>(n_cluster);  // number of "nodes" (elements) in the graph
+    int ncon    = 1;                          // The number of balancing constraints. It should be at least 1.
+    int wgtflag = 2;                          // weights on vertices only, none on edges
+    int numflag = 0;                          // C-style 0-based numbering
+    int nparts  = static_cast<int>(n_pieces); // number of subdomains to create
+    int edgecut = 0;                          // the numbers of edges cut by the resulting partition
+
+    // Set the options
+    options[0] = 0; // use default options
+
+    // build the graph in CSR format.  Note that
+    // the edges in the graph will correspond to
+    // face neighbors
+    {
+
+      adjncy.reserve (n_cluster*6);
+
+      for (unsigned int n=0; n<n_cluster; ++n)
+      {
+        const Cluster * cluster = _clusters[n];
+
+        // The weight is used to define what a balanced graph is
+        vwgt[n] = 0;
+        for (unsigned int mn=0; mn<cluster->elems.size(); mn++)
+        {
+          const Elem * elem = cluster->elems[mn];
+          vwgt[n] += mesh.subdomain_weight( elem->subdomain_id () ) * elem->n_nodes();
+        }
+
+        // The beginning of the adjacency array for this elem
+        xadj.push_back(adjncy.size());
+
+        // Loop over the element's neighbors.  An element
+        // adjacency corresponds to a face neighbor
+        std::vector<const Elem *> neighbors = cluster_neighbor_elem(cluster);
+        for (unsigned int ms=0; ms<neighbors.size(); ms++)
+        {
+          const Cluster * neighbor = _elem_cluster_map[neighbors[ms]->id()];
+          adjncy.push_back (neighbor->id);
+        }
+      }
+
+      // The end of the adjacency array for the last elem
+      xadj.push_back(adjncy.size());
+
+    } // done building the graph
+
+
+    if (adjncy.empty())
+      adjncy.push_back(0);
+
+
+
+#if PETSC_VERSION_GE(3,3,0)
+    // METIS-5 interface
+    metis_error = Metis::METIS_PartGraphKway(&n, &ncon, &xadj[0], &adjncy[0], &vwgt[0], NULL/*vsize*/, NULL/*adjwgt*/,
+                                             &nparts, NULL, NULL, NULL, &edgecut, &part[0]);
 #else
-  // old METIS-4 interface
-  Metis::METIS_PartGraphKway(&n, &xadj[0], &adjncy[0], &vwgt[0], NULL, &wgtflag, &numflag,
-                             &nparts, &options[0], &edgecut, &part[0]);
+    // old METIS-4 interface
+    Metis::METIS_PartGraphKway(&n, &xadj[0], &adjncy[0], &vwgt[0], NULL, &wgtflag, &numflag,
+                                             &nparts, &options[0], &edgecut, &part[0]);
 #endif
 
-  STOP_LOG("partition()", "MetisPartitioner");
+  }
+
+  // broadcast partition info to all the processores
+  if(!_serial_partition)
+  {
+    Parallel::broadcast(metis_error, 0);
+  }
+  else
+  {
+    Parallel::sum(metis_error);
+  }
 
   // Assign the returned processor ids.  The part array contains
   // the processor id for each active element, but in terms of
   // the contiguous indexing we defined above
+
+  if( !metis_error )
   {
+    Parallel::broadcast(part, 0);
 
     for (unsigned int n=0; n<n_cluster; ++n)
     {
@@ -155,6 +174,15 @@ void MetisPartitioner::_do_partition (MeshBase& mesh,
       }
     }
   }
+  else
+  {
+    LinearPartitioner *lp = new LinearPartitioner;
+    lp->partition(mesh, 0, n_pieces);
+    delete lp;
+  }
+
+
+  STOP_LOG("partition()", "MetisPartitioner");
 
 #else
 

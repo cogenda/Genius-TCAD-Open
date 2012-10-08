@@ -23,7 +23,9 @@ def findFreePort(begin, end):
         try:
             s.bind(('', port))
         except socket.error, (errno, msg):
-            if errno==98 or errno==48 or errno==10048: # address already in use
+            if errno in (48, 98,         # Linux: /usr/include/asm-generic/errno.h 
+                         10013, 10048,): # Windows: Winerror.h/Winsock2.h 
+                # address already in use
                 continue
             raise socket.error(errno, msg)
         

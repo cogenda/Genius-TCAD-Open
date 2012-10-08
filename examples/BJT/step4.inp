@@ -35,6 +35,6 @@ SOLVE    Type=STEADYSTATE
 
 # do transient simulation
 METHOD   Type = DDML1   NS=LineSearch LS=LU
-SOLVE    Type = TRANSIENT TStart=0 TStep=0.2e-7  TStop=5e-6 out=tran.vb
+SOLVE    Type = TRANSIENT TStart=0 TStep=0.2e-7  TStop=5e-6 out.prefix=tran.vb
 
 END

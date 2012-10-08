@@ -286,13 +286,6 @@ public:
   { return _boundary_ids; }
 
 
-  /**
-   * @return the subdomain id of this boundary side lies on.
-   * if the side on INTERFACE, sub_id1 and sub_id2 are meanful
-   * if the side is on the BOUNDARY, sub_id2 is set to invalid_id
-   */
-  void get_subdomains_bd_on(short int boundary_id, unsigned int & sub_id1, unsigned int & sub_id2) const;
-
 
   /**
    * @return the subdomain id of this boundary side lies on.
@@ -387,6 +380,7 @@ public:
    */
   void rebuild_ids();
 
+
   /**
    * Number used for internal use. This is the return value
    * if a boundary condition is not specified.
@@ -448,6 +442,8 @@ public:
    * extra boundary descriptions
    */
   std::vector<std::string> _extra_descriptions;
+
+
 
 //   /**
 //    * Functor class for printing a single node's info

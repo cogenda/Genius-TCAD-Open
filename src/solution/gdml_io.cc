@@ -31,6 +31,7 @@
 #include "boundary_info.h"
 #include "simulation_system.h"
 #include "boundary_condition_collector.h"
+#include "material_define.h"
 #include "parallel.h"
 
 
@@ -174,11 +175,14 @@ void GDMLIO::write_gdml_surface (const std::string& filename)
       }
 
     // write all the materials
+    std::set<std::string>  materials;
     for( unsigned int r=0; r<system.n_regions(); r++)
     {
       const SimulationRegion * region = system.region(r);
+      if( materials.find(region->material()) != materials.end()) continue;
+      materials.insert(region->material());
 
-      _out << "  <material name=\"" << region->name() + "_" + region->material() <<"\" formula=\"" << region->material() <<"\">" <<std::endl;
+      _out << "  <material name=\"" << Material::FormatMaterialString(region->material()) <<"\" formula=\"" << region->material() <<"\">" <<std::endl;
       _out << "  <D value=\"" << region->get_density(system.T_external())/(g*pow(cm,-3)) <<"\" />" <<std::endl;
 
       std::vector<std::string> atoms;
@@ -195,7 +199,8 @@ void GDMLIO::write_gdml_surface (const std::string& filename)
       for(unsigned int n=0; n<atoms.size(); ++n)
       {
         const std::string & atom_name = atoms[n];
-        _out << "  <fraction n=\""<< fraction[n]*atom_value(atom_name)/molecule_value <<"\" ref=\"" << atom_name <<"\" />" <<std::endl;
+        const std::string & atom_ref = _atoms.find(atom_name)->second.name;
+        _out << "  <fraction n=\""<< fraction[n]*atom_value(atom_name)/molecule_value <<"\" ref=\"" << atom_ref <<"\" />" <<std::endl;
       }
 
       _out << "  </material> " <<std::endl;
@@ -278,7 +283,7 @@ void GDMLIO::write_gdml_surface (const std::string& filename)
       const SimulationRegion * region = system.region(r);
 
       _out << "  <volume name=\"" << region->name() << "\">" << std::endl;
-      _out << "    <materialref ref=\"" << region->name() + "_" + region->material() <<"\"/>" << std::endl;
+      _out << "    <materialref ref=\"" << Material::FormatMaterialString(region->material()) <<"\"/>" << std::endl;
       _out << "    <solidref ref=\"Solid_" << region->name() <<"\"/>" << std::endl;
       _out << "  </volume>" << std::endl;
     }

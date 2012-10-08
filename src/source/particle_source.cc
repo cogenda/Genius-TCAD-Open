@@ -19,7 +19,9 @@
 /*                                                                              */
 /********************************************************************************/
 
+#include <limits>
 #include <fstream>
+
 #include "parser.h"
 #include "mesh_base.h"
 #include "point_locator_base.h"
@@ -34,6 +36,8 @@
 #include "parallel.h"
 #include "mathfunc.h"
 #include "log.h"
+
+//#define DEBUG
 
 using PhysicalUnit::s;
 using PhysicalUnit::um;
@@ -395,6 +399,14 @@ void Particle_Source_Track::_read_particle_profile_track(const std::string & fil
       ss >>  p1[0] >> p1[1] >> p1[2] >> p2[0] >> p2[1] >> p2[2] >> energy;
       if(!ss.eof()) { ss >> sigma;}
 
+      // skip track with very little energy
+      // a very low energy such as 1.38073e-315 may break some floating point compare result
+      if(energy < 1e-12) continue;
+      // skip very short track
+      Point begin(p1[0]*um,p1[1]*um,p1[2]*um);
+      Point end(p2[0]*um,p2[1]*um,p2[2]*um);
+      if( (begin-end).size() < 1e-6*um ) continue;
+
       meta_data.push_back(p1[0]*um);
       meta_data.push_back(p1[1]*um);
       meta_data.push_back(p1[2]*um);
@@ -429,10 +441,162 @@ void Particle_Source_Track::_read_particle_profile_track(const std::string & fil
 
 
 
+
+
+
+
+#if 1
+void Particle_Source_Track::update_system()
+{
+  START_LOG("update_system()", "Particle_Source_Track");
+
+  MESSAGE<< "  process particle generation";
+  RECORD();
+
+  const double pi = 3.1415926536;
+  genius_assert(_system.mesh().mesh_dimension() == 3);
+
+  std::vector<double> region_energy(_system.n_regions(), 0.0);
+  double total_energy=0.0;
+
+  AutoPtr<NearestNodeLocator> nn_locator( new NearestNodeLocator(_system.mesh()) );
+
+  for(unsigned int t=0; t<_tracks.size(); ++t)
+  {
+    if( t%(1+_tracks.size()/20) ==0 )
+    {
+      MESSAGE<< ".";
+      RECORD();
+    }
+
+    const track_t & track = _tracks[t];
+    genius_assert(track.energy > 0.0 && (track.end - track.start).size() > 0.0);
+
+    /*
+    // prevent bad tracks
+    int bad_track = 0;
+    if( track.energy == 0.0 || (track.end - track.start).size() == 0.0) bad_track=1;
+    Parallel::broadcast(bad_track);
+    if(bad_track) continue;
+    */
+
+    double track_energy = 0.0;
+    std::map<FVM_Node *, double> track_energy_density;
+
+    const Point track_dir = (track.end - track.start).unit(); // track direction
+    const double ed = track.energy/(track.end - track.start).size(); // linear energy density
+    const double lateral_char = track.lateral_char;
+    // find the nodes that near the track
+    for(unsigned int r=0; r<_system.n_regions(); r++)
+    {
+      const SimulationRegion * region = _system.region(r);
+
+      // fast return
+      const std::pair<Point, Real> bsphere = region->boundingsphere();
+      const Point cent = 0.5*(track.start+track.end);
+      const double diag = 0.5*(track.start-track.end).size();
+      if( (bsphere.first - cent).size() > bsphere.second + diag + 5*lateral_char ) continue;
+
+
+      std::vector<const Node *> nn = nn_locator->nearest_nodes(track.start, track.end, 5*lateral_char, r);
+      for(unsigned int n=0; n<nn.size(); ++n)
+      {
+        Point loc = *nn[n];
+        FVM_Node * fvm_node = region->region_fvm_node(nn[n]); // may be NULL, if not on local
+        if(!fvm_node || !fvm_node->on_processor()) continue;
+
+        Point loc_pp = track.start + (loc-track.start)*track_dir*track_dir;
+        Real r = (loc-loc_pp).size();
+        double e_r = exp(-r*r/(lateral_char*lateral_char));
+        double e_z = Erf((loc_pp-track.start)*track_dir/lateral_char) - Erf((loc_pp-track.end)*track_dir/lateral_char);
+        double energy_density = ed/(2*pi*lateral_char*lateral_char)*e_r*e_z;
+        track_energy += energy_density*fvm_node->volume();
+        track_energy_density[fvm_node] += energy_density;
+      }
+    }
+
+    Parallel::sum(track_energy);
+
+    if(track_energy > 0.0)
+    {
+      double alpha = track.energy/track_energy; //used for keep energy conservation track.energy;
+      std::map<FVM_Node *, double>::const_iterator it = track_energy_density.begin();
+      for(; it != track_energy_density.end(); ++it)
+      {
+        FVM_Node * fvm_node = it->first;
+        if(!fvm_node) continue;
+
+        double energy_density = it->second;
+
+        SimulationRegion * region = _system.region(fvm_node->subdomain_id());
+        //if( region->type() != SemiconductorRegion) continue;
+
+        if(fvm_node && fvm_node->on_local())
+        {
+          FVM_NodeData * node_data = fvm_node->node_data();
+          node_data->PatG() += alpha*energy_density/_quan_eff/(_t_char/2.0*sqrt(pi)*(1+Erf((_t_max-_t0)/_t_char)));
+          node_data->PatE() += alpha*energy_density;
+          total_energy += alpha*energy_density*fvm_node->volume();
+          region_energy[ fvm_node->subdomain_id() ] += alpha*energy_density*fvm_node->volume();
+        }
+      }
+    }
+    else
+    {
+      // find the nearest node of the track
+      FVM_Node * neraset_node=0;
+      double distance=std::numeric_limits<double>::infinity();
+      for(unsigned int r=0; r<_system.n_regions(); r++)
+      {
+        const SimulationRegion * region = _system.region(r);
+        double dist;
+        const Node * n = nn_locator->nearest_node(0.5*(track.start+track.end), r, dist);
+        if(n == NULL) continue;
+
+        FVM_Node * fvm_node = region->region_fvm_node(n); // may be NULL, if not on local
+        if(!fvm_node || !fvm_node->on_processor()) continue;
+
+        if( dist < distance)
+        {
+          distance = dist;
+          neraset_node = fvm_node;
+        }
+      }
+
+      double min_distance=distance;
+      Parallel::min(min_distance);
+
+      if( min_distance == distance && neraset_node)
+      {
+        double energy_density = track.energy/neraset_node->volume();
+        FVM_NodeData * node_data = neraset_node->node_data();
+        node_data->PatG() += energy_density/_quan_eff/(_t_char/2.0*sqrt(pi)*(1+Erf((_t_max-_t0)/_t_char)));
+        node_data->PatE() += energy_density;
+        total_energy += track.energy;
+        region_energy[neraset_node->subdomain_id()] += track.energy;
+      }
+    }
+
+  }
+
+  MESSAGE<< "ok" <<std::endl;
+  RECORD();
+
+  STOP_LOG("update_system()", "Particle_Source_Track");
+
+}
+
+#endif
+
+#if 0
 void Particle_Source_Track::update_system()
 {
   const double pi = 3.1415926536;
   genius_assert(_system.mesh().mesh_dimension() == 3);
+
+  std::map<std::string, double> region_energy;
+  double total_energy=0.0;
+  int lost_energy=0;
 
   AutoPtr<NearestNodeLocator> nn_locator( new NearestNodeLocator(_system.mesh()) );
 
@@ -453,8 +617,15 @@ void Particle_Source_Track::update_system()
     {
       const SimulationRegion * region = _system.region(r);
 
+      unsigned int try_radii = 0;
       Real radii = 5*lateral_char;
       std::vector<const Node *> nn = nn_locator->nearest_nodes(track.start, track.end, radii, r);
+      while(nn.size() < 10 && try_radii++ < 3)
+      {
+        radii *= 3.0;
+        nn = nn_locator->nearest_nodes(track.start, track.end, radii, r);
+      }
+
       for(unsigned int n=0; n<nn.size(); ++n)
       {
         Point loc = *nn[n];
@@ -483,6 +654,7 @@ void Particle_Source_Track::update_system()
           energy_statistics += it->second.second*fvm_node->volume();
       }
       Parallel::sum(energy_statistics);
+      if(energy_statistics == 0.0) lost_energy ++;
       alpha = energy_statistics > 0.0 ? track.energy/energy_statistics : 1.0; //used for keep energy conservation
     }
 
@@ -493,21 +665,23 @@ void Particle_Source_Track::update_system()
       if(!fvm_node) continue;
 
       SimulationRegion * region = _system.region(fvm_node->subdomain_id());
-      if( region->type() != SemiconductorRegion) continue;
+      //if( region->type() != SemiconductorRegion) continue;
 
       if(fvm_node && fvm_node->on_local())
       {
         FVM_NodeData * node_data = fvm_node->node_data();
         node_data->PatG() += alpha*it->second.second/_quan_eff/(_t_char/2.0*sqrt(pi)*(1+Erf((_t_max-_t0)/_t_char)));
         node_data->PatE() += alpha*it->second.second;//*fvm_node->volume();
-        //total_energy = alpha*it->second.second*fvm_node->volume();
-        //region_energy[ _system.region(fvm_node->subdomain_id())->name() ] += alpha*it->second.second*fvm_node->volume();
+        total_energy += alpha*it->second.second*fvm_node->volume();
+        region_energy[ _system.region(fvm_node->subdomain_id())->name() ] += alpha*it->second.second*fvm_node->volume();
       }
     }
   }
 
-  //std::map<std::string, double>::const_iterator it = region_energy.begin();
-  //for(;it != region_energy.end(); ++it)
-  //  std::cout<<it->first << " " << it->second<<std::endl;
-  //std::cout<<total_energy<<std::endl;
+  std::map<std::string, double>::const_iterator it = region_energy.begin();
+  for(;it != region_energy.end(); ++it)
+    std::cout<<it->first << " " << it->second<<std::endl;
+  std::cout<<total_energy<< " " << lost_energy << std::endl;
 }
+#endif
+

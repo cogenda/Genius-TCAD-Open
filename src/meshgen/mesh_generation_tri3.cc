@@ -1263,6 +1263,7 @@ int MeshGeneratorTri3::do_refine(MeshRefinement & mesh_refinement)
 
   // call MeshRefinement class to do FEM refine
   mesh_refinement.refine_and_coarsen_elements ();
+  _mesh.find_neighbors();
 
   // we can simply flat refined mesh to level 0
   // since we do not need these information

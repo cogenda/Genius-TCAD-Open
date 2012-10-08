@@ -183,8 +183,11 @@ void MetalSimulationRegion::EBM3_Function(PetscScalar * x, Vec f, InsertMode &ad
       PetscScalar V2   =  x[n2_local_offset+node_psi_offset];
       PetscScalar rho2 =  0;
 
+      // truncated to positive
+      double S = std::abs(fvm_n1->cv_surface_area(fvm_n2));
+
       // "flux" from node 2 to node 1
-      PetscScalar f_psi =  sigma*fvm_n1->cv_surface_area(fvm_n2->root_node())*(V2 - V1)/fvm_n1->distance(fvm_n2) ;
+      PetscScalar f_psi =  sigma*S*(V2 - V1)/fvm_n1->distance(fvm_n2) ;
 
       // ignore thoese ghost nodes
       if( fvm_n1->on_processor() )
@@ -212,7 +215,7 @@ void MetalSimulationRegion::EBM3_Function(PetscScalar * x, Vec f, InsertMode &ad
         PetscScalar T2   =  x[n2_local_offset+node_Tl_offset];
         PetscScalar kap2 =  mt->thermal->HeatConduction(T2);
         PetscScalar kap = 0.5*(kap1+kap2);       // kapa at mid point of the edge
-        PetscScalar f_q =  kap*fvm_n1->cv_surface_area(fvm_n2->root_node())*(T2 - T1)/fvm_n1->distance(fvm_n2) ;
+        PetscScalar f_q =  kap*S*(T2 - T1)/fvm_n1->distance(fvm_n2) ;
         // ignore thoese ghost nodes
         if( fvm_n1->on_processor() )
         {
@@ -303,8 +306,11 @@ void MetalSimulationRegion::EBM3_Jacobian(PetscScalar * x, Mat *jac, InsertMode 
       AutoDScalar V2   =  x[n2_local_offset+node_psi_offset];  V2.setADValue(1,1.0);
       PetscScalar rho2 =  0;
 
+      // truncated to positive
+      double S = std::abs(fvm_n1->cv_surface_area(fvm_n2));
+
       // "flux" from node 2 to node 1
-      AutoDScalar f_psi =  sigma*fvm_n1->cv_surface_area(fvm_n2->root_node())*(V2 - V1)/fvm_n1->distance(fvm_n2) ;
+      AutoDScalar f_psi =  sigma*S*(V2 - V1)/fvm_n1->distance(fvm_n2) ;
 
       // ignore thoese ghost nodes
       if( fvm_n1->on_processor() )
@@ -333,7 +339,7 @@ void MetalSimulationRegion::EBM3_Jacobian(PetscScalar * x, Mat *jac, InsertMode 
         PetscScalar kap2 =  mt->thermal->HeatConduction(T2.getValue());
 
         PetscScalar kap = 0.5*(kap1+kap2);       // kapa at mid point of the edge
-        AutoDScalar f_q =  kap*fvm_n1->cv_surface_area(fvm_n2->root_node())*(T2 - T1)/fvm_n1->distance(fvm_n2) ;
+        AutoDScalar f_q =  kap*S*(T2 - T1)/fvm_n1->distance(fvm_n2) ;
 
         // ignore thoese ghost nodes
         if( fvm_n1->on_processor() )

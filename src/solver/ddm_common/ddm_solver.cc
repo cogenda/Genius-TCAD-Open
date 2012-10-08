@@ -33,6 +33,12 @@
 #include "MXMLUtil.h"
 
 
+using PhysicalUnit::A;
+using PhysicalUnit::V;
+using PhysicalUnit::W;
+using PhysicalUnit::C;
+
+
 DDMSolverBase::DDMSolverBase(SimulationSystem & system): FVM_NonlinearSolver(system)
 {
   // do clear
@@ -191,6 +197,8 @@ int DDMSolverBase::solve_equ()
     RECORD();
   }
 
+  SolverSpecify::tran_histroy = false;
+
   return 0;
 }
 
@@ -242,6 +250,9 @@ int DDMSolverBase::solve_steadystate()
       RECORD();
     }
   }
+
+  SolverSpecify::tran_histroy = false;
+
   return 0;
 }
 
@@ -624,6 +635,9 @@ int DDMSolverBase::solve_dcsweep()
     VecDestroy ( PetscDestroyObject(xs3) );
   }
 
+
+  SolverSpecify::tran_histroy = false;
+
   return 0;
 }
 
@@ -814,6 +828,10 @@ int DDMSolverBase::solve_op()
   SolverSpecify::PseudoTimeStepPotential = dtao_init_potential;
   SolverSpecify::PseudoTimeStepCarrier = dtao_init_carrier;
   SolverSpecify::PseudoTimeStepMetal = dtao_init_metal;
+
+
+  SolverSpecify::tran_histroy = false;
+
   return 0;
 }
 
@@ -899,6 +917,7 @@ int DDMSolverBase::solve_iv_trace()
 
   std::string electrode_trace = SolverSpecify::Electrode_VScan[0];
   BoundaryCondition * bc_trace = _system.get_bcs()->get_bc(electrode_trace);
+  PetscScalar R_bak = bc_trace->ext_circuit()->serial_resistance();
 
   // the current vscan voltage
   PetscScalar V = SolverSpecify::VStart;
@@ -943,7 +962,7 @@ int DDMSolverBase::solve_iv_trace()
   MESSAGE<<"IV automatically trace by continuation method\n"; RECORD();
 
   // initial condition check
-  bc_trace->ext_circuit()->R() = Rload;
+  bc_trace->ext_circuit()->set_serial_resistance(Rload);
 
   // call pre_solve_process
   this->pre_solve_process();
@@ -1030,9 +1049,9 @@ int DDMSolverBase::solve_iv_trace()
     // compute tangent line of IV curve as well as load resistance
     {
 
-      I = bc_trace->ext_circuit()->current_itering();
+      I = bc_trace->ext_circuit()->current();
       Parallel::sum(I);
-      Potential = bc_trace->ext_circuit()->potential_itering();
+      Potential = bc_trace->ext_circuit()->potential();
 
       //if( std::abs(I) > 1e-5*PhysicalUnit::A )
       //  Rref = PhysicalUnit::V/std::abs(I);
@@ -1118,7 +1137,7 @@ int DDMSolverBase::solve_iv_trace()
 
     // since Rload will be changed, we should change bias voltage to meet the truncation point.
     V += I*(Rload_new-Rload);
-    bc_trace->ext_circuit()->R() = Rload_new;
+    bc_trace->ext_circuit()->set_serial_resistance(Rload_new);
     bc_trace->ext_circuit()->Vapp() = V;
 
     Rload = Rload_new;
@@ -1145,9 +1164,14 @@ int DDMSolverBase::solve_iv_trace()
 
 
 trace_end:
+  bc_trace->ext_circuit()->set_serial_resistance(R_bak);
   solve_iv_trace_end();
 
+
+  SolverSpecify::tran_histroy = false;
+
   return error;
+
 }
 
 
@@ -1170,6 +1194,18 @@ int DDMSolverBase::solve_transient()
   // if BDF2 scheme is used, we should set SolverSpecify::BDF2_LowerOrder flag to true
   if ( SolverSpecify::TS_type==SolverSpecify::BDF2 )
     SolverSpecify::BDF2_LowerOrder = true;
+
+  // we have a previous dc solution
+  if(!SolverSpecify::tran_histroy)
+  {
+    _system.get_electrical_source()->update ( SolverSpecify::TStart );
+    for(unsigned int b=0; b<_system.get_bcs()->n_bcs(); b++)
+    {
+      BoundaryCondition * bc = _system.get_bcs()->get_bc(b);
+      if(bc && bc->is_electrode())
+        bc->ext_circuit()->tran_op_init();
+    }
+  }
 
   // transient simulation clock
   SolverSpecify::clock = SolverSpecify::TStart + SolverSpecify::TStep;
@@ -1364,7 +1400,7 @@ int DDMSolverBase::solve_transient()
       SolverSpecify::dt = SolverSpecify::TStepMax;
 
     // limit time step by changes of external source, i.e. max allowed changes of vsource
-    SolverSpecify::dt = _system.get_electrical_source()->limit_dt(SolverSpecify::clock, SolverSpecify::dt, SolverSpecify::VStepMax, SolverSpecify::IStepMax);
+    SolverSpecify::dt = _system.get_electrical_source()->limit_dt(SolverSpecify::clock, SolverSpecify::dt, SolverSpecify::TStepMin, SolverSpecify::VStepMax, SolverSpecify::IStepMax);
 
     // limit time step by field source
     SolverSpecify::dt = _system.get_field_source()->limit_dt(SolverSpecify::clock, SolverSpecify::dt);
@@ -1444,6 +1480,9 @@ int DDMSolverBase::solve_transient()
   VecDestroy ( PetscDestroyObject(x_n2) );
   VecDestroy ( PetscDestroyObject(xp) );
   VecDestroy ( PetscDestroyObject(LTE) );
+
+
+  SolverSpecify::tran_histroy = true;
 
   return 0;
 }
@@ -1579,8 +1618,9 @@ void DDMSolverBase::petsc_snes_convergence_test ( PetscInt its, PetscReal , Pets
 
   double  toler_relax = SolverSpecify::toler_relax;
   if(its)
-    toler_relax = std::max(SolverSpecify::toler_relax, 0.1/(pnorm+1e-8));
-
+  {
+    //toler_relax = std::max(SolverSpecify::toler_relax, 1.0/(pnorm+1e-3));
+  }
   bool  poisson_conv              = poisson_norm              < toler_relax*SolverSpecify::poisson_abs_toler;
   bool  elec_continuity_conv      = elec_continuity_norm      < toler_relax*SolverSpecify::elec_continuity_abs_toler;
   bool  hole_continuity_conv      = hole_continuity_norm      < toler_relax*SolverSpecify::hole_continuity_abs_toler;
@@ -1597,13 +1637,13 @@ void DDMSolverBase::petsc_snes_convergence_test ( PetscInt its, PetscReal , Pets
 
   MESSAGE<< std::setw(3) << its << " " ;
   MESSAGE<< std::scientific;
-  MESSAGE<< poisson_norm << (poisson_conv ? "* " : "  ");
-  MESSAGE<< elec_continuity_norm << (elec_continuity_conv ? "* " : "  ");
-  MESSAGE<< hole_continuity_norm << (hole_continuity_conv ? "* " : "  ");
-  MESSAGE<< heat_equation_norm   << (heat_equation_conv ? "* " : "  ");
-  MESSAGE<< elec_energy_equation_norm << (elec_energy_equation_conv ? "* " : "  ");
-  MESSAGE<< hole_energy_equation_norm << (hole_energy_equation_conv ? "* " : "  ");
-  MESSAGE<< electrode_norm << (electrode_conv ? "* " : "  ");
+  MESSAGE<< poisson_norm/C              << (poisson_conv ? "* " : "  ");
+  MESSAGE<< elec_continuity_norm/A      << (elec_continuity_conv ? "* " : "  ");
+  MESSAGE<< hole_continuity_norm/A      << (hole_continuity_conv ? "* " : "  ");
+  MESSAGE<< heat_equation_norm/W        << (heat_equation_conv ? "* " : "  ");
+  MESSAGE<< elec_energy_equation_norm/W << (elec_energy_equation_conv ? "* " : "  ");
+  MESSAGE<< hole_energy_equation_norm/W << (hole_energy_equation_conv ? "* " : "  ");
+  MESSAGE<< electrode_norm/A            << (electrode_conv ? "* " : "  ");
   MESSAGE<< std::fixed << std::setw(4) << (pnorm==0.0 ? -std::numeric_limits<PetscScalar>::infinity():log10(pnorm))
     << (pnorm < SolverSpecify::relative_toler ? "*" : " ") << "\n" ;
   RECORD();
@@ -1648,7 +1688,8 @@ void DDMSolverBase::petsc_snes_convergence_test ( PetscInt its, PetscReal , Pets
     else
     {
       // check for absolute convergence
-      if ( poisson_norm               < SolverSpecify::poisson_abs_toler         &&
+      if ( its && 
+           poisson_norm               < SolverSpecify::poisson_abs_toler         &&
            elec_continuity_norm       < SolverSpecify::elec_continuity_abs_toler &&
            hole_continuity_norm       < SolverSpecify::hole_continuity_abs_toler &&
            electrode_norm             < SolverSpecify::electrode_abs_toler       &&

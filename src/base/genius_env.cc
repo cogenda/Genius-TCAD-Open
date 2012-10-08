@@ -23,6 +23,10 @@
 #include "genius_common.h"
 #include "genius_env.h"
 
+#include <ios>
+#include <fstream>
+#include <string>
+
 #ifdef HAVE_SLEPC
   #include "slepcsys.h"
 #endif
@@ -83,3 +87,42 @@ bool Genius::clean_processors()
 
   return true;
 }
+
+
+#ifdef WINDOWS
+#else
+#include <unistd.h>
+#include <sys/time.h>
+#include <sys/resource.h>
+#endif
+
+
+
+std::pair<size_t, size_t> Genius::memory_size()
+{
+#ifdef WINDOWS
+#else
+
+   // 'file' stat seems to give the most reliable results
+   //
+   std::ifstream stat_stream("/proc/self/statm", std::ios_base::in);
+
+   size_t vsize; // Virtual memory size in pages.
+   size_t rss;   // Resident Set Size in pages
+
+   stat_stream >> vsize >> rss; // don't care about the rest
+
+   stat_stream.close();
+
+   size_t page_size = sysconf(_SC_PAGE_SIZE);
+
+   return std::make_pair(vsize*page_size, rss*page_size);
+
+#endif
+  //return 0;
+
+}
+
+
+
+

@@ -19,6 +19,7 @@
 /*                                                                              */
 /********************************************************************************/
 
+#include <fstream>
 #include <cassert>
 
 #include "waveform.h"
@@ -30,6 +31,9 @@
 #else
   #include <dlfcn.h>
 #endif
+
+#include "parallel.h"
+#include "physical_unit.h"
 
 
 WaveformShell::WaveformShell(const std::string & s, const std::string & dll_file, const std::string & function, double s_t):Waveform(s)
@@ -70,3 +74,53 @@ WaveformShell::~WaveformShell()
   dlclose( dll );
 #endif
 }
+
+
+
+//-------------------------------------------------------------------------------
+#include "monot_cubic_interpolator.h"
+
+WaveformFile::WaveformFile(const std::string & s, const std::string & filename):Waveform(s)
+{
+  if(Genius::processor_id()==0)
+  {
+    std::ifstream in;
+    in.open(filename.c_str());
+    genius_assert(in.good());
+
+    while(!in.eof())
+    {
+      double t, v;
+      in >> t >> v;
+      _time.push_back(t*PhysicalUnit::s);
+      _wave.push_back(v);
+    }
+
+    in.close();
+  }
+
+  Parallel::broadcast(_time);
+  Parallel::broadcast(_wave);
+
+  _int = new MonotCubicInterpolator(_time, _wave);
+}
+
+
+WaveformFile::~WaveformFile()
+{
+  delete _int;
+}
+
+
+
+double WaveformFile::waveform(double t)
+{
+  if(_time.empty()) return 0.0;
+  if( t <_int->getMinimumX().first ) return 0.0;
+  if( t >_int->getMaximumX().first ) return 0.0;
+  return _int->evaluate(t);
+}
+
+
+
+

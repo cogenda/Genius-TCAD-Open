@@ -88,39 +88,33 @@ public:
   /**
    * @return the centre node pointer
    */
-  const Node * root_node() const
-    { return _node; }
+  const Node * root_node() const    { return _node; }
 
   /**
    * @return the pointer to nodal data
    */
-  FVM_NodeData * node_data()
-  { return _node_data;}
+  FVM_NodeData * node_data()  { return _node_data;}
 
   /**
    * @return the const pointer to nodal data
    */
-  const FVM_NodeData * node_data() const
-    { return _node_data;}
+  const FVM_NodeData * node_data() const    { return _node_data;}
 
 
   /**
    * let this fvm_node hold FVM_NodeData
    */
-  void hold_node_data(FVM_NodeData * data)
-  { _node_data = data; }
+  void hold_node_data(FVM_NodeData * data)  { _node_data = data; }
 
   /**
    * @return true if this FVM_Node belongs to local processor
    */
-  bool on_processor() const
-  { return _node->on_processor(); }
+  bool on_processor() const  { return _node->on_processor(); }
 
   /**
    * @return true if this FVM_Node belongs to local processor or is a ghost FVM_Node
    */
-  bool on_local() const
-  { return _node->on_local(); }
+  bool on_local() const  { return _node->on_local(); }
 
   /**
    * @return true if _global_offset and _local_offset are valid
@@ -129,52 +123,59 @@ public:
   { return (_global_offset[_solver_index] != invalid_uint && _local_offset[_solver_index] != invalid_uint);}
 
   /**
-   * set element-node map
+   * add element-node map
    */
-  void set_elem_it_belongs(const Elem * el, unsigned int n)
-  {
-    _elem_has_this_node.push_back( std::pair<const Elem *,unsigned int>(el,n) );
-  }
+  void add_elem_it_belongs(const Elem * el, unsigned int n);
 
   /**
-   * set the node which connects to me as my neighbor.
+   * add fvm node neighbor
    */
-  void set_node_neighbor(const Node * n, FVM_Node *fn=NULL)
-  {
-    _node_neighbor[n] = fn;
-  }
+  void add_fvm_node_neighbor(FVM_Node *, Real);
+
+  /**
+   * set fvm node neighbor
+   */
+  void set_fvm_node_neighbor(FVM_Node *, Real, Real);
 
   /**
    * set ghost node, which has the same root_node but in different region
    */
-  void set_ghost_node(FVM_Node * fn, unsigned int sub_id, Real area)
-  {
-    if( _ghost_nodes == NULL)
-      _ghost_nodes = new std::map< FVM_Node *, std::pair<unsigned int, Real> >;
-
-    std::pair<unsigned int, Real> gf(sub_id,area);
-    _ghost_nodes->insert( std::pair< FVM_Node *, std::pair<unsigned int, Real> >(fn, gf) );
-  }
+  void set_ghost_node(FVM_Node * fn, unsigned int sub_id, Real area);
 
   /**
    * set interface area of the ghost node
    */
   void set_ghost_node_area(unsigned int sub_id, Real area);
 
-  /**
-   * assign neighbor related control volume surface area
-   */
-  Real & cv_surface_area(const Node * neighbor)  { return _cv_surface_area[neighbor]; }
 
   /**
    * get neighbor related control volume surface area
    */
-  Real cv_surface_area(const Node * neighbor) const  { return _cv_surface_area.find(neighbor)->second; }
+  Real cv_surface_area(const FVM_Node * neighbor) const;
 
   /**
    * get total control volume surface area
    */
   Real total_cv_surface_area() const;
+
+
+  /**
+   * get neighbor related absolute vaule of control volume surface area
+   */
+  Real cv_abs_surface_area(const FVM_Node * neighbor) const;
+
+  /**
+   * get total absolute vaule of control volume surface area
+   */
+  Real total_abs_cv_surface_area() const;
+
+
+  /**
+   * force positive cv surface area to each neighbor ( including cv of neighbors in other subdomain )
+   * @return false when negative cv to neighbor was fixed 
+   */
+  bool posotive_cv_surface_area_to_each_neighbor(bool fix);
+
 
   /**
    * truncate control volume surface area to positive
@@ -188,48 +189,28 @@ public:
    * @return the number of ghost node, which in different region.
    * the NULL node (indicate outside boundary) is also considered here.
    */
-  unsigned int n_ghost_node() const
-  {
-     genius_assert(_ghost_nodes);
-     return _ghost_nodes->size();
-  }
+  unsigned int n_ghost_node() const  {  return _ghost_nodes->size();  }
 
   /**
    * @return the number of ghost node, which in different region. No NULL nodes!
    */
-  unsigned int n_pure_ghost_node() const
-  {
-    genius_assert(_ghost_nodes);
-    // sun NULL ghost node
-    if( _ghost_nodes->find(NULL)!=_ghost_nodes->end() )
-      return _ghost_nodes->size() -1 ;
-    return _ghost_nodes->size();
-  }
+  unsigned int n_pure_ghost_node() const;
 
   /**
    * @return the begin position of _ghost_nodes
    */
-  fvm_ghost_node_iterator  ghost_node_begin() const
-    { genius_assert(_ghost_nodes); return _ghost_nodes->begin(); }
+  fvm_ghost_node_iterator  ghost_node_begin() const    { return _ghost_nodes->begin(); }
 
 
   /**
    * @return the end position of _ghost_nodes
    */
-  fvm_ghost_node_iterator  ghost_node_end() const
-    { genius_assert(_ghost_nodes); return _ghost_nodes->end(); }
+  fvm_ghost_node_iterator  ghost_node_end() const      { return _ghost_nodes->end(); }
 
   /**
    * @return ith ghost FVM_Node
    */
-  FVM_Node * ghost_fvm_node(unsigned int i) const
-  {
-    genius_assert(_ghost_nodes);
-    genius_assert(i<n_ghost_node());
-    fvm_ghost_node_iterator  it = ghost_node_begin();
-    for(unsigned int l=0; l<i; ++i, ++it);
-    return (*it).first;
-  }
+  FVM_Node * ghost_fvm_node(unsigned int i) const;
 
   /**
    * @return the area of CV (control volume) surface to outside boundary
@@ -250,14 +231,14 @@ public:
 
 
   /**
-   * @return sum of S/d of the control volumn
+   * @return sum of S/d of the control volume
    * S is the surface area to neighbor n
    * d is the length to neighbor n
    */
   Real laplace_unit() const;
 
   /**
-   * @return sum of abs(S)/d of the control volumn
+   * @return sum of abs(S)/d of the control volume
    * S is the surface area to neighbor n
    * d is the length to neighbor n
    */
@@ -266,22 +247,19 @@ public:
   /**
    * set the subdomain index for this node
    */
-  void set_subdomain_id (unsigned int sbd_id)
-  { _subdomain_id = sbd_id; }
+  void set_subdomain_id (unsigned int sbd_id)  { _subdomain_id = sbd_id; }
 
 
   /**
    * set the boundary condition type of this node
    */
-  void set_bc_type(BCType  bc_type)
-  { _bc_type = bc_type; }
+  void set_bc_type(BCType  bc_type)  { _bc_type = bc_type; }
 
   /**
    * set the boundary index for this node
    * Please note it is boundary id here, not boundary condition index.
    */
-  void set_boundary_id (short int bn_id)
-  { _boundary_id = bn_id; }
+  void set_boundary_id (short int bn_id)  { _boundary_id = bn_id; }
 
   /**
    * @return true if the fvm_node on boundary
@@ -291,81 +269,62 @@ public:
   /**
    * set the volume of CV
    */
-  void set_control_volume( Real v)
-  { _volume = v; }
+  void set_control_volume( Real v)  { _volume = v; }
 
   /**
    * @return the fvm_node's subdomain id
    */
-  unsigned int subdomain_id () const
-    { return _subdomain_id; }
+  unsigned int subdomain_id () const    { return _subdomain_id; }
 
   /**
    * @return the boundary condition type of this node
    */
-  BCType bc_type() const
-    { return _bc_type; }
+  BCType bc_type() const    { return _bc_type; }
 
   /**
    * @return the node's bc index
    */
-  short int boundary_id () const
-    { return _boundary_id; }
+  short int boundary_id () const    { return _boundary_id; }
 
 
   /**
    * get current solver index
    */
-  static unsigned int solver_index()
-  { return _solver_index; }
+  static unsigned int solver_index()  { return _solver_index; }
 
 
   /**
    * set solver index, we allow max 4 solvers exist at the same time
    */
-  static void set_solver_index(unsigned int s)
-  {
-    genius_assert(s < 4);
-    _solver_index = s;
-  }
+  static void set_solver_index(unsigned int s)  { _solver_index = s;  }
 
 
   /**
    * @return the offset of nodal solution data in global petsc vector
    */
-  unsigned int global_offset () const
-    { return _global_offset[_solver_index]; }
+  unsigned int global_offset () const    { return _global_offset[_solver_index]; }
 
   /**
    * function for set global offset
    */
-  void set_global_offset (unsigned int pos )
-  { _global_offset[_solver_index] = pos; }
+  void set_global_offset (unsigned int pos )  { _global_offset[_solver_index] = pos; }
 
 
   /**
    * @return the offset of nodal solution data in local vector
    */
-  unsigned int local_offset () const
-    { return _local_offset[_solver_index]; }
+  unsigned int local_offset () const    { return _local_offset[_solver_index]; }
 
   /**
    * function for set local offset
    */
-  void set_local_offset (unsigned int pos )
-  { _local_offset[_solver_index] = pos; }
+  void set_local_offset (unsigned int pos )  { _local_offset[_solver_index] = pos; }
 
   /**
    * @return the volume of this FVM cell
    */
-  Real volume() const
-    { return _volume; }
+  Real volume() const    { return _volume; }
 
-  /**
-   * @return the number if element this fvm node (partly) has
-   */
-  unsigned int partly_has_n_elem() const
-  { return _elem_has_this_node.size(); }
 
 
   typedef std::vector< std::pair<const Elem *,unsigned int> >::const_iterator fvm_element_iterator;
@@ -373,30 +332,18 @@ public:
   /**
    * @return the begin position of _elem_has_this_node
    */
-  fvm_element_iterator  elem_begin() const
-    { return  _elem_has_this_node.begin(); }
+  fvm_element_iterator  elem_begin() const    { return  _elem_has_this_node.begin(); }
 
   /**
    * @return the end position of _elem_has_this_node
    */
-  fvm_element_iterator  elem_end() const
-    { return  _elem_has_this_node.end(); }
+  fvm_element_iterator  elem_end() const    { return  _elem_has_this_node.end(); }
 
 
   /**
    * @return the subdomains this fvm_node on
    */
   std::vector<unsigned int> subdomains() const;
-
-
-  typedef std::map<const Node *, FVM_Node *>::const_iterator fvm_neighbor_node_iterator;
-
-
-  /**
-   * @return the number of node neighbors, only this region
-   */
-  unsigned int n_node_neighbors() const
-    { return _node_neighbor.size(); }
 
 
   /**
@@ -422,49 +369,58 @@ public:
   void PDE_off_processor_node_pattern(std::vector<std::pair<unsigned int, unsigned int> > &, bool elem_based=false) const;
 
 
+
+  typedef std::vector< std::pair<FVM_Node *, std::pair<Real, Real> > >::const_iterator fvm_neighbor_node_iterator;
+
+
   /**
-   * @return true iff node is a neighbor of this FVM_Node
+   * @return the number of fvm_node neighbors, only this region
    */
-  bool is_neighbor(const Node * node) const
-  { return _node_neighbor.find(node)!=_node_neighbor.end(); }
+  unsigned int fvm_node_neighbors() const    { return _fvm_node_neighbor.size(); }
+
+  /**
+   * @return nth fvm_node neighbor
+   */
+  FVM_Node * fvm_node_neighbor(unsigned int n) { return _fvm_node_neighbor[n].first; }
+
+  /**
+   * @return surface area of control volume to nth fvm_node neighbor
+   */
+  Real cv_surface_area(unsigned int n) { return _fvm_node_neighbor[n].second.first; }
 
 
   /**
    * @return the begin position of _node_neighbor
    */
-  fvm_neighbor_node_iterator  neighbor_node_begin() const
-    { return _node_neighbor.begin(); }
+  fvm_neighbor_node_iterator  neighbor_node_begin() const    { return _fvm_node_neighbor.begin(); }
 
 
   /**
    * @return the end position of _node_neighbor
    */
-  fvm_neighbor_node_iterator  neighbor_node_end() const
-    { return _node_neighbor.end(); }
+  fvm_neighbor_node_iterator  neighbor_node_end() const    { return _fvm_node_neighbor.end(); }
+
+
 
   /**
    * @return the distance to other node
    */
-  Real distance(const FVM_Node * other) const
-  { return (*_node - *(other->_node)).size(); }
+  Real distance(const FVM_Node * other) const  { return (*_node - *(other->_node)).size(); }
 
   /**
    * @return the distance to other node
    */
-  Real distance(const Node * other) const
-  { return (*_node - *other).size(); }
+  Real distance(const Node * other) const  { return (*_node - *other).size(); }
 
   /**
    * set norm vector to boundary/interface surface
    */
-  void set_norm(const VectorValue<Real> &norm)
-  { _norm = norm; }
+  void set_norm(const VectorValue<Real> &norm)  { _norm = norm; }
 
   /**
    * @return norm vector to boundary/interface surface
    */
-  const VectorValue<Real> & norm() const
-  { return _norm; }
+  const VectorValue<Real> & norm() const  { return _norm; }
 
 
   /**
@@ -481,6 +437,18 @@ public:
    * combine several FVM_Node with same root node
    */
   void operator += (const FVM_Node &other_node);
+
+
+  /**
+   * try to free memory and reorder _fvm_node_neighbor
+   */
+  void prepare_for_use();
+
+
+  /**
+   * @returns memory usage
+   */
+  size_t memory_size() const;
 
 
   /**
@@ -517,19 +485,28 @@ private:
    */
   std::vector< std::pair<const Elem *, unsigned int> > _elem_has_this_node;
 
+  /**
+   * The vector of:
+   * the FVM_Node of my neighbor and the surface area of control volume to the FVM_Node neighbor
+   * @note only contain FVM_Node in the same subdomain!
+   * two surface areas are recorded, one is sum surface area and other is sum |surface area|
+   */
+  std::vector< std::pair<FVM_Node *, std::pair<Real, Real> > > _fvm_node_neighbor;
 
   /**
-   * the node neighbor (link this node by a side edge) as well as their FVM_Node map.
-   * only neighbors belong to same region (have the same subdomain id) are recorded.
+   * weakly less test of two std::pair\<FVM_Node *, Real\> objects
    */
-  std::map< const Node *, FVM_Node * > _node_neighbor;
-
-
-  /**
-   * control volume surface area. indicated by neighbor Node
-   * NOTE: the surface area is not truncated
-   */
-  std::map< const Node *, Real > _cv_surface_area;
+  class FNLess
+  {
+    public:
+      /**
+       * Call DofObject::Less()(a,b) to check less.
+       */
+      bool operator () (const std::pair<FVM_Node *, std::pair<Real, Real> > &a, const std::pair<FVM_Node *, std::pair<Real, Real> > &b) const
+      {
+        return a.first < b.first;
+      }
+  };
 
   /**
    * the FVM Node with same root node, but in different region

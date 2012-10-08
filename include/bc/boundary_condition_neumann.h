@@ -116,6 +116,7 @@ public:
   { /* no thing to do for Neumann boundary */ }
 
 
+
   //////////////////////////////////////////////////////////////////////////////////
   //----------------Function and Jacobian evaluate for L2 DDM---------------------//
   //////////////////////////////////////////////////////////////////////////////////
@@ -159,6 +160,8 @@ public:
   virtual void DDMAC_Fill_Matrix_Vector( Mat A, Vec b, const Mat J, const double omega, InsertMode & add_value_flag );
 
 
+
+
   //////////////////////////////////////////////////////////////////////////////////
   //----------------- functions for Fast Hydrodynamic solver  --------------------//
   //////////////////////////////////////////////////////////////////////////////////
@@ -172,7 +175,6 @@ public:
    * function for evaluating boundary for HDM method
    */
   virtual void HDM_Boundary( const PetscScalar * , Vec /*x*/, InsertMode &  );
-
 
 };
 

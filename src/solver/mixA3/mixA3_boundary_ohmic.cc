@@ -310,14 +310,14 @@ void OhmicContactBC::MixA_EBM3_Function(PetscScalar * x, Vec f, InsertMode &add_
               FVM_Node::fvm_neighbor_node_iterator nb_it = fvm_nodes[i]->neighbor_node_begin();
               for(; nb_it != fvm_nodes[i]->neighbor_node_end(); ++nb_it)
               {
-                FVM_Node *nb_node = (*nb_it).second;
+                FVM_Node *nb_node = (*nb_it).first;
                 FVM_NodeData * nb_node_data = nb_node->node_data();
                 // the psi of neighbor node
                 PetscScalar V_nb = x[nb_node->local_offset()+0];
                 // distance from nb node to this node
-                PetscScalar distance = (*(fvm_nodes[i]->root_node()) - *(nb_node->root_node())).size();
+                PetscScalar distance = fvm_nodes[i]->distance(nb_node);
                 // area of out surface of control volume related with neighbor node
-                PetscScalar cv_boundary = fvm_nodes[i]->cv_surface_area(nb_node->root_node());
+                PetscScalar cv_boundary = fvm_nodes[i]->cv_surface_area(nb_node);
                 PetscScalar dEdt;
                 if(SolverSpecify::TS_type==SolverSpecify::BDF2 && SolverSpecify::BDF2_LowerOrder==false) //second order
                 {
@@ -471,7 +471,7 @@ void OhmicContactBC::MixA_EBM3_Jacobian_Reserve(Mat *jac, InsertMode &add_value_
 
                 FVM_Node::fvm_neighbor_node_iterator  gnb_it = ghost_fvm_node->neighbor_node_begin();
                 for(; gnb_it != ghost_fvm_node->neighbor_node_end(); ++gnb_it)
-                  MatSetValue(*jac, global_offset+node_Tl_offset, (*gnb_it).second->global_offset()+ghostregion_node_Tl_offset, 0, ADD_VALUES);
+                  MatSetValue(*jac, global_offset+node_Tl_offset, (*gnb_it).first->global_offset()+ghostregion_node_Tl_offset, 0, ADD_VALUES);
               }
             }
 
@@ -529,7 +529,7 @@ void OhmicContactBC::MixA_EBM3_Jacobian_Reserve(Mat *jac, InsertMode &add_value_
           FVM_Node::fvm_neighbor_node_iterator nb_it_end =  fvm_node->neighbor_node_end();
           for(; nb_it!=nb_it_end; ++nb_it)
           {
-            const FVM_Node *  fvm_nb_node = (*nb_it).second;
+            const FVM_Node *  fvm_nb_node = (*nb_it).first;
             for(unsigned int nv=0; nv<region->ebm_n_variables(); ++nv)
               bc_node_reserve.push_back(fvm_nb_node->global_offset()+nv);
           }
@@ -572,9 +572,6 @@ void OhmicContactBC::MixA_EBM3_Jacobian_Preprocess(PetscScalar * ,Mat *jac, std:
 
   // for 2D mesh, z_width() is the device dimension in Z direction; for 3D mesh, z_width() is 1.0
   PetscScalar current_scale = this->z_width();
-  PetscScalar R = ext_circuit()->R();             // resistance
-  PetscScalar C = ext_circuit()->C();             // capacitance
-  PetscScalar L = ext_circuit()->L();             // inductance
   PetscScalar dt = SolverSpecify::dt;
 
   // search and process all the boundary nodes
@@ -611,26 +608,8 @@ void OhmicContactBC::MixA_EBM3_Jacobian_Preprocess(PetscScalar * ,Mat *jac, std:
         MatGetValues(*jac, 1, &row[node_p_offset], n_node_var, &row[0], &A2[0]);
 
         //for inter connect electrode
-        if(this->is_inter_connect_bc())
-        {
-          for(unsigned int nv=0; nv<n_node_var; ++nv)
-            JM[nv] = R*(A1[nv]-A2[nv])*current_scale;
-        }
-        // for stand alone electrode
-        else
-        {
-          if(ext_circuit()->is_voltage_driven())
-          {
-            for(unsigned int nv=0; nv<n_node_var; ++nv)
-              JM[nv] = (L/dt+R)*(A1[nv]-A2[nv])*current_scale;
-          }
-
-          if(ext_circuit()->is_current_driven())
-          {
-            for(unsigned int nv=0; nv<n_node_var; ++nv)
-              JM[nv] = (A1[nv]-A2[nv])*current_scale;
-          }
-        }
+        for(unsigned int nv=0; nv<n_node_var; ++nv)
+          JM[nv] = (A1[nv]-A2[nv])*current_scale;
 
         // get the derivative of electrode current to neighbors of ohmic node
         // NOTE neighbors and ohmic bc node may on different processor!
@@ -638,12 +617,12 @@ void OhmicContactBC::MixA_EBM3_Jacobian_Preprocess(PetscScalar * ,Mat *jac, std:
         FVM_Node::fvm_neighbor_node_iterator nb_it_end = fvm_node->neighbor_node_end();
         for(; nb_it != nb_it_end; ++nb_it)
         {
-          const FVM_Node *  fvm_nb_node = (*nb_it).second;
+          const FVM_Node *  fvm_nb_node = (*nb_it).first;
 
           // distance from nb node to this node
-          PetscScalar distance = (*(fvm_node->root_node()) - *(fvm_nb_node->root_node())).size();
+          PetscScalar distance = fvm_node->distance(fvm_nb_node);
           // area of out surface of control volume related with neighbor node
-          PetscScalar cv_boundary = fvm_node->cv_surface_area(fvm_nb_node->root_node());
+          PetscScalar cv_boundary = fvm_node->cv_surface_area(fvm_nb_node);
 
           std::vector<PetscInt>    col(n_node_var);
           for(unsigned int i=0; i<n_node_var; ++i)
@@ -653,29 +632,9 @@ void OhmicContactBC::MixA_EBM3_Jacobian_Preprocess(PetscScalar * ,Mat *jac, std:
           MatGetValues(*jac, 1, &row[node_p_offset], n_node_var, &col[0], &A2[0]);
 
           //for inter connect electrode
-          if(this->is_inter_connect_bc())
-          {
-            for(unsigned int nv=0; nv<n_node_var; ++nv)
-              JN[nv] = R*(A1[nv]-A2[nv])*current_scale;
+          for(unsigned int nv=0; nv<n_node_var; ++nv)
+            JN[nv] = (A1[nv]-A2[nv])*current_scale;
 
-          }
-          // for stand alone electrode
-          else
-          {
-            if(ext_circuit()->is_voltage_driven())
-            {
-              for(unsigned int nv=0; nv<n_node_var; ++nv)
-                JN[nv] = (L/dt+R)*(A1[nv]-A2[nv])*current_scale;
-
-            }
-
-            if(ext_circuit()->is_current_driven())
-            {
-              for(unsigned int nv=0; nv<n_node_var; ++nv)
-                JN[nv] = (A1[nv]-A2[nv])*current_scale;
-
-            }
-          }
           _buffer_cols.push_back(col);
           _buffer_jacobian_entries.push_back(JN);
         }
@@ -953,14 +912,14 @@ void OhmicContactBC::MixA_EBM3_Jacobian(PetscScalar * x, Mat *jac, InsertMode &a
               FVM_Node::fvm_neighbor_node_iterator nb_it = fvm_nodes[i]->neighbor_node_begin();
               for(; nb_it != fvm_nodes[i]->neighbor_node_end(); ++nb_it)
               {
-                FVM_Node *nb_node = (*nb_it).second;
+                FVM_Node *nb_node = (*nb_it).first;
                 FVM_NodeData * nb_node_data = nb_node->node_data();
                 // the psi of neighbor node
                 AutoDScalar V_nb = x[nb_node->local_offset()+0];  V_nb.setADValue(1, 1.0);
                 // distance from nb node to this node
-                PetscScalar distance = (*(fvm_nodes[i]->root_node()) - *(nb_node->root_node())).size();
+                PetscScalar distance = fvm_nodes[i]->distance(nb_node);
                 // area of out surface of control volume related with neighbor node
-                PetscScalar cv_boundary = fvm_nodes[i]->cv_surface_area(nb_node->root_node());
+                PetscScalar cv_boundary = fvm_nodes[i]->cv_surface_area(nb_node);
 
                 AutoDScalar dEdt;
                 if(SolverSpecify::TS_type==SolverSpecify::BDF2 && SolverSpecify::BDF2_LowerOrder==false) //second order

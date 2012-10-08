@@ -174,6 +174,13 @@ int EBM3Solver::post_solve_process()
     bc->EBM3_Update_Solution(lxx);
   }
 
+  // do bc post process
+  for(unsigned int b=0; b<_system.get_bcs()->n_bcs(); b++)
+  {
+    BoundaryCondition * bc = _system.get_bcs()->get_bc(b);
+    bc->EBM3_Post_Process();
+  }
+
   VecRestoreArray(lx, &lxx);
 
   return DDMSolverBase::post_solve_process();
@@ -882,7 +889,12 @@ void EBM3Solver::error_norm()
       if( offset != invalid_uint )
       {
         potential_norm += xx[offset]*xx[offset];
-        electrode_norm += ff[offset]*ff[offset];
+
+        PetscScalar scaling = 1.0;
+        if(bc->is_electrode())
+          scaling = bc->ext_circuit()->mna_scaling(SolverSpecify::dt);
+
+        electrode_norm += scaling*ff[offset]*scaling*ff[offset];
       }
     }
 

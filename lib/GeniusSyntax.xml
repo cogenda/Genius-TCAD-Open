@@ -34,11 +34,26 @@
     <parameter name="cap" type="num" default="0">
       <description></description>
     </parameter>
+    <parameter name="cap.um" type="num" default="0">
+      <description></description>
+    </parameter>
+    <parameter name="cap1" type="num" default="0">
+      <description></description>
+    </parameter>
+    <parameter name="cap2" type="num" default="0">
+      <description></description>
+    </parameter>
     <parameter name="eps" type="num" default="3.9">
       <description></description>
     </parameter>
     <parameter name="ext.temp" type="num" default="300">
       <description></description>
+    </parameter>
+    <parameter name="ext.circuit" type="enum" default="rcl">
+      <description></description>
+      <enum>rcl</enum>
+      <enum>pi</enum>
+      <enum>tline</enum>
     </parameter>
     <parameter name="heat.transfer" type="num" default="1000">
       <description></description>
@@ -74,6 +89,18 @@
       <description>anti-reflection coatings</description>
     </parameter>
     <parameter name="res" type="num" default="0">
+      <description></description>
+    </parameter>
+    <parameter name="res.load" type="num" default="0">
+      <description></description>
+    </parameter>
+    <parameter name="res.um" type="num" default="0">
+      <description></description>
+    </parameter>
+    <parameter name="tl.length" type="num" default="0">
+      <description></description>
+    </parameter>
+    <parameter name="tl.div" type="int" default="10">
       <description></description>
     </parameter>
     <parameter name="elec.recomb.velocity" type="num" default="2.573e6">
@@ -761,6 +788,9 @@
     <parameter name="intensity" type="num" default="0">
       <description></description>
     </parameter>
+    <parameter name="optical.gen" type="num" default="0">
+      <description></description>
+    </parameter>
     <parameter name="lambda" type="num" default="0.532">
       <description></description>
     </parameter>
@@ -915,6 +945,9 @@
     </parameter>
     <parameter name="halfimplicit.resolvecarrier" type="bool" default="false">
       <description>resolve carrier equation</description>
+    </parameter>
+    <parameter name="halfimplicit.carrierweight" type="num" default="0">
+      <description>Poisson correction parameter</description>
     </parameter>
     <parameter name="truncation" type="enum" default="always">
       <description></description>
@@ -1095,6 +1128,9 @@
       <enum>newton</enum>
       <enum>trustregion</enum>
     </parameter>
+    <parameter name="pclu.lag" type="int" default="10">
+      <description></description>
+    </parameter>
     <parameter name="pc" type="enum" default="ilu">
       <description></description>
       <enum>amg</enum>
@@ -1201,6 +1237,9 @@
       <description></description>
     </parameter>
     <parameter name="toler.relax" type="num" default="10000">
+      <description></description>
+    </parameter>
+    <parameter name="tol.relax" type="num" default="10000">
       <description></description>
     </parameter>
     <parameter name="type" type="enum" default="ddml1">
@@ -1320,6 +1359,9 @@
       <enum>ej</enum>
       <enum>eqf</enum>
       <enum>esimple</enum>
+    </parameter>
+    <parameter name="quasifermicarriertrucation" type="num" default="1e-2">
+      <description></description>
     </parameter>
     <parameter name="region" type="string" default="">
       <description></description>
@@ -2291,6 +2333,27 @@
       <description></description>
     </parameter>
   </command>
+  <command name="REGIONSET">
+    <description></description>
+    <parameter name="region" type="string" default="">
+      <description></description>
+    </parameter>
+    <parameter name="x.mole" type="num" default="0.0">
+      <description></description>
+    </parameter>
+    <parameter name="y.mole" type="num" default="0.0">
+      <description></description>
+    </parameter>
+    <parameter name="doping.na" type="num" default="0.0">
+      <description></description>
+    </parameter>
+    <parameter name="doping.nd" type="num" default="0.0">
+      <description></description>
+    </parameter>
+    <parameter name="opt.gen" type="num" default="0.0">
+      <description></description>
+    </parameter>
+  </command>
   <command name="SOLVE">
     <description></description>
     <parameter name="label" type="string" default="">
@@ -2403,7 +2466,10 @@
     <parameter name="uic" type="bool" default="true">
       <description></description>
     </parameter>
-    <parameter name="tranop" type="bool" default="true">
+    <parameter name="tran.op" type="bool" default="true">
+      <description></description>
+    </parameter>
+    <parameter name="tran.histroy" type="bool" default="false">
       <description></description>
     </parameter>
     <parameter name="rampup.steps" type="int" default="1">
@@ -2586,6 +2652,9 @@
       <description></description>
     </parameter>
   </command>
+  <command name="SOURCEAPPLY">
+    <description></description>
+  </command>
   <command name="STRESS">
     <description></description>
   </command>
@@ -2669,6 +2738,9 @@
     <parameter name="alpha" type="num" default="0">
       <description></description>
     </parameter>
+    <parameter name="file" type="string" default="">
+      <description></description>
+    </parameter>
     <parameter name="dll" type="string" default="">
       <description></description>
     </parameter>
@@ -2717,7 +2789,7 @@
     <parameter name="type" type="enum" default="uniform">
       <description></description>
       <enum>uniform</enum>
-      <enum>sin</enum>
+      <enum>sine</enum>
       <enum>gaussian</enum>
       <enum>exp</enum>
       <enum>pulse</enum>

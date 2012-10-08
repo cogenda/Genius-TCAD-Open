@@ -644,7 +644,7 @@ const Elem * TreeNode<N>::hit_element(const Point & p, const Point & dir) const
   if (this->active())
   {
     const Elem *elem = NULL;
-    double dist = 1e10;
+    double dist = 1e30;
     for (std::vector<const Elem*>::const_iterator pos=elements.begin(); pos != elements.end(); ++pos)
     {
       IntersectionResult result;
@@ -663,7 +663,7 @@ const Elem * TreeNode<N>::hit_element(const Point & p, const Point & dir) const
   else
   {
     int nearest_child=-1;
-    double dist = 1e10;
+    double dist = 1e30;
     const Elem *elem = NULL;
     const Elem *ret_elem = NULL;
     for (unsigned int c=0; c<children.size(); c++)

@@ -50,11 +50,11 @@ SOLVE
 MODEL     Region=Silicon H.MOB=false EB.LEVEL=NONE
 METHOD    Type=DDML1 NS=Basic LS=LU
 SOLVE     TYpe=EQ
-SOLVE     TYpe=DC VSCAN=Anode vstart=0.0 vstep=0.1 vstop=0.6 out=dc
+SOLVE     TYpe=DC VSCAN=Anode vstart=0.0 vstep=0.1 vstop=0.6 out.prefix=dc
 
 # do AC sweep
 METHOD    Type=DDMAC  LS=BCGS PC=LU
-SOLVE     Type=ACSWEEP acscan=Anode  F.Start=1e3 F.stop=2e9 out=ac vac=0.0026
+SOLVE     Type=ACSWEEP acscan=Anode  F.Start=1e3 F.stop=2e9 out.prefix=ac vac=0.0026
 
 # export result
 EXPORT   VTKFILE=pn2d_ac.vtk  

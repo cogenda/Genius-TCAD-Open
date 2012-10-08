@@ -207,6 +207,14 @@ public:
       {
         return a._id < b._id;
       }
+
+      /**
+       * Call DofObject::Less()(a,b) to check less.
+       */
+      bool operator () (const DofObject *a, const DofObject *b) const
+      {
+        return a->_id < b->_id;
+      }
   };
 
 

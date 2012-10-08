@@ -375,9 +375,14 @@ public:
 
 public:
   /// return the acceptor in sol_data
-  virtual double acceptor(unsigned int index) const = 0;
+  virtual double acceptor(unsigned int index) const;
   /// return the donor in sol_data
-  virtual double donor(unsigned int index) const = 0;
+  virtual double donor(unsigned int index) const;
+
+  /// return the mole_x in sol_data
+  virtual double mole_x(unsigned int index) const;
+  /// return the mole_y in sol_data
+  virtual double mole_y(unsigned int index) const;
 
 protected:
 
@@ -394,6 +399,18 @@ protected:
   SolHead_t              _sol_head;
 
   std::vector<SolData_t> _sol_data;
+
+  /// index of acceptor in sol_data
+  unsigned int _acceptor_index;
+
+  /// index of donor in sol_data
+  unsigned int _donor_index;
+
+  /// index of mole_x in sol_data
+  unsigned int _mole_x_index;
+
+  /// index of mole_y in sol_data
+  unsigned int _mole_y_index;
 
   /**
    * solution has a material string to indicate which region it belongs to

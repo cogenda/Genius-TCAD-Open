@@ -110,11 +110,11 @@ public:
    *  This is executed after each (nonlinear) iteration
    *  i.e. for collecting convergence information or implementing various damping strategy
    */
-  void post_iteration(void * f, void * x, void * y, void * w, bool & change_y, bool &change_w)
+  void post_check(void * f, void * x, void * y, void * w, bool & change_y, bool &change_w)
   {
     std::deque<Hook *>::iterator it;
     for (it=_hook_list.begin(); it!=_hook_list.end(); ++it)
-      (*it)->post_iteration(f, x, y, w, change_y, change_w);
+      (*it)->post_check(f, x, y, w, change_y, change_w);
   }
 
   /**

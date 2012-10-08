@@ -212,7 +212,7 @@ void ResistanceInsulatorBC::DDM1R_Jacobian_Reserve(Mat *jac, InsertMode &add_val
         FVM_Node::fvm_neighbor_node_iterator nb_it = fvm_node->neighbor_node_begin();
         for(; nb_it != fvm_node->neighbor_node_end(); ++nb_it)
         {
-          const FVM_Node *nb_node = (*nb_it).second;
+          const FVM_Node *nb_node = (*nb_it).first;
           MatSetValue(*jac, resistance_fvm_node->global_offset(), nb_node->global_offset(), 0, ADD_VALUES);
         }
       }

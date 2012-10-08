@@ -21,6 +21,8 @@
 //
 // Material Type: GaAs
 
+// H. R. Yeager, “Circuit-simulation models for the high electron-mobility transistor,” Ph. D.
+// Thesis, Stanford University, April 1989
 
 #include "PMI.h"
 
@@ -194,8 +196,16 @@ public:
 
 /*---------------------------------------------------------------
  *  the interface function called by material databse controller
- *  use Analytic model as default mobility model
+ *  use Hypertang model as default mobility model
  */
+extern "C"
+{
+  DLL_EXPORT_DECLARE  PMIS_Mobility* PMIS_GaAs_Mob_Default (const PMIS_Environment& env)
+  {
+    return new GSS_GaAs_Mob_Hypertang(env);
+  }
+}
+
 extern "C"
 {
   DLL_EXPORT_DECLARE  PMIS_Mobility* PMIS_GaAs_Mob_Hypertang (const PMIS_Environment& env)

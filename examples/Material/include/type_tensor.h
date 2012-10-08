@@ -61,18 +61,28 @@ protected:
                const T zx=0.,
                const T zy=0.,
                const T zz=0.);
+
+
   /**
-   * Construct Tensor by one vector. DIM==1 
+   * Constructor.  By default sets all entries to 0.  Gives the tensor 0 in
+   * \p DIM dimensions.  This is a poor constructor for 2D tensors -
+   * if the default arguments are to be overridden it requires that
+   * the "z = 0." argument also be given explicitly.
+   */
+  TypeTensor  (const T *);
+
+  /**
+   * Construct Tensor by one vector. DIM==1
    */
   TypeTensor  (const TypeVector<T> &x);
-  
+
   /**
-   * Construct Tensor by two vector. DIM==2 
+   * Construct Tensor by two vector. DIM==2
    */
   TypeTensor  (const TypeVector<T> &x, const TypeVector<T> &y);
-  
+
   /**
-   * Construct Tensor by three  vector. DIM==3 
+   * Construct Tensor by three  vector. DIM==3
    */
   TypeTensor  (const TypeVector<T> &x, const TypeVector<T> &y, const TypeVector<T> &z);
 public:
@@ -93,6 +103,17 @@ public:
   void assign (const TypeTensor<T> &);
 
   /**
+   * Return the \f$ i^{th} \f$ element of the tensor.
+   */
+  T operator [] (const unsigned int i) const;
+
+  /**
+   * Return a writeable reference to the \f$ i^{th} \f$ element of the
+   * tensor.
+   */
+  T & operator [] (const unsigned int i);
+
+  /**
    * Return the \f$ i,j^{th} \f$ element of the tensor.
    */
   T operator () (const unsigned int i, const unsigned int j) const;
@@ -104,12 +125,12 @@ public:
   T & operator () (const unsigned int i, const unsigned int j);
 
   /**
-   * Add two tensors. 
+   * Add two tensors.
    */
   TypeTensor<T> operator + (const TypeTensor<T> &) const;
 
   /**
-   * Add to this tensor. 
+   * Add to this tensor.
    */
   const TypeTensor<T> & operator += (const TypeTensor<T> &);
 
@@ -131,7 +152,7 @@ public:
   TypeTensor<T> operator - (const TypeTensor<T> &) const;
 
   /**
-   * Subtract from this tensor. 
+   * Subtract from this tensor.
    */
   const TypeTensor<T> & operator -= (const TypeTensor<T> &);
 
@@ -148,7 +169,7 @@ public:
   void subtract_scaled (const TypeTensor<T2> &, const T);
 
   /**
-   * Return the opposite of a tensor 
+   * Return the opposite of a tensor
    */
   TypeTensor<T> operator - () const;
 
@@ -303,6 +324,32 @@ TypeTensor<T>::TypeTensor (const T xx,
   }
 }
 
+template <typename T>
+inline
+TypeTensor<T>::TypeTensor (const T* v)
+{
+  _coords[0] = v[0];
+
+  if (DIM == 2)
+  {
+    _coords[1] = v[1];
+    _coords[2] = v[2];
+    _coords[3] = v[3];
+  }
+
+  if (DIM == 3)
+  {
+    _coords[1] = v[1];
+    _coords[2] = v[2];
+    _coords[3] = v[3];
+    _coords[4] = v[4];
+    _coords[5] = v[5];
+    _coords[6] = v[6];
+    _coords[7] = v[7];
+    _coords[8] = v[8];
+  }
+}
+
 
 template <typename T>
 inline
@@ -366,6 +413,16 @@ void TypeTensor<T>::assign (const TypeTensor<T> &p)
     _coords[i] = p._coords[i];
 }
 
+
+
+template <typename T>
+inline T TypeTensor<T>::operator [] (const unsigned int i) const
+{ return _coords[i]; }
+
+
+template <typename T>
+inline T & TypeTensor<T>::operator [] (const unsigned int i)
+{ return _coords[i]; }
 
 
 template <typename T>

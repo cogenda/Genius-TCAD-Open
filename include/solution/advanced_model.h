@@ -48,9 +48,9 @@ struct AdvancedModel
     ESurface          = true;
     TransverseMobilityInBoundaryLayer = true;
     HighFieldMobility = true;
-    HighFieldMobilityAD = true;
     HighFieldMobilitySelfConsistently = true;
     Mob_Force = ModelSpecify::ESimple;
+    QuasiFermiCarrierTruc = 1e-2;
 
     HotCarrierInjection = false;
     DIRTunneling = false;
@@ -105,18 +105,15 @@ struct AdvancedModel
   bool    HighFieldMobilitySelfConsistently;
 
   /**
-   * specify if we should consider the derivative of high field mobility
-   * for silicon, one can try false.
-   * for GaAs, should be always true.
-   */
-  bool    HighFieldMobilityAD;
-
-  /**
    * how to evaluate the driving force in the High Field Mobility
    */
   ModelSpecify::MobilityForce Mob_Force;
 
 
+  /**
+   * density truncation for Quasi-Fermi level evaluation
+   */
+  double  QuasiFermiCarrierTruc;
 
   //-----------------------------------------------------------
   // parameters for hot carrier injection

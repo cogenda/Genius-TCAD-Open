@@ -34,8 +34,7 @@
 #include "genius_common.h"
 #include "face_tri3.h"
 
-// TNT matrix-vector library
-#include <TNT/tnt.h>
+
 
 // Forward declarations
 
@@ -225,7 +224,7 @@ private:
   /**
    * precomputed matrix inv[A^T.A].A^T for fast vector reconstruct computation
    */
-  TNT::Array2D<Real> least_squares_vector_reconstruct_matrix;
+  Real least_squares_vector_reconstruct_matrix[2][3];
 
   /**
    * precomput matrix inv[A^T.A].A^T for fast vector reconstruct computation

@@ -121,7 +121,6 @@ protected:
   {
     unsigned int id;
     std::vector<const Elem *> elems;
-    std::vector<const Elem *> neighbors;
   };
 
   /**
@@ -130,9 +129,9 @@ protected:
   std::vector<Cluster *> _clusters;
 
   /**
-   * map elem to cluster
+   * map elem to cluster _elem_cluster_map[elem->id]
    */
-  std::map<const Elem *, const Cluster *> _elem_cluster_map;
+  std::vector<const Cluster *> _elem_cluster_map;
 
   /**
    * build the cluster, can be rewrite by derived class
@@ -143,6 +142,11 @@ protected:
    * merge elems into cluster
    */
   virtual void _merge_elem_to_cluster(MeshBase& mesh, const std::vector<std::vector<unsigned int> > *);
+
+  /**
+   * get neighbor elems of a cluster
+   */
+  std::vector<const Elem *> cluster_neighbor_elem(const Cluster *) const;
 
   /**
    * clear the cluster

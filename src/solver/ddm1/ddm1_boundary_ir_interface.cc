@@ -157,14 +157,14 @@ void ResistanceInsulatorBC::DDM1_Function(PetscScalar * x, Vec f, InsertMode &ad
         FVM_Node::fvm_neighbor_node_iterator nb_it = insulator_fvm_node->neighbor_node_begin();
         for(; nb_it != insulator_fvm_node->neighbor_node_end(); ++nb_it)
         {
-          const FVM_Node *nb_node = (*nb_it).second;
+          const FVM_Node *nb_node = (*nb_it).first;
           const FVM_NodeData * nb_node_data = nb_node->node_data();
           // the psi of neighbor node
           PetscScalar V_nb = x[nb_node->local_offset()];
           // distance from nb node to this node
           PetscScalar distance = insulator_fvm_node->distance(nb_node);
           // area of out surface of control volume related with neighbor node
-          PetscScalar cv_boundary = insulator_fvm_node->cv_surface_area(nb_node->root_node());
+          PetscScalar cv_boundary = std::abs(insulator_fvm_node->cv_surface_area(nb_node));
           PetscScalar dEdt;
           if(SolverSpecify::TS_type==SolverSpecify::BDF2 && SolverSpecify::BDF2_LowerOrder==false) //second order
           {
@@ -247,7 +247,7 @@ void ResistanceInsulatorBC::DDM1_Jacobian_Reserve(Mat *jac, InsertMode &add_valu
         FVM_Node::fvm_neighbor_node_iterator nb_it = fvm_node->neighbor_node_begin();
         for(; nb_it != fvm_node->neighbor_node_end(); ++nb_it)
         {
-          const FVM_Node *nb_node = (*nb_it).second;
+          const FVM_Node *nb_node = (*nb_it).first;
           MatSetValue(*jac, resistance_fvm_node->global_offset(), nb_node->global_offset(), 0, ADD_VALUES);
         }
       }
@@ -348,7 +348,7 @@ void ResistanceInsulatorBC::DDM1_Jacobian(PetscScalar * x, Mat *jac, InsertMode 
         FVM_Node::fvm_neighbor_node_iterator nb_it = insulator_fvm_node->neighbor_node_begin();
         for(; nb_it != insulator_fvm_node->neighbor_node_end(); ++nb_it)
         {
-          const FVM_Node *nb_node = (*nb_it).second;
+          const FVM_Node *nb_node = (*nb_it).first;
           const FVM_NodeData * nb_node_data = nb_node->node_data();
 
           // the psi of neighbor node
@@ -358,7 +358,7 @@ void ResistanceInsulatorBC::DDM1_Jacobian(PetscScalar * x, Mat *jac, InsertMode 
           PetscScalar distance = insulator_fvm_node->distance(nb_node);
 
           // area of out surface of control volume related with neighbor node
-          PetscScalar cv_boundary = insulator_fvm_node->cv_surface_area(nb_node->root_node());
+          PetscScalar cv_boundary = std::abs(insulator_fvm_node->cv_surface_area(nb_node));
           AutoDScalar dEdt;
           if(SolverSpecify::TS_type==SolverSpecify::BDF2 && SolverSpecify::BDF2_LowerOrder==false) //second order
           {

@@ -242,10 +242,10 @@ void InsulatorInsulatorInterfaceBC::EBM3_Jacobian_Reserve(Mat *jac, InsertMode &
           FVM_Node::fvm_neighbor_node_iterator  gnb_it = ghost_fvm_node->neighbor_node_begin();
           for(; gnb_it != ghost_fvm_node->neighbor_node_end(); ++gnb_it)
           {
-            MatSetValue(*jac, fvm_nodes[i]->global_offset()+node_psi_offset, (*gnb_it).second->global_offset()+node_psi_offset, 0, ADD_VALUES);
+            MatSetValue(*jac, fvm_nodes[i]->global_offset()+node_psi_offset, (*gnb_it).first->global_offset()+node_psi_offset, 0, ADD_VALUES);
 
             if(regions[i]->get_advanced_model()->enable_Tl())
-              MatSetValue(*jac, fvm_nodes[i]->global_offset()+node_Tl_offset, (*gnb_it).second->global_offset()+node_Tl_offset, 0, ADD_VALUES);
+              MatSetValue(*jac, fvm_nodes[i]->global_offset()+node_Tl_offset, (*gnb_it).first->global_offset()+node_Tl_offset, 0, ADD_VALUES);
           }
         }
       }

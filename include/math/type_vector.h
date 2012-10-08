@@ -303,6 +303,11 @@ public:
   bool operator > (const TypeVector<T>& rhs) const;
 
   /**
+   * @return true when all the item less than rhs
+   */
+  bool all_less(const TypeVector<T>& rhs) const;
+
+  /**
    * Formatted print to \p std::cout.
    */
   void print(std::ostream& os) const;

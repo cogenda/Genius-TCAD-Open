@@ -57,7 +57,7 @@ int TIF3D::read()
       std::string buf;
       std::getline(ctmp, buf);
 
-      if( buf.find("V1.1") == std::string::npos )
+      if( buf.find("V1.1") == std::string::npos && buf.find("V1.2") == std::string::npos )
       {
         std::cerr<<"TIF3D should have version >= 1.1"<<std::endl;
         return 1;
@@ -77,8 +77,12 @@ int TIF3D::read()
     // face
     else if (flag == 'F' || flag == 'f')
     {
+      std::string buf;
+      std::getline(ctmp, buf);
+      std::stringstream ss(buf);
+
       Face_t f;
-      ctmp >> f.index >> f.point1 >> f.point2 >> f.point3 >> f.bc_index;
+      ss >> f.index >> f.point1 >> f.point2 >> f.point3 >> f.bc_index ;
       // save it
       _faces.push_back(f);
     }

@@ -125,14 +125,14 @@ void ChargedContactBC::DDMAC_Fill_Matrix_Vector( Mat A, Vec b, const Mat J, cons
           FVM_Node::fvm_neighbor_node_iterator nb_it_end = fvm_nodes[i]->neighbor_node_end();
           for(; nb_it != nb_it_end; ++nb_it)
           {
-            const FVM_Node *nb_node = (*nb_it).second;
+            const FVM_Node *nb_node = (*nb_it).first;
             // the psi of neighbor node
             AutoDScalar V_nb = nb_node->node_data()->psi();  V_nb.setADValue(1,1.0);
             // distance from nb node to this node
-            PetscScalar distance = (*(fvm_nodes[i]->root_node()) - *(nb_node->root_node())).size();
+            PetscScalar distance = fvm_nodes[i]->distance(nb_node);
             // area of out surface of control volume related with neighbor node,
             // here we should consider the difference of 2D/3D by multiply z_width
-            PetscScalar cv_boundary = fvm_nodes[i]->cv_surface_area(nb_node->root_node())*z_width;
+            PetscScalar cv_boundary = fvm_nodes[i]->cv_surface_area(nb_node)*z_width;
             // surface electric field and electrc displacement
             AutoDScalar D = node_data->eps()*(V_nb-V)/distance;
             // since the governing equation is \sum \integral D + \sigma = 0

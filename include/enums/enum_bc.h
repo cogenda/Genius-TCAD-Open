@@ -80,17 +80,18 @@ enum BCType
 
 
   /**
-   * The interface of Semiconductor region to Insulator region.
-   * this is important in MOS simulation.
-   */
-  IF_Insulator_Semiconductor  = 0x0012,
-
-  /**
    * The interface of Insulator region to Insulator region.
    * Since some MOS has a nitride-oxide gate. we have to deal with this
    * boundary condition
    */
-  IF_Insulator_Insulator      = 0x0013,
+  IF_Insulator_Insulator      = 0x0012,
+
+  /**
+   * The interface of Semiconductor region to Insulator region.
+   * this is important in MOS simulation.
+   */
+  IF_Insulator_Semiconductor  = 0x0013,
+
 
   /**
    * The interface of Electrode region to Electrode region.

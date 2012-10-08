@@ -289,6 +289,9 @@ public:
   std::vector<Region_t> & region_array()
   { return _regions; }
 
+  const std::map<int, std::string> & face_array() const
+  { return _face_labels; }
+
   const std::vector<SolData_t> & sol_data_array() const
     { return _sol_data; }
 

@@ -53,6 +53,29 @@ public:
   PetscScalar J_FN_Tunneling(const PetscScalar &E_ins, const PetscScalar &alpha) const
   { return 0.0; }
 
+  PetscScalar J_CBET_Tunneling(const PetscScalar &m, const PetscScalar &Tl,
+                               const PetscScalar &Efn1, const PetscScalar &Efn2,
+                               const PetscScalar &Ec1,  const PetscScalar &Ec2,
+                               const PetscScalar &B1,   const PetscScalar &B2,
+                               const PetscScalar &t) const
+  { return 0.0; }
+
+  PetscScalar J_VBHT_Tunneling(const PetscScalar &m, const PetscScalar &Tl,
+                               const PetscScalar &Efp1, const PetscScalar &Efp2,
+                               const PetscScalar &Ev1,  const PetscScalar &Ev2,
+                               const PetscScalar &B1,   const PetscScalar &B2,
+                               const PetscScalar &t) const
+  { return 0.0; }
+
+  PetscScalar J_VBET_Tunneling(const PetscScalar &m, const PetscScalar &Tl,
+                               const PetscScalar &Efn1, const PetscScalar &Efn2,
+                               const PetscScalar &Ec1,  const PetscScalar &Ec2,
+                               const PetscScalar &Ev1,  const PetscScalar &Ev2,
+                               const PetscScalar &B1,   const PetscScalar &B2,
+                               const PetscScalar &t) const
+  { return 0.0; }
+
+
   GSS_Air_BandStructure(const PMII_Environment &env):PMII_BandStructure(env)
   {
     Band_Init();

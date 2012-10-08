@@ -37,12 +37,17 @@ Sphere::Sphere () :
 
 
 
-Sphere::Sphere (const Point& c,
-        const Real   r)
+Sphere::Sphere (const Point& c,  const Real   r)
 {
   assert (r > 0.);
 
   this->create_from_center_radius (c, r);
+}
+
+
+Sphere::Sphere (const std::pair<Point, Real> & s)
+{
+  this->create_from_center_radius (s.first, s.second);
 }
 
 
@@ -207,6 +212,23 @@ Point Sphere::closest_point (const Point& p) const
 
   return cp;
 }
+
+
+bool Sphere::intersect_point (const Point& p, const Point &r, Real &t1, Real &t2) const
+{
+  assert( above_surface(p) );
+
+  Real t = ( _cent - p ) *r;
+  Real h = (_cent -  (p + r * t)).size();
+  if(h > _rad) return false;
+
+  Real d = sqrt(_rad*_rad - h*h);
+  t1 = t - d;
+  t2 = t + d; 
+  return true;
+}
+
+
 
 
 

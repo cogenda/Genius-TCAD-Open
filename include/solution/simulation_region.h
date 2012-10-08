@@ -259,6 +259,18 @@ public:
   const std::pair<Point, Point> & boundingbox() const
   { return _region_bounding_box; }
 
+
+  /**
+   * @return the boundingbox of the region
+   */
+  std::pair<Point, Real> boundingsphere() const
+  {
+    const double  diag = (_region_bounding_box.second - _region_bounding_box.first).size();
+    const Point   cent = (_region_bounding_box.second + _region_bounding_box.first)*0.5;
+    return std::pair<Point, Real>(cent, diag);
+  }
+
+
   /**
    * @return const reference of element in this region
    */
@@ -559,6 +571,15 @@ public:
   template <typename T>
   bool get_variable_data(const std::string &v, DataLocation, std::vector<T> &) const;
 
+
+  /**
+   * set all the variables v to value d
+   * must executed in parallel.
+   * @return true for success
+   */
+  template <typename T>
+  bool set_variable_data(const std::string &v, DataLocation, const T d) ;
+
   /**
    * @return the region node based variables
    */
@@ -708,6 +729,11 @@ public:
     return _hanging_node_on_elem_edge.end();
   }
 
+
+  /**
+   * approx memory usage
+   */
+  virtual size_t memory_size() const;
 
 protected:
 
@@ -1863,7 +1889,6 @@ public:
   virtual void LinearPoissin_Update_Solution(const PetscScalar * x) = 0;
 
 
-
   //////////////////////////////////////////////////////////////////////////////////
   //-----------------  functions for mobility evaluation     ---------------------//
   //////////////////////////////////////////////////////////////////////////////////
@@ -1878,6 +1903,7 @@ public:
   virtual void Mob_Evaluation( std::vector< std::pair<unsigned int, unsigned int> > &edge,
                                std::vector< std::pair<double, double> > & mob,
                                std::vector< double > & weight) const {}
+
 
 };
 

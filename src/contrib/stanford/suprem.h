@@ -42,11 +42,6 @@ public:
   /// read suprem file into meta data structure
   virtual bool read();
 
-  /// return the acceptor in sol_data
-  virtual double acceptor(unsigned int data_index) const;
-
-  /// return the donor in sol_data
-  virtual double donor(unsigned int data_index) const;
 
 private:
 

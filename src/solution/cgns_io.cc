@@ -503,6 +503,8 @@ void CGNSIO::read (const std::string& filename)
               genius_assert(!cg_array_read_as(a, type, &data));
               if( std::string(array) == "electrode_potential" )
                 electrode_potential[bd_id] = data;
+              if( std::string(array) == "electrode_potential_old" )
+                electrode_potential_old[bd_id] = data;
               if( std::string(array) == "electrode_vapp" )
                 electrode_vapp[bd_id] = data;
               if( std::string(array) == "electrode_iapp" )
@@ -923,6 +925,15 @@ void CGNSIO::read (const std::string& filename)
       bc->ext_circuit()->potential() = el_it->second * V;
   }
 
+  Parallel::broadcast(electrode_potential_old, 0);
+  for(el_it = electrode_potential_old.begin(); el_it!=electrode_potential_old.end(); ++el_it )
+  {
+    std::string bc_label= mesh.boundary_info->get_label_by_id(el_it->first);
+    BoundaryCondition * bc = system.get_bcs()->get_bc(bc_label);
+    if(bc && bc->is_electrode())
+      bc->ext_circuit()->potential_old() = el_it->second * V;
+  }
+
   Parallel::broadcast(electrode_vapp, 0);
   for(el_it = electrode_vapp.begin(); el_it!=electrode_vapp.end(); ++el_it )
   {
@@ -1288,6 +1299,7 @@ void CGNSIO::write (const std::string& filename)
         if( bc->is_electrode() )
         {
           double potential = bc->ext_circuit()->potential()/V;
+          double potential_old = bc->ext_circuit()->potential_old()/V;
           double vapp = bc->ext_circuit()->Vapp()/V;
           double iapp = bc->ext_circuit()->Iapp()/A;
           int    DimensionVector = 1;
@@ -1295,6 +1307,7 @@ void CGNSIO::write (const std::string& filename)
           assert(!cg_user_data_write ("extra_data_for_electrode"));
           assert(!cg_goto(fn, B, "Zone_t", Z, "ZoneBC_t", 1, "BC_t", BC, "UserDefinedData_t", 2, "end"));
           assert(!cg_array_write("electrode_potential", RealDouble, 1, &DimensionVector, &potential));
+          assert(!cg_array_write("electrode_potential_old", RealDouble, 1, &DimensionVector, &potential_old));
           assert(!cg_array_write("electrode_vapp", RealDouble, 1, &DimensionVector, &vapp));
           assert(!cg_array_write("electrode_iapp", RealDouble, 1, &DimensionVector, &iapp));
         }

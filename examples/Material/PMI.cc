@@ -180,7 +180,7 @@ const std::string & PMI_Server::get_PMI_info()
   return PMI_Info;
 }
 
-std::string PMI_Server::get_parameter_string(const int verbosity)
+const std::string & PMI_Server::get_parameter_string(const int verbosity)
 {
   std::stringstream output;
 
@@ -226,7 +226,9 @@ std::string PMI_Server::get_parameter_string(const int verbosity)
     output << std::right;
     output << std::endl;
   }
-  return output.str();
+  _param_string = output.str();
+
+  return _param_string;
 }
 
 /**

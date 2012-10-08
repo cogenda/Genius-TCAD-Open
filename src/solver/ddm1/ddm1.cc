@@ -317,6 +317,7 @@ void DDM1Solver::potential_damping(Vec x, Vec y, PetscBool *changed_y)
       }
     }
 
+    /*
     // only the last processor do this
     if(Genius::is_last_processor())
     {
@@ -328,6 +329,7 @@ void DDM1Solver::potential_damping(Vec x, Vec y, PetscBool *changed_y)
           yy[array_offset] *= f;
       }
     }
+    */
   }
 
 
@@ -698,6 +700,7 @@ void DDM1Solver::error_norm()
   }
 
   if(Genius::is_last_processor())
+  {
     for(unsigned int b=0; b<_system.get_bcs()->n_bcs(); b++)
     {
       const BoundaryCondition * bc = _system.get_bcs()->get_bc(b);
@@ -705,10 +708,15 @@ void DDM1Solver::error_norm()
       if( offset != invalid_uint )
       {
         potential_norm += xx[offset]*xx[offset];
-        electrode_norm += ff[offset]*ff[offset];
+
+        PetscScalar scaling = 1.0;
+        if(bc->is_electrode())
+          scaling = bc->ext_circuit()->mna_scaling(SolverSpecify::dt);
+
+        electrode_norm += scaling*ff[offset]*scaling*ff[offset];
       }
     }
-
+  }
 
 
   // sum of variable value on all processors

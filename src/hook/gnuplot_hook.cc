@@ -42,9 +42,9 @@ GnuplotHook::GnuplotHook(SolverBase & solver, const std::string & name, void * f
   SolverSpecify::SolverType solver_type = this->get_solver().solver_type();
 
   // if we are called by mixA solver?
-  if(solver_type == SolverSpecify::DDML1MIXA  ||
-     solver_type == SolverSpecify::DDML2MIXA ||
-     solver_type == SolverSpecify::EBML3MIXA
+  if(solver_type == SolverSpecify::DDML1MIXA || solver_type == SolverSpecify::DDML1MIX  ||
+     solver_type == SolverSpecify::DDML2MIXA || solver_type == SolverSpecify::DDML2MIX  ||
+     solver_type == SolverSpecify::EBML3MIXA || solver_type == SolverSpecify::EBML3MIX
     )
     _mixA = true;
 
@@ -111,6 +111,7 @@ void GnuplotHook::post_solve()
     _out<< std::scientific << std::right;
 
     if( SolverSpecify::Type==SolverSpecify::DCSWEEP ||
+        SolverSpecify::Type==SolverSpecify::OP      ||
         SolverSpecify::Type==SolverSpecify::TRACE   ||
         SolverSpecify::Type==SolverSpecify::TRANSIENT )
     {
@@ -269,6 +270,8 @@ void  GnuplotHook::_write_gnuplot_head()
     {
       case SolverSpecify::DCSWEEP   :
         _out << "# Plotname: DC transfer characteristic" << std::endl; break;
+      case SolverSpecify::OP   :
+        _out << "# Plotname: OP" << std::endl; break;
       case SolverSpecify::TRACE     :
         _out << "# Plotname: DC curve trace" << std::endl; break;
       case SolverSpecify::TRANSIENT :
@@ -282,6 +285,7 @@ void  GnuplotHook::_write_gnuplot_head()
     _out << "# Variables: " << std::endl;
 
     if( SolverSpecify::Type==SolverSpecify::DCSWEEP ||
+        SolverSpecify::Type==SolverSpecify::OP      ||
         SolverSpecify::Type==SolverSpecify::TRACE   ||
         SolverSpecify::Type==SolverSpecify::TRANSIENT )
     {
@@ -296,12 +300,18 @@ void  GnuplotHook::_write_gnuplot_head()
       if( _mixA ) // mix mode
       {
         const SPICE_CKT * spice_ckt = this->get_solver().get_system().get_circuit();
+
+        //const std::map<unsigned int, std::string> & electrodes = spice_ckt->get_spice_node_to_electrode_info();
         for(unsigned int n=0; n<spice_ckt->n_ckt_nodes(); n++)
         {
+          std::string electrode = spice_ckt->ckt_node_name(n);
+          //if(electrodes.find(n) != electrodes.end())
+          //  electrode = electrode + "=" + electrodes.find(n)->second;
+
           if(spice_ckt->is_voltage_node(n))
-            _out << '#' <<'\t' << ++n_var <<'\t' << spice_ckt->ckt_node_name(n)   << " [V]"<< std::endl;
+            _out << '#' <<'\t' << ++n_var <<'\t' << electrode   << " [V]"<< std::endl;
           else
-            _out << '#' <<'\t' << ++n_var <<'\t' << spice_ckt->ckt_node_name(n)   << " [A]"<< std::endl;
+            _out << '#' <<'\t' << ++n_var <<'\t' << electrode   << " [A]"<< std::endl;
         }
       }
       else

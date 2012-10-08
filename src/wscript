@@ -7,7 +7,7 @@ def build(bld):
 
   # Contrib libraries
   contrib_dirs = '''ann csabathy expreval spice tetgen tif3d
-                    ctri klu mxml nn spline triangle tif stanford dfise'''.split()
+                    ctri klu mxml nn spline triangle tif stanford dfise trex'''.split()
   dirs=[]
   for d in contrib_dirs:
     d = 'contrib/%s' % d

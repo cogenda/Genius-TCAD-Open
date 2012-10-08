@@ -60,11 +60,6 @@ public:
   virtual BoundaryType boundary_type() const
     { return BOUNDARY; }
 
-  /**
-   * @return true when it has external circuit
-   */
-  virtual bool is_electrode()  const
-  {return ext_circuit()!=NULL;}
 
   /**
    * @return true iff this boundary has a current flow
@@ -165,6 +160,7 @@ public:
    * update solution data of DDML1 solver.
    */
   virtual void DDM1_Update_Solution(PetscScalar *x);
+
 
   //////////////////////////////////////////////////////////////////////////////////
   //--------------Function and Jacobian evaluate for new L1 DDM-------------------//
@@ -407,7 +403,6 @@ public:
   virtual void MixA_EBM3_Jacobian(PetscScalar * , Mat *, InsertMode &);
 
 
-
   //////////////////////////////////////////////////////////////////////////////////
   //--------------Matrix and RHS Vector evaluate for DDM AC Solver----------------//
   //////////////////////////////////////////////////////////////////////////////////
@@ -463,8 +458,8 @@ public:
    * function for build RHS and matrix for half implicit poisson correction equation.
    */
   virtual void DDM1_Half_Implicit_Poisson_Correction(PetscScalar * x, Mat A, Vec r, InsertMode &add_value_flag);
-#endif
 
+#endif
 };
 
 

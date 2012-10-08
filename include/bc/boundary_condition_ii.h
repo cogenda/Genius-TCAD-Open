@@ -62,11 +62,6 @@ public:
   virtual BoundaryType boundary_type() const
     { return INTERFACE; }
 
-  /**
-   * @return false
-   */
-  virtual bool is_electrode()  const
-    {return false;}
 
   /**
    * @return true iff this boundary has a current flow

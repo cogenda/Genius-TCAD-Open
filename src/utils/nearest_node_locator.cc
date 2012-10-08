@@ -19,9 +19,11 @@
 /*                                                                              */
 /********************************************************************************/
 
+#include <limits>
 #include <set>
 #include "mesh_base.h"
 #include "nearest_node_locator.h"
+#include "perf_log.h"
 
 
 inline Real get_location( const Node *n, unsigned int k ) { return n->coord(k); }
@@ -70,9 +72,27 @@ Real NearestNodeLocator::distance_to_nearest_node(const Point &p, unsigned int s
   Node source_node(p);
 
   std::pair<kdtree_type::const_iterator,  kdtree_type::distance_type> pItr = kd_tree->find_nearest(&source_node, 1e30);
-  assert(pItr.first != kd_tree->end() );
 
-  return pItr.second;
+  if(pItr.first != kd_tree->end())
+    return pItr.second;
+  return std::numeric_limits<double>::infinity();
+}
+
+
+const Node * NearestNodeLocator::nearest_node(const Point &p, unsigned int subdomain, Real &dist) const
+{
+  const kdtree_type * kd_tree = _kdtrees[subdomain];
+  Node source_node(p);
+
+  std::pair<kdtree_type::const_iterator,  kdtree_type::distance_type> pItr = kd_tree->find_nearest(&source_node, 1e30);
+  if(pItr.first != kd_tree->end() )
+  {
+    dist = pItr.second;
+    return *(pItr.first);
+  }
+
+  dist = std::numeric_limits<double>::infinity();
+  return NULL;
 }
 
 
@@ -100,6 +120,7 @@ std::vector<const Node * > NearestNodeLocator::nearest_nodes(const Point &p1, co
 
   this->nearest_nodes(p1, p2, radius, subdomain, nn_set);
   nn.insert(nn.end(), nn_set.begin(), nn_set.end());
+
   return nn;
 }
 

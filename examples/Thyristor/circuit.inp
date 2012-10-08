@@ -23,6 +23,6 @@ IMPORT   CGNSFile=Thyristor.cgns
 ATTACH   Electrode=Anode   VApp=Vs
 ATTACH   Electrode=Gate    VApp=Vs 
 METHOD   Type=DDML1 NS=Basic LS=GMRES Damping=Potential
-SOLVE    Type=TRANSIENT     out=iv.txt  TStart = 0 TStep=1e-8  TstepMax=1e-7  TStop = 3e-6
+SOLVE    Type=TRANSIENT     out.prefix=iv.txt  TStart = 0 TStep=1e-8  TstepMax=1e-7  TStop = 3e-6
 
 END

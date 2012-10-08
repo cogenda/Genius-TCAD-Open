@@ -83,6 +83,8 @@ private:
   double _t_start;
   double _t_end;
 
+  bool   _surface;
+
 #ifdef HAVE_VTK
 
   /**

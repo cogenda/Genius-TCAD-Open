@@ -273,7 +273,7 @@ void IF_Metal_OhmicBC::DDMAC_Fill_Matrix_Vector( Mat A, Vec b, const Mat J, cons
       FVM_Node::fvm_neighbor_node_iterator nb_it = semiconductor_node->neighbor_node_begin();
       for(; nb_it != semiconductor_node->neighbor_node_end(); ++nb_it)
       {
-        const FVM_Node *nb_node = (*nb_it).second;
+        const FVM_Node *nb_node = (*nb_it).first;
         std::vector<PetscInt>    nb_col_re(semiconductor_n_node_var), nb_col_im(semiconductor_n_node_var);
         for(unsigned int i=0; i<semiconductor_n_node_var; ++i)
         {
@@ -317,7 +317,7 @@ void IF_Metal_OhmicBC::DDMAC_Fill_Matrix_Vector( Mat A, Vec b, const Mat J, cons
       FVM_Node::fvm_neighbor_node_iterator nb_it = semiconductor_node->neighbor_node_begin();
       for(; nb_it != semiconductor_node->neighbor_node_end(); ++nb_it)
       {
-        const FVM_Node *nb_node = (*nb_it).second;
+        const FVM_Node *nb_node = (*nb_it).first;
 
         // the psi of this node
         AutoDScalar  V = semiconductor_node_data->psi(); V.setADValue(0, 1.0);
@@ -328,7 +328,7 @@ void IF_Metal_OhmicBC::DDMAC_Fill_Matrix_Vector( Mat A, Vec b, const Mat J, cons
         PetscScalar distance = (*(semiconductor_node->root_node()) - *(nb_node->root_node())).size();
 
         // area of out surface of control volume related with neighbor node
-        PetscScalar cv_boundary = semiconductor_node->cv_surface_area(nb_node->root_node());
+        PetscScalar cv_boundary = semiconductor_node->cv_surface_area(nb_node);
         AutoDScalar D = semiconductor_node_data->eps()*(V-V_nb)/distance;
 
         // the 1/dt is replaced by j*omega.
@@ -351,28 +351,23 @@ void IF_Metal_OhmicBC::DDMAC_Fill_Matrix_Vector( Mat A, Vec b, const Mat J, cons
       }
     }
 
-    // if we have insulator node?
-    if ( has_associated_region ( ( *node_it ), InsulatorRegion ) )
+    // if we have extra regions associated with this node?
+
+    std::vector<SimulationRegion *> node_extra_regions = this->extra_regions(*node_it);
+    for(unsigned int n=0; n<node_extra_regions.size(); n++)
     {
-      BoundaryCondition::region_node_iterator  rnode_it     = region_node_begin ( *node_it );
-      BoundaryCondition::region_node_iterator  end_rnode_it = region_node_end ( *node_it );
-      for ( ; rnode_it!=end_rnode_it; ++rnode_it )
+      const SimulationRegion * region = node_extra_regions[n];
+      const FVM_Node * fvm_node  = get_region_fvm_node(*node_it, region);
+
+      // the psi of insulator region equals to metal region
+      region->DDMAC_Force_equal(fvm_node, POTENTIAL, A, add_value_flag, resistance_region, resistance_node);
+
+      if(region->get_advanced_model()->enable_Tl())
       {
-        const SimulationRegion * region = ( *rnode_it ).second.first;
-        if ( region->type() != InsulatorRegion ) continue;
-        const FVM_Node * insulator_node  = ( *rnode_it ).second.second;
-
-        // the psi of insulator region equals to metal region
-        region->DDMAC_Force_equal(insulator_node, POTENTIAL, A, add_value_flag, resistance_region, resistance_node);
-
-        if(region->get_advanced_model()->enable_Tl())
-        {
-          // load Jacobian entry of this node from J and fill into AC matrix A
-          region->DDMAC_Fill_Nodal_Matrix_Vector(insulator_node, TEMPERATURE, A, b, J, omega, add_value_flag, resistance_region, resistance_node);
-          region->DDMAC_Force_equal(insulator_node, TEMPERATURE, A, add_value_flag, resistance_region, resistance_node);
-        }
+        // load Jacobian entry of this node from J and fill into AC matrix A
+        region->DDMAC_Fill_Nodal_Matrix_Vector(fvm_node, TEMPERATURE, A, b, J, omega, add_value_flag, resistance_region, resistance_node);
+        region->DDMAC_Force_equal(fvm_node, TEMPERATURE, A, add_value_flag, resistance_region, resistance_node);
       }
-
     }
 
   }

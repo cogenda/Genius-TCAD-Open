@@ -317,14 +317,14 @@ void IF_Metal_OhmicBC::_EBM3_Function_Infinite_Recombination ( PetscScalar * x, 
       FVM_Node::fvm_neighbor_node_iterator nb_it = semiconductor_node->neighbor_node_begin();
       for ( ; nb_it != semiconductor_node->neighbor_node_end(); ++nb_it )
       {
-        const FVM_Node *nb_node = ( *nb_it ).second;
+        const FVM_Node *nb_node = (*nb_it).first;
         const FVM_NodeData * nb_node_data = nb_node->node_data();
         // the psi of neighbor node
         PetscScalar V_nb = x[nb_node->local_offset() +0];
         // distance from nb node to this node
         PetscScalar distance = semiconductor_node->distance ( nb_node );
         // area of out surface of control volume related with neighbor node
-        PetscScalar cv_boundary = semiconductor_node->cv_surface_area ( nb_node->root_node() );
+        PetscScalar cv_boundary = semiconductor_node->cv_surface_area ( nb_node );
         PetscScalar dEdt;
         if ( SolverSpecify::TS_type==SolverSpecify::BDF2 && SolverSpecify::BDF2_LowerOrder==false ) //second order
         {
@@ -443,12 +443,12 @@ void IF_Metal_OhmicBC::EBM3_Jacobian_Preprocess(PetscScalar * ,Mat *jac, std::ve
     FVM_Node::fvm_neighbor_node_iterator nb_it_end = semiconductor_node->neighbor_node_end();
     for(; nb_it != nb_it_end; ++nb_it)
     {
-      const FVM_Node *  semiconductor_nb_node = (*nb_it).second;
+      const FVM_Node *  semiconductor_nb_node = (*nb_it).first;
 
       // distance from nb node to this node
       PetscScalar distance = semiconductor_node->distance( semiconductor_nb_node );
       // area of out surface of control volume related with neighbor node
-      PetscScalar cv_boundary = semiconductor_node->cv_surface_area(semiconductor_nb_node->root_node());
+      PetscScalar cv_boundary = semiconductor_node->cv_surface_area(semiconductor_nb_node);
 
       std::vector<PetscInt>    col(n_node_var);
       for(unsigned int i=0; i<n_node_var; ++i)
@@ -719,14 +719,14 @@ void IF_Metal_OhmicBC::_EBM3_Jacobian_Infinite_Recombination ( PetscScalar * x, 
       FVM_Node::fvm_neighbor_node_iterator nb_it = semiconductor_node->neighbor_node_begin();
       for ( ; nb_it != semiconductor_node->neighbor_node_end(); ++nb_it )
       {
-        const FVM_Node *nb_node = ( *nb_it ).second;
+        const FVM_Node *nb_node = (*nb_it).first;
         const FVM_NodeData * nb_node_data = nb_node->node_data();
         // the psi of neighbor node
         AutoDScalar V_nb = x[nb_node->local_offset() +0]; V_nb.setADValue ( 1, 1.0 );
         // distance from nb node to this node
         PetscScalar distance = semiconductor_node->distance ( nb_node );
         // area of out surface of control volume related with neighbor node
-        PetscScalar cv_boundary = semiconductor_node->cv_surface_area ( nb_node->root_node() );
+        PetscScalar cv_boundary = semiconductor_node->cv_surface_area ( nb_node );
         AutoDScalar dEdt;
         if ( SolverSpecify::TS_type==SolverSpecify::BDF2 && SolverSpecify::BDF2_LowerOrder==false ) //second order
         {
@@ -819,7 +819,7 @@ void IF_Metal_OhmicBC::EBM3_Jacobian_Reserve ( Mat *jac, InsertMode &add_value_f
     FVM_Node::fvm_neighbor_node_iterator nb_it = semiconductor_node->neighbor_node_begin();
     for ( ; nb_it != semiconductor_node->neighbor_node_end(); ++nb_it )
     {
-      const FVM_Node *nb_node = ( *nb_it ).second;
+      const FVM_Node *nb_node = (*nb_it).first;
       for(unsigned int n=0; n<n_node_var_semiconductor; ++n)
         MatSetValue ( *jac, resistance_node->global_offset(), nb_node->global_offset()+n, 0, ADD_VALUES );
     }
@@ -833,7 +833,7 @@ void IF_Metal_OhmicBC::EBM3_Jacobian_Reserve ( Mat *jac, InsertMode &add_value_f
       FVM_Node::fvm_neighbor_node_iterator nb_it = semiconductor_node->neighbor_node_begin();
       for ( ; nb_it != semiconductor_node->neighbor_node_end(); ++nb_it )
       {
-        const FVM_Node *nb_node = ( *nb_it ).second;
+        const FVM_Node *nb_node = (*nb_it).first;
         for(unsigned int n=0; n<n_node_var_semiconductor; ++n)
           MatSetValue ( *jac, resistance_node->global_offset()+1, nb_node->global_offset()+n, 0, ADD_VALUES );
       }
@@ -854,7 +854,7 @@ void IF_Metal_OhmicBC::EBM3_Jacobian_Reserve ( Mat *jac, InsertMode &add_value_f
         FVM_Node::fvm_neighbor_node_iterator nb_it = insulator_node->neighbor_node_begin();
         for ( ; nb_it != insulator_node->neighbor_node_end(); ++nb_it )
         {
-          const FVM_Node *nb_node = ( *nb_it ).second;
+          const FVM_Node *nb_node = (*nb_it).first;
           MatSetValue ( *jac, resistance_node->global_offset()+0, nb_node->global_offset()+0, 0, ADD_VALUES );
         }
 
@@ -865,7 +865,7 @@ void IF_Metal_OhmicBC::EBM3_Jacobian_Reserve ( Mat *jac, InsertMode &add_value_f
           FVM_Node::fvm_neighbor_node_iterator nb_it = insulator_node->neighbor_node_begin();
           for ( ; nb_it != insulator_node->neighbor_node_end(); ++nb_it )
           {
-            const FVM_Node *nb_node = ( *nb_it ).second;
+            const FVM_Node *nb_node = (*nb_it).first;
             MatSetValue ( *jac, resistance_node->global_offset()+1, nb_node->global_offset()+1, 0, ADD_VALUES );
           }
         }

@@ -251,7 +251,7 @@ void ResistanceResistanceBC::Poissin_Jacobian_Reserve(Mat *jac, InsertMode &add_
 
       FVM_Node::fvm_neighbor_node_iterator  gnb_it = ghost_fvm_node->neighbor_node_begin();
       for(; gnb_it != ghost_fvm_node->neighbor_node_end(); ++gnb_it)
-        MatSetValue(*jac, resistance_fvm_node_1->global_offset(), (*gnb_it).second->global_offset(), 0, ADD_VALUES);
+        MatSetValue(*jac, resistance_fvm_node_1->global_offset(), (*gnb_it).first->global_offset(), 0, ADD_VALUES);
     }
 
     MatSetValue(*jac, resistance_fvm_node_2->global_offset(), resistance_fvm_node_1->global_offset(), 0, ADD_VALUES);

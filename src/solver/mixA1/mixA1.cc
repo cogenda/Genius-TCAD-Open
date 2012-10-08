@@ -83,6 +83,7 @@ int MixA1Solver::pre_solve_process(bool load_solution)
     VecAssemblyEnd(L);
   }
 
+
   // do bc pre process
   for(unsigned int b=0; b<_system.get_bcs()->n_bcs(); b++)
   {
@@ -834,7 +835,6 @@ void MixA1Solver::build_petsc_sens_residual(Vec x, Vec r)
   // restore array back to Vec
   VecRestoreArray(lx, &lxx);
 
-  this->ground_spice_0_node(r, add_value_flag);
 
   // assembly the function Vec
   VecAssemblyBegin(r);
@@ -964,7 +964,6 @@ void MixA1Solver::build_petsc_sens_jacobian(Vec x, Mat *, Mat *)
   MatAssemblyBegin(J, MAT_FINAL_ASSEMBLY);
   MatAssemblyEnd  (J, MAT_FINAL_ASSEMBLY);
 
-  this->ground_spice_0_node(&J);
 
   //scaling the matrix
   MatDiagonalScale(J, L, PETSC_NULL);

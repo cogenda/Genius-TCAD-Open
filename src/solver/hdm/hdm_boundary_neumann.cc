@@ -121,11 +121,11 @@ void NeumannBC::HDM_Boundary( const PetscScalar * x, Vec flux, InsertMode &  )
           FVM_Node::fvm_neighbor_node_iterator  neighbor_end = fvm_node->neighbor_node_end();
           for(; neighbor_begin!=neighbor_end; ++neighbor_begin )
           {
-            const FVM_Node * neigbor_node = (*neighbor_begin).second;
+            const FVM_Node * neigbor_node = (*neighbor_begin).first;
             genius_assert(neigbor_node->on_local());
 
-            Real d = (*(fvm_node->root_node()) - *(neigbor_node->root_node())).size();
-            Real S = fvm_node->cv_surface_area(neigbor_node->root_node());
+            Real d = fvm_node->distance(neigbor_node);
+            Real S = fvm_node->cv_surface_area(neigbor_node);
             VectorValue<double> dir = (*(neigbor_node->root_node()) - *(fvm_node->root_node())).unit();
             dir -= 2*(dir*norm)*norm;
 

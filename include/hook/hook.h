@@ -84,7 +84,7 @@ public:
    *  This is executed after each (nonlinear) iteration
    *  i.e. for collecting convergence information or implementing various damping strategy
    */
-  virtual void post_iteration(void * , void * , void * , void * , bool &, bool &) {}
+  virtual void post_check(void * , void * , void * , void * , bool &, bool &) {}
 
   /**
    * This is executed after the finalization of the solver
@@ -94,16 +94,14 @@ public:
   /**
    * @return the name of the hook
    */
-  const std::string & name() const
-  { return _name; }
+  const std::string & name() const  { return _name; }
 
   /**
    * @return const reference of solver
    * NOTE although we allow hook change the solver internal data
    * however it is highly not recommend
    */
-  const SolverBase  & get_solver() const
-  { return _solver; }
+  const SolverBase  & get_solver() const  { return _solver; }
 
 protected:
 

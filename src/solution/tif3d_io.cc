@@ -141,7 +141,14 @@ void TIF3DIO::read (const std::string& filename)
     // map bc_index to bc label
     std::map<std::string, std::pair<short int, bool> > bd_map;
     typedef std::map<std::string, std::pair<short int, bool> >::iterator Bd_It;
-
+    {
+      const std::map<int, std::string> & face_labels = tif3d_reader.face_array();
+      std::map<int, std::string>::const_iterator face_label_it = face_labels.begin();
+      for( ; face_label_it != face_labels.end(); ++ face_label_it)
+      {
+        bd_map[face_label_it->second] = std::pair<short int, bool>(face_label_it->first, true);
+      }
+    }
 
 
     //however, the boundary/interface information should be set here
@@ -164,20 +171,9 @@ void TIF3DIO::read (const std::string& filename)
       const Elem* elem = mesh.elem(elems[nbd]);
       short int bd_index = bds[nbd];
 
-      // face has label
-      if(tif3d_reader.face_has_label(bd_index ))
-      {
-        mesh.boundary_info->remove(elem, sides[nbd]);
-        std::string bd_label = tif3d_reader.face_label(bd_index);
+      // face already has label
+      if(tif3d_reader.face_has_label(bd_index ))  continue;
 
-        // if the label not exist
-        if( bd_map.find(bd_label) == bd_map.end() )
-          bd_map[bd_label] = std::make_pair(bd_index, true);
-
-        // add pair-element to boundary with new bd_index
-        mesh.boundary_info->add_side(elem, sides[nbd], bd_index);
-        continue;
-      }
 
       //is it an interface side
       if( elem->neighbor(sides[nbd])!=NULL )
@@ -218,7 +214,7 @@ void TIF3DIO::read (const std::string& filename)
         else
         {
           //else, increase bd_index, insert it into bd_map
-          bd_index = bd_map.size() + 1;
+          bd_index = bd_map.size() + 1024;
           bd_map[bd_label] = std::make_pair(bd_index, false);
         }
 
@@ -241,7 +237,7 @@ void TIF3DIO::read (const std::string& filename)
         else
         {
           //else, increase bd_index, insert it into bd_map
-          bd_index = bd_map.size() + 1;
+          bd_index = bd_map.size() + 1024;
           bd_map[bd_label] = std::make_pair(bd_index, false);
         }
 

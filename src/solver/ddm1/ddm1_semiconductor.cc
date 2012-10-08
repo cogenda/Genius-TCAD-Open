@@ -228,7 +228,7 @@ void SemiconductorSimulationRegion::DDM1_Function(PetscScalar * x, Vec f, Insert
       PetscScalar eps = 0.5*(eps1+eps2);
 
       // "flux" from node 2 to node 1
-      PetscScalar f =  eps*fvm_n1->cv_surface_area(fvm_n2->root_node())*(V2 - V1)/fvm_n1->distance(fvm_n2) ;
+      PetscScalar f =  eps*fvm_n1->cv_surface_area(fvm_n2)*(V2 - V1)/fvm_n1->distance(fvm_n2) ;
 
       // ignore thoese ghost nodes
       if( fvm_n1->on_processor() )
@@ -297,10 +297,11 @@ void SemiconductorSimulationRegion::DDM1_Function(PetscScalar * x, Vec f, Insert
 
         if(get_advanced_model()->HighFieldMobilitySelfConsistently)
         {
+          double truc = get_advanced_model()->QuasiFermiCarrierTruc;
           // use values in the current iteration
           V  =  x[fvm_node->local_offset()+0];
-          n  =  x[fvm_node->local_offset()+1] + 1e-2*fvm_node_data->ni();
-          p  =  x[fvm_node->local_offset()+2] + 1e-2*fvm_node_data->ni();
+          n  =  std::max(x[fvm_node->local_offset()+1], truc*fvm_node_data->ni());
+          p  =  std::max(x[fvm_node->local_offset()+2], truc*fvm_node_data->ni());
         }
         else
         {
@@ -861,7 +862,7 @@ void SemiconductorSimulationRegion::DDM1_Jacobian(PetscScalar * x, Mat *jac, Ins
       // poisson's equation
 
       const PetscScalar eps = 0.5*(eps1+eps2);
-      AutoDScalar f_phi =  eps*fvm_n1->cv_surface_area(fvm_n2->root_node())*(V2 - V1)/length ;
+      AutoDScalar f_phi =  eps*fvm_n1->cv_surface_area(fvm_n2)*(V2 - V1)/length ;
 
       PetscInt row[2],col[2];
       row[0] = col[0] = fvm_n1->global_offset();
@@ -950,12 +951,17 @@ void SemiconductorSimulationRegion::DDM1_Jacobian(PetscScalar * x, Mat *jac, Ins
 
         if(get_advanced_model()->HighFieldMobilitySelfConsistently)
         {
+          double truc = get_advanced_model()->QuasiFermiCarrierTruc;
           // use values in the current iteration
           V  =  x[fvm_node->local_offset()+0];   V.setADValue(3*nd+0, 1.0);
-          n  =  x[fvm_node->local_offset()+1];   n.setADValue(3*nd+1, 1.0);
-          p  =  x[fvm_node->local_offset()+2];   p.setADValue(3*nd+2, 1.0);
-          n  +=  1e-2*fvm_node_data->ni();
-          p  +=  1e-2*fvm_node_data->ni();
+          n  =  std::max(x[fvm_node->local_offset()+1], truc*fvm_node_data->ni());
+          p  =  std::max(x[fvm_node->local_offset()+2], truc*fvm_node_data->ni());
+
+          if(x[fvm_node->local_offset()+1] > truc*fvm_node_data->ni())
+            n.setADValue(3*nd+1, 1.0);
+
+          if(x[fvm_node->local_offset()+2] > truc*fvm_node_data->ni())
+            p.setADValue(3*nd+2, 1.0);
         }
         else
         {

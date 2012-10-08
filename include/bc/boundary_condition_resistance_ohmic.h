@@ -64,12 +64,6 @@ public:
 
 
   /**
-   * @return true when it has external circuit
-   */
-  virtual bool is_electrode()  const
-  {return ext_circuit()!=NULL;}
-
-  /**
    * @return true iff this boundary has a current flow
    */
   virtual bool has_current_flow() const

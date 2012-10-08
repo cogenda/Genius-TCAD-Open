@@ -36,18 +36,9 @@ public:
   /// read MediciTIF file
   virtual bool read();
 
-  /// return the acceptor in sol_data
-  virtual double acceptor(unsigned int data_index) const;
-
-  /// return the donor in sol_data
-  virtual double donor(unsigned int data_index) const;
 
 private:
-  /// index of acceptor in sol_data
-  unsigned int _acceptor_index;
 
-  /// index of donor in sol_data
-  unsigned int _donor_index;
 };
 
 

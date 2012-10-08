@@ -328,6 +328,27 @@ public:
   template <typename T>
   const T & data(const unsigned int , const unsigned int ) const;
 
+  /**
+   * approx memory usage
+   */
+  size_t memory_size() const
+  {
+    size_t counter = sizeof(*this);
+
+    for(unsigned int n=0; n<_scalar_block.size(); ++n)
+      counter += _scalar_block[n].capacity()*sizeof(Real);
+
+    for(unsigned int n=0; n<_complex_block.size(); ++n)
+      counter += _complex_block[n].capacity()*sizeof(std::complex<Real>);
+
+    for(unsigned int n=0; n<_vector_block.size(); ++n)
+      counter += _vector_block[n].capacity()*sizeof(VectorValue<Real>);
+
+    for(unsigned int n=0; n<_tensor_block.size(); ++n)
+      counter += _tensor_block[n].capacity()*sizeof(TensorValue<Real>);
+
+    return counter;
+  }
 
 private:
 

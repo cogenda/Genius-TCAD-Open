@@ -56,15 +56,9 @@ void OhmicContactBC::DDMAC_Fill_Matrix_Vector( Mat A, Vec b, const Mat J, const 
   PetscInt bc_global_offset_re = this->global_offset();
   PetscInt bc_global_offset_im = this->global_offset()+1;
 
-  PetscScalar R = ext_circuit()->R();             // resistance
-  PetscScalar C = ext_circuit()->C();             // capacitance
-  PetscScalar L = ext_circuit()->L();             // inductance
-
   const PetscScalar Heat_Transfer = this->scalar("heat.transfer");
 
   // impedance at frequency omega
-  std::complex <PetscScalar> Z1(R, omega*L);
-  std::complex <PetscScalar> Y2(0.0, omega*C);
   std::complex <PetscScalar> j(0.0, 1.0);
 
   // for 2D mesh, z_width() is the device dimension in Z direction; for 3D mesh, z_width() is 1.0
@@ -302,6 +296,8 @@ void OhmicContactBC::DDMAC_Fill_Matrix_Vector( Mat A, Vec b, const Mat J, const 
   // we should set matrix entries related with obmic electrode current
   // which is required by external electrode circuit
   {
+    const std::complex<PetscScalar> mna_scaling = ext_circuit()->mna_ac_scaling(omega);
+
     std::vector< std::vector<PetscInt> >    cols_re, cols_im;
     std::vector< std::vector<PetscScalar> > current_jacobian_re, current_jacobian_im;
 
@@ -347,10 +343,10 @@ void OhmicContactBC::DDMAC_Fill_Matrix_Vector( Mat A, Vec b, const Mat J, const 
           // build AC matrix items
           for(unsigned int nv=0; nv<n_node_var; ++nv)
           {
-            BJ1[nv] =  (Z1*(A1[nv]-A2[nv])*current_scale).real(); // (real , real )
-            BJ2[nv] = -(Z1*(A1[nv]-A2[nv])*current_scale).imag(); // (real , image)
-            BJ3[nv] =  (Z1*(A1[nv]-A2[nv])*current_scale).imag(); // (image, real )
-            BJ4[nv] =  (Z1*(A1[nv]-A2[nv])*current_scale).real(); // (image, image)
+            BJ1[nv] =  (mna_scaling*(A1[nv]-A2[nv])*current_scale).real(); // (real , real )
+            BJ2[nv] = -(mna_scaling*(A1[nv]-A2[nv])*current_scale).imag(); // (real , image)
+            BJ3[nv] =  (mna_scaling*(A1[nv]-A2[nv])*current_scale).imag(); // (image, real )
+            BJ4[nv] =  (mna_scaling*(A1[nv]-A2[nv])*current_scale).real(); // (image, image)
           }
 
           // the real equation location of ohmic bc in matrix entry
@@ -371,7 +367,7 @@ void OhmicContactBC::DDMAC_Fill_Matrix_Vector( Mat A, Vec b, const Mat J, const 
           FVM_Node::fvm_neighbor_node_iterator nb_it_end = fvm_node->neighbor_node_end();
           for(; nb_it != nb_it_end; ++nb_it)
           {
-            const FVM_Node *  fvm_nb_node = (*nb_it).second;
+            const FVM_Node *  fvm_nb_node = (*nb_it).first;
             std::vector<PetscInt>    col_re(n_node_var), col_im(n_node_var);
             for(unsigned int i=0; i<n_node_var; ++i)
             {
@@ -384,10 +380,10 @@ void OhmicContactBC::DDMAC_Fill_Matrix_Vector( Mat A, Vec b, const Mat J, const 
 
             for(unsigned int nv=0; nv<n_node_var; ++nv)
             {
-              BJ1[nv] =  (Z1*(A1[nv]-A2[nv])*current_scale).real(); // (real , real )
-              BJ2[nv] = -(Z1*(A1[nv]-A2[nv])*current_scale).imag(); // (real , image)
-              BJ3[nv] =  (Z1*(A1[nv]-A2[nv])*current_scale).imag(); // (image, real )
-              BJ4[nv] =  (Z1*(A1[nv]-A2[nv])*current_scale).real(); // (image, image)
+              BJ1[nv] =  (mna_scaling*(A1[nv]-A2[nv])*current_scale).real(); // (real , real )
+              BJ2[nv] = -(mna_scaling*(A1[nv]-A2[nv])*current_scale).imag(); // (real , image)
+              BJ3[nv] =  (mna_scaling*(A1[nv]-A2[nv])*current_scale).imag(); // (image, real )
+              BJ4[nv] =  (mna_scaling*(A1[nv]-A2[nv])*current_scale).real(); // (image, image)
             }
 
             // the real equation location of ohmic bc in matrix entry
@@ -411,15 +407,15 @@ void OhmicContactBC::DDMAC_Fill_Matrix_Vector( Mat A, Vec b, const Mat J, const 
             AutoDScalar V_nb = fvm_nb_node->node_data()->psi(); V_nb.setADValue(1, 1.0);
 
             // distance from nb node to this node
-            PetscScalar distance = (*(fvm_node->root_node()) - *(fvm_nb_node->root_node())).size();
+            PetscScalar distance = fvm_node->distance(fvm_nb_node);
 
             // area of out surface of control volume related with neighbor node
-            PetscScalar cv_boundary = fvm_node->cv_surface_area(fvm_nb_node->root_node());
+            PetscScalar cv_boundary = fvm_node->cv_surface_area(fvm_nb_node);
             AutoDScalar D = node_data->eps()*(V-V_nb)/distance;
 
             // the 1/dt is replaced by j*omega.
-            std::complex <PetscScalar> dJdisp_dV  = Z1*cv_boundary*D.getADValue(0)*j*omega*current_scale;
-            std::complex <PetscScalar> dJdisp_dVn = Z1*cv_boundary*D.getADValue(1)*j*omega*current_scale;
+            std::complex <PetscScalar> dJdisp_dV  = mna_scaling*cv_boundary*D.getADValue(0)*j*omega*current_scale;
+            std::complex <PetscScalar> dJdisp_dVn = mna_scaling*cv_boundary*D.getADValue(1)*j*omega*current_scale;
 
             // V
             MatSetValue(A, bc_global_offset_re, fvm_node->global_offset(), dJdisp_dV.real(), ADD_VALUES);
@@ -447,14 +443,11 @@ void OhmicContactBC::DDMAC_Fill_Matrix_Vector( Mat A, Vec b, const Mat J, const 
   }
 
 
-  if(Genius::processor_id() == Genius::n_processors() -1)
+  if(Genius::is_last_processor())
   {
     // here we process the external circuit, we do not use AD here
 
-    // the external electrode equation is:
-    // f_ext = (L/dt+R)*current + (Ve-Vapp) + (L/dt+R)*C/dt*Ve - (L/dt+R)*C/dt*P - L/dt*(I+Ic);
-    // as a result, the K=d(f_ext)/d(Ve) in frequency domain is
-    std::complex <PetscScalar> K = Z1*Y2 + PetscScalar(1.0);
+    std::complex <PetscScalar> K = this->ext_circuit()->mna_ac_jacobian(omega);
 
     MatSetValue(A, bc_global_offset_re, bc_global_offset_re,  K.real(), ADD_VALUES);
     MatSetValue(A, bc_global_offset_re, bc_global_offset_im, -K.imag(), ADD_VALUES);
@@ -463,7 +456,6 @@ void OhmicContactBC::DDMAC_Fill_Matrix_Vector( Mat A, Vec b, const Mat J, const 
 
     VecSetValue(b, bc_global_offset_re, this->ext_circuit()->Vac(), ADD_VALUES);
     VecSetValue(b, bc_global_offset_im, 0.0, ADD_VALUES);
-
   }
 
   // the last operator is ADD_VALUES
@@ -480,7 +472,7 @@ void OhmicContactBC::DDMAC_Update_Solution(const PetscScalar * lxx, const Mat J,
 
 
   // for 2D mesh, system().z_width() is the device dimension in Z direction; for 3D mesh, system().z_width() is 1.0
-  PetscScalar current_scale = system().z_width();
+  std::complex<PetscScalar> current_scale = system().z_width();
 
   BoundaryCondition::const_node_iterator node_it;
   BoundaryCondition::const_node_iterator end_it = nodes_end();
@@ -521,7 +513,7 @@ void OhmicContactBC::DDMAC_Update_Solution(const PetscScalar * lxx, const Mat J,
         FVM_Node::fvm_neighbor_node_iterator nb_it_end = fvm_node->neighbor_node_end();
         for(; nb_it != nb_it_end; ++nb_it)
         {
-          const FVM_Node *  fvm_nb_node = (*nb_it).second;
+          const FVM_Node *  fvm_nb_node = (*nb_it).first;
           std::vector<PetscInt> col;
 
           for(unsigned int i=0; i<n_node_var; ++i)
@@ -555,7 +547,7 @@ void OhmicContactBC::DDMAC_Update_Solution(const PetscScalar * lxx, const Mat J,
           std::complex<PetscScalar> Vn = std::complex<PetscScalar>(Vn_re, Vn_im);
 
           // area of out surface of control volume related with neighbor node
-          PetscScalar cv_boundary = fvm_node->cv_surface_area(fvm_nb_node->root_node());
+          PetscScalar cv_boundary = fvm_node->cv_surface_area(fvm_nb_node);
 
           Iac += node_data->eps()*(V-Vn)/distance*j*omega*cv_boundary*current_scale;
         }

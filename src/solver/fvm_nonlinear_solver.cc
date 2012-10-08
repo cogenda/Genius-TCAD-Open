@@ -475,7 +475,7 @@ void FVM_NonlinearSolver::sens_line_search_post_check(Vec x, Vec y, Vec w, Petsc
   hook_list()->post_iteration();
 
   bool _changed_y = false, _changed_w = false;
-  hook_list()->post_iteration((void*)f, (void*)x, (void*)y, (void*)w, _changed_y, _changed_w);
+  hook_list()->post_check((void*)f, (void*)x, (void*)y, (void*)w, _changed_y, _changed_w);
   *changed_y = _changed_y ? PETSC_TRUE : *changed_y;
   *changed_w = _changed_w ? PETSC_TRUE : *changed_w;
   return;
@@ -677,28 +677,6 @@ void FVM_NonlinearSolver::set_petsc_linear_solver_type()
         switch (_linear_solver_type)
         {
             case SolverSpecify::LU :
-            MESSAGE<< "Using LAPACK-LU linear solver..."<<std::endl;  RECORD();
-            break;
-            case SolverSpecify::UMFPACK :
-#ifdef PETSC_HAVE_UMFPACK
-            MESSAGE<< "Using UMFPACK linear solver..."<<std::endl;
-            RECORD();
-            ierr = PCFactorSetMatSolverPackage (pc, "umfpack"); genius_assert(!ierr);
-#else
-            MESSAGE << "Warning:  no UMFPACK solver configured, use default LU solver instead!" << std::endl;
-            RECORD();
-#endif
-            break;
-            case SolverSpecify::SuperLU :
-#ifdef PETSC_HAVE_SUPERLU
-            MESSAGE<< "Using SuperLU linear solver..."<<std::endl;
-            RECORD();
-            ierr = PCFactorSetMatSolverPackage (pc, "superlu"); genius_assert(!ierr);
-#else
-            MESSAGE << "Warning:  no SuperLU solver configured, use default LU solver instead!" << std::endl;
-            RECORD();
-#endif
-            break;
             case SolverSpecify::MUMPS :
 #ifdef PETSC_HAVE_MUMPS
             MESSAGE<< "Using MUMPS linear solver..."<<std::endl;
@@ -709,6 +687,29 @@ void FVM_NonlinearSolver::set_petsc_linear_solver_type()
             RECORD();
 #endif
             break;
+
+            case SolverSpecify::UMFPACK :
+#ifdef PETSC_HAVE_UMFPACK
+            MESSAGE<< "Using UMFPACK linear solver..."<<std::endl;
+            RECORD();
+            ierr = PCFactorSetMatSolverPackage (pc, "umfpack"); genius_assert(!ierr);
+#else
+            MESSAGE << "Warning:  no UMFPACK solver configured, use default LU solver instead!" << std::endl;
+            RECORD();
+#endif
+            break;
+
+            case SolverSpecify::SuperLU :
+#ifdef PETSC_HAVE_SUPERLU
+            MESSAGE<< "Using SuperLU linear solver..."<<std::endl;
+            RECORD();
+            ierr = PCFactorSetMatSolverPackage (pc, "superlu"); genius_assert(!ierr);
+#else
+            MESSAGE << "Warning:  no SuperLU solver configured, use default LU solver instead!" << std::endl;
+            RECORD();
+#endif
+            break;
+
             case SolverSpecify::PASTIX:
 #ifdef PETSC_HAVE_PASTIX
             MESSAGE<< "Using PaStiX linear solver..."<<std::endl;
@@ -719,6 +720,7 @@ void FVM_NonlinearSolver::set_petsc_linear_solver_type()
             RECORD();
 #endif
             break;
+
             case   SolverSpecify::SuperLU_DIST:
 #ifdef PETSC_HAVE_SUPERLU_DIST
             MESSAGE<< "Using SuperLU_DIST linear solver..."<<std::endl;
@@ -769,6 +771,8 @@ void FVM_NonlinearSolver::set_petsc_preconditioner_type()
   {
     return;
   }
+
+  SNESSetLagPreconditioner(snes, 1);
 
   switch (_preconditioner_type)
   {
@@ -879,6 +883,9 @@ void FVM_NonlinearSolver::set_petsc_preconditioner_type()
           _linear_solver_type = SolverSpecify::GMRES;
           ierr = KSPSetType (ksp, (char*) KSPGMRES);      genius_assert(!ierr);
         }
+
+        // PCLU, with lag PC rebuild
+        SNESSetLagPreconditioner(snes, SolverSpecify::NSLagPCLU);
 
         if (Genius::n_processors()==1)
         {

@@ -46,7 +46,7 @@ namespace Parser
 
 
   void    Parameter::set_bool(const bool v, unsigned int idx)
-{ this->set<bool>(idx)=v; _et = BOOL; }
+  { this->set<bool>(idx)=v; _et = BOOL; }
 
 
   void    Parameter::set_int(const int v, unsigned int idx)

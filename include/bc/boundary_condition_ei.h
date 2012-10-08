@@ -65,12 +65,6 @@ public:
     { return INTERFACE; }
 
   /**
-   * @return false
-   */
-  virtual bool is_electrode()  const
-    {return false;}
-
-  /**
    * @return true iff this boundary has a current flow
    */
   virtual bool has_current_flow() const
@@ -209,7 +203,6 @@ public:
   virtual void EBM3_Jacobian(PetscScalar * , Mat *, InsertMode &);
 
 
-
   //////////////////////////////////////////////////////////////////////////////////
   //--------------Matrix and RHS Vector evaluate for DDM AC Solver----------------//
   //////////////////////////////////////////////////////////////////////////////////
@@ -252,6 +245,7 @@ public:
   virtual void DDM1_Half_Implicit_Poisson_Correction(PetscScalar * x, Mat A, Vec r, InsertMode &add_value_flag);
 
 #endif
+
 
 };
 

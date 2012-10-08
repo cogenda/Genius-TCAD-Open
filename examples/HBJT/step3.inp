@@ -28,7 +28,7 @@ ATTACH   Electrode=Base     	 VApp=Vb   # set voltage(Base) to Vb
 ATTACH   Electrode=Collector     VApp=VCC
 
 # call DDML1 to give a initial value for AC sweep.
-METHOD   Type=EBML3  NS=Basic LS=MUMPS Damping=Potential
+METHOD   Type=DDML1  NS=Basic LS=MUMPS Damping=Potential
 
 # compute STEADYSTATE to get a initial value
 SOLVE    Type=STEADYSTATE
@@ -36,7 +36,7 @@ SOLVE    Type=STEADYSTATE
 # Do AC sweep here.
 # we use LU as very strong preconditioner of GMRES method.
 METHOD   Type=DDMAC   LS=GMRES  PC=LU
-SOLVE    Type=ACSWEEP    ACScan=Base  out=ivac  \
+SOLVE    Type=ACSWEEP    ACScan=Base  out.prefix=ivac  \
          F.Start=1e6 F.Multiple=1.1  F.Stop=1e10
 
 END

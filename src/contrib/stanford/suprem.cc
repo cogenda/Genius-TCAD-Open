@@ -111,6 +111,7 @@ bool SupremTIF::read()
       region.node_num  = 0;
       region.tri_num   = 0;
       region.material = _material_index_to_string[material_id];
+      region.segment = false;
       std::stringstream ss;
       ss << "region_" << region.index;
       region.name = ss.str();
@@ -169,17 +170,6 @@ bool SupremTIF::read()
 
 }
 
-
-double SupremTIF::acceptor(unsigned int data_index) const
-{
-  return _sol_data[data_index].data_array[_acceptor_index];
-}
-
-
-double SupremTIF::donor(unsigned int data_index) const
-{
-  return _sol_data[data_index].data_array[_donor_index];
-}
 
 
 void SupremTIF::_init_index_string_map()

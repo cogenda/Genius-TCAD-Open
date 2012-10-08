@@ -27,9 +27,9 @@
 #include <vector>
 #include <map>
 
-#include "genius_common.h"
-#include "adolc.h" // for automatic differentiation
+
 #include "parser_parameter.h"   // for parameter calibrating from user input file
+#include "adolc.h" // for automatic differentiation
 #include "variable_define.h"
 
 using namespace adtl;
@@ -266,6 +266,8 @@ protected:
    */
   std::string PMI_Info;
 
+  std::string _param_string;  
+
 public:
   /**
    * aux function return node coordinate.
@@ -344,7 +346,7 @@ public:
    * an interface for main code to get a string representation of the
    * current parameter values in the material database
    */
-  virtual std::string get_parameter_string(const int verbosity=0);
+  virtual const std::string& get_parameter_string(const int verbosity=0);
 
 public:
   /**
@@ -1344,7 +1346,36 @@ class PMII_BandStructure : public PMII_Server
   /**
    * Fowler-Nordheim tunneling
    */
-  virtual PetscScalar J_FN_Tunneling(const PetscScalar &E_ins) const = 0;
+  virtual PetscScalar J_FN_Tunneling(const PetscScalar &E_ins, const PetscScalar &alpha) const = 0;
+
+  /**
+   * Conduction band electron tunneling
+   */
+  virtual PetscScalar J_CBET_Tunneling(const PetscScalar &m, const PetscScalar &Tl,
+                                       const PetscScalar &Efn1, const PetscScalar &Efn2,
+                                       const PetscScalar &Ec1,  const PetscScalar &Ec2,
+                                       const PetscScalar &B1,   const PetscScalar &B2,
+                                       const PetscScalar &t) const = 0;
+
+
+  /**
+   * Valence band hole tunneling
+   */
+  virtual PetscScalar J_VBHT_Tunneling(const PetscScalar &m, const PetscScalar &Tl,
+                                       const PetscScalar &Efn1, const PetscScalar &Efn2,
+                                       const PetscScalar &Ec1,  const PetscScalar &Ec2,
+                                       const PetscScalar &B1,   const PetscScalar &B2,
+                                       const PetscScalar &t) const = 0;
+
+  /**
+   * Valence band electron tunneling
+   */
+  virtual PetscScalar J_VBET_Tunneling(const PetscScalar &m, const PetscScalar &Tl,
+                                       const PetscScalar &Efn1, const PetscScalar &Efn2,
+                                       const PetscScalar &Ec1,  const PetscScalar &Ec2,
+                                       const PetscScalar &Ev1,  const PetscScalar &Ev2,
+                                       const PetscScalar &B1,   const PetscScalar &B2,
+                                       const PetscScalar &t) const = 0;
 
 };
 

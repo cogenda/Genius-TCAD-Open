@@ -68,7 +68,7 @@ SOLVE     Type=STEADY
 
 # do AC sweep
 METHOD    Type=DDMAC  LS=BCGS PC=LU ksp.rtol=1e-14
-SOLVE     Type=ACSWEEP acscan=GATE  F.Start=1.0 F.stop=1e5 out=cap_ac vac=0.001
+SOLVE     Type=ACSWEEP acscan=GATE  F.Start=1.0 F.stop=1e5 out.prefix=cap_ac vac=0.001
 
 # export result
 EXPORT    CGNSFILE=cap.cgns VTKFILE=cap.vtu

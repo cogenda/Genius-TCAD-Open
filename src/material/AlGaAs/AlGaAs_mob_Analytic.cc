@@ -105,37 +105,37 @@ private:
    parameter_map.insert(para_item("MUN.MIN",    PARA("MUN.MIN",    "", "cm*cm/V/s",cm*cm/V/s , &MUN_MIN)) );
    parameter_map.insert(para_item("MIN.X1", PARA("MIN.X1", "", "-", 1.0, &MIN_X1)) );
    parameter_map.insert(para_item("MIN.X2", PARA("MIN.X2", "", "-", 1.0, &MIN_X2)) );
-	 parameter_map.insert(para_item("MUN.MAX",    PARA("MUN.MAX",    "", "cm*cm/V/s", cm*cm/V/s, &MUN_MAX)) );
-	 parameter_map.insert(para_item("MAN.X1", PARA("MAN.X1", "", "-", 1.0, &MAN_X1)) );
+   parameter_map.insert(para_item("MUN.MAX",    PARA("MUN.MAX",    "", "cm*cm/V/s", cm*cm/V/s, &MUN_MAX)) );
+   parameter_map.insert(para_item("MAN.X1", PARA("MAN.X1", "", "-", 1.0, &MAN_X1)) );
    parameter_map.insert(para_item("MAN.X2", PARA("MAN.X2", "", "-", 1.0, &MAN_X2)) );
-	 parameter_map.insert(para_item("NREFN",    PARA("NREFN",    "", "cm^-3", std::pow(cm,-3), &NREFN)) );
-	 parameter_map.insert(para_item("NREFN2",    PARA("NREFN2",    "", "cm^-3", std::pow(cm,-3), &NREFN2)) );
-	 parameter_map.insert(para_item("NUN",    PARA("NUN",    "", "-", 1.0, &NUN)) );
-	 parameter_map.insert(para_item("XIN",    PARA("XIN",    "", "-", 1.0, &XIN)) );
-	 parameter_map.insert(para_item("ALPHAN",    PARA("ALPHAN",    "", "-", 1.0, &ALPHAN)) );
+   parameter_map.insert(para_item("NREFN",    PARA("NREFN",    "", "cm^-3", std::pow(cm,-3), &NREFN)) );
+   parameter_map.insert(para_item("NREFN2",    PARA("NREFN2",    "", "cm^-3", std::pow(cm,-3), &NREFN2)) );
+   parameter_map.insert(para_item("NUN",    PARA("NUN",    "", "-", 1.0, &NUN)) );
+   parameter_map.insert(para_item("XIN",    PARA("XIN",    "", "-", 1.0, &XIN)) );
+   parameter_map.insert(para_item("ALPHAN",    PARA("ALPHAN",    "", "-", 1.0, &ALPHAN)) );
 
-	 parameter_map.insert(para_item("MUP.MIN",    PARA("MUP.MIN",    "", "cm*cm/V/s", cm*cm/V/s, &MUP_MIN)) );
-	 parameter_map.insert(para_item("MIP.X1", PARA("MIP.X1", "", "-", 1.0, &MIP_X1)) );
+   parameter_map.insert(para_item("MUP.MIN",    PARA("MUP.MIN",    "", "cm*cm/V/s", cm*cm/V/s, &MUP_MIN)) );
+   parameter_map.insert(para_item("MIP.X1", PARA("MIP.X1", "", "-", 1.0, &MIP_X1)) );
    parameter_map.insert(para_item("MIP.X2", PARA("MIP.X2", "", "-", 1.0, &MIP_X2)) );
-	 parameter_map.insert(para_item("MUP.MAX",    PARA("MUP.MAX",    "", "cm*cm/V/s",cm*cm/V/s , &MUP_MAX)) );
-	 parameter_map.insert(para_item("MAP.X1", PARA("MAP.X1", "", "-", 1.0, &MAP_X1)) );
+   parameter_map.insert(para_item("MUP.MAX",    PARA("MUP.MAX",    "", "cm*cm/V/s",cm*cm/V/s , &MUP_MAX)) );
+   parameter_map.insert(para_item("MAP.X1", PARA("MAP.X1", "", "-", 1.0, &MAP_X1)) );
    parameter_map.insert(para_item("MAP.X2", PARA("MAP.X2", "", "-", 1.0, &MAP_X2)) );
-	 parameter_map.insert(para_item("NREFP",    PARA("NREFP",    "", "cm^-3",std::pow(cm,-3) , &NREFP)) );
-	 parameter_map.insert(para_item("NREFP2",    PARA("NREFP2",    "", "cm^-3",std::pow(cm,-3) , &NREFP2)) );
-	 parameter_map.insert(para_item("NUP",    PARA("NUP",    "", "-",1.0 , &NUP)) );
-	 parameter_map.insert(para_item("XIP",    PARA("XIP",    "", "-",1.0 , &XIP)) );
-	 parameter_map.insert(para_item("ALPHAP",    PARA("ALPHAP",    "", "-", 1.0, &ALPHAP)) );
+   parameter_map.insert(para_item("NREFP",    PARA("NREFP",    "", "cm^-3",std::pow(cm,-3) , &NREFP)) );
+   parameter_map.insert(para_item("NREFP2",    PARA("NREFP2",    "", "cm^-3",std::pow(cm,-3) , &NREFP2)) );
+   parameter_map.insert(para_item("NUP",    PARA("NUP",    "", "-",1.0 , &NUP)) );
+   parameter_map.insert(para_item("XIP",    PARA("XIP",    "", "-",1.0 , &XIP)) );
+   parameter_map.insert(para_item("ALPHAP",    PARA("ALPHAP",    "", "-", 1.0, &ALPHAP)) );
 
-	 parameter_map.insert(para_item("VSATN",    PARA("VSATN",    "", "cm/s", cm/s, &VSATN)) );
-	 parameter_map.insert(para_item("VSN1",    PARA("VSN1",    "", "-",1.0 , &VSN1)) );
-	 parameter_map.insert(para_item("VSN2",    PARA("VSN2",    "", "-",1.0 , &VSN2)) );
-	 parameter_map.insert(para_item("VSATP",    PARA("VSATP",    "", "cm/s", cm/s, &VSATP)) );
-	 parameter_map.insert(para_item("VSP1",    PARA("VSP1",    "", "-",1.0 , &VSP1)) );
-	 parameter_map.insert(para_item("VSP2",    PARA("VSP2",    "", "-",1.0 , &VSP2)) );
-    parameter_map.insert(para_item("E0N", PARA("E0N", "", "V/cm", V/cm, &E0N)) );
-    parameter_map.insert(para_item("EN1", PARA("EN1", "", "-",1.0 , &EN1)) );
-    parameter_map.insert(para_item("EN2", PARA("EN2", "", "-", 1.0, &EN2)) );
-    parameter_map.insert(para_item("E0P", PARA("E0P", "", "V/cm",V/cm , &E0P)) );
+   parameter_map.insert(para_item("VSATN",    PARA("VSATN",    "", "cm/s", cm/s, &VSATN)) );
+   parameter_map.insert(para_item("VSN1",    PARA("VSN1",    "", "-",1.0 , &VSN1)) );
+   parameter_map.insert(para_item("VSN2",    PARA("VSN2",    "", "-",1.0 , &VSN2)) );
+   parameter_map.insert(para_item("VSATP",    PARA("VSATP",    "", "cm/s", cm/s, &VSATP)) );
+   parameter_map.insert(para_item("VSP1",    PARA("VSP1",    "", "-",1.0 , &VSP1)) );
+   parameter_map.insert(para_item("VSP2",    PARA("VSP2",    "", "-",1.0 , &VSP2)) );
+   parameter_map.insert(para_item("E0N", PARA("E0N", "", "V/cm", V/cm, &E0N)) );
+   parameter_map.insert(para_item("EN1", PARA("EN1", "", "-",1.0 , &EN1)) );
+   parameter_map.insert(para_item("EN2", PARA("EN2", "", "-", 1.0, &EN2)) );
+   parameter_map.insert(para_item("E0P", PARA("E0P", "", "V/cm",V/cm , &E0P)) );
 #endif
   }
 
@@ -240,16 +240,7 @@ public:
 
 /*---------------------------------------------------------------
  *  the interface function called by material databse controller
- *  use Analytic model as default mobility model
  */
-extern "C"
-{
-  DLL_EXPORT_DECLARE  PMIS_Mobility* PMIS_AlGaAs_Mob_Default (const PMIS_Environment& env)
-  {
-    return new GSS_AlGaAs_Mob_Analytic(env);
-  }
-}
-/* alias */
 extern "C"
 {
   DLL_EXPORT_DECLARE  PMIS_Mobility* PMIS_AlGaAs_Mob_Analytic (const PMIS_Environment& env)

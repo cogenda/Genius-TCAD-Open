@@ -87,8 +87,8 @@ public:
    *  This is executed after each (nonlinear) iteration
    *  i.e. for collecting convergence information or implementing various damping strategy
    */
-  virtual void post_iteration(void * f, void * x, void * y, void * w, bool & change_y, bool &change_w)
-  { if(hook) hook->post_iteration(f, x, y, w, change_y, change_w); }
+  virtual void post_check(void * f, void * x, void * y, void * w, bool & change_y, bool &change_w)
+  { if(hook) hook->post_check(f, x, y, w, change_y, change_w); }
 
   /**
    * This is executed after the finalization of the solver

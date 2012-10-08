@@ -194,40 +194,6 @@ void HeteroInterfaceBC::DDMAC_Fill_Matrix_Vector( Mat A, Vec b, const Mat J, con
                 Ev = Ev + kb*T*log(gamma_f(fabs(p)/n_data->Nv()));
               }
 
-
-              // thermal emit current
-              AutoDScalar Jn=0, Jp=0;
-              AutoDScalar Sn=0, Sp=0;
-
-              if(Ec0 > Ec)
-              {
-                // Jn is enter region 0
-                AutoDScalar pm = mt0->band->EffecElecMass(T)/mt->band->EffecElecMass(T);
-                Jn =  2*e*(mt0->band->ThermalVn(T)*n0 - pm*mt->band->ThermalVn(T)*n*exp(-(Ec0-Ec)/(kb*T)));
-                Sn = -2*e*(mt0->band->ThermalVn(T)*n0*2.5*kb*Tn0 - pm*mt->band->ThermalVn(T)*n*exp(-(Ec0-Ec)/(kb*T))*2.5*kb*Tn);
-              }
-              else
-              {
-                // Jn is left region 0
-                AutoDScalar pm = mt->band->EffecElecMass(T)/mt0->band->EffecElecMass(T);
-                Jn = -2*e*(mt->band->ThermalVn(T)*n - pm*mt0->band->ThermalVn(T)*n0*exp(-(Ec-Ec0)/(kb*T)));
-                Sn =  2*e*(mt->band->ThermalVn(T)*n*2.5*kb*Tn - pm*mt0->band->ThermalVn(T)*n0*exp(-(Ec-Ec0)/(kb*T))*2.5*kb*Tn0);
-              }
-
-              if(Ev0 < Ev)
-              {
-                // Jp is enter region 0
-                AutoDScalar pm = mt0->band->EffecHoleMass(T)/mt->band->EffecHoleMass(T);
-                Jp = -2*e*(mt0->band->ThermalVp(T)*p0 - pm*mt->band->ThermalVp(T)*p*exp((Ev0-Ev)/(kb*T)));
-                Sp =  2*e*(mt0->band->ThermalVp(T)*p0*2.5*kb*Tp0 - pm*mt->band->ThermalVp(T)*p*exp((Ev0-Ev)/(kb*T))*2.5*kb*Tp);
-              }
-              else
-              {
-                AutoDScalar pm = mt->band->EffecHoleMass(T)/mt0->band->EffecHoleMass(T);
-                Jp =  2*e*(mt->band->ThermalVp(T)*p - pm*mt0->band->ThermalVp(T)*p0*exp((Ev-Ev0)/(kb*T)));
-                Sp = -2*e*(mt->band->ThermalVp(T)*p*2.5*kb*Tp - pm*mt0->band->ThermalVp(T)*p0*exp((Ev-Ev0)/(kb*T))*2.5*kb*Tp0);
-              }
-
               // area of out surface of control volume related with neighbor node
               PetscScalar cv_boundary = fvm_nodes[i]->outside_boundary_surface_area();
 
@@ -241,32 +207,68 @@ void HeteroInterfaceBC::DDMAC_Fill_Matrix_Vector( Mat A, Vec b, const Mat J, con
 
                 regions[i]->DDMAC_Fill_Nodal_Matrix_Vector(fvm_nodes[i], ELECTRON, A, b, J, omega, add_value_flag);
                 regions[i]->DDMAC_Fill_Nodal_Matrix_Vector(fvm_nodes[i], HOLE, A, b, J, omega, add_value_flag);
-
-                std::vector<int> rows_re, rows_im, cols_re, cols_im;
-                for(unsigned int nv=0; nv<n_node_var_0; ++nv)
-                {
-                  rows_re.push_back(fvm_nodes[0]->global_offset()+nv);
-                  rows_im.push_back(fvm_nodes[0]->global_offset()+n_node_var_0+nv);
-                }
-                for(unsigned int nv=0; nv<n_node_var; ++nv)
-                {
-                  rows_re.push_back(fvm_nodes[i]->global_offset()+nv);
-                  rows_im.push_back(fvm_nodes[i]->global_offset()+n_node_var+nv);
-                }
-                cols_re = rows_re;
-                cols_im = rows_im;
-
-                // current flow
-                MatSetValues(A, 1, &rows_re[n_node_var_0+node_n_offset], cols_re.size(), &cols_re[0], (Jn*cv_boundary).getADValue(), ADD_VALUES);
-                MatSetValues(A, 1, &rows_re[node_n_offset], cols_re.size(), &cols_re[0], (-Jn*cv_boundary).getADValue(), ADD_VALUES);
-                MatSetValues(A, 1, &rows_im[n_node_var_0+node_n_offset], cols_im.size(), &cols_im[0], (Jn*cv_boundary).getADValue(), ADD_VALUES);
-                MatSetValues(A, 1, &rows_im[node_n_offset], cols_im.size(), &cols_im[0], (-Jn*cv_boundary).getADValue(), ADD_VALUES);
-
-                MatSetValues(A, 1, &rows_re[n_node_var_0+node_p_offset], cols_re.size(), &cols_re[0], (-Jp*cv_boundary).getADValue(), ADD_VALUES);
-                MatSetValues(A, 1, &rows_re[node_p_offset], cols_re.size(), &cols_re[0], (Jp*cv_boundary).getADValue(), ADD_VALUES);
-                MatSetValues(A, 1, &rows_im[n_node_var_0+node_p_offset], cols_im.size(), &cols_im[0], (-Jp*cv_boundary).getADValue(), ADD_VALUES);
-                MatSetValues(A, 1, &rows_im[node_p_offset], cols_im.size(), &cols_im[0], (Jp*cv_boundary).getADValue(), ADD_VALUES);
               }
+
+
+              std::vector<int> rows_re, rows_im, cols_re, cols_im;
+              for(unsigned int nv=0; nv<n_node_var_0; ++nv)
+              {
+                rows_re.push_back(fvm_nodes[0]->global_offset()+nv);
+                rows_im.push_back(fvm_nodes[0]->global_offset()+n_node_var_0+nv);
+              }
+              for(unsigned int nv=0; nv<n_node_var; ++nv)
+              {
+                rows_re.push_back(fvm_nodes[i]->global_offset()+nv);
+                rows_im.push_back(fvm_nodes[i]->global_offset()+n_node_var+nv);
+              }
+              cols_re = rows_re;
+              cols_im = rows_im;
+
+              // thermal emit current
+              AutoDScalar Jn=0, Jp=0;
+              AutoDScalar Sn=0, Sp=0;
+
+              if(Ec0 > Ec)
+              {
+                // Jn is enter region 0
+                AutoDScalar pm = mt0->band->EffecElecMass(T)/mt->band->EffecElecMass(T);
+                Jn =  2*e*(mt0->band->ThermalVn(T)*n0 - pm*mt->band->ThermalVn(T)*n*exp(-(Ec0-Ec)/(kb*T)))*cv_boundary;
+                Sn = -2*e*(mt0->band->ThermalVn(T)*n0*2.5*kb*Tn0 - pm*mt->band->ThermalVn(T)*n*exp(-(Ec0-Ec)/(kb*T))*2.5*kb*Tn)*cv_boundary;
+              }
+              else
+              {
+                // Jn is left region 0
+                AutoDScalar pm = mt->band->EffecElecMass(T)/mt0->band->EffecElecMass(T);
+                Jn = -2*e*(mt->band->ThermalVn(T)*n - pm*mt0->band->ThermalVn(T)*n0*exp(-(Ec-Ec0)/(kb*T)))*cv_boundary;
+                Sn =  2*e*(mt->band->ThermalVn(T)*n*2.5*kb*Tn - pm*mt0->band->ThermalVn(T)*n0*exp(-(Ec-Ec0)/(kb*T))*2.5*kb*Tn0)*cv_boundary;
+              }
+
+              if(Ev0 < Ev)
+              {
+                // Jp is enter region 0
+                AutoDScalar pm = mt0->band->EffecHoleMass(T)/mt->band->EffecHoleMass(T);
+                Jp = -2*e*(mt0->band->ThermalVp(T)*p0 - pm*mt->band->ThermalVp(T)*p*exp((Ev0-Ev)/(kb*T)))*cv_boundary;
+                Sp =  2*e*(mt0->band->ThermalVp(T)*p0*2.5*kb*Tp0 - pm*mt->band->ThermalVp(T)*p*exp((Ev0-Ev)/(kb*T))*2.5*kb*Tp)*cv_boundary;
+              }
+              else
+              {
+                AutoDScalar pm = mt->band->EffecHoleMass(T)/mt0->band->EffecHoleMass(T);
+                Jp =  2*e*(mt->band->ThermalVp(T)*p - pm*mt0->band->ThermalVp(T)*p0*exp((Ev-Ev0)/(kb*T)))*cv_boundary;
+                Sp = -2*e*(mt->band->ThermalVp(T)*p*2.5*kb*Tp - pm*mt0->band->ThermalVp(T)*p0*exp((Ev-Ev0)/(kb*T))*2.5*kb*Tp0)*cv_boundary;
+              }
+
+
+              // current flow
+              MatSetValues(A, 1, &rows_re[n_node_var_0+node_n_offset], cols_re.size(), &cols_re[0], (Jn).getADValue(), ADD_VALUES);
+              MatSetValues(A, 1, &rows_re[node_n_offset], cols_re.size(), &cols_re[0], (-Jn).getADValue(), ADD_VALUES);
+              MatSetValues(A, 1, &rows_im[n_node_var_0+node_n_offset], cols_im.size(), &cols_im[0], (Jn).getADValue(), ADD_VALUES);
+              MatSetValues(A, 1, &rows_im[node_n_offset], cols_im.size(), &cols_im[0], (-Jn).getADValue(), ADD_VALUES);
+
+              MatSetValues(A, 1, &rows_re[n_node_var_0+node_p_offset], cols_re.size(), &cols_re[0], (-Jp).getADValue(), ADD_VALUES);
+              MatSetValues(A, 1, &rows_re[node_p_offset], cols_re.size(), &cols_re[0], (Jp).getADValue(), ADD_VALUES);
+              MatSetValues(A, 1, &rows_im[n_node_var_0+node_p_offset], cols_im.size(), &cols_im[0], (-Jp).getADValue(), ADD_VALUES);
+              MatSetValues(A, 1, &rows_im[node_p_offset], cols_im.size(), &cols_im[0], (Jp).getADValue(), ADD_VALUES);
+
 
 
               if(regions[i]->get_advanced_model()->enable_Tl())

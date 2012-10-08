@@ -532,6 +532,11 @@ class Elem :    public DofObject
   virtual Real hmax () const;
 
   /**
+   * bounding sphere as (centroid, R)
+   */
+  virtual std::pair<Point, Real> bounding_sphere() const;
+
+  /**
    * @return the gradient of input variable in the cell,
    * however we should never reach here
    */
@@ -836,6 +841,11 @@ class Elem :    public DofObject
    * @returns dimension by elem type
    */
   static unsigned int dim (const ElemType et);
+
+  /**
+   * @returns memory usage by elem type
+   */
+  static size_t memory_size (const ElemType et);
 
   /**
    * return \p true if the element can be used in FVM

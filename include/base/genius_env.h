@@ -123,6 +123,11 @@ namespace Genius {
   bool experiment_code();
 
   /**
+   * current memory usage of this processor in \<virtual memory size, resident Set Size \>
+   */
+  std::pair<size_t, size_t> memory_size();
+
+  /**
    * Namespaces don't provide private data,
    * so let's take the data we would like
    * private and put it in an obnoxious

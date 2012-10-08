@@ -57,6 +57,11 @@ public:
 		const T zz=0.);
 
   /**
+   * Constructor by array
+   */
+  TensorValue  (const T*);
+
+  /**
    * Construct Tensor by one vector. DIM==1
    */
   TensorValue  (const TypeVector<T> &x): TypeTensor<T> (x){}
@@ -109,6 +114,7 @@ typedef RealTensorValue     RealTensor;
 
 
 
+
 //------------------------------------------------------
 // Inline functions
 template <typename T>
@@ -126,6 +132,13 @@ TensorValue<T>::TensorValue (const T xx,
 {
 }
 
+
+template <typename T>
+inline
+TensorValue<T>::TensorValue (const T* v) :
+    TypeTensor<T> (v)
+{
+}
 
 
 template <typename T>

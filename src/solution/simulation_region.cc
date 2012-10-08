@@ -212,49 +212,25 @@ void SimulationRegion::prepare_for_use()
 {
   START_LOG("prepare_for_use()", "SimulationRegion");
 
-  // first, we set std::map< const Node *, FVM_Node * > _node_neighbor for FVM_Node
-  {
-    std::map<unsigned int, FVM_Node *>::iterator nodes_it = _region_node.begin();
-    for(; nodes_it != _region_node.end(); ++nodes_it)
-    {
-      FVM_Node * fvm_node = (*nodes_it).second;
-
-      // skip nonlocal fvm_node
-      if( !fvm_node->on_local() ) continue;
-
-      FVM_Node::fvm_neighbor_node_iterator  nb_fvm_node_it = fvm_node->neighbor_node_begin();
-      for(; nb_fvm_node_it!=fvm_node->neighbor_node_end(); ++nb_fvm_node_it)
-        fvm_node->set_node_neighbor( (*nb_fvm_node_it).first, region_fvm_node((*nb_fvm_node_it).first) );
-    }
-  }
-
-
-
-  // fix FVM_Node if laplace operator < 0.0
   std::map<unsigned int, FVM_Node *>::iterator nodes_it = _region_node.begin();
   for(; nodes_it != _region_node.end(); ++nodes_it)
   {
     FVM_Node * fvm_node = (*nodes_it).second;
+    fvm_node->prepare_for_use();
+
     // skip not on processor fvm_node
     if( !fvm_node->on_processor() ) continue;
 
+     // fix FVM_Node if laplace operator < 0.0
     if( fvm_node->laplace_unit() < 0.0 )
     {
       fvm_node->truncate_cv_surface_area();
     }
+
+    // fix FVM_Node if it has a negative surface area to its neighbor
+    fvm_node->posotive_cv_surface_area_to_each_neighbor(true);
   }
 
-  // for efficient reason, let each element hold pointer to corresponding FVM_Node
-  // since _region_cell is <const Elem *>, we do const_cast here
-  {
-    element_iterator elem_it = elements_begin();
-    for(; elem_it != elements_end(); elem_it++)
-    {
-      Elem * e = const_cast<Elem *> (*elem_it);
-      for(unsigned int i=0; i<e->n_nodes(); i++)
-        e->hold_fvm_node( i, region_fvm_node( e->get_node(i)) );
-    }
-  }
 
   // fix extra on local cells
   // neighbor elem of an on processor element is marked as on local previously
@@ -695,6 +671,52 @@ bool SimulationRegion::get_variable_data(const std::string &var_name, DataLocati
 
 
 template <typename T>
+bool SimulationRegion::set_variable_data(const std::string &var_name, DataLocation location, const T val) 
+{
+  parallel_only();
+
+  if( location == POINT_CENTER )
+  {
+    if( _region_point_variables.find(var_name) == _region_point_variables.end() ) return false;
+
+    const SimulationVariable & variable = _region_point_variables.find(var_name)->second;
+    unsigned int variable_index = variable.variable_index;
+    Real unit = variable.variable_unit;
+
+    for(unsigned int n=0; n<_region_processor_node.size(); ++n)
+    {
+      const FVM_Node * fvm_node = _region_processor_node[n];
+      unsigned int offset = fvm_node->node_data()->offset();
+      _node_data_storage.data<T>(variable_index, offset) = val*unit;
+    }
+  }
+
+  if( location == CELL_CENTER )
+  {
+    if( _region_cell_variables.find(var_name) == _region_cell_variables.end() ) return false;
+
+    const SimulationVariable & variable = _region_cell_variables.find(var_name)->second;
+    unsigned int variable_index = variable.variable_index;
+    Real unit = variable.variable_unit;
+
+    std::map<unsigned int, T> value;
+    for(unsigned int n=0; n<_region_cell.size(); ++n)
+    {
+      const Elem * elem = _region_cell[n];
+      if( elem->on_processor() )
+      {
+        unsigned int offset = _region_cell_data[n]->offset();
+        _cell_data_storage.data<T>(variable_index, offset) = val*unit;
+      }
+    }
+  }
+
+  return true;
+
+}
+
+
+template <typename T>
 bool SimulationRegion::sync_point_variable(const std::string &var_name)
 {
   parallel_only();
@@ -777,6 +799,35 @@ void SimulationRegion::add_hanging_node_on_edge(const Node * node, const Elem * 
 }
 
 
+size_t SimulationRegion::memory_size() const
+{
+  size_t counter = sizeof(*this);
+
+  counter += _region_neighbors.capacity()*sizeof(SimulationRegion *);
+  // FIXME std::map<short int, BoundaryCondition *> _region_boundaries;
+  counter += _region_cell.capacity()*sizeof(const Elem *);
+  counter += _region_cell_data.capacity()*sizeof(FVM_CellData *);
+  counter += _cell_data_storage.memory_size();
+  std::map<unsigned int, FVM_Node *>::const_iterator it = _region_node.begin();
+  for( ; it != _region_node.end(); it++ )
+  {
+    counter += it->second->memory_size();
+    counter += sizeof(it->first);
+  }
+
+  counter += _region_local_node.capacity()*sizeof(FVM_Node *);
+  counter += _region_processor_node.capacity()*sizeof(FVM_Node *);
+  counter += _region_ghost_node.capacity()*sizeof(FVM_Node *);
+  counter += _region_image_node.capacity()*sizeof(FVM_Node *);
+  counter +=  _node_data_storage.memory_size();
+  counter += _region_edges.capacity()*sizeof(std::pair<FVM_Node *, FVM_Node *>);
+
+  return counter;
+}
+
+
+
+
 //explicit instantiation
 template
 bool SimulationRegion::get_variable_data<Real>(const std::string &var_name, DataLocation location, std::vector<Real> &sv) const;
@@ -789,4 +840,18 @@ bool SimulationRegion::get_variable_data< VectorValue<Real> >(const std::string 
 
 template
 bool SimulationRegion::get_variable_data< TensorValue<Real> >(const std::string &var_name, DataLocation location, std::vector< TensorValue<Real> > &sv) const;
+
+//explicit instantiation
+template
+bool SimulationRegion::set_variable_data<Real>(const std::string &var_name, DataLocation location, const Real sv);
+
+template
+bool SimulationRegion::set_variable_data<Complex>(const std::string &var_name, DataLocation location, const Complex sv);
+
+template
+bool SimulationRegion::set_variable_data< VectorValue<Real> >(const std::string &var_name, DataLocation location, const VectorValue<Real> sv);
+
+template
+bool SimulationRegion::set_variable_data< TensorValue<Real> >(const std::string &var_name, DataLocation location, const TensorValue<Real> sv);
+
 

@@ -169,6 +169,18 @@ bool TypeVector<T>::operator > (const TypeVector<T>& rhs) const
 }
 
 
+template <typename T>
+bool TypeVector<T>::all_less(const TypeVector<T>& rhs) const
+{
+  bool res = true;
+  for (unsigned int i=0; i<DIM; i++)
+  {
+    if ((*this)(i) >= rhs(i))
+      res = false;
+  }
+  return res;
+}
+
 
 
 // ------------------------------------------------------------

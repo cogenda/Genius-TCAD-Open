@@ -286,7 +286,7 @@ void IF_Metal_SchottkyBC::DDM1R_Jacobian_Reserve(Mat *jac, InsertMode &add_value
     FVM_Node::fvm_neighbor_node_iterator nb_it = semiconductor_node->neighbor_node_begin();
     for ( ; nb_it != semiconductor_node->neighbor_node_end(); ++nb_it )
     {
-      const FVM_Node *nb_node = ( *nb_it ).second;
+      const FVM_Node *nb_node = ( *nb_it ).first;
       MatSetValue ( *jac, resistance_node->global_offset()+0, nb_node->global_offset()+0, 0, ADD_VALUES );
       MatSetValue ( *jac, resistance_node->global_offset()+0, nb_node->global_offset()+1, 0, ADD_VALUES );
       MatSetValue ( *jac, resistance_node->global_offset()+0, nb_node->global_offset()+2, 0, ADD_VALUES );

@@ -579,7 +579,7 @@ void IF_Metal_OhmicBC::DDM1R_Jacobian_Preprocess(PetscScalar *, Mat *jac, std::v
       FVM_Node::fvm_neighbor_node_iterator nb_it_end = semiconductor_node->neighbor_node_end();
       for(; nb_it != nb_it_end; ++nb_it)
       {
-        const FVM_Node *  semiconductor_nb_node = (*nb_it).second;
+        const FVM_Node *  semiconductor_nb_node = (*nb_it).first;
 
         std::vector<PetscInt>    col(3);
         col[0] = semiconductor_nb_node->global_offset()+0;
@@ -942,7 +942,7 @@ void IF_Metal_OhmicBC::DDM1R_Jacobian_Reserve ( Mat *jac, InsertMode &add_value_
     FVM_Node::fvm_neighbor_node_iterator nb_it = semiconductor_node->neighbor_node_begin();
     for ( ; nb_it != semiconductor_node->neighbor_node_end(); ++nb_it )
     {
-      const FVM_Node *nb_node = ( *nb_it ).second;
+      const FVM_Node *nb_node = ( *nb_it ).first;
       MatSetValue ( *jac, resistance_node->global_offset()+0, nb_node->global_offset()+0, 0, ADD_VALUES );
       MatSetValue ( *jac, resistance_node->global_offset()+0, nb_node->global_offset()+1, 0, ADD_VALUES );
       MatSetValue ( *jac, resistance_node->global_offset()+0, nb_node->global_offset()+2, 0, ADD_VALUES );

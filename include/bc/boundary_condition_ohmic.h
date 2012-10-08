@@ -71,12 +71,6 @@ public:
 
 
   /**
-   * @return true when it has external circuit
-   */
-  virtual bool is_electrode()  const
-  {return ext_circuit()!=NULL;}
-
-  /**
    * @return true iff this boundary has a current flow
    */
   virtual bool has_current_flow() const
@@ -386,6 +380,7 @@ public:
    */
   virtual void DDMAC_Update_Solution(const PetscScalar * lxx , const Mat, const double omega);
 
+
 #ifdef COGENDA_COMMERCIAL_PRODUCT
   //////////////////////////////////////////////////////////////////////////////////
   //----------------- functions for Gummel DDML1 solver --------------------------//
@@ -454,6 +449,7 @@ public:
    * function for build RHS and matrix for half implicit poisson correction equation.
    */
   virtual void DDM1_Half_Implicit_Poisson_Correction(PetscScalar * x, Mat A, Vec r, InsertMode &add_value_flag);
+
 #endif
 
   //////////////////////////////////////////////////////////////////////////////////
@@ -483,6 +479,7 @@ public:
    * function for build RHS vector of linear poisson's equation.
    */
   virtual void LinearPoissin_RHS(Vec b, InsertMode &);
+
 
 };
 

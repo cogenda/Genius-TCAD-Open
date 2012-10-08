@@ -69,11 +69,6 @@ public:
   virtual void set_boundary_type(BoundaryType type)
   { _bd_type = type; }
 
-  /**
-   * @return true when it has external circuit
-   */
-  virtual bool is_electrode()  const
-  {return ext_circuit()!=NULL;}
 
 
   /**
@@ -374,6 +369,7 @@ public:
    * update solution value for ddm ac solver
    */
   virtual void DDMAC_Update_Solution(const PetscScalar * lxx , const Mat, const double omega);
+
 
 };
 

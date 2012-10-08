@@ -891,8 +891,8 @@ public:
   }
   // }}}
 
-  // {{{ std::string get_parameter_string(const int verbosity)
-  std::string get_parameter_string(const int verbosity)
+  // {{{ const std::string & get_parameter_string(const int verbosity)
+  const std::string & get_parameter_string(const int verbosity)
   {
     std::stringstream output;
 
@@ -965,7 +965,8 @@ public:
     if (header_printed)
       output   << std::endl;
 
-    return output.str();
+    _param_string = output.str();
+    return _param_string;
   }
   // }}}
 

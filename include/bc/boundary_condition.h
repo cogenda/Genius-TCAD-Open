@@ -37,6 +37,7 @@
 #include "external_circuit.h"
 #include "petscvec.h"
 #include "petscmat.h"
+#include "solver_specify.h"
 #include "enum_region.h"
 #include "enum_bc.h"
 
@@ -69,7 +70,12 @@ extern std::string BC_enum_to_string(BCType);
 /**
  * @return the BCType of an interface boundary by two subdomain material type
  */
-extern BCType determine_bc_by_subdomain(const std::string & mat1, const std::string mat2, bool pisces_compatible_mode=false );
+extern BCType determine_bc_by_subdomain(const std::string & mat1, const std::string & mat2, bool pisces_compatible_mode=false );
+
+/**
+ * @return true when BCType is consistent with two subdomain material type
+ */
+extern bool consistent_bc_by_subdomain(const std::string & mat1, const std::string & mat2, BCType type, bool pisces_compatible_mode=false );
 
 
 
@@ -311,12 +317,12 @@ public:
   /**
    * @return true if boundary node associated with a region with specified SimulationRegionType
    */
-  bool has_associated_region(const Node * n, SimulationRegionType rt) const
-  {
-    typedef std::map<const Node *, std::multimap<SimulationRegionType, std::pair<SimulationRegion *, FVM_Node *> > >::const_iterator It;
-    It it = _bd_fvm_nodes.find(n);
-    return it->second.find(rt)!=it->second.end();
-  }
+  bool has_associated_region(const Node * n, SimulationRegionType rt) const;
+
+  /**
+   * @return the region except _bc_regions by specified SimulationRegionType
+   */
+  std::vector<SimulationRegion *>  extra_regions(const Node * n) const;
 
   /**
    * find the FVM_Node by Node and its region type. the region type should be unique in this multimap!
@@ -456,16 +462,6 @@ public:
    */
   virtual PetscScalar & z_width()
   { return _z_width;}
-
-  /**
-   * @return true iff this boundary is an electrode
-   */
-  virtual bool is_electrode() const=0;
-
-  /**
-   * @return true iff this boundary has a current flow
-   */
-  virtual bool has_current_flow() const=0;
 
 
   /**
@@ -762,6 +758,16 @@ public:
    * @return the writable pointer of External Circuit
    */
   ExternalCircuit * ext_circuit()  { return  _ext_circuit; }
+
+  /**
+   * @return true when it has external circuit
+   */
+  virtual bool is_electrode()  const  {return ext_circuit()!=NULL;}
+
+  /**
+   * @return true iff this boundary has a current flow
+   */
+  virtual bool has_current_flow() const=0;
 
   /**
    * set link to spice flag
@@ -1608,6 +1614,7 @@ public:
   { this->EBM3_Jacobian(x, jac, add_value_flag); }
 
 
+
   //////////////////////////////////////////////////////////////////////////////////
   //--------------Matrix and RHS Vector evaluate for DDM AC Solver----------------//
   //////////////////////////////////////////////////////////////////////////////////
@@ -1866,6 +1873,7 @@ public:
    * @note each derived region should override it
    */
   virtual void LinearPoissin_RHS(Vec b, InsertMode &) {}
+
 }
 ;
 

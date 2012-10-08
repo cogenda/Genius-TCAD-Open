@@ -85,6 +85,11 @@ public:
   Sphere (const Point& c, const Real r);
 
   /**
+   * Constructs a sphere of radius r centered at c.
+   */
+  Sphere (const std::pair<Point, Real> & );
+
+  /**
    * Constructs a sphere by 4 points.
    */
   Sphere (const Point& a, const Point& b, const Point& c, const Point& d);
@@ -134,6 +139,11 @@ public:
    * @returns the closest point on the surface to point p.
    */
   Point closest_point (const Point& p) const;
+
+  /**
+   * @returns the first intersect point on the surface to ray (p, r).
+   */
+  bool intersect_point (const Point& p, const Point &r, Real &t1, Real &t2) const;
 
   /**
    * @returns a unit vector normal to the surface at

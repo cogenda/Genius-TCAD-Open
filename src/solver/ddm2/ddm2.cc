@@ -809,7 +809,12 @@ void DDM2Solver::error_norm()
       if( offset != invalid_uint )
       {
         potential_norm += xx[offset]*xx[offset];
-        electrode_norm += ff[offset]*ff[offset];
+
+        PetscScalar scaling = 1.0;
+        if(bc->is_electrode())
+          scaling = bc->ext_circuit()->mna_scaling(SolverSpecify::dt);
+
+        electrode_norm += scaling*ff[offset]*scaling*ff[offset];
       }
     }
 

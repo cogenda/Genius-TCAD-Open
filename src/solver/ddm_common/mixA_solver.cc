@@ -63,6 +63,7 @@ int MixASolverBase::create_solver()
   return FVM_NonlinearSolver::create_solver();
 }
 
+
 int MixASolverBase::destroy_solver()
 {
 
@@ -96,6 +97,7 @@ int MixASolverBase::pre_solve_process(bool load_solution)
 
 void MixASolverBase::link_electrode_to_spice_node()
 {
+  _circuit->clear_electrode();
   for(unsigned int n=0; n<_system.get_bcs()->n_bcs(); ++n)
   {
     BoundaryCondition * bc = _system.get_bcs()->get_bc(n);
@@ -413,30 +415,6 @@ void MixASolverBase::dump_spice_matrix_petsc(const std::string &file) const
 }
 
 
-void MixASolverBase::ground_spice_0_node(Vec f,InsertMode &add_value_flag)
-{
-  // since we will use INSERT_VALUES operat, check the vec state.
-  if( (add_value_flag != INSERT_VALUES) && (add_value_flag != NOT_SET_VALUES) )
-  {
-    VecAssemblyBegin(f);
-    VecAssemblyEnd(f);
-  }
-
-  if(Genius::is_last_processor())
-  {
-    PetscScalar residual = _circuit->rhs_old(0);
-    VecSetValue(f, _circuit->global_offset_f(0), residual, INSERT_VALUES);
-  }
-
-  add_value_flag = INSERT_VALUES;
-}
-
-
-void MixASolverBase::ground_spice_0_node(Mat *jac)
-{
-  PetscInt _0_row = _circuit->global_offset_f(0);
-  PetscUtils::MatZeroRows(*jac, 1, &_0_row, 1.0);
-}
 
 
 
@@ -734,6 +712,9 @@ int MixASolverBase::solve_dcop(bool tran_op)
     this->post_solve_process();
   }
 
+  print_spice_node();
+
+  SolverSpecify::tran_histroy = false;
 
   return 0;
 }
@@ -1098,6 +1079,9 @@ int MixASolverBase::solve_dcsweep()
     VecDestroy(PetscDestroyObject(xs3));
   }
 
+
+  SolverSpecify::tran_histroy = false;
+
   return 0;
 }
 
@@ -1395,13 +1379,15 @@ int MixASolverBase::solve_transient()
   while(SolverSpecify::clock < SolverSpecify::TStop+0.5*SolverSpecify::dt);
 
 
-end:
   // free aux vectors
   VecDestroy(PetscDestroyObject(x_n));
   VecDestroy(PetscDestroyObject(x_n1));
   VecDestroy(PetscDestroyObject(x_n2));
   VecDestroy(PetscDestroyObject(xp));
   VecDestroy(PetscDestroyObject(LTE));
+
+
+  SolverSpecify::tran_histroy = true;
 
   return 0;
 }

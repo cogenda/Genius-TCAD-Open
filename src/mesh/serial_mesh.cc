@@ -312,10 +312,94 @@ void SerialMesh::delete_node(Node* n)
 
 
 
-
-static bool less_than( const Node * n1, const Node * n2 )
+void SerialMesh::reorder_elems()
 {
-  return n1->id() < n2->id();
+  START_LOG("reorder_elems()", "Mesh");
+
+  // do it only on serial mesh
+  assert(_is_serial);
+
+  {
+    const Elem * elem_begin = _elements[0];
+    for(unsigned int n=0; n<_elements.size(); ++n)
+      if( _elements[n]->centroid().all_less(elem_begin->centroid()) )
+        elem_begin = _elements[n];
+
+    // the visited flag array
+    std::vector<bool> visit_flag(n_elem(), false);
+    unsigned int new_index = 0;
+    // a queue for Breadth-First Search
+    std::queue<const Elem *> Q;
+    std::vector<unsigned int> new_order(n_elem(), invalid_uint);
+
+    // do Breadth-First Search
+    // begin at this node.
+    visit_flag[elem_begin->id()] = true;
+    Q.push( elem_begin );
+
+    while(!Q.empty())
+    {
+      const Elem * current = Q.front();
+      Q.pop();
+      new_order[current->id()] = new_index++;
+
+      // here just use a simple neighbor search method.
+      // the neighbor is in arbitrary ordered.
+      // however, one may use other nodal reordering
+      // i.e. sort neighbor nodes by Degree of the neighboring nodes,
+      // Physical distance of the neighboring nodes to current node
+      // or even the solution based sort
+      for(unsigned int e=0; e<current->n_neighbors(); ++e)
+      {
+        const Elem * neighbor = current->neighbor(e);
+        if(neighbor && !visit_flag[neighbor->id()] )
+        {
+          Q.push(neighbor);
+          visit_flag[neighbor->id()] = true;
+        }
+      }
+    }
+
+    // ok, assign ordered index to each elem
+    for(unsigned int n=0; n<_elements.size(); ++n)
+      _elements[n]->set_id () = new_order[_elements[n]->id()];
+
+    // sort the elems by new ID
+    DofObject::Less less;
+    std::sort( _elements.begin(), _elements.end(), less );
+  }
+
+
+  // also sort nodes
+  {
+    std::vector<bool> visit_flag(n_nodes(), false);
+    std::vector<unsigned int> new_order(n_nodes(), invalid_uint);
+    unsigned int new_index = 0;
+    for(unsigned int n=0; n<_elements.size(); ++n)
+    {
+      const Elem * elem = _elements[n];
+      for( unsigned int v=0; v<elem->n_nodes(); ++v)
+      {
+        const Node * node = elem->get_node(v);
+
+        if( !visit_flag[node->id()] )
+        {
+          new_order[node->id()] = new_index++;
+          visit_flag[node->id()] = true;
+        }
+      }
+    }
+
+    // ok, assign ordered index to each node
+    for (unsigned int n=0; n<_nodes.size(); ++n)
+      _nodes[n]->set_id() = new_order[_nodes[n]->id()];
+
+    // sort the nodes by new ID
+    DofObject::Less less;
+    std::sort( _nodes.begin(), _nodes.end(), less );
+  }
+
+  STOP_LOG("reorder_elems()", "Mesh");
 }
 
 
@@ -340,10 +424,7 @@ void SerialMesh::reorder_nodes()
   node_iterator start_node = nodes_begin();
 
   for (node_it  = nodes_begin() ; node_it != node_end; ++node_it)
-    if( (*(*node_it))(0) < (*(*start_node))(0) &&
-        (*(*node_it))(1) < (*(*start_node))(1) &&
-        (*(*node_it))(2) < (*(*start_node))(2)
-      )
+    if( (*(*node_it)).all_less(*(*start_node)))
       start_node = node_it;
 
 
@@ -388,7 +469,8 @@ void SerialMesh::reorder_nodes()
     (*node_it)->set_id () = new_order[(*node_it)->id()];
 
   // sort the nodes by new ID
-  std::sort( _nodes.begin(), _nodes.end(), less_than );
+  DofObject::Less less;
+  std::sort( _nodes.begin(), _nodes.end(), less );
 
   STOP_LOG("reorder_nodes()", "Mesh");
 }
@@ -460,7 +542,7 @@ AutoPtr<Elem> SerialMesh::elem_clone (const unsigned int i) const
   unsigned int cnt = 0;
 
   const ElemType elem_type    = static_cast<ElemType>(conn[cnt++]);
-  AutoPtr<Elem> clone = Elem::build_clone(elem_type);
+  AutoPtr<Elem> clone = Elem::build_clone(elem_type);//build ElemClone
   //Elem * clone = new ElemClone<Elem>();
   clone->processor_id() = conn[cnt++];
   clone->subdomain_id() = conn[cnt++];
@@ -476,7 +558,7 @@ AutoPtr<Elem> SerialMesh::elem_clone (const unsigned int i) const
   clone->set_p_refinement_flag(p_refinement_flag);
   clone->set_p_level(p_level);
 #endif
-  // Assign the nodes
+  // Assign the nodes, these nodes will be deleted by ElemClone
   for (unsigned int n=0; n<clone->n_nodes(); n++)
   {
     clone->set_node(n) = new Node(pts[3*n+0], pts[3*n+1], pts[3*n+2], conn[cnt++]);
@@ -585,29 +667,76 @@ void SerialMesh::renumber_nodes_and_elements ()
   assert (next_free_elem == _elements.size());
   assert (next_free_node == _nodes.size());
 
+  // c++0x shrink_to_fit
+  std::vector< Elem * >(_elements).swap(_elements);
+  std::vector< Node * >(_nodes).swap(_nodes);
+
   STOP_LOG("renumber_nodes_and_elem()", "Mesh");
 }
 
 
-void SerialMesh::delete_remote_elements()
+void SerialMesh::delete_remote_elements(bool volume_elem, bool surface_elem)
 {
   if(Genius::n_processors() == 1) return;
 
+  std::set<const Elem *> deleted_elems;
   for(unsigned int n=0; n<_elements.size(); ++n)
   {
-    if( _elements[n] && !_elements[n]->on_local() )
+    Elem * elem = _elements[n];
+    if(!elem || elem->on_local()) continue;
+
+    bool be = boundary_info->is_boundary_elem(elem);
+    if( (volume_elem && !be) || (surface_elem && be) )
     {
-      delete_elem(_elements[n]);
+      deleted_elems.insert(elem);
+      //will also delete elem in boundary_info
+      delete_elem(elem);
+    }
+  }
+
+  //reset neighbor info, set remote neighbor pointer to NULL
+  for(unsigned int n=0; n<_elements.size(); ++n)
+  {
+    Elem * elem = _elements[n];
+    if( elem )
+    {
+      for (unsigned int ms=0; ms<elem->n_neighbors(); ms++)
+      {
+        if (elem->neighbor(ms) && deleted_elems.find(elem->neighbor(ms))!=deleted_elems.end())
+        {
+          elem->set_neighbor(ms, NULL);
+        }
+      }
+    }
+  }
+
+  deleted_elems.clear();
+
+  //statistic nodes
+  std::set<const Node *> remaining_nodes;
+  for(unsigned int n=0; n<_elements.size(); ++n)
+  {
+    Elem * elem = _elements[n];
+    if( elem )
+    {
+      for (unsigned int md=0; md<elem->n_nodes(); md++)
+      {
+        remaining_nodes.insert(elem->get_node(md));
+      }
     }
   }
 
   for(unsigned int n=0; n<_nodes.size(); ++n)
   {
-    if( _nodes[n] && !_nodes[n]->on_local() )
+    Node * node = _nodes[n];
+    if( node && remaining_nodes.find(node) == remaining_nodes.end() )
     {
-      delete_node(_nodes[n]);
+      // will also delete node in boundary_info
+      delete_node(node);
     }
   }
+
+  remaining_nodes.clear();
 
   _is_serial = false;
 
@@ -753,6 +882,63 @@ void SerialMesh::pack_boundary_faces (std::vector<unsigned int> & el_id,
 }
 
 
+void SerialMesh::pack_boundary_egeds(std::vector< std::pair<unsigned int, unsigned int> > &edges) const
+{
+  parallel_only();
+
+  std::vector<unsigned int> el_id;
+  std::vector<unsigned short int> side_id;
+  std::vector<short int> bc_id;
+  this->boundary_info->build_on_processor_side_list (el_id, side_id, bc_id);
+
+  std::set< std::pair<unsigned int, unsigned int> >  edges_set;
+  for (unsigned int n=0; n<el_id.size(); ++n)
+  {
+    const Elem * elem = _elements[el_id[n]];
+    if(elem && elem->processor_id() == Genius::processor_id())
+    {
+      AutoPtr<Elem> face = elem->build_side(side_id[n], false);
+
+      // is an edge
+      if(face->dim() == 1)
+      {
+        unsigned int node1_id = face->get_node(0)->id();
+        unsigned int node2_id = face->get_node(1)->id();
+        if(node1_id >  node2_id ) std::swap(node1_id, node2_id);
+        edges_set.insert( std::make_pair(node1_id, node2_id) );
+      }
+      else
+      {
+        for(unsigned int e=0; e<face->n_edges(); ++e)
+        {
+          std::pair<unsigned int, unsigned int> edge_nodes;
+          face->nodes_on_edge(e, edge_nodes);
+          unsigned int node1_id = face->get_node(edge_nodes.first)->id();
+          unsigned int node2_id = face->get_node(edge_nodes.second)->id();
+          if(node1_id >  node2_id ) std::swap(node1_id, node2_id);
+          edges_set.insert( std::make_pair(node1_id, node2_id) );
+        }
+      }
+    }
+  }
+
+  std::vector<unsigned int> buffer;
+  std::set< std::pair<unsigned int, unsigned int> >::iterator it=  edges_set.begin();
+  for(; it!=edges_set.end(); ++it)
+  {
+    buffer.push_back(it->first);
+    buffer.push_back(it->second);
+  }
+  Parallel::allgather(buffer);
+
+  for(unsigned int n=0; n<buffer.size();)
+    edges_set.insert( std::make_pair(buffer[n++], buffer[n++]) );
+
+  for(it=edges_set.begin(); it!=edges_set.end(); ++it)
+  {
+    edges.push_back(*it);
+  }
+}
 
 void SerialMesh::pack_boundary_nodes (std::vector<unsigned int> & node_id,
                                       std::vector<short int> & bc_id) const
@@ -946,6 +1132,7 @@ void SerialMesh::broadcast (unsigned int root_id)
     }
   }
   _is_serial = true;
+
 }
 
 
@@ -1154,4 +1341,29 @@ void SerialMesh::subdomain_graph(std::vector<std::vector<unsigned int> >& adjncy
 }
 
 
+
+size_t SerialMesh::memory_size() const
+{
+  size_t counter = sizeof(*this);
+
+  counter += _elements.capacity()*sizeof(Elem *);
+  for(unsigned int n=0; n<_elements.size(); ++n)
+  {
+    Elem * elem = _elements[n];
+    if(!elem) continue;
+
+    counter += Elem::memory_size(elem->type());
+  }
+
+  counter += _nodes.capacity()*sizeof(Node *);
+  for(unsigned int n=0; n<_nodes.size(); ++n)
+  {
+    Node * node = _nodes[n];
+    if(!node) continue;
+
+    counter += sizeof(Node);
+  }
+
+  return counter;
+}
 

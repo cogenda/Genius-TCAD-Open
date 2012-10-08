@@ -526,15 +526,15 @@ void HeteroInterfaceBC::EBM3_Jacobian_Reserve ( Mat *jac, InsertMode &add_value_
               FVM_Node::fvm_neighbor_node_iterator  nb_it = fvm_nodes[i]->neighbor_node_begin();
               for(; nb_it != fvm_nodes[i]->neighbor_node_end(); ++nb_it)
               {
-                cols.push_back((*nb_it).second->global_offset()+0);
-                cols.push_back((*nb_it).second->global_offset()+1);
-                cols.push_back((*nb_it).second->global_offset()+2);
+                cols.push_back((*nb_it).first->global_offset()+0);
+                cols.push_back((*nb_it).first->global_offset()+1);
+                cols.push_back((*nb_it).first->global_offset()+2);
                 if ( regions[i]->get_advanced_model()->enable_Tl() )
-                  cols.push_back((*nb_it).second->global_offset()+regions[i]->ebm_variable_offset(TEMPERATURE));
+                  cols.push_back((*nb_it).first->global_offset()+regions[i]->ebm_variable_offset(TEMPERATURE));
                 if ( regions[i]->get_advanced_model()->enable_Tn() )
-                  cols.push_back((*nb_it).second->global_offset()+regions[i]->ebm_variable_offset(E_TEMP));
+                  cols.push_back((*nb_it).first->global_offset()+regions[i]->ebm_variable_offset(E_TEMP));
                 if ( regions[i]->get_advanced_model()->enable_Tp() )
-                  cols.push_back((*nb_it).second->global_offset()+regions[i]->ebm_variable_offset(H_TEMP));
+                  cols.push_back((*nb_it).first->global_offset()+regions[i]->ebm_variable_offset(H_TEMP));
               }
 
               std::vector<PetscScalar> value(rows.size()*cols.size(),0);
@@ -578,9 +578,9 @@ void HeteroInterfaceBC::EBM3_Jacobian_Reserve ( Mat *jac, InsertMode &add_value_
               FVM_Node::fvm_neighbor_node_iterator  nb_it = fvm_nodes[i]->neighbor_node_begin();
               for(; nb_it != fvm_nodes[i]->neighbor_node_end(); ++nb_it)
               {
-                cols.push_back((*nb_it).second->global_offset()+0);
+                cols.push_back((*nb_it).first->global_offset()+0);
                 if ( region->get_advanced_model()->enable_Tl() )
-                  cols.push_back((*nb_it).second->global_offset()+1);
+                  cols.push_back((*nb_it).first->global_offset()+1);
               }
 
               std::vector<PetscScalar> value(rows.size()*cols.size(),0);
@@ -932,8 +932,8 @@ void HeteroInterfaceBC::EBM3_Jacobian ( PetscScalar * x, Mat *jac, InsertMode &a
                 // electrons are leaving region 0
                 AutoDScalar pm = mt0->band->EffecElecMass ( T ) /mt->band->EffecElecMass ( T );
                 AutoDScalar Jn = 2*( mt0->band->ThermalVn ( T ) *n0 - pm*mt->band->ThermalVn ( T ) *n*exp ( - ( Ec0-Ec ) / ( kb*T ) ) ) *cv_boundary;
-                MatSetValues ( *jac, 1, &rows[n_node_var_0+node_n_offset], cols.size(), &cols[0], Jn.getADValue(), ADD_VALUES );
-                MatSetValues ( *jac, 1, &rows[node_n_offset], cols.size(), &cols[0], (-Jn).getADValue(), ADD_VALUES );
+                MatSetValues ( *jac, 1, &rows[n_node_var_0+node_n_offset], cols.size(), &cols[0], Jn.getADValue(), ADD_VALUES );//me
+                MatSetValues ( *jac, 1, &rows[node_n_offset], cols.size(), &cols[0], (-Jn).getADValue(), ADD_VALUES );//fvm_node0
 
                 AutoDScalar Sn = -2*e* ( mt0->band->ThermalVn ( T ) *n0*2.5*kb*Tn0 - pm*mt->band->ThermalVn ( T ) *n*exp ( - ( Ec0-Ec ) / ( kb*T ) ) *2.5*kb*Tn ) *cv_boundary;
                 // electron energy flux
@@ -957,6 +957,7 @@ void HeteroInterfaceBC::EBM3_Jacobian ( PetscScalar * x, Mat *jac, InsertMode &a
                 if ( regions[0]->get_advanced_model()->enable_Tn() )
                   MatSetValues ( *jac, 1, &rows[node_Tn_offset], cols.size(), &cols[0], ( -Sn ).getADValue(), ADD_VALUES );
               }
+
 
 
               if ( Ev0 < Ev )
@@ -989,6 +990,7 @@ void HeteroInterfaceBC::EBM3_Jacobian ( PetscScalar * x, Mat *jac, InsertMode &a
                 if ( regions[0]->get_advanced_model()->enable_Tp() )
                   MatSetValues ( *jac, 1, &rows[node_Tp_offset], cols.size(), &cols[0], ( -Sp ).getADValue(), ADD_VALUES );
               }
+
 
               break;
             }

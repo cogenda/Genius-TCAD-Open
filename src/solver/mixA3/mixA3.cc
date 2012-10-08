@@ -1018,7 +1018,6 @@ void MixA3Solver::build_petsc_sens_residual(Vec x, Vec r)
   // restore array back to Vec
   VecRestoreArray(lx, &lxx);
 
-  this->ground_spice_0_node(r, add_value_flag);
 
   // assembly the function Vec
   VecAssemblyBegin(r);
@@ -1151,7 +1150,6 @@ void MixA3Solver::build_petsc_sens_jacobian(Vec x, Mat *, Mat *)
   MatAssemblyBegin(J, MAT_FINAL_ASSEMBLY);
   MatAssemblyEnd  (J, MAT_FINAL_ASSEMBLY);
 
-  this->ground_spice_0_node(&J);
 
   //scaling the matrix
   MatDiagonalScale(J, L, PETSC_NULL);

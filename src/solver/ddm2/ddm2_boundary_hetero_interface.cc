@@ -378,10 +378,10 @@ void HeteroInterfaceBC::DDM2_Jacobian_Reserve(Mat *jac, InsertMode &add_value_fl
               FVM_Node::fvm_neighbor_node_iterator  nb_it = fvm_nodes[i]->neighbor_node_begin();
               for(; nb_it != fvm_nodes[i]->neighbor_node_end(); ++nb_it)
               {
-                cols.push_back((*nb_it).second->global_offset()+0);
-                cols.push_back((*nb_it).second->global_offset()+1);
-                cols.push_back((*nb_it).second->global_offset()+2);
-                cols.push_back((*nb_it).second->global_offset()+3);
+                cols.push_back((*nb_it).first->global_offset()+0);
+                cols.push_back((*nb_it).first->global_offset()+1);
+                cols.push_back((*nb_it).first->global_offset()+2);
+                cols.push_back((*nb_it).first->global_offset()+3);
               }
 
               std::vector<PetscScalar> value(rows.size()*cols.size(),0);
@@ -407,8 +407,8 @@ void HeteroInterfaceBC::DDM2_Jacobian_Reserve(Mat *jac, InsertMode &add_value_fl
               FVM_Node::fvm_neighbor_node_iterator  nb_it = fvm_nodes[i]->neighbor_node_begin();
               for(; nb_it != fvm_nodes[i]->neighbor_node_end(); ++nb_it)
               {
-                cols.push_back((*nb_it).second->global_offset()+0);
-                cols.push_back((*nb_it).second->global_offset()+1);
+                cols.push_back((*nb_it).first->global_offset()+0);
+                cols.push_back((*nb_it).first->global_offset()+1);
               }
 
               std::vector<PetscScalar> value(rows.size()*cols.size(),0);

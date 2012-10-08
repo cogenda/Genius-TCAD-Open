@@ -226,6 +226,12 @@ void MoleAnalytic::set_mole_function_linear(const Parser::Card & c)
 {
   std::string region = c.get_string("region", "");
 
+  if( _system.region(region) == NULL )
+  {
+    MESSAGE<<"ERROR at " << c.get_fileline() <<" MOLE: Region "<< region <<" does not exist."<<std::endl; RECORD();
+    genius_error();
+  }
+
   std::pair<Point, Point> bbox = _system.region(region)->boundingbox();
 
   // get the bound box

@@ -12,6 +12,7 @@ class HINSTANCE__; // Forward or never
 typedef HINSTANCE__* HINSTANCE;
 #endif
 
+class MonotCubicInterpolator;
 
 /**
  * basic class of Waveform
@@ -414,6 +415,38 @@ public:
     return Waveform_Shell(t/scale_t);
   }
 
+};
+
+
+/**
+ * wave form from file
+ */
+class WaveformFile: public Waveform
+{
+private:
+
+  std::vector<double> _time;
+
+  std::vector<double> _wave;
+
+  MonotCubicInterpolator * _int;
+
+public:
+
+  /**
+   * constructor, read the file
+   */
+  WaveformFile(const std::string & s, const std::string & file);
+
+  /**
+   * destructor
+   */
+  ~WaveformFile();
+
+  /**
+   * call Waveform_Shell to get the user provide value
+   */
+  double waveform(double t);
 };
 
 

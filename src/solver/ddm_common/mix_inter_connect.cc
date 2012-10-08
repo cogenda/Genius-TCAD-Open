@@ -41,6 +41,7 @@ void ElectrodeInterConnectBC::mix_inter_connect_fill_value(Vec x, Vec L)
 
 void ElectrodeInterConnectBC::mix_inter_connect_function(PetscScalar *x , Vec f, InsertMode &add_value_flag)
 {
+
   // Gate boundary condition is processed here
   SPICE_CKT * ckt = this->system().get_circuit();
   unsigned int spice_node_index = ckt->get_spice_node_by_bc(this);
@@ -66,18 +67,20 @@ void ElectrodeInterConnectBC::mix_inter_connect_function(PetscScalar *x , Vec f,
     {
       const BoundaryCondition * electrode = electrodes[n];
       PetscScalar Ve = x[electrode->local_offset()];
-      PetscScalar r  = electrode->ext_circuit()->R();
+      PetscScalar r  = electrode->ext_circuit()->inter_connect_resistance();
       I += (Vic-Ve)/r;
     }
 
     VecSetValue(f, this->global_offset(), I/A, ADD_VALUES);
   }
+
 }
 
 
 
 void ElectrodeInterConnectBC::mix_inter_connect_reserve(Mat *jac, InsertMode &add_value_flag)
 {
+
   // since we will use ADD_VALUES operat, check the matrix state.
   if( (add_value_flag != ADD_VALUES) && (add_value_flag != NOT_SET_VALUES) )
   {
@@ -107,7 +110,8 @@ void ElectrodeInterConnectBC::mix_inter_connect_reserve(Mat *jac, InsertMode &ad
 
 void ElectrodeInterConnectBC::mix_inter_connect_jacobian(PetscScalar *x , Mat *jac, InsertMode &add_value_flag)
 {
-// since we will use ADD_VALUES operat, check the matrix state.
+
+  // since we will use ADD_VALUES operat, check the matrix state.
   if( (add_value_flag != ADD_VALUES) && (add_value_flag != NOT_SET_VALUES) )
   {
     MatAssemblyBegin(*jac, MAT_FLUSH_ASSEMBLY);
@@ -122,7 +126,7 @@ void ElectrodeInterConnectBC::mix_inter_connect_jacobian(PetscScalar *x , Mat *j
     for(unsigned int n=0; n<electrodes.size(); ++n)
     {
       const BoundaryCondition * electrode = electrodes[n];
-      PetscScalar r  = electrode->ext_circuit()->R();
+      PetscScalar r  = electrode->ext_circuit()->inter_connect_resistance();
       //I += (Vic-Ve)/r/A;
       MatSetValue(*jac, this->global_offset(), this->global_offset(), 1.0/r/A, ADD_VALUES);
       MatSetValue(*jac, this->global_offset(), electrode->global_offset(), -1.0/r/A, ADD_VALUES);

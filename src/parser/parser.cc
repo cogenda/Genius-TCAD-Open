@@ -21,12 +21,37 @@
 
 //  $Id: parser.cc,v 1.15 2008/07/09 05:58:16 gdiso Exp $
 
-#include <stdio.h>
-#include <stdio.h>
-#include <string.h>
+#include <cstdio>
+#include <cstring>
 #include "config.h"
 #include "parser.h"
 #include "log.h"
+
+
+namespace Parser
+{
+
+int InputParser::read_card_file(const char *filename)
+{
+  InputYY::yyin = fopen(filename, "r");
+
+  if( InputYY::yyin == NULL )
+    return 1;
+
+  if( InputYY::yyparse((void*)this) )
+    return 1;
+
+  fclose(InputYY::yyin);
+
+  std::list<Card>::iterator it;
+  for( it=_card_list.begin(); it!=_card_list.end(); it++ )
+  {
+    _pattern.check_detail(*it);
+  }
+  return 0;
+}
+
+}
 
 // avoid isatty() problem of Bison 2.3
 #define YY_NEVER_INTERACTIVE 1

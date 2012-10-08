@@ -207,9 +207,9 @@ namespace Material
   {
     genius_assert(material_name_to_material_type.size());
 
-    if ( material_name_to_material_type[mat_name] == Semiconductor                  ||
-         material_name_to_material_type[mat_name] == SingleCompoundSemiconductor    ||
-         material_name_to_material_type[mat_name] == ComplexCompoundSemiconductor
+    if ( material_name_to_material_type.find(mat_name)->second == Semiconductor                  ||
+         material_name_to_material_type.find(mat_name)->second == SingleCompoundSemiconductor    ||
+         material_name_to_material_type.find(mat_name)->second == ComplexCompoundSemiconductor
        )
       return true;
 
@@ -222,7 +222,7 @@ namespace Material
   {
     genius_assert(material_name_to_material_type.size());
 
-    if ( material_name_to_material_type[mat_name] == SingleCompoundSemiconductor )
+    if ( material_name_to_material_type.find(mat_name)->second == SingleCompoundSemiconductor )
       return true;
 
     return false;
@@ -233,7 +233,7 @@ namespace Material
   {
     genius_assert(material_name_to_material_type.size());
 
-    if ( material_name_to_material_type[mat_name] == ComplexCompoundSemiconductor )
+    if ( material_name_to_material_type.find(mat_name)->second == ComplexCompoundSemiconductor )
       return true;
 
     return false;
@@ -244,7 +244,7 @@ namespace Material
   {
     genius_assert(material_name_to_material_type.size());
 
-    if ( material_name_to_material_type[mat_name] == Insulator )
+    if ( material_name_to_material_type.find(mat_name)->second == Insulator )
       return true;
 
     return false;
@@ -256,7 +256,7 @@ namespace Material
   {
     genius_assert(material_name_to_material_type.size());
 
-    if ( material_name_to_material_type[mat_name] == Conductor )
+    if ( material_name_to_material_type.find(mat_name)->second == Conductor )
       return true;
 
     return false;
@@ -267,7 +267,7 @@ namespace Material
   {
     genius_assert(material_name_to_material_type.size());
 
-    if ( material_name_to_material_type[mat_name] == Resistance )
+    if ( material_name_to_material_type.find(mat_name)->second == Resistance )
       return true;
 
     return false;
@@ -278,7 +278,7 @@ namespace Material
   {
     genius_assert(material_name_to_material_type.size());
 
-    if ( material_name_to_material_type[mat_name] == Vacuum )
+    if ( material_name_to_material_type.find(mat_name)->second == Vacuum )
       return true;
 
     return false;
@@ -290,7 +290,7 @@ namespace Material
   {
     genius_assert(material_name_to_material_type.size());
 
-    if ( material_name_to_material_type[mat_name] == PML )
+    if ( material_name_to_material_type.find(mat_name)->second == PML )
       return true;
 
     return false;
@@ -301,7 +301,9 @@ namespace Material
   MaterialType material_type(const std::string & mat_name)
   {
     genius_assert(material_name_to_material_type.size());
-    return material_name_to_material_type[mat_name];
+    if(material_name_to_material_type.find(mat_name) != material_name_to_material_type.end())
+      return material_name_to_material_type.find(mat_name)->second;
+    return INVALID_MATERIAL_TYPE;
   }
 
 

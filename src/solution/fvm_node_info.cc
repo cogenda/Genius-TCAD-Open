@@ -21,6 +21,8 @@
 
 //  $Id: fvm_node_info.cc,v 1.8 2008/07/09 05:58:16 gdiso Exp $
 
+#include <algorithm>
+
 #include "elem.h"
 #include "fvm_node_info.h"
 #include "boundary_info.h"
@@ -58,6 +60,54 @@ FVM_Node::~FVM_Node()
 }
 
 
+void FVM_Node::add_elem_it_belongs(const Elem * el, unsigned int n)
+{
+  _elem_has_this_node.push_back( std::pair<const Elem *,unsigned int>(el,n) );
+}
+
+
+void FVM_Node::add_fvm_node_neighbor(FVM_Node *nb, Real s)
+{
+  for(unsigned int n=0; n<_fvm_node_neighbor.size(); ++n)
+  {
+    if( _fvm_node_neighbor[n].first->root_node() == nb->root_node() )
+    {
+      _fvm_node_neighbor[n].second.first  += s;
+      _fvm_node_neighbor[n].second.second += std::abs(s);
+      return;
+    }
+  }
+
+  _fvm_node_neighbor.push_back( std::make_pair(nb, std::make_pair(s, std::abs(s))) );
+}
+
+
+void FVM_Node::set_fvm_node_neighbor(FVM_Node *nb, Real s, Real abs)
+{
+  for(unsigned int n=0; n<_fvm_node_neighbor.size(); ++n)
+  {
+    if( _fvm_node_neighbor[n].first->root_node() == nb->root_node() )
+    {
+      _fvm_node_neighbor[n].second.first  = s;
+      _fvm_node_neighbor[n].second.second = abs;
+      return;
+    }
+  }
+
+  _fvm_node_neighbor.push_back( std::make_pair(nb, std::make_pair(s, abs)) );
+}
+
+
+void FVM_Node::set_ghost_node(FVM_Node * fn, unsigned int sub_id, Real area)
+{
+  if( _ghost_nodes == NULL)
+    _ghost_nodes = new std::map< FVM_Node *, std::pair<unsigned int, Real> >;
+
+  std::pair<unsigned int, Real> gf(sub_id,area);
+  _ghost_nodes->insert( std::pair< FVM_Node *, std::pair<unsigned int, Real> >(fn, gf) );
+}
+
+
 void FVM_Node::set_ghost_node_area(unsigned int sub_id, Real area)
 {
   // the sub_id of boundary face equal to this FVM_Node and _ghost_nodes are empty
@@ -81,32 +131,190 @@ void FVM_Node::set_ghost_node_area(unsigned int sub_id, Real area)
 }
 
 
+FVM_Node * FVM_Node::ghost_fvm_node(unsigned int i) const
+{
+  fvm_ghost_node_iterator  it = ghost_node_begin();
+  for(unsigned int l=0; l<i; ++i, ++it);
+  return (*it).first;
+}
+
+
+
+Real FVM_Node::cv_surface_area(const FVM_Node * neighbor) const
+{
+  unsigned int size = _fvm_node_neighbor.size();
+  if( size < 5 )
+  {
+    for(unsigned int n=0; n<size; ++n)
+      if(_fvm_node_neighbor[n].first == neighbor)
+        return _fvm_node_neighbor[n].second.first;
+  }
+  else
+  {
+    unsigned int left  = 0;
+    unsigned int right = size-1;
+    while(left <= right)
+    {
+      unsigned int middle = (left+right)/2;
+      if (neighbor < _fvm_node_neighbor[middle].first)
+        right = middle - 1;
+      else if (neighbor > _fvm_node_neighbor[middle].first)
+        left = middle + 1;
+      else
+        return _fvm_node_neighbor[middle].second.first;
+    }
+  }
+  return 0.0;
+}
+
 
 Real FVM_Node::total_cv_surface_area() const
 {
   Real total_surface_area = 0.0;
-  std::map< const Node *, Real >::const_iterator cv_it = _cv_surface_area.begin();
-  for(; cv_it != _cv_surface_area.end(); ++cv_it)
+  for(unsigned int n=0; n<_fvm_node_neighbor.size(); ++n)
   {
-    total_surface_area += cv_it->second;
+    total_surface_area += _fvm_node_neighbor[n].second.first;
   }
   return total_surface_area;
 }
 
 
+Real FVM_Node::cv_abs_surface_area(const FVM_Node * neighbor) const
+{
+  unsigned int size = _fvm_node_neighbor.size();
+  if( size < 5 )
+  {
+    for(unsigned int n=0; n<size; ++n)
+      if(_fvm_node_neighbor[n].first == neighbor)
+        return _fvm_node_neighbor[n].second.second;
+  }
+  else
+  {
+    unsigned int left  = 0;
+    unsigned int right = size-1;
+    while(left <= right)
+    {
+      unsigned int middle = (left+right)/2;
+      if (neighbor < _fvm_node_neighbor[middle].first)
+        right = middle - 1;
+      else if (neighbor > _fvm_node_neighbor[middle].first)
+        left = middle + 1;
+      else
+        return _fvm_node_neighbor[middle].second.second;
+    }
+  }
+  return 0.0;
+}
+
+
+Real FVM_Node::total_abs_cv_surface_area() const
+{
+  Real total_surface_area = 0.0;
+  for(unsigned int n=0; n<_fvm_node_neighbor.size(); ++n)
+  {
+    total_surface_area += _fvm_node_neighbor[n].second.second;
+  }
+  return total_surface_area;
+}
+
+
+bool FVM_Node::posotive_cv_surface_area_to_each_neighbor(bool fix)
+{
+  std::map<const Node *, Real> cv_surface_area_map;
+
+  for( unsigned int n=0; n<_fvm_node_neighbor.size(); ++n)
+  {
+    const Node * node = _fvm_node_neighbor[n].first->root_node();
+    Real  cv = _fvm_node_neighbor[n].second.first;
+    cv_surface_area_map[node] += cv;
+  }
+
+  if(_ghost_nodes)
+  {
+    std::map< FVM_Node *, std::pair<unsigned int, Real> >::const_iterator it = _ghost_nodes->begin();
+    for(; it != _ghost_nodes->end(); ++it)
+    {
+      const FVM_Node * ghost_fvm_node = it->first;
+      if(!ghost_fvm_node) continue;
+      for( unsigned int n=0; n<ghost_fvm_node->_fvm_node_neighbor.size(); ++n)
+      {
+        const Node * node = ghost_fvm_node->_fvm_node_neighbor[n].first->root_node();
+        Real  cv = ghost_fvm_node->_fvm_node_neighbor[n].second.first;
+        cv_surface_area_map[node] += cv;
+      }
+    }
+  }
+
+
+  bool positive = true;
+  std::map<const Node *, Real>::const_iterator it = cv_surface_area_map.begin();
+  for(; it != cv_surface_area_map.end(); ++it)
+    if( it->second < 0.0 ) positive = false;
+  if(positive) return true;
+
+  // force to positive
+  if(fix)
+  {
+    for( unsigned int n=0; n<_fvm_node_neighbor.size(); ++n)
+    {
+      const Node * node = _fvm_node_neighbor[n].first->root_node();
+      if( cv_surface_area_map[node] < 0.0 )
+      {
+        Real cv     = std::abs(_fvm_node_neighbor[n].second.first);
+        Real cv_abs = _fvm_node_neighbor[n].second.second;
+        // force to positive
+        _fvm_node_neighbor[n].second.first  = cv;
+        // also update my neighbor
+        FVM_Node * neighbor_fvm_node = _fvm_node_neighbor[n].first;
+        neighbor_fvm_node->set_fvm_node_neighbor(this, cv, cv_abs);
+      }
+    }
+
+    if(_ghost_nodes)
+    {
+      std::map< FVM_Node *, std::pair<unsigned int, Real> >::const_iterator it = _ghost_nodes->begin();
+      for(; it != _ghost_nodes->end(); ++it)
+      {
+        FVM_Node * ghost_fvm_node = it->first;
+        if(!ghost_fvm_node) continue;
+        for( unsigned int n=0; n<ghost_fvm_node->_fvm_node_neighbor.size(); ++n)
+        {
+          const Node * node = ghost_fvm_node->_fvm_node_neighbor[n].first->root_node();
+          if( cv_surface_area_map[node] < 0.0 )
+          {
+            Real cv     = std::abs(ghost_fvm_node->_fvm_node_neighbor[n].second.first);
+            Real cv_abs = ghost_fvm_node->_fvm_node_neighbor[n].second.second;
+            // force to positive
+            ghost_fvm_node->_fvm_node_neighbor[n].second.first  = cv;
+            // also update my neighbor
+            FVM_Node * neighbor_fvm_node = ghost_fvm_node->_fvm_node_neighbor[n].first;
+            neighbor_fvm_node->set_fvm_node_neighbor(ghost_fvm_node, cv, cv_abs);
+          }
+        }
+      }
+    }
+  }
+
+  return false;
+}
+
+
+
 void FVM_Node::truncate_cv_surface_area()
 {
-  std::map< const Node *, Real >::iterator cv_it = _cv_surface_area.begin();
-  for(; cv_it != _cv_surface_area.end(); ++cv_it)
+  for(unsigned int n=0; n<_fvm_node_neighbor.size(); ++n)
   {
-    if(cv_it->second < 0.0)
+    if(_fvm_node_neighbor[n].second.first < 0.0)
     {
-      Real cv = std::abs(cv_it->second);
+      Real cv     = std::abs(_fvm_node_neighbor[n].second.first);
+      Real cv_abs = _fvm_node_neighbor[n].second.second;
       // force to positive
-      cv_it->second = cv;
+      _fvm_node_neighbor[n].second.first  = cv;
+
       // also update my neighbor
-      FVM_Node * neighbor_fvm_node = _node_neighbor.find(cv_it->first)->second;
-      neighbor_fvm_node->_cv_surface_area.find(_node)->second = cv;
+      FVM_Node * neighbor_fvm_node = _fvm_node_neighbor[n].first;
+
+      neighbor_fvm_node->set_fvm_node_neighbor(this, cv, cv_abs);
     }
   }
 }
@@ -152,11 +360,9 @@ Real FVM_Node::laplace_unit() const
 {
   Real r = 0.0;
 
-  std::map< const Node *, Real >::const_iterator it = _cv_surface_area.begin();
-  for( ; it != _cv_surface_area.end();  ++it)
+  for(unsigned int n=0; n<_fvm_node_neighbor.size(); ++n)
   {
-    const Node * node = it->first;
-    r+= it->second/this->distance(node);
+    r+= _fvm_node_neighbor[n].second.first/this->distance(_fvm_node_neighbor[n].first);
   }
 
   return r/this->volume();
@@ -167,14 +373,21 @@ Real FVM_Node::sup_laplace_unit() const
 {
   Real r = 0.0;
 
-  std::map< const Node *, Real >::const_iterator it = _cv_surface_area.begin();
-  for( ; it != _cv_surface_area.end();  ++it)
+  for(unsigned int n=0; n<_fvm_node_neighbor.size(); ++n)
   {
-    const Node * node = it->first;
-    r+= std::abs(it->second)/this->distance(node);
+    r+= std::abs(_fvm_node_neighbor[n].second.second)/this->distance(_fvm_node_neighbor[n].first);
   }
 
   return r/this->volume();
+}
+
+
+unsigned int FVM_Node::n_pure_ghost_node() const
+{
+  // sun NULL ghost node
+  if( _ghost_nodes->find(NULL)!=_ghost_nodes->end() )
+    return _ghost_nodes->size() -1 ;
+  return _ghost_nodes->size();
 }
 
 
@@ -184,8 +397,8 @@ void FVM_Node::PDE_node_pattern(std::vector<std::pair<unsigned int, unsigned int
   if( elem_based==false )
   {
 
-    // the PDE node pattern in thie region. n_node_neighbors()+1 means "this" node is also considered.
-    v_region_nodes.push_back( std::pair<unsigned int, unsigned int>(subdomain_id (), n_node_neighbors()+1) );
+    // the PDE node pattern in thie region. fvm_node_neighbors()+1 means "this" node is also considered.
+    v_region_nodes.push_back( std::pair<unsigned int, unsigned int>(subdomain_id (), fvm_node_neighbors()+1) );
 
     // consider ghost nodes in other regions
     if( _ghost_nodes!=NULL && !_ghost_nodes->empty() )
@@ -193,7 +406,7 @@ void FVM_Node::PDE_node_pattern(std::vector<std::pair<unsigned int, unsigned int
       {
         FVM_Node *ghost_node = (*git).first;
         if(ghost_node)
-          v_region_nodes.push_back( std::pair<unsigned int, unsigned int>(ghost_node->subdomain_id (), ghost_node->n_node_neighbors()+1) );
+          v_region_nodes.push_back( std::pair<unsigned int, unsigned int>(ghost_node->subdomain_id (), ghost_node->fvm_node_neighbors()+1) );
       }
     return;
   }
@@ -259,13 +472,13 @@ void FVM_Node::PDE_node_pattern(std::vector<std::pair<unsigned int, unsigned int
   //only consider neighbor nodes, link this node by an edge
   if( elem_based==false )
   {
-    // the PDE node pattern in thie region. n_node_neighbors()+1 means "this" node is also considered.
-    v_region_nodes.push_back( std::pair<unsigned int, unsigned int>(subdomain_id (), n_node_neighbors()+1) );
+    // the PDE node pattern in thie region. fvm_node_neighbors()+1 means "this" node is also considered.
+    v_region_nodes.push_back( std::pair<unsigned int, unsigned int>(subdomain_id (), fvm_node_neighbors()+1) );
 
     //neighbor not on this processor
     unsigned int off_nodes = 0;
     for(fvm_neighbor_node_iterator it= neighbor_node_begin(); it!= neighbor_node_end(); ++it)
-      if( (*it).first->on_local() && (*it).first->processor_id() != Genius::processor_id() )   off_nodes++;
+      if( (*it).first->on_local() && (*it).first->root_node()->processor_id() != Genius::processor_id() )   off_nodes++;
     v_off_region_nodes.push_back( std::pair<unsigned int, unsigned int>(subdomain_id (), off_nodes) );
 
     // consider ghost nodes in other regions
@@ -276,12 +489,12 @@ void FVM_Node::PDE_node_pattern(std::vector<std::pair<unsigned int, unsigned int
         FVM_Node *ghost_node = (*git).first;
         if( ghost_node == NULL) continue;
 
-        v_region_nodes.push_back( std::pair<unsigned int, unsigned int>(ghost_node->subdomain_id (), ghost_node->n_node_neighbors()+1) );
+        v_region_nodes.push_back( std::pair<unsigned int, unsigned int>(ghost_node->subdomain_id (), ghost_node->fvm_node_neighbors()+1) );
 
         unsigned int off_nodes = 0;
         fvm_neighbor_node_iterator gnit = ghost_node->neighbor_node_begin();
         for(; gnit!= ghost_node->neighbor_node_end(); ++gnit)
-          if( (*gnit).first->on_local() && (*gnit).first->processor_id() != Genius::processor_id() )   off_nodes++;
+          if( (*gnit).first->on_local() && (*gnit).first->root_node()->processor_id() != Genius::processor_id() )   off_nodes++;
         v_off_region_nodes.push_back( std::pair<unsigned int, unsigned int>(ghost_node->subdomain_id (), off_nodes) );
       }
     }
@@ -360,7 +573,7 @@ void FVM_Node::PDE_off_processor_node_pattern(std::vector<std::pair<unsigned int
     //neighbor not on this processor
     fvm_neighbor_node_iterator it= neighbor_node_begin();
     for(; it!= neighbor_node_end(); ++it)
-      if( (*it).first->on_local() && (*it).first->processor_id() != Genius::processor_id() )   nodes++;
+      if( (*it).first->on_local() && (*it).first->root_node()->processor_id() != Genius::processor_id() )   nodes++;
     v_region_nodes.push_back( std::pair<unsigned int, unsigned int>(subdomain_id (), nodes) );
 
     // we should consider ghost node, since it has the same root node
@@ -372,7 +585,7 @@ void FVM_Node::PDE_off_processor_node_pattern(std::vector<std::pair<unsigned int
         unsigned int nodes = 0;
         fvm_neighbor_node_iterator gnit = ghost_node->neighbor_node_begin();
         for(; gnit!= ghost_node->neighbor_node_end(); ++gnit)
-          if( (*gnit).first->on_local() && (*gnit).first->processor_id() != Genius::processor_id() )   nodes++;
+          if( (*gnit).first->on_local() && (*gnit).first->root_node()->processor_id() != Genius::processor_id() )   nodes++;
         v_region_nodes.push_back( std::pair<unsigned int, unsigned int>(ghost_node->subdomain_id (), nodes) );
       }
 
@@ -450,7 +663,7 @@ VectorValue<PetscScalar> FVM_Node::gradient(SolutionVariable var, bool ghost) co
   fvm_neighbor_node_iterator neighbor_it_end =  this->neighbor_node_end();
   for(;neighbor_it!=neighbor_it_end; ++neighbor_it)
   {
-    const FVM_Node * neighbor_node = neighbor_it->second;
+    const FVM_Node * neighbor_node = neighbor_it->first;
     genius_assert(neighbor_node->on_local());
 
     PetscScalar w = 1.0/ this->distance(neighbor_node);
@@ -482,7 +695,7 @@ VectorValue<PetscScalar> FVM_Node::gradient(SolutionVariable var, bool ghost) co
       fvm_neighbor_node_iterator neighbor_it_end =  ghost_node->neighbor_node_end();
       for(;neighbor_it!=neighbor_it_end; ++neighbor_it)
       {
-        const FVM_Node * neighbor_node = neighbor_it->second;
+        const FVM_Node * neighbor_node = neighbor_it->first;
         genius_assert(neighbor_node->on_local());
 
         PetscScalar w = 1.0/ ghost_node->distance(neighbor_node);
@@ -537,32 +750,51 @@ void FVM_Node::operator += (const FVM_Node &other_node)
   _elem_has_this_node.insert(_elem_has_this_node.end(),  other_node.elem_begin(),  other_node.elem_end());
 
   // combine neighbor node
-  _node_neighbor.insert(other_node.neighbor_node_begin(),  other_node.neighbor_node_end());
+  for(unsigned int n=0; n<other_node._fvm_node_neighbor.size(); ++n)
+    this->add_fvm_node_neighbor(other_node._fvm_node_neighbor[n].first, other_node._fvm_node_neighbor[n].second.first);
 
   // add volume
   _volume += other_node._volume;
 
-  // add cv surface
-  std::map< const Node *, Real >::const_iterator cv_it = other_node._cv_surface_area.begin();
-  for(; cv_it != other_node._cv_surface_area.end(); ++cv_it)
+}
+
+
+
+void FVM_Node::prepare_for_use()
+{
+  //std::vector< std::pair<const Elem *, unsigned int> >(_elem_has_this_node).swap(_elem_has_this_node);
+  //std::vector< std::pair<FVM_Node *, Real> >(_fvm_node_neighbor).swap(_fvm_node_neighbor);
+  FNLess less;
+  std::sort( _fvm_node_neighbor.begin(), _fvm_node_neighbor.end(), less );
+}
+
+
+
+size_t FVM_Node::memory_size() const
+{
+  size_t counter = sizeof(*this);
+
+  counter += sizeof(FVM_NodeData);
+  counter += _elem_has_this_node.capacity()*sizeof(std::pair<const Elem *, unsigned int>);
+  counter += _fvm_node_neighbor.capacity()*sizeof(std::pair<FVM_Node *, std::pair<Real, Real> >);
+
+  if(_ghost_nodes)
   {
-    if(_cv_surface_area.find(cv_it->first) != _cv_surface_area.end())
-      (*_cv_surface_area.find(cv_it->first)).second += cv_it->second;
-    else
-      // insert a new item
-      _cv_surface_area[(*cv_it).first] = cv_it->second;
+    std::map< FVM_Node *, std::pair<unsigned int, Real> >::const_iterator it = _ghost_nodes->begin();
+    for( ; it != _ghost_nodes->end(); ++it )
+      counter += sizeof(it->first) + sizeof(it->second);
   }
 
+  return counter;
 }
 
 
 void FVM_Node::print(std::ostream& os) const
 {
   os << "FVM_Node id " << this->root_node()->id() << ", region " << _subdomain_id << ", volume " << this->volume() << std::endl;
-  std::map< const Node *, Real >::const_iterator cv_it = _cv_surface_area.begin();
-  for(; cv_it != _cv_surface_area.end(); ++cv_it)
+  for(unsigned int n=0; n<_fvm_node_neighbor.size(); ++n)
   {
-    os << "  Neighbor " << cv_it->first->id() << ", surface area " << cv_it->second << std::endl;
+    os << "  Neighbor " << _fvm_node_neighbor[n].first->root_node()->id() << ", surface area " << _fvm_node_neighbor[n].second.first << std::endl;
   }
   os << "Total surface area " << this->total_cv_surface_area() << std::endl;
 }

@@ -24,6 +24,7 @@
 #include "side.h"
 #include "edge_edge2.h"
 #include "face_quad4.h"
+#include "sphere.h"
 
 
 
@@ -519,7 +520,7 @@ bool Quad4::contains_point (const Point& p) const
 
 
 
-void Quad4::ray_hit(const Point &p , const Point &d , IntersectionResult &result, unsigned int dim) const
+void Quad4::ray_hit(const Point &point , const Point &d , IntersectionResult &result, unsigned int dim) const
 {
   // the ray and the quad is co-plane
   if (std::abs((this->point(1) - this->point(0)).dot(d.cross(this->point(2) - this->point(0))))<1e-10)
@@ -528,7 +529,7 @@ void Quad4::ray_hit(const Point &p , const Point &d , IntersectionResult &result
     for ( unsigned int s=0; s<this->n_sides(); ++s )
     {
       AutoPtr<Elem> edge = this->build_side ( s );
-      edge->ray_hit ( p, d, edge_intersections[s] );
+      edge->ray_hit ( point, d, edge_intersections[s] );
     }
 
     // miss?
@@ -593,6 +594,23 @@ void Quad4::ray_hit(const Point &p , const Point &d , IntersectionResult &result
     return;
   }
 
+
+  // if point is far away, numerical error may cause some problem. move point something close.
+  Sphere sphere(this->bounding_sphere());
+
+  // p = point + d*t1
+  Point p = point;
+  Real t1=0, t2=0;
+  if( sphere.above_surface(point))
+  {
+    if(!sphere.intersect_point(point, d, t1, t2))
+    {
+      result.state = Missed;
+      return;
+    }
+    p = point + t1*d;
+  }
+
   // on triangle 0,1,2
   {
 
@@ -624,7 +642,7 @@ void Quad4::ray_hit(const Point &p , const Point &d , IntersectionResult &result
       result.state=Intersect_Body;
       result.hit_points.resize(1);
       result.hit_points[0].p = p+t*d;
-      result.hit_points[0].t = t;
+      result.hit_points[0].t = t+t1; //add t1 back
 
       // the intersection point location
       if(std::abs(u+v)<1e-10) //
@@ -703,7 +721,7 @@ void Quad4::ray_hit(const Point &p , const Point &d , IntersectionResult &result
       result.state=Intersect_Body;
       result.hit_points.resize(1);
       result.hit_points[0].p = p+t*d;
-      result.hit_points[0].t = t;
+      result.hit_points[0].t = t+t1; //add t1 back
 
       // the intersection point location
       if(std::abs(u+v)<1e-10) //

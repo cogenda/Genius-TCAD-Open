@@ -149,6 +149,7 @@ void UnstructuredMesh::_find_neighbors_by_key()
   for (element_iterator el = this->elements_begin(); el != el_end; ++el)
   {
     Elem* elem = *el;
+    if(!elem) continue;
     for (unsigned int s=0; s<elem->n_neighbors(); s++)
       elem->set_neighbor(s,NULL);
   }
@@ -176,6 +177,7 @@ void UnstructuredMesh::_find_neighbors_by_key()
     for (element_iterator el = this->elements_begin(); el != el_end; ++el)
     {
       Elem* element = *el;
+      if(!element) continue;
 
       for (unsigned int ms=0; ms<element->n_neighbors(); ms++)
       {
@@ -283,6 +285,7 @@ void UnstructuredMesh::_find_neighbors_by_key()
        el != end; ++el)
   {
     Elem* elem = *el;
+    if(!elem) continue;
 
     assert (elem->parent() != NULL);
     for (unsigned int s=0; s < elem->n_neighbors(); s++)
@@ -313,6 +316,7 @@ void UnstructuredMesh::_find_neighbors_by_ukey()
   for (element_iterator el = this->elements_begin(); el != el_end; ++el)
   {
     Elem* elem = *el;
+    if(!elem) continue;
     for (unsigned int s=0; s<elem->n_neighbors(); s++)
       elem->set_neighbor(s,NULL);
   }
@@ -339,6 +343,7 @@ void UnstructuredMesh::_find_neighbors_by_ukey()
     for (element_iterator el = this->elements_begin(); el != el_end; ++el)
     {
       Elem* element = *el;
+      if(!element) continue;
 
       for (unsigned int ms=0; ms<element->n_neighbors(); ms++)
       {
@@ -415,6 +420,7 @@ void UnstructuredMesh::_find_neighbors_by_ukey()
        el != end; ++el)
   {
     Elem* elem = *el;
+    if(!elem) continue;
 
     assert (elem->parent() != NULL);
     for (unsigned int s=0; s < elem->n_neighbors(); s++)
@@ -550,15 +556,12 @@ bool UnstructuredMesh::convert_to_fvm_mesh (std::string &error)
 
   // here we convert all the active FEM element to FVM element, maybe only element belongs to local
   // procesor needs to be converted.
-  const_element_iterator endit = active_elements_end();
-  for (const_element_iterator it = active_elements_begin();  it != endit; ++it )
+  const_element_iterator endit = local_elements_end();
+  for (const_element_iterator it = local_elements_begin();  it != endit; ++it )
   {
     Elem* fem_elem = *it;
 
     assert (fem_elem != NULL);
-
-    // skip elements not on_local
-    if( !fem_elem->on_local() ) continue;
 
     // can this element be used in FVM?
     if ( fem_elem->fvm_compatible_test() == false )
@@ -665,12 +668,11 @@ bool UnstructuredMesh::convert_to_fvm_mesh (std::string &error)
      */
     fvm_elem->set_id(fem_elem->id());
 
-    // delete old fem element,
+    // delete old fem element, also delete bd info of old fem element
     this->insert_elem(fvm_elem);
 
   }
 
-  this->boundary_info->rebuild_ids();
 
   return true;
 }
@@ -684,15 +686,12 @@ bool UnstructuredMesh::convert_to_cylindrical_fvm_mesh (std::string &error)
 
   // here we convert all the active FEM element to FVM element, maybe only element belongs to local
   // procesor needs to be converted.
-  const_element_iterator endit = active_elements_end();
-  for (const_element_iterator it = active_elements_begin();  it != endit; ++it )
+  const_element_iterator endit = local_elements_end();
+  for (const_element_iterator it = local_elements_begin();  it != endit; ++it )
   {
     Elem* fem_elem = *it;
 
     assert (fem_elem != NULL);
-
-    // skip elements not on_local
-    if( !fem_elem->on_local() ) continue;
 
     // can this element be used in FVM?
     if ( fem_elem->fvm_compatible_test() == false )
@@ -822,8 +821,6 @@ bool UnstructuredMesh::convert_to_cylindrical_fvm_mesh (std::string &error)
     this->insert_elem(fvm_elem);
 
   }
-
-  this->boundary_info->rebuild_ids();
 
   return true;
 }
@@ -969,6 +966,7 @@ void UnstructuredMesh::partition_cluster(std::vector<std::vector<unsigned int> >
   clusters.resize(_subdomain_cluster.size());
   if(_subdomain_cluster.empty()) return;
 
+
   // map subdomain to clusters
   std::map<unsigned int, unsigned int> subdomain_map;
   for(unsigned int n=0; n<_subdomain_cluster.size(); ++n)
@@ -989,6 +987,7 @@ void UnstructuredMesh::partition_cluster(std::vector<std::vector<unsigned int> >
       clusters[n].push_back(elem->id());
     }
   }
+
 }
 
 

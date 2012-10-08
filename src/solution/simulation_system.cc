@@ -124,7 +124,7 @@ SimulationSystem::SimulationSystem(MeshBase & mesh, Parser::InputParser & _decks
 
       _cylindrical_mesh = c.get_bool("cylindricalmesh", false);
       _resistive_metal_mode = c.get_bool("resistivemetal", false);
-      _block_partition = c.get_bool("blockpartition", true);
+      _block_partition = c.get_bool("blockpartition", false);
 
       double res = c.get_real("leakage.res", 1e12)*PhysicalUnit::V/PhysicalUnit::A;
       double cap = c.get_real("leakage.cap", 1e-18)*PhysicalUnit::C/PhysicalUnit::V;
@@ -258,8 +258,6 @@ void SimulationSystem::init_region_post_process()
     }
   }
 #endif
-  // apply field source to system
-  _field_source->update_system();
 }
 
 
@@ -326,69 +324,6 @@ bool SimulationSystem::has_complex_compound_semiconductor_region() const
 
 void SimulationSystem::build_simulation_system()
 {
-  unsigned int region_num = _mesh.n_subdomains();
-
-  _simulation_regions.resize( region_num );
-  std::map<unsigned int,  SimulationRegion *> subdomain_id_to_region_map;
-
-  // create simulation region from subdomain information
-  for(unsigned int r=0; r<region_num; r++)
-  {
-    switch( Material::material_type( _mesh.subdomain_material(r) ) )
-    {
-        case Material::Semiconductor                :
-        case Material::SingleCompoundSemiconductor  :
-        case Material::ComplexCompoundSemiconductor :
-        {
-          _simulation_regions[r] = new SemiconductorSimulationRegion(_mesh.subdomain_label_by_id(r), _mesh.subdomain_material(r), _T_external, _z_width);
-          break;
-        }
-        case Material::Insulator     :
-        {
-          _simulation_regions[r] = new InsulatorSimulationRegion(_mesh.subdomain_label_by_id(r), _mesh.subdomain_material(r), _T_external, _z_width);
-          break;
-        }
-        case Material::Conductor     :
-        {
-          _simulation_regions[r] = new ElectrodeSimulationRegion(_mesh.subdomain_label_by_id(r), _mesh.subdomain_material(r), _T_external, _z_width);
-          break;
-        }
-        case Material::Resistance     :
-        {
-          if(_resistive_metal_mode)
-            _simulation_regions[r] = new MetalSimulationRegion(_mesh.subdomain_label_by_id(r), _mesh.subdomain_material(r), _T_external, _z_width);
-          else
-            _simulation_regions[r] = new ElectrodeSimulationRegion(_mesh.subdomain_label_by_id(r), _mesh.subdomain_material(r), _T_external, _z_width);
-          break;
-        }
-        case Material::Vacuum       :
-        {
-          _simulation_regions[r] = new VacuumSimulationRegion(_mesh.subdomain_label_by_id(r), _mesh.subdomain_material(r), _T_external, _z_width);
-          break;
-        }
-        case Material::PML       :
-        {
-          _simulation_regions[r] = new PMLSimulationRegion(_mesh.subdomain_label_by_id(r), _mesh.subdomain_material(r), _T_external, _z_width);
-          break;
-        }
-        default:
-        {
-          MESSAGE<< "ERROR: Region "<< _mesh.subdomain_label_by_id(r) << " with unsupported material type " << _mesh.subdomain_material(r) << std::endl; RECORD();
-          genius_error();
-        }
-    }
-
-    //
-    _simulation_regions[r]->set_subdomain_id(r);
-    subdomain_id_to_region_map[r] = _simulation_regions[r];
-
-    //set partition weight for each region
-    _mesh.set_subdomain_weight(r, Material::material_weight(_mesh.subdomain_material(r)));
-  }
-
-  // each region should hold subdomain_id_to_region_map
-  SimulationRegion::set_subdomain_id_to_region_map(subdomain_id_to_region_map);
-
   // each region has its own FVM mesh
   build_region_fvm_mesh();
 
@@ -401,9 +336,9 @@ void SimulationSystem::build_simulation_system()
   // clear surface locator to save memory
   _mesh.clear_surface_locator();
 
-  //-----------------------------
-  // FIXME experimental code!
-  //-----------------------------
+  // totally delete remote elems
+  if(!_field_source->request_serial_mesh() && Genius::processor_id() !=0 )
+    _mesh.delete_remote_elements(true, true);
 
   // remove remote object in each region
   for(unsigned int n = 0; n < this->n_regions(); n++)
@@ -411,12 +346,6 @@ void SimulationSystem::build_simulation_system()
     SimulationRegion * region = _simulation_regions[n];
     region->remove_remote_object();
   }
-
-  // remove remote object when processor_id > 1
-  // which means only processor 0 hold the complete mesh
-  if(!_field_source->request_serial_mesh() && Genius::processor_id() !=0 )
-    _mesh.delete_remote_elements();
-
 }
 
 
@@ -435,9 +364,9 @@ void SimulationSystem::build_region_fvm_mesh()
   {
     START_LOG("build_region_fvm_mesh(1)", "SimulationSystem");
 
-    MESSAGE<<"  Create mesh topological information...";  RECORD();
     UnstructuredMesh & mesh = dynamic_cast<UnstructuredMesh &>(_mesh);
 
+    MESSAGE<<"  Create mesh topological information...";  RECORD();
     // 2d or 3d mesh?
     mesh.count_mesh_dimension();
 
@@ -447,21 +376,31 @@ void SimulationSystem::build_region_fvm_mesh()
     // let all the elements find their neighbors
     mesh.find_neighbors();
 
-    // reorder the node index by Reverse Cuthill-McKee Algorithm
-    mesh.reorder_nodes();
+    // reorder the elem/node index by Reverse Cuthill-McKee Algorithm
+    mesh.reorder_elems();
+    MESSAGE<<std::endl;  RECORD();
 
+
+    MESSAGE<<"  Partition mesh...";  RECORD();
     // prepare for partition
     if(_block_partition)
       mesh.subdomain_cluster(this->build_subdomain_cluster());
 
     // partition the mesh.
-    mesh.partition();
+    mesh.partition(Genius::n_processors());
 
     // ok, mesh is prepared
     mesh.set_prepared();
 
+    // remove remote mesh elements when processor_id > 1
+    // however, keep boundary elems for later bc setup
+    if(!_field_source->request_serial_mesh() && Genius::processor_id() !=0 )
+      _mesh.delete_remote_elements(true, false);
+
     MESSAGE<<std::endl;  RECORD();
+
     STOP_LOG("build_region_fvm_mesh(1)", "SimulationSystem");
+
 
 
     START_LOG("build_region_fvm_mesh(2)", "SimulationSystem");
@@ -487,9 +426,75 @@ void SimulationSystem::build_region_fvm_mesh()
         genius_error();
       }
     }
+
+    //std::cout<<"FVM MESH " << _mesh.memory_usage()/(1024*1024)<<std::endl;
+
+
     MESSAGE<<std::endl;  RECORD();
     STOP_LOG("build_region_fvm_mesh(2)", "SimulationSystem");
   }
+
+
+  _simulation_regions.resize( _mesh.n_subdomains() );
+  std::map<unsigned int,  SimulationRegion *> subdomain_id_to_region_map;
+
+  // create simulation region from subdomain information
+  for(unsigned int r=0; r<_mesh.n_subdomains(); r++)
+  {
+    switch( Material::material_type( _mesh.subdomain_material(r) ) )
+    {
+      case Material::Semiconductor                :
+      case Material::SingleCompoundSemiconductor  :
+      case Material::ComplexCompoundSemiconductor :
+      {
+        _simulation_regions[r] = new SemiconductorSimulationRegion(_mesh.subdomain_label_by_id(r), _mesh.subdomain_material(r), _T_external, _z_width);
+        break;
+      }
+      case Material::Insulator     :
+      {
+        _simulation_regions[r] = new InsulatorSimulationRegion(_mesh.subdomain_label_by_id(r), _mesh.subdomain_material(r), _T_external, _z_width);
+        break;
+      }
+      case Material::Conductor     :
+      {
+        _simulation_regions[r] = new ElectrodeSimulationRegion(_mesh.subdomain_label_by_id(r), _mesh.subdomain_material(r), _T_external, _z_width);
+        break;
+      }
+      case Material::Resistance     :
+      {
+        if(_resistive_metal_mode)
+          _simulation_regions[r] = new MetalSimulationRegion(_mesh.subdomain_label_by_id(r), _mesh.subdomain_material(r), _T_external, _z_width);
+        else
+          _simulation_regions[r] = new ElectrodeSimulationRegion(_mesh.subdomain_label_by_id(r), _mesh.subdomain_material(r), _T_external, _z_width);
+        break;
+      }
+      case Material::Vacuum       :
+      {
+        _simulation_regions[r] = new VacuumSimulationRegion(_mesh.subdomain_label_by_id(r), _mesh.subdomain_material(r), _T_external, _z_width);
+        break;
+      }
+      case Material::PML       :
+      {
+        _simulation_regions[r] = new PMLSimulationRegion(_mesh.subdomain_label_by_id(r), _mesh.subdomain_material(r), _T_external, _z_width);
+        break;
+      }
+      default:
+      {
+        MESSAGE<< "ERROR: Region "<< _mesh.subdomain_label_by_id(r) << " with unsupported material type " << _mesh.subdomain_material(r) << std::endl; RECORD();
+        genius_error();
+      }
+    }
+
+    //
+    _simulation_regions[r]->set_subdomain_id(r);
+    subdomain_id_to_region_map[r] = _simulation_regions[r];
+
+    //set partition weight for each region
+    _mesh.set_subdomain_weight(r, Material::material_weight(_mesh.subdomain_material(r)));
+  }
+
+  // each region should hold subdomain_id_to_region_map
+  SimulationRegion::set_subdomain_id_to_region_map(subdomain_id_to_region_map);
 
 
   START_LOG("build_region_fvm_mesh(3)", "SimulationSystem");
@@ -512,21 +517,23 @@ void SimulationSystem::build_region_fvm_mesh()
   // A convenient typedef
   typedef map_type::iterator Iter;
 
-  // search in all the ACTIVE element
-
-  MeshBase::const_element_iterator       el  = _mesh.active_elements_begin();
-  const MeshBase::const_element_iterator end = _mesh.active_elements_end();
-
+  // search in all the LOCAL element
+  MeshBase::element_iterator       el  = _mesh.local_elements_begin();
+  const MeshBase::element_iterator end = _mesh.local_elements_end();
   for (; el != end; ++el)
   {
-    const Elem * elem = *el;
+    Elem * elem = *el;
+    genius_assert(elem->on_local());
+
+    std::vector<FVM_Node *> elem_fvm_nodes(elem->n_nodes());
+    std::vector<FVM_Node *> global_elem_fvm_nodes(elem->n_nodes(), (FVM_Node *)0);
 
     for (unsigned int n=0; n<elem->n_nodes(); n++)
     {
       Node * node = elem->get_node(n);
 
       // only set informations for local node
-      if( !node->on_local() ) continue;
+      genius_assert( node->on_local() );
 
       // create a fvm node from cell's node
       FVM_Node *fvm_node = new FVM_Node( node );
@@ -535,63 +542,67 @@ void SimulationSystem::build_region_fvm_mesh()
       // set the subdomain_id of fvm node the same as the element
       fvm_node->set_subdomain_id( elem->subdomain_id () );
 
-
       // the fvm node belongs to which cell, also record the local index of the root node
-      fvm_node->set_elem_it_belongs(elem, n) ;
+      fvm_node->add_elem_it_belongs(elem, n) ;
 
       // set the partial volume associated with this node
       // only on_local FVM elements own non-zero value!
       fvm_node->set_control_volume( elem->partial_volume_truncated(n) );
 
-      // insert all the node which connected to this node into node_neighbor
-      for (unsigned int m=0; m<elem->n_nodes(); m++)
-        if ( n!=m && elem->node_node_connect(n,m) )
-          fvm_node->set_node_neighbor ( elem->get_node(m) );
-
-      // search for all the neighbor node (connect this node by an edge)
-      // and set partial_area_with_edge to this FVM_Node
-      for (unsigned int e=0; e<elem->n_edges(); e++)
+      // buffer for later use
+      elem_fvm_nodes[n] = fvm_node;
+      // if this node already has a FVM_Node
+      std::pair<Iter, Iter> pos = _node_to_fvm_node_map.equal_range(node);
+      while (pos.first != pos.second)
       {
-        std::pair<unsigned int, unsigned int> edge_nodes;
-        elem->nodes_on_edge(e, edge_nodes);
-        if(elem->get_node(edge_nodes.first)  == fvm_node->root_node())
-          fvm_node->cv_surface_area(elem->get_node(edge_nodes.second)) = elem->partial_area_with_edge(e);
-        if(elem->get_node(edge_nodes.second) == fvm_node->root_node())
-          fvm_node->cv_surface_area(elem->get_node(edge_nodes.first))  = elem->partial_area_with_edge(e);
-      }
-
-
-      // at last, we insert this FVM Node into
-      // std::multimap<const Node * , FVM_Node *> _node_to_fvm_node_map;
-
-      // if we can find FVM Node with same root node in multimap
-      if( _node_to_fvm_node_map.find((*el)->get_node(n)) != _node_to_fvm_node_map.end() )
-      {
-
-        std::pair<Iter, Iter> pos = _node_to_fvm_node_map.equal_range((*el)->get_node(n));
-
-        // do combination if two FVM Node has same subdomain_id.
-        // this is done by overloaded operator '+='
-
-        while (pos.first != pos.second)
+        FVM_Node *  fvm_current = (*pos.first).second;
+        if ( fvm_current->subdomain_id () == fvm_node->subdomain_id () )
         {
-          if ( (*pos.first).second->subdomain_id () == fvm_node->subdomain_id () )
-          {
-            *((*pos.first).second) +=  *fvm_node;
-            delete fvm_node;
-            break;
-          }
-          ++pos.first;
+          global_elem_fvm_nodes[n] = fvm_current;
+          break;
         }
-
-        if (pos.first == pos.second)      // insert a new FVM Node
-          _node_to_fvm_node_map.insert(pos.first, std::pair<const Node * , FVM_Node *>((*el)->get_node(n), fvm_node) );
+        ++pos.first;
       }
-      else // insert a new FVM Node
+    }
+
+    // process FVM_Node neighbor information
+    for (unsigned int e=0; e<elem->n_edges(); e++)
+    {
+      //elem edges
+      std::pair<unsigned int, unsigned int> edge_nodes;
+      elem->nodes_on_edge(e, edge_nodes);
+
+      // surface area associated with this edge
+      Real surface_area = elem->partial_area_with_edge(e);
+
+      FVM_Node * fvm_node1  = elem_fvm_nodes[edge_nodes.first];
+      FVM_Node * fvm_node1g = global_elem_fvm_nodes[edge_nodes.first];
+      FVM_Node * fvm_node2  = elem_fvm_nodes[edge_nodes.second];
+      FVM_Node * fvm_node2g = global_elem_fvm_nodes[edge_nodes.second];
+
+      fvm_node1->add_fvm_node_neighbor(fvm_node2g ? fvm_node2g : fvm_node2, surface_area);
+      fvm_node2->add_fvm_node_neighbor(fvm_node1g ? fvm_node1g : fvm_node1, surface_area);
+    }
+
+    // at last, we insert this FVM Node into
+    // std::multimap<const Node * , FVM_Node *> _node_to_fvm_node_map;
+    for (unsigned int n=0; n<elem->n_nodes(); n++)
+    {
+      FVM_Node * fvm_node   = elem_fvm_nodes[n];
+      FVM_Node * fvm_node_g = global_elem_fvm_nodes[n];
+
+      if(fvm_node_g)
       {
-        _node_to_fvm_node_map.insert( std::pair<const Node * , FVM_Node *>((*el)->get_node(n), fvm_node) );
+        *fvm_node_g +=  *fvm_node;
+        delete fvm_node;
+        fvm_node = fvm_node_g;
+      }
+      else
+      {
+        _node_to_fvm_node_map.insert( std::make_pair(elem->get_node(n), fvm_node) );
       }
 
+      elem->hold_fvm_node( n, fvm_node );
     }
 
   }
@@ -602,26 +613,27 @@ void SimulationSystem::build_region_fvm_mesh()
 
 
   // prepare ghost node information
-  Iter  it_fvm = _node_to_fvm_node_map.begin();
-  for( ; it_fvm != _node_to_fvm_node_map.end(); ++it_fvm )
   {
-    // skip nonlocal fvm_node
-    if(! (*it_fvm).second->on_local() ) continue;
-
-    // the FVM Nodes with same root node. they will be ghost nodes in different region
-    std::pair<Iter, Iter> pos = _node_to_fvm_node_map.equal_range( (*it_fvm).first );
-
-    // insert them into ghost node map. The interface area is set to 0.0 here, will be changed later.
-    while (pos.first != pos.second)
+    Iter it_fvm_end = _node_to_fvm_node_map.end();
+    for(Iter  it_fvm = _node_to_fvm_node_map.begin(); it_fvm != it_fvm_end; ++it_fvm )
     {
-      if ( pos.first != it_fvm )
-      {
-        (*it_fvm).second->set_ghost_node( (*pos.first).second, (*pos.first).second->subdomain_id (), 0.0 );
-      }
+      // skip nonlocal fvm_node
+      if( !it_fvm->second->on_local() ) continue;
 
-      ++pos.first;
+      // the FVM Nodes with same root node. they will be ghost nodes in different region
+      std::pair<Iter, Iter> pos = _node_to_fvm_node_map.equal_range( it_fvm->first );
+
+      // insert them into ghost node map. The interface area is set to 0.0 here, will be changed later.
+      while (pos.first != pos.second)
+      {
+        if ( pos.first != it_fvm )
+         it_fvm->second->set_ghost_node( (*pos.first).second, (*pos.first).second->subdomain_id (), 0.0 );
+
+        ++pos.first;
+      }
     }
   }
+
 
   MESSAGE<<std::endl;  RECORD();
   STOP_LOG("build_region_fvm_mesh(3)", "SimulationSystem");
@@ -657,9 +669,7 @@ void SimulationSystem::build_region_fvm_mesh()
     {
       // get the element which has boundary/interface side
       const Elem* elem = _mesh.elem(elems[nbd]);
-      if( !elem->on_local() ) continue;
-
-      genius_assert(elem->on_boundary() || elem->on_interface());
+      if( !elem || !elem->on_local() ) continue;
 
       // get the side
       AutoPtr<Elem> side (elem->build_side(sides[nbd]));
@@ -742,8 +752,8 @@ void SimulationSystem::build_region_fvm_mesh()
     {
       // get the element which has boundary/interface side
       const Elem* elem = _mesh.elem(elems[nbd]);
-      genius_assert(elem->on_boundary() || elem->on_interface());
-      if(!elem->on_local()) continue;
+
+      if(!elem || !elem->on_local()) continue;
 
       // the vector norm to boundary/interface
       VectorValue<Real> norm = elem->outside_unit_normal(sides[nbd]);
@@ -805,15 +815,15 @@ void SimulationSystem::build_region_fvm_mesh()
   // reserve memory for data block
   {
     std::vector<unsigned int> region_cells(this->n_regions(), 0);
-    for (el=_mesh.active_elements_begin(); el != end; ++el)
+    for (el=_mesh.local_elements_begin(); el != end; ++el)
     {
       unsigned int region_index = (*el)-> subdomain_id ();
-      if((*el)->on_local()) region_cells[region_index]++;
+      region_cells[region_index]++;
     }
 
     std::vector<unsigned int> region_nodes(this->n_regions(), 0);
     Iter it_fvm_end = _node_to_fvm_node_map.end();
-    for(it_fvm = _node_to_fvm_node_map.begin(); it_fvm != it_fvm_end; ++it_fvm )
+    for(Iter it_fvm = _node_to_fvm_node_map.begin(); it_fvm != it_fvm_end; ++it_fvm )
     {
       //insert the FVM Node into correspoding region
       FVM_Node *fvm_node = (*it_fvm).second;
@@ -829,7 +839,7 @@ void SimulationSystem::build_region_fvm_mesh()
 
   // insert element / FVM_Node pointer into each region
   {
-    for (el=_mesh.active_elements_begin(); el != end; ++el)
+    for (el=_mesh.local_elements_begin(); el != end; ++el)
     {
       unsigned int region_index = (*el)-> subdomain_id ();
       _simulation_regions[region_index]->insert_cell(*el);
@@ -838,7 +848,7 @@ void SimulationSystem::build_region_fvm_mesh()
     // this is overkill for parallel simulation since
     // we needn't all the nodal information
     Iter it_fvm_end = _node_to_fvm_node_map.end();
-    for(it_fvm = _node_to_fvm_node_map.begin(); it_fvm != it_fvm_end; ++it_fvm )
+    for(Iter it_fvm = _node_to_fvm_node_map.begin(); it_fvm != it_fvm_end; ++it_fvm )
     {
       //insert the FVM Node into correspoding region
       unsigned int region_index = (*it_fvm).second->subdomain_id();
@@ -858,7 +868,12 @@ void SimulationSystem::build_region_fvm_mesh()
     _simulation_regions[n]->prepare_for_use_parallel();
   }
 
+  MESSAGE<<std::endl;  RECORD();
+  STOP_LOG("build_region_fvm_mesh(6)", "SimulationSystem");
 
+
+  START_LOG("build_region_fvm_mesh(7)", "SimulationSystem");
+  MESSAGE<<"  Setup hanging node...";  RECORD();
   // set region hanging node. we had make sure that no hanging node on the region interface.
   for(unsigned int n = 0; n < this->n_regions(); n++)
   {
@@ -882,10 +897,10 @@ void SimulationSystem::build_region_fvm_mesh()
         if ( (node = (*it)->is_hanging_node_on_edge(e))!=NULL )
           region->add_hanging_node_on_edge(node, *it, e);
     }
-
   }
   MESSAGE<<std::endl;  RECORD();
-  STOP_LOG("build_region_fvm_mesh(6)", "SimulationSystem");
+  STOP_LOG("build_region_fvm_mesh(7)", "SimulationSystem");
+
 
   MESSAGE<<"Simulation data structure build ok.\n"<<std::endl;  RECORD();
 
@@ -1237,22 +1252,30 @@ void SimulationSystem::sync_print_info () const
   std::stringstream   ss;
   ss  << "Simulation System Information on processor " << Genius::processor_id() << " :" << '\n';
 
+
+  std::vector<unsigned int> region_nodes;
+  std::vector<unsigned int> region_elems;
+  for(unsigned int n = 0; n < this->n_regions(); n++)
+  {
+    region_elems.push_back( _simulation_regions[n]->n_on_processor_cell() );
+    region_nodes.push_back( _simulation_regions[n]->n_on_processor_node() );
+  }
+
+  Parallel::sum(region_nodes);
+  Parallel::sum(region_elems);
+
   for(unsigned int n = 0; n < this->n_regions(); n++)
   {
     unsigned int n_on_processor_cell = _simulation_regions[n]->n_on_processor_cell();
     unsigned int n_on_processor_node = _simulation_regions[n]->n_on_processor_node();
-    unsigned int n_cell = n_on_processor_cell;
-    unsigned int n_node = n_on_processor_node;
-    Parallel::sum(n_cell);
-    Parallel::sum(n_node);
 
     if(n_on_processor_cell==0 && n_on_processor_node==0) continue;
 
     ss << "   region " << _simulation_regions[n]->name()
     << " with material " << _simulation_regions[n]->material()
     << " has "
-    << n_on_processor_cell << " of " << n_cell << " total cells, "
-    << n_on_processor_node << " of " << n_node<<" total nodes."
+    << n_on_processor_cell << " of " << region_elems[n] << " total cells, "
+    << n_on_processor_node << " of " << region_nodes[n] << " total nodes."
     << '\n';
   }
 
@@ -1269,6 +1292,21 @@ void SimulationSystem::sync_print_info () const
 
   //PetscSynchronizedPrintf(PETSC_COMM_WORLD, "%s", out_info.c_str());
   //PetscSynchronizedFlush(PETSC_COMM_WORLD);
+}
+
+
+
+size_t SimulationSystem::memory_size() const
+{
+  size_t counter = sizeof(*this);
+
+  //SimulationRegion
+  for(unsigned int n=0; n<_simulation_regions.size(); ++n)
+    counter += _simulation_regions[n]->memory_size();
+
+
+  return counter;
+
 }
 
 

@@ -197,7 +197,7 @@ void SemiconductorSimulationRegion::LinearPoissin_Update_Solution(const PetscSca
       FVM_Node::fvm_neighbor_node_iterator neighbor_it_end =  fvm_node->neighbor_node_end();
       for(;neighbor_it!=neighbor_it_end; ++neighbor_it)
       {
-        const FVM_Node * neighbor_node = neighbor_it->second;
+        const FVM_Node * neighbor_node = neighbor_it->first;
         const FVM_NodeData * neighbor_node_data = neighbor_node->node_data();
 
         PetscScalar w = 1.0/ fvm_node->distance(neighbor_node);

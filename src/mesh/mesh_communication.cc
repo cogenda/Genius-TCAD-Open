@@ -169,11 +169,13 @@ void MeshCommunication::broadcast_mesh (MeshBase&) const
   {
     std::vector<unsigned int> buf (4);
 
-    buf[0] = n_nodes;
-    buf[1] = n_elem;
-    buf[2] = total_weight;
-    buf[3] = n_subdomains;
-
+    if (Genius::processor_id() == 0)
+    {
+      buf[0] = n_nodes;
+      buf[1] = n_elem;
+      buf[2] = total_weight;
+      buf[3] = n_subdomains;
+    }
     // Broadcast
     Parallel::broadcast (buf);
 

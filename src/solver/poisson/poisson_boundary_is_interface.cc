@@ -185,8 +185,7 @@ void InsulatorSemiconductorInterfaceBC::Poissin_Function(PetscScalar * x, Vec f,
           // force the potential equal to corresponding point in semiconductor
           case InsulatorRegion:
           {
-            // insulator region should be the second region
-            genius_assert(i==1);
+            // we may have several insulator regions
 
             // record the source row and dst row
             iy.push_back(fvm_nodes[i]->global_offset());
@@ -281,7 +280,7 @@ void InsulatorSemiconductorInterfaceBC::Poissin_Jacobian_Reserve(Mat *jac, Inser
 
             FVM_Node::fvm_neighbor_node_iterator  gnb_it = ghost_fvm_node->neighbor_node_begin();
             for(; gnb_it != ghost_fvm_node->neighbor_node_end(); ++gnb_it)
-              MatSetValue(*jac, fvm_nodes[i]->global_offset(), (*gnb_it).second->global_offset(), 0, ADD_VALUES);
+              MatSetValue(*jac, fvm_nodes[i]->global_offset(), (*gnb_it).first->global_offset(), 0, ADD_VALUES);
 
             break;
           }
@@ -289,7 +288,6 @@ void InsulatorSemiconductorInterfaceBC::Poissin_Jacobian_Reserve(Mat *jac, Inser
           // Insulator-Semiconductor interface at Insulator side, we should add the rows to semiconductor region
           case InsulatorRegion:
           {
-            genius_assert(i==1);
             // reserve for later operator
             MatSetValue(*jac, fvm_nodes[i]->global_offset(), fvm_nodes[0]->global_offset(), 0, ADD_VALUES);
 

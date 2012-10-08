@@ -147,14 +147,14 @@ void ChargedContactBC::Poissin_Function(PetscScalar * x, Vec f, InsertMode &add_
         FVM_Node::fvm_neighbor_node_iterator nb_it_end = insulator_node->neighbor_node_end();
         for(; nb_it != nb_it_end; ++nb_it)
         {
-          const FVM_Node *nb_node = (*nb_it).second;
+          const FVM_Node *nb_node = (*nb_it).first;
           // the psi of neighbor node
           PetscScalar V_nb = x[nb_node->local_offset()];
           // distance from nb node to this node
           PetscScalar distance = insulator_node->distance(nb_node);
           // area of out surface of control volume related with neighbor node,
           // here we should consider the difference of 2D/3D by multiply z_width
-          PetscScalar cv_boundary = insulator_node->cv_surface_area(nb_node->root_node())*z_width;
+          PetscScalar cv_boundary = insulator_node->cv_surface_area(nb_node)*z_width;
           // surface electric field
           PetscScalar E = (V_nb-V_insulator)/distance;
           PetscScalar D = insulator_node_data->eps()*E;
@@ -229,7 +229,7 @@ void ChargedContactBC::Poissin_Jacobian_Reserve(Mat *jac, InsertMode &add_value_
       FVM_Node::fvm_neighbor_node_iterator nb_it_end = insulator_node->neighbor_node_end();
       for(; nb_it != nb_it_end; ++nb_it)
       {
-        const FVM_Node *nb_node = (*nb_it).second;
+        const FVM_Node *nb_node = (*nb_it).first;
         MatSetValue(*jac, this->inter_connect_hub()->global_offset(), insulator_node->global_offset(), 0, ADD_VALUES);
         MatSetValue(*jac, this->inter_connect_hub()->global_offset(), nb_node->global_offset(), 0, ADD_VALUES);
       }
@@ -354,7 +354,7 @@ void ChargedContactBC::Poissin_Jacobian(PetscScalar * x, Mat *jac, InsertMode &a
       FVM_Node::fvm_neighbor_node_iterator nb_it_end = insulator_node->neighbor_node_end();
       for(; nb_it != nb_it_end; ++nb_it)
       {
-        const FVM_Node *nb_node = (*nb_it).second;
+        const FVM_Node *nb_node = (*nb_it).first;
         genius_assert(nb_node->on_local());
 
         // the psi of neighbor node
@@ -363,7 +363,7 @@ void ChargedContactBC::Poissin_Jacobian(PetscScalar * x, Mat *jac, InsertMode &a
         PetscScalar distance = insulator_node->distance(nb_node);
         // area of out surface of control volume related with neighbor node,
         // here we should consider the difference of 2D/3D by multiply z_width
-        PetscScalar cv_boundary = insulator_node->cv_surface_area(nb_node->root_node())*z_width;
+        PetscScalar cv_boundary = insulator_node->cv_surface_area(nb_node)*z_width;
         // surface electric field and electrc displacement
         AutoDScalar E = (V_nb-V_insulator)/distance;
         AutoDScalar D = insulator_node_data->eps()*E;

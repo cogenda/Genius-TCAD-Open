@@ -121,6 +121,11 @@ namespace PhysicalUnit
    */
   double   mA;
 
+  /**
+   *  define as V/A
+   */
+  double   Ohm;
+
   // Fundamental Physical Constants
 
   /**
@@ -179,6 +184,7 @@ namespace PhysicalUnit
     ps = 1e-12*s;
     A  = C/s;
     mA = 1e-3*A;
+    Ohm= V/A; 
 
     kb   = 1.3806503e-23*J/K;
     e    = 1.602176462e-19*C;
@@ -212,6 +218,7 @@ namespace PhysicalUnit
     ps = 1e-12*s;
     A  = C/s;
     mA = 1e-3*A;
+    Ohm= V/A; 
 
     kb   = 1.3806503e-23*J/K;
     e    = 1.602176462e-19*C;
@@ -244,6 +251,7 @@ namespace PhysicalUnit
     ps = 1e-12*s;
     A  = C/s;
     mA = 1e-3*A;
+    Ohm= V/A; 
 
     kb   = 1.3806503e-23*J/K;
     e    = 1.602176462e-19*C;
@@ -278,6 +286,7 @@ namespace PhysicalUnit
     ps = 1e-12*s;
     A  = C/s;
     mA = 1e-3*A;
+    Ohm= V/A; 
 
     kb   = 1.3806503e-23*J/K;
     e    = 1.602176462e-19*C;

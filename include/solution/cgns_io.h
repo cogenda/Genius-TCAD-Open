@@ -152,6 +152,11 @@ private:
   std::map< short int, double > electrode_potential;
 
   /**
+   * electrode potential
+   */
+  std::map< short int, double > electrode_potential_old;
+
+  /**
    * electrode vapp
    */
   std::map< short int, double > electrode_vapp;

@@ -111,7 +111,7 @@ class SerialMesh : public UnstructuredMesh
    * except for "ghosts" which touch a local element, and deletes
    * all nodes which are not part of a local or ghost element
    */
-  virtual void delete_remote_elements ();
+  virtual void delete_remote_elements (bool volume_elem=true, bool surface_elem=true);
 
   /**
    * pack all the mesh node location (x, y, z) one by one into an real array
@@ -130,14 +130,19 @@ class SerialMesh : public UnstructuredMesh
   virtual void pack_elems(std::vector<int> &) const;
 
   /**
-   * pack all the mesh boundary info, should be executed in parallel
+   * pack all the mesh boundary face info, should be executed in parallel
    */
   virtual void pack_boundary_faces (std::vector<unsigned int> &,
                                     std::vector<unsigned short int> &,
                                     std::vector<short int> &) const;
 
   /**
-   * pack all the mesh boundary info, should be executed in parallel
+   * pack all the mesh boundary edge info, should be executed in parallel
+   */
+  virtual void pack_boundary_egeds(std::vector< std::pair<unsigned int, unsigned int> > &) const;
+
+  /**
+   * pack all the mesh boundary node info, should be executed in parallel
    */
   virtual void pack_boundary_nodes (std::vector<unsigned int> &,
                                     std::vector<short int> &) const;
@@ -188,6 +193,12 @@ class SerialMesh : public UnstructuredMesh
   virtual Elem* insert_elem (Elem* e) ;
   virtual void delete_elem (Elem* e) ;
 
+
+  /**
+   * functions for reordering elems
+   */
+  virtual void reorder_elems();
+
   /**
    * functions for reordering nodes
    */
@@ -197,6 +208,12 @@ class SerialMesh : public UnstructuredMesh
    * the subdomain interconnect graph in CSR format
    */
   virtual void subdomain_graph(std::vector<std::vector<unsigned int> >&) const;
+
+
+  /**
+   * approx memory usage
+   */
+  virtual size_t memory_size() const;
 
 public:
   /**

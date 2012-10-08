@@ -121,6 +121,11 @@ public:
   { return _is_prepared; }
 
   /**
+   * set the state of _is_prepared
+   */
+  void set_prepared (bool flag) { _is_prepared = flag; }
+
+  /**
    * @returns \p true if all elements and nodes of the mesh
    * exist on the current processor, \p false otherwise
    */
@@ -154,7 +159,7 @@ public:
    * except for "ghosts" which touch a local element, and deletes
    * all nodes which are not part of a local or ghost element
    */
-  virtual void delete_remote_elements () {}
+  virtual void delete_remote_elements (bool volume_elem=true, bool surface_elem=true ) {}
 
   /**
    * pack all the mesh node location (x, y, z) one by one into an real array
@@ -173,12 +178,17 @@ public:
   virtual void pack_elems(std::vector<int> &) const {}
 
   /**
-   * pack all the mesh boundary info, should be executed in parallel
+   * pack all the mesh boundary face info, should be executed in parallel
    */
   virtual void pack_boundary_faces (std::vector<unsigned int> &, std::vector<unsigned short int> &, std::vector<short int> &) const {}
 
   /**
-   * pack all the mesh boundary info, should be executed in parallel
+   * pack all the mesh boundary edge info, should be executed in parallel
+   */
+  virtual void pack_boundary_egeds(std::vector< std::pair<unsigned int, unsigned int> > &) const {}
+
+  /**
+   * pack all the mesh boundary node info, should be executed in parallel
    */
   virtual void pack_boundary_nodes (std::vector<unsigned int> &, std::vector<short int> &) const {}
 
@@ -323,7 +333,7 @@ public:
    * must be executed in parallel
    * use AutoPtr to prevent memory lost.
    */
-  virtual AutoPtr<Elem> elem_clone (const unsigned int i) const = 0;
+  virtual AutoPtr<Elem> elem_clone (const unsigned int i)  const= 0;
 
   /**
    * Add a new \p Node at \p Point \p p to the end of the vertex array,
@@ -365,11 +375,18 @@ public:
 
 
   /**
+   * reorder the elems index by Reverse Cuthill-McKee Algorithm
+   * which can reduce filling in LU (ILU) Factorization
+   */
+  virtual void reorder_elems () {}
+
+
+  /**
    * reorder the node index by Reverse Cuthill-McKee Algorithm
    * which can reduce filling in LU (ILU) Factorization
    */
-  virtual void reorder_nodes ()
-  {genius_error();}
+  virtual void reorder_nodes () {}
+
 
   /**
    * Locate element face (edge in 2D) neighbors.  This is done with the help
@@ -405,16 +422,12 @@ public:
    *  1.) call \p find_neighbors()
    *  2.) call \p partition()
    *  3.) call \p renumber_nodes_and_elements()
-   *
-   * The read_xda_file boolean flag is true when prepare_for_use
-   * is called from Mesh::read after reading an xda file.  It prevents
-   * the renumbering of nodes and elements.  In general, leave this at
-   * the default value of false.
    */
   virtual void prepare_for_use (const bool skip_renumber_nodes_and_elements=false);
 
   /**
    * Call the default partitioner (currently \p metis_partition()).
+   * @param serial  do partition in serial
    */
   void partition (const unsigned int n_parts=Genius::n_processors());
 
@@ -475,8 +488,12 @@ public:
   /**
    * @return subdomain material by subdomain id
    */
-  const std::string & subdomain_material(unsigned int id) const
-  { genius_assert(id<_subdomain_materials.size()); return (*_subdomain_materials.find(id)).second; }
+  std::string subdomain_material(unsigned int id) const
+  {
+    if(id<_subdomain_materials.size())
+      return (*_subdomain_materials.find(id)).second;
+    return std::string();
+  }
 
   /**
    * @return subdomain weight by subdomain id
@@ -527,6 +544,11 @@ public:
    * Prints relevant information about the mesh.
    */
   void print_info (std::ostream& os=std::cout) const;
+
+  /**
+   * approx memory usage
+   */
+  virtual size_t memory_size() const { return sizeof(*this); }
 
   /**
    * Equivalent to calling print_info() above, but now you can write:

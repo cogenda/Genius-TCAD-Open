@@ -182,14 +182,14 @@ void SolderPadBC::MixA_EBM3_Function(PetscScalar * x, Vec f, InsertMode &add_val
             FVM_Node::fvm_neighbor_node_iterator nb_it = fvm_node->neighbor_node_begin();
             for(; nb_it != fvm_node->neighbor_node_end(); ++nb_it)
             {
-              const FVM_Node *nb_node = (*nb_it).second;
+              const FVM_Node *nb_node = (*nb_it).first;
               const FVM_NodeData * nb_node_data = nb_node->node_data();
               // the psi of neighbor node
               PetscScalar V_nb = x[nb_node->local_offset()+node_psi_offset];
               // distance from nb node to this node
-              PetscScalar distance = (*(fvm_node->root_node()) - *(nb_node->root_node())).size();
+              PetscScalar distance = fvm_node->distance(nb_node);
               // area of out surface of control volume related with neighbor node
-              PetscScalar cv_boundary = fvm_node->cv_surface_area(nb_node->root_node());
+              PetscScalar cv_boundary = std::abs(fvm_node->cv_surface_area(nb_node));
 
               // current flow
               current_buffer.push_back( cv_boundary*sigma*(V-V_nb)/distance*current_scale );
@@ -288,7 +288,7 @@ void SolderPadBC::MixA_EBM3_Jacobian_Reserve(Mat *jac, InsertMode &add_value_fla
           FVM_Node::fvm_neighbor_node_iterator nb_it_end = fvm_node->neighbor_node_end();
           for(; nb_it != nb_it_end; ++nb_it)
           {
-            const FVM_Node *  fvm_nb_node = (*nb_it).second;
+            const FVM_Node *  fvm_nb_node = (*nb_it).first;
             bc_node_reserve.push_back(fvm_nb_node->global_offset()+0);
           }
         }
@@ -381,6 +381,10 @@ void SolderPadBC::MixA_EBM3_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_
   const double workfunction = resistance_region->material()->basic->Affinity(T_external());
   const double sigma = resistance_region->material()->basic->Conductance();
 
+
+  //the indepedent variable number, we only need 2 here.
+  adtl::AutoDScalar::numdir=2;
+
   // loop again
   BoundaryCondition::const_node_iterator node_it = nodes_begin();
   BoundaryCondition::const_node_iterator end_it = nodes_end();
@@ -432,17 +436,17 @@ void SolderPadBC::MixA_EBM3_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_
             FVM_Node::fvm_neighbor_node_iterator nb_it = fvm_node->neighbor_node_begin();
             for(; nb_it != fvm_node->neighbor_node_end(); ++nb_it)
             {
-              const FVM_Node *nb_node = (*nb_it).second;
+              const FVM_Node *nb_node = (*nb_it).first;
               const FVM_NodeData * nb_node_data = nb_node->node_data();
 
               // the psi of neighbor node
               AutoDScalar V_nb = x[nb_node->local_offset()+node_psi_offset]; V_nb.setADValue(1, 1.0);
 
               // distance from nb node to this node
-              PetscScalar distance = (*(fvm_node->root_node()) - *(nb_node->root_node())).size();
+              PetscScalar distance = fvm_node->distance(nb_node);
 
               // area of out surface of control volume related with neighbor node
-              PetscScalar cv_boundary = fvm_node->cv_surface_area(nb_node->root_node());
+              PetscScalar cv_boundary = std::abs(fvm_node->cv_surface_area(nb_node));
 
 
               AutoDScalar current = cv_boundary*sigma*(V-V_nb)/distance*current_scale;

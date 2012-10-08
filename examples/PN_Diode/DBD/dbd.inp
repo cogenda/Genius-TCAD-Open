@@ -43,6 +43,6 @@ SOLVE    Type=EQUILIBRIUM  #compute equilibrium state
 MODEL    Region=Si   II=Local II.Force=EVector
 METHOD   Type=DDML1  NS=Basic LS=GMRES  toler.relax=1e5
 ATTACH   Electrode=Cathode    VApp=Vp
-SOLVE    Type = TRANSIENT  out=biv TStart=0 TStep=1e-12 TStepMax=1e-11 TStop = 1.0e-9
+SOLVE    Type = TRANSIENT  out.prefix=biv TStart=0 TStep=1e-12 TStepMax=1e-11 TStop = 1.0e-9
 
 END

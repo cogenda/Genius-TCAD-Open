@@ -150,14 +150,14 @@ void ChargedContactBC::EBM3_Function(PetscScalar * x, Vec f, InsertMode &add_val
           FVM_Node::fvm_neighbor_node_iterator nb_it_end = fvm_nodes[i]->neighbor_node_end();
           for(; nb_it != nb_it_end; ++nb_it)
           {
-            const FVM_Node *nb_node = (*nb_it).second;
+            const FVM_Node *nb_node = (*nb_it).first;
             // the psi of neighbor node
             PetscScalar V_nb = x[nb_node->local_offset()];
             // distance from nb node to this node
-            PetscScalar distance = (*(fvm_nodes[i]->root_node()) - *(nb_node->root_node())).size();
+            PetscScalar distance = fvm_nodes[i]->distance(nb_node);
             // area of out surface of control volume related with neighbor node,
             // here we should consider the difference of 2D/3D by multiply z_width
-            PetscScalar cv_boundary = fvm_nodes[i]->cv_surface_area(nb_node->root_node())*z_width;
+            PetscScalar cv_boundary = fvm_nodes[i]->cv_surface_area(nb_node)*z_width;
             // surface electric field
             PetscScalar E = (V_nb-V)/distance;
             PetscScalar D = node_data->eps()*E;
@@ -311,7 +311,7 @@ void ChargedContactBC::EBM3_Jacobian_Reserve(Mat *jac, InsertMode &add_value_fla
 
               FVM_Node::fvm_neighbor_node_iterator  gnb_it = ghost_fvm_node->neighbor_node_begin();
               for(; gnb_it != ghost_fvm_node->neighbor_node_end(); ++gnb_it)
-                MatSetValue(*jac, fvm_nodes[i]->global_offset()+node_Tl_offset, (*gnb_it).second->global_offset()+ghost_node_Tl_offset, 0, ADD_VALUES);
+                MatSetValue(*jac, fvm_nodes[i]->global_offset()+node_Tl_offset, (*gnb_it).first->global_offset()+ghost_node_Tl_offset, 0, ADD_VALUES);
             }
           }
 
@@ -343,7 +343,7 @@ void ChargedContactBC::EBM3_Jacobian_Reserve(Mat *jac, InsertMode &add_value_fla
       FVM_Node::fvm_neighbor_node_iterator nb_it_end = fvm_node->neighbor_node_end();
       for(; nb_it != nb_it_end; ++nb_it)
       {
-        const FVM_Node *  fvm_nb_node = (*nb_it).second;
+        const FVM_Node *  fvm_nb_node = (*nb_it).first;
         MatSetValue(*jac, this->global_offset(), fvm_nb_node->global_offset(), 0, ADD_VALUES);
       }
     }
@@ -526,14 +526,14 @@ void ChargedContactBC::EBM3_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_
           FVM_Node::fvm_neighbor_node_iterator nb_it_end = fvm_nodes[i]->neighbor_node_end();
           for(; nb_it != nb_it_end; ++nb_it)
           {
-            const FVM_Node *nb_node = (*nb_it).second;
+            const FVM_Node *nb_node = (*nb_it).first;
             // the psi of neighbor node
             AutoDScalar V_nb = x[nb_node->local_offset()+node_psi_offset];  V_nb.setADValue(1,1.0);
             // distance from nb node to this node
-            PetscScalar distance = (*(fvm_nodes[i]->root_node()) - *(nb_node->root_node())).size();
+            PetscScalar distance = fvm_nodes[i]->distance(nb_node);
             // area of out surface of control volume related with neighbor node,
             // here we should consider the difference of 2D/3D by multiply z_width
-            PetscScalar cv_boundary = fvm_nodes[i]->cv_surface_area(nb_node->root_node())*z_width;
+            PetscScalar cv_boundary = fvm_nodes[i]->cv_surface_area(nb_node)*z_width;
             // surface electric field and electrc displacement
             AutoDScalar E = (V_nb-V)/distance;
             AutoDScalar D = node_data->eps()*E;

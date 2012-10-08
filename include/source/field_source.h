@@ -62,6 +62,11 @@ public:
   void update_system();
 
   /**
+   * @return applied_to_system flag
+   */
+  bool applied_to_system() const { return _applied_to_system; }
+
+  /**
    * @return the limited time step
    */
   double limit_dt(double time, double dt) const;
@@ -138,6 +143,11 @@ private:
   void parse_spectrum_file(const std::string & filename, SimulationSystem & system, const Parser::Card &c);
 
   /**
+   * flag to indicate that the field source has been applied
+   */
+  bool _applied_to_system;
+
+  /**
    * all the particle sources
    */
   std::vector<Particle_Source *> _particle_sources;
@@ -170,6 +180,11 @@ private:
   /**
    * private functions for setting each waveform
    */
+  void  SetWaveformSin(const Parser::Card &c);
+
+  /**
+   * private functions for setting each waveform
+   */
   void  SetWaveformGauss(const Parser::Card &c);
 
   /**
@@ -186,6 +201,11 @@ private:
    * private functions for setting each waveform
    */
   void  SetWaveformShell(const Parser::Card &c);
+
+  /**
+   * private functions for setting each waveform
+   */
+  void  SetWaveformWaveFile(const Parser::Card &c);
 };
 
 #endif

@@ -149,6 +149,12 @@ public:
    */
   int  do_import  ( const Parser::Card & c );
 
+
+  /**
+   * process "REGIONSET" card
+   */
+  int do_region_set ( const Parser::Card & c);
+
   /**
    * process and do "NODESET" card
    */
@@ -163,6 +169,11 @@ public:
    * process and do "PMI" card
    */
   int  set_physical_model  ( const Parser::Card & c );
+
+  /**
+   * process "SOURCEAPPLY" card
+   */
+  int apply_field_source  ( const Parser::Card & c );
 
   /**
    * process and do "REFINE.CONFORM" card
@@ -267,11 +278,6 @@ public:
    *  This is executed after each (nonlinear) iteration
    */
   virtual void post_iteration();
-
-  /**
-   *  This is executed after each (nonlinear) iteration
-   */
-  virtual void post_iteration(void * , void * , void * , bool &, bool &);
 
   /**
    * This is executed after the finalization of the solver

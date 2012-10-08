@@ -96,6 +96,7 @@ VectorValue<T>::VectorValue (const T x,
 }
 
 
+
 template <typename T>
 inline
 VectorValue<T>::VectorValue (const T * v) :

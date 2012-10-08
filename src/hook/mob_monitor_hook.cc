@@ -65,6 +65,7 @@ MobMonitorHook::MobMonitorHook ( SolverBase & solver, const std::string & name, 
 
   _t_start = 0;
   _t_end   = std::numeric_limits<double>::infinity();
+  _surface = false;
 
   const std::vector<Parser::Parameter> & parm_list = *((std::vector<Parser::Parameter> *)param);
   for(std::vector<Parser::Parameter>::const_iterator parm_it = parm_list.begin();
@@ -74,6 +75,8 @@ MobMonitorHook::MobMonitorHook ( SolverBase & solver, const std::string & name, 
       _t_start=parm_it->get_real() * PhysicalUnit::s;
     if(parm_it->name() == "tstop" && parm_it->type() == Parser::REAL)
       _t_end=parm_it->get_real() * PhysicalUnit::s;
+    if(parm_it->name() == "surface" && parm_it->type() == Parser::BOOL)
+      _surface=parm_it->get_bool();
   }
 }
 
@@ -109,7 +112,11 @@ void MobMonitorHook::on_init()
   mesh.pack_nodes(points);
 
   std::vector< std::pair<unsigned int, unsigned int> > edge_array;
-  mesh.pack_egeds(edge_array);
+
+  if(_surface)
+    mesh.pack_boundary_egeds(edge_array);
+  else
+    mesh.pack_egeds(edge_array);
   for(unsigned int n=0; n<edge_array.size(); ++n)
   {
     edges.insert( std::make_pair( edge_array[n], n ) );
@@ -275,6 +282,8 @@ void MobMonitorHook::solution_to_vtk()
 
     for(unsigned int n=0; n<edge.size(); ++n)
     {
+      if(edges.find(edge[n]) == edges.end()) continue;
+
       unsigned int index = edges.find(edge[n])->second;
       elec_mob[index] = mob[n].first/(cm*cm/V/s);
       hole_mob[index] = mob[n].second/(cm*cm/V/s);

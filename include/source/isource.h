@@ -30,6 +30,7 @@
 #define __isource_h__
 
 #include <string>
+#include <map>
 #include <cmath>
 
 #include "config.h"
@@ -71,6 +72,19 @@ public:
    * virtual function, @return current for a given time step
    */
   virtual double iapp(double t)=0;
+
+  /**
+   * @return the max value of iapp(t+delta_t)-iapp(t), delta_t in [0, dt]
+   */
+  virtual double di_max(double t, double dt, double dt_min)
+  {
+    double i = iapp(t);
+    double di = iapp(t+dt) - i;
+    for(double clock=t; clock < t+dt; clock+=dt_min)
+      if( std::abs(di) < std::abs(iapp(clock) - i))
+        di = iapp(clock) - i;
+    return di;
+  }
 
   /**
    * @return const reference of label
@@ -122,7 +136,17 @@ public:
    * @return constant current when t>td, else 0
    */
   double iapp(double t)
-  { return t>=td? Idc:0;};
+  { return t>=td? Idc:0;}
+
+
+  /**
+   * @return the max value of iapp(t+delta_t)-iapp(t), delta_t in [0, dt]
+   */
+  double di_max(double t, double dt, double dt_min)
+  {
+    if(t<td && t+dt >=td) return Idc-0.0;
+    return 0.0;
+  }
 };
 
 
@@ -174,7 +198,42 @@ public:
    * @return current with sine wave when t>td, else return dc current of I0
    */
   double iapp(double t)
-  { return t>=td? Iamp*exp(-alpha*(t-td))*sin(2*3.14159265358979323846*fre*(t-td)):0;};
+  { return t>=td? Iamp*exp(-alpha*(t-td))*sin(2*3.14159265358979323846*fre*(t-td)):0;}
+
+
+  /**
+   * @return the max value of iapp(t+delta_t)-iapp(t), delta_t in [0, dt]
+   */
+  double di_max(double t, double dt, double dt_min)
+  {
+    int cycles = fre*(t-td);
+    double t1 = t;
+    double t2 = t+dt;
+    double ta1 = cycles/fre + 0.25/fre + td;
+    double ta2 = cycles/fre + 0.75/fre + td;
+    double ta3 = (cycles+1)/fre + 0.25/fre + td;
+    double ta4 = (cycles+1)/fre + 0.75/fre + td;
+
+    std::map<double, double> i_wave;
+    i_wave[t1 ] =  iapp(t1);
+    i_wave[t2 ] =  iapp(t2);
+    i_wave[ta1] =  iapp(ta1);
+    i_wave[ta2] =  iapp(ta2);
+    i_wave[ta3] =  iapp(ta3);
+    i_wave[ta4] =  iapp(ta4);
+
+    std::map<double, double>::iterator it1 = i_wave.find(t1);
+    std::map<double, double>::iterator it2 = i_wave.find(t2);
+
+    double i1 = it1->second;
+    double di = it2->second - i1;
+    while(it1++ != it2)
+    {
+      if( std::abs(di) < std::abs(it1->second - i1) )
+        di = it1->second - i1;
+    }
+    return di;
+  }
 };
 
 
@@ -255,6 +314,48 @@ public:
       else    return I1;
     }
   }
+
+  /**
+   * @return the max value of iapp(t+delta_t)-iapp(t), delta_t in [0, dt]
+   */
+  double di_max(double t, double dt, double dt_min)
+  {
+    int cycles = (t-td)/pr;
+    double t1  = t;
+    double t2  = t+dt;
+    double ta1 = 0  + cycles*pr + td;
+    double ta2 = tr + cycles*pr + td;
+    double ta3 = tr + pw + cycles*pr + td;
+    double ta4 = tr + pw + tf + cycles*pr + td;
+    double ta5 = 0  + (cycles+1)*pr + td;
+    double ta6 = tr + (cycles+1)*pr + td;
+    double ta7 = tr + pw + (cycles+1)*pr + td;
+    double ta8 = tr + pw + tf + (cycles+1)*pr + td;
+
+    std::map<double, double> i_wave;
+    i_wave[t1 ] =  iapp(t1);
+    i_wave[t2 ] =  iapp(t2);
+    i_wave[ta1] =  iapp(ta1);
+    i_wave[ta2] =  iapp(ta2);
+    i_wave[ta3] =  iapp(ta3);
+    i_wave[ta4] =  iapp(ta4);
+    i_wave[ta5] =  iapp(ta5);
+    i_wave[ta6] =  iapp(ta6);
+    i_wave[ta7] =  iapp(ta7);
+    i_wave[ta8] =  iapp(ta8);
+
+    std::map<double, double>::iterator it1 = i_wave.find(t1);
+    std::map<double, double>::iterator it2 = i_wave.find(t2);
+
+    double i1 = it1->second;
+    double di = it2->second - i1;
+    while(it1++ != it2)
+    {
+      if( std::abs(di) < std::abs(it1->second - i1) )
+        di = it1->second - i1;
+    }
+    return di;
+  }
 };
 
 
@@ -321,6 +422,34 @@ public:
       return I1+(I2-I1)*(1-exp(-(t-td)/trc));
     else
       return I1+(I2-I1)*(1-exp(-(t-td)/trc))+(I1-I2)*(1-exp(-(t-tfd)/tfc));
+  }
+
+
+  /**
+   * @return the max value of iapp(t+delta_t)-iapp(t), delta_t in [0, dt]
+   */
+  double di_max(double t, double dt, double dt_min)
+  {
+    double t1 = (t-td);
+    double t2 = (t+dt-td);
+    double ta1 = tfd;
+
+    std::map<double, double> i_wave;
+    i_wave[t1 ] =  iapp(t1);
+    i_wave[t2 ] =  iapp(t2);
+    i_wave[ta1] =  iapp(ta1);
+
+    std::map<double, double>::iterator it1 = i_wave.find(t1);
+    std::map<double, double>::iterator it2 = i_wave.find(t2);
+
+    double i1 = it1->second;
+    double di = it2->second - i1;
+    while(it1++ != it2)
+    {
+      if( std::abs(di) < std::abs(it1->second - i1) )
+        di = it1->second - i1;
+    }
+    return di;
   }
 
 };

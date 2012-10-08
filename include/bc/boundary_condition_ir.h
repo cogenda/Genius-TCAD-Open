@@ -63,13 +63,6 @@ public:
 
 
   /**
-   * @return true when it has external circuit
-   */
-  virtual bool is_electrode()  const
-  {return false;}
-
-
-  /**
    * @return true iff this boundary has a current flow
    */
   virtual bool has_current_flow() const
@@ -307,6 +300,7 @@ public:
    */
   virtual void EBM3_Update_Solution(PetscScalar *);
 
+
   //////////////////////////////////////////////////////////////////////////////////
   //--------------Matrix and RHS Vector evaluate for DDM AC Solver----------------//
   //////////////////////////////////////////////////////////////////////////////////
@@ -315,6 +309,7 @@ public:
    *  evaluating matrix and rhs vector for ddm ac solver
    */
   virtual void DDMAC_Fill_Matrix_Vector( Mat A, Vec b, const Mat J, const double omega, InsertMode & add_value_flag );
+
 
 
 #ifdef COGENDA_COMMERCIAL_PRODUCT

@@ -23,9 +23,10 @@
 
 
 // Local includes
+#include "elem.h"
 #include "boundary_info.h"
 #include "boundary_mesh.h"
-#include "elem.h"
+#include "parallel.h"
 #include "log.h"
 
 
@@ -291,6 +292,8 @@ void BoundaryInfo::add_side(const Elem* elem,
 
 void BoundaryInfo::boundary_side_nodes_with_id ( std::map<short int, std::set<const Node *> > & boundary_side_nodes_id_map) const
 {
+  assert(_mesh.is_serial() == true);
+
   boundary_side_nodes_id_map.clear();
 
   std::multimap<const Elem*, std::pair<unsigned short int, short int> >::const_iterator pos;
@@ -564,7 +567,7 @@ void BoundaryInfo::build_on_processor_node_list (std::vector<unsigned int>& nl, 
   il.clear();
 
   std::map<const Node*, short int>::const_iterator pos
-      = _boundary_node_id.begin();
+  = _boundary_node_id.begin();
 
   for (; pos != _boundary_node_id.end(); ++pos)
   {
@@ -597,8 +600,8 @@ void BoundaryInfo::build_side_list (std::vector<unsigned int>&       el,
 
 
 void BoundaryInfo::build_active_side_list (std::vector<unsigned int>&       el,
-                                           std::vector<unsigned short int>& sl,
-                                           std::vector<short int>&          il) const
+    std::vector<unsigned short int>& sl,
+    std::vector<short int>&          il) const
 {
   el.clear();
   sl.clear();
@@ -606,8 +609,7 @@ void BoundaryInfo::build_active_side_list (std::vector<unsigned int>&       el,
 
   std::multimap<const Elem*, std::pair<unsigned short int, short int> >::const_iterator pos;
 
-  for (pos=_boundary_side_id.begin(); pos != _boundary_side_id.end();
-       ++pos)
+  for (pos=_boundary_side_id.begin(); pos != _boundary_side_id.end(); ++pos)
   {
     const Elem * elem = pos->first;
     if (elem->active() )
@@ -638,8 +640,8 @@ void BoundaryInfo::build_active_side_list (std::vector<unsigned int>&       el,
 
 
 void BoundaryInfo::build_on_processor_side_list (std::vector<unsigned int>&       el,
-                                                 std::vector<unsigned short int>& sl,
-                                                 std::vector<short int>&          il) const
+    std::vector<unsigned short int>& sl,
+    std::vector<short int>&          il) const
 {
   el.clear();
   sl.clear();
@@ -696,6 +698,7 @@ void BoundaryInfo::nodes_with_boundary_id (std::vector<const Node *>& nl, short 
     nl.push_back((*it).second);
 }
 
+
 void BoundaryInfo::nodes_with_boundary_id ( std::map<short int, std::vector<const Node *> > & node_boundary_id_map) const
 {
   node_boundary_id_map.clear();
@@ -710,33 +713,33 @@ void BoundaryInfo::nodes_with_boundary_id ( std::map<short int, std::vector<cons
 
 
 void BoundaryInfo::node_in_regions ( std::map<const Node *, std::set<unsigned int > > & node_region_map) const
-{
-  node_region_map.clear();
-
-  std::multimap<const Elem*, std::pair<unsigned short int, short int> >::const_iterator pos;
-  for (pos=_boundary_side_id.begin(); pos != _boundary_side_id.end(); ++pos)
   {
-    const Elem* elem = (*pos).first;
-    unsigned short int side = (*pos).second.first;
-    short int bd_id = (*pos).second.second;
+    node_region_map.clear();
 
-    std::vector<const Elem*> family;
-    elem->active_family_tree_by_side(family, side);
-
-    for(unsigned int f=0; f<family.size(); ++f)
+    std::multimap<const Elem*, std::pair<unsigned short int, short int> >::const_iterator pos;
+    for (pos=_boundary_side_id.begin(); pos != _boundary_side_id.end(); ++pos)
     {
-      const Elem* family_elem = family[f];
-      AutoPtr<Elem> side_elem = family_elem->build_side(side);
+      const Elem* elem = (*pos).first;
+      unsigned short int side = (*pos).second.first;
+      short int bd_id = (*pos).second.second;
 
-      for (unsigned int n=0; n<side_elem->n_nodes(); ++n)
+      std::vector<const Elem*> family;
+      elem->active_family_tree_by_side(family, side);
+
+      for(unsigned int f=0; f<family.size(); ++f)
       {
-        const Node * node = side_elem->get_node(n);
-        node_region_map[node].insert(elem->subdomain_id());
+        const Elem* family_elem = family[f];
+        AutoPtr<Elem> side_elem = family_elem->build_side(side);
+
+        for (unsigned int n=0; n<side_elem->n_nodes(); ++n)
+        {
+          const Node * node = side_elem->get_node(n);
+          node_region_map[node].insert(elem->subdomain_id());
+        }
       }
     }
+    assert(node_region_map.size() == _boundary_node_id.size());
   }
-  assert(node_region_map.size() == _boundary_node_id.size());
-}
 
 
 
@@ -812,69 +815,24 @@ void BoundaryInfo::active_elem_with_boundary_id (
 
 
 
-void BoundaryInfo::get_subdomains_bd_on(short int boundary_id, unsigned int & sub_id1, unsigned int & sub_id2) const
-{
 
-  std::multimap<const Elem*, std::pair<unsigned short int, short int> >::const_iterator pos;
-
-  std::set< unsigned int > sub_ids;
-
-
-  for (pos=_boundary_side_id.begin(); pos != _boundary_side_id.end(); ++pos)
-  {
-    // if not match required  boundary_id, continue
-    if( pos->second.second != boundary_id ) continue;
-
-    // only process element with this boundary_id
-    const Elem * elem = pos->first;
-    sub_ids.insert( elem->subdomain_id() );
-
-    // get the side
-    unsigned int side = pos->second.first;
-
-    const Elem * neighbor_elem = elem->neighbor(side);
-
-    if( neighbor_elem == NULL )
-      sub_ids.insert( invalid_uint );
-    else
-      sub_ids.insert( neighbor_elem->subdomain_id() );
-
-  }
-
-  // fatal error
-  if( sub_ids.size() != 2 )
-  {
-    MESSAGE<<std::endl;
-    MESSAGE<<"Fatal Error: Genius assert that all the boundary faces (edges) with same"<<std::endl;
-    MESSAGE<<"boundary label should either be external boundary of a special region or"<<std::endl;
-    MESSAGE<<"interface between two regions."<<std::endl;
-    MESSAGE<<"However, the mesh boundary "<<get_label_by_id(boundary_id)<<" breaks this assert."<<std::endl;
-    MESSAGE<<"This boundary involves "<<sub_ids.size()<<" regions."<<std::endl;
-    MESSAGE<<"Please check the device mesh and try again."<<std::endl;
-    RECORD();
-    genius_error();
-  }
-
-  std::set< unsigned int >::iterator it = sub_ids.begin();
-
-  it = sub_ids.begin();
-  sub_id1 = *it;
-  ++it;
-  sub_id2 = *it;
-
-}
 
 
 void BoundaryInfo::get_subdomains_bd_on( std::map<short int,  std::pair<unsigned int, unsigned int > > & boundary_subdomain_map ) const
 {
-  std::multimap<const Elem*, std::pair<unsigned short int, short int> >::const_iterator pos;
-
   std::map<short int, std::set< unsigned int > > boundary_sub_ids;
+  std::set<short int>::const_iterator bit = _boundary_ids.begin();
+  for(; bit != _boundary_ids.end(); ++bit)
+    boundary_sub_ids.insert( std::make_pair(*bit,std::set< unsigned int >()) );
+
+  std::multimap<const Elem*, std::pair<unsigned short int, short int> >::const_iterator pos;
   for (pos=_boundary_side_id.begin(); pos != _boundary_side_id.end(); ++pos)
   {
     short int boundary_id = pos->second.second;
 
     const Elem * elem = pos->first;
+    if(!elem->on_processor()) continue;
+
     boundary_sub_ids[boundary_id].insert( elem->subdomain_id() );
 
     // get the side
@@ -883,16 +841,22 @@ void BoundaryInfo::get_subdomains_bd_on( std::map<short int,  std::pair<unsigned
     if( neighbor_elem == NULL )
       boundary_sub_ids[boundary_id].insert( invalid_uint );
     else
+    {
+      assert(neighbor_elem->on_local());
       boundary_sub_ids[boundary_id].insert( neighbor_elem->subdomain_id() );
+    }
   }
 
   // fatal error
-  std::map<short int, std::set< unsigned int > >::const_iterator boundary_sub_ids_it = boundary_sub_ids.begin();
-  std::map<short int, std::set< unsigned int > >::const_iterator boundary_sub_ids_it_end = boundary_sub_ids.end();
+  std::map<short int, std::set< unsigned int > >::iterator boundary_sub_ids_it = boundary_sub_ids.begin();
+  std::map<short int, std::set< unsigned int > >::iterator boundary_sub_ids_it_end = boundary_sub_ids.end();
   for(; boundary_sub_ids_it != boundary_sub_ids_it_end; ++boundary_sub_ids_it )
   {
     short int boundary_id = boundary_sub_ids_it->first;
-    const std::set< unsigned int > & sub_ids = boundary_sub_ids_it->second;
+    std::set< unsigned int > & sub_ids = boundary_sub_ids_it->second;
+    Parallel::allgather(sub_ids);
+
+
     if( sub_ids.size() != 2 )
     {
       MESSAGE<<std::endl;
@@ -932,6 +896,8 @@ void BoundaryInfo::get_boundary_ids_by_subdomain (unsigned int subdomain, std::s
       bd_ids.insert(pos->second.second);
     }
 
+    Parallel::allgather(bd_ids);
+
   }
 
 
@@ -943,8 +909,8 @@ void BoundaryInfo::get_subdomain_neighbors( unsigned int subdomain, std::vector<
   std::multimap<const Elem*, std::pair<unsigned short int, short int> >::const_iterator pos;
   for (pos=_boundary_side_id.begin(); pos != _boundary_side_id.end(); ++pos)
   {
-
     const Elem * elem = pos->first;
+    if( !elem->on_processor() ) continue;
 
     if( elem->subdomain_id() != subdomain) continue;
 
@@ -953,6 +919,8 @@ void BoundaryInfo::get_subdomain_neighbors( unsigned int subdomain, std::vector<
     if( neighbor_elem )
       neighbor_subdomains_set.insert(neighbor_elem->subdomain_id());
   }
+
+  Parallel::allgather(neighbor_subdomains_set);
 
   // save to vector
   neighbor_subdomains.clear();
@@ -966,26 +934,28 @@ void BoundaryInfo::get_subdomain_neighbors( unsigned int subdomain, std::vector<
 
 
 std::set<short int> BoundaryInfo::get_ids_on_region_interface(unsigned int sub1, unsigned int sub2) const
+{
+  std::set<short int> bds;
+  std::multimap<const Elem*, std::pair<unsigned short int, short int> >::const_iterator pos;
+  for (pos=_boundary_side_id.begin(); pos != _boundary_side_id.end(); ++pos)
   {
-    std::set<short int> bds;
-    std::multimap<const Elem*, std::pair<unsigned short int, short int> >::const_iterator pos;
-    for (pos=_boundary_side_id.begin(); pos != _boundary_side_id.end(); ++pos)
-    {
-      const Elem * elem = pos->first;
-      if( elem->subdomain_id() != sub1) continue; // only consider elem on subdomain 1
+    const Elem * elem = pos->first;
+    if( !elem->on_processor() ) continue;
+    if( elem->subdomain_id() != sub1) continue; // only consider elem on subdomain 1
 
       // if my neighbor on subdomain 2, record it
-      const Elem * beighbor_elem = elem->neighbor(pos->second.first);
-      if(!beighbor_elem) continue;
-      if( beighbor_elem->subdomain_id() == sub2) bds.insert(pos->second.second);
-    }
-    return bds;
+    const Elem * neighbor_elem = elem->neighbor(pos->second.first);
+    if(!neighbor_elem) continue;
+    if( neighbor_elem->subdomain_id() == sub2) bds.insert(pos->second.second);
   }
+  Parallel::allgather(bds);
+  return bds;
+}
 
 
 void BoundaryInfo::find_neighbors()
 {
-
+  assert(_mesh.is_serial() == true);
   // Find neighboring elements by first finding elements
   // with identical side keys and then check to see if they
   // are neighbors
@@ -1010,7 +980,7 @@ void BoundaryInfo::find_neighbors()
   std::multimap<const Elem*, std::pair<unsigned short int, short int> >::iterator el_end = _boundary_side_id.end();
   for (; el != el_end; ++el)
   {
-   next_side:
+  next_side:
 
     Elem * element    = const_cast<Elem *>(el->first);
     unsigned int side = el->second.first;

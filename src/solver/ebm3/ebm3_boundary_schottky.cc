@@ -34,7 +34,7 @@
 
 using PhysicalUnit::kb;
 using PhysicalUnit::e;
-
+using PhysicalUnit::Ohm;
 
 /*---------------------------------------------------------------------
  * fill Schottky electrode potential into initial vector
@@ -54,16 +54,8 @@ void SchottkyContactBC::EBM3_Fill_Value(Vec x, Vec L)
     //for stand alone electrode
     else
     {
-      if(ext_circuit()->is_voltage_driven())
-      {
-        const PetscScalar R = this->ext_circuit()->R();
-        VecSetValue(L, this->global_offset(), 1.0/((1.0+R)*current_scale), INSERT_VALUES);
-      }
-
-      if(ext_circuit()->is_current_driven())
-      {
-        VecSetValue(L, this->global_offset(), 1.0/(current_scale), INSERT_VALUES);
-      }
+      const PetscScalar s = ext_circuit()->electrode_scaling(SolverSpecify::dt);
+      VecSetValue(L, this->global_offset(), s, INSERT_VALUES);
     }
 
   }
@@ -291,14 +283,14 @@ void SchottkyContactBC::EBM3_Function(PetscScalar * x, Vec f, InsertMode &add_va
               FVM_Node::fvm_neighbor_node_iterator nb_it = fvm_nodes[i]->neighbor_node_begin();
               for(; nb_it != fvm_nodes[i]->neighbor_node_end(); ++nb_it)
               {
-                const FVM_Node *nb_node = (*nb_it).second;
+                const FVM_Node *nb_node = (*nb_it).first;
                 const FVM_NodeData * nb_node_data = nb_node->node_data();
                 // the psi of neighbor node
                 PetscScalar V_nb = x[nb_node->local_offset()+0];
                 // distance from nb node to this node
-                PetscScalar distance = (*(fvm_nodes[i]->root_node()) - *(nb_node->root_node())).size();
+                PetscScalar distance = fvm_nodes[i]->distance(nb_node);
                 // area of out surface of control volume related with neighbor node
-                PetscScalar cv_boundary = fvm_nodes[i]->cv_surface_area(nb_node->root_node());
+                PetscScalar cv_boundary = fvm_nodes[i]->cv_surface_area(nb_node);
                 PetscScalar dEdt;
                 if(SolverSpecify::TS_type==SolverSpecify::BDF2 && SolverSpecify::BDF2_LowerOrder==false) //second order
                 {
@@ -405,30 +397,23 @@ void SchottkyContactBC::EBM3_Function(PetscScalar * x, Vec f, InsertMode &add_va
   // NOTE: only statistic current flow belongs to on processor node
   PetscScalar current = current_scale*std::accumulate(current_buffer.begin(), current_buffer.end(), 0.0 );
 
+  ext_circuit()->potential() = Ve;
+  ext_circuit()->current() = current;
+
+  PetscScalar mna_scaling = ext_circuit()->mna_scaling(SolverSpecify::dt);
+
   //for inter connect electrode
   if(this->is_inter_connect_bc())
   {
-    PetscScalar R = ext_circuit()->R();                               // resistance
+    PetscScalar R = ext_circuit()->inter_connect_resistance();                               // resistance
     PetscScalar f_ext = R*current;
     VecSetValue(f, this->global_offset(), f_ext, ADD_VALUES);
   }
   // for stand alone electrode
   else
   {
-    if(ext_circuit()->is_voltage_driven())
-    {
-      PetscScalar R = ext_circuit()->R();             // resistance
-      PetscScalar L = ext_circuit()->L();             // inductance
-      PetscScalar dt = SolverSpecify::dt;
-      PetscScalar f_ext = (L/dt+R)*current;
-      VecSetValue(f, this->global_offset(), f_ext, ADD_VALUES);
-    }
-
-    if(ext_circuit()->is_current_driven())
-    {
-      PetscScalar f_ext = current;
-      VecSetValue(f, this->global_offset(), f_ext, ADD_VALUES);
-    }
+    PetscScalar f_ext = mna_scaling*current;
+    VecSetValue(f, this->global_offset(), f_ext, ADD_VALUES);
   }
 
   if(Genius::is_last_processor())
@@ -437,41 +422,16 @@ void SchottkyContactBC::EBM3_Function(PetscScalar * x, Vec f, InsertMode &add_va
     if(this->is_inter_connect_bc())
     {
       PetscScalar V_ic = x[this->inter_connect_hub()->local_offset()];  // potential at inter connect node
-      PetscScalar R = ext_circuit()->R();                               // resistance
       PetscScalar f_ext = Ve - V_ic;
       VecSetValue(f, this->global_offset(), f_ext, ADD_VALUES);
     }
-    // for stand along electrode
+    // for stand alone electrode
     else
     {
-      if(ext_circuit()->is_voltage_driven())
-      {
-        PetscScalar Vapp = ext_circuit()->Vapp();       // application voltage
-        PetscScalar R = ext_circuit()->R();             // resistance
-        PetscScalar C = ext_circuit()->C();             // capacitance
-        PetscScalar L = ext_circuit()->L();             // inductance
-        PetscScalar I = ext_circuit()->current();       // the previous step current flow into electrode
-        PetscScalar Ic = ext_circuit()->cap_current();  // the previous step current flow pass though cap to ground.
-        PetscScalar P  = ext_circuit()->potential();    // the previous step potential of the electrode
-        PetscScalar dt = SolverSpecify::dt;
-        PetscScalar f_ext = (Ve-Vapp) + (L/dt+R)*C/dt*Ve - (L/dt+R)*C/dt*P - L/dt*(I+Ic);
-        VecSetValue(f, this->global_offset(), f_ext, ADD_VALUES);
-      }
-
-      if(ext_circuit()->is_current_driven())
-      {
-        PetscScalar Iapp = ext_circuit()->Iapp();         // application current
-        PetscScalar Ic   = ext_circuit()->cap_current();  // the previous step current flow pass though cap to ground.
-        PetscScalar f_ext = Ic - Iapp;
-        VecSetValue(f, this->global_offset(), f_ext, ADD_VALUES);
-      }
+      PetscScalar f_ext = ext_circuit()->mna_function(SolverSpecify::dt);
+      VecSetValue(f, this->global_offset(), f_ext, ADD_VALUES);
     }
-
   }
-
-  // save the IV of current iteration
-  ext_circuit()->current_itering() = current;
-  ext_circuit()->potential_itering() = Ve;
 
 
   // the last operator is ADD_VALUES
@@ -548,7 +508,7 @@ void SchottkyContactBC::EBM3_Jacobian_Reserve(Mat *jac, InsertMode &add_value_fl
 
                 FVM_Node::fvm_neighbor_node_iterator  gnb_it = ghost_fvm_node->neighbor_node_begin();
                 for(; gnb_it != ghost_fvm_node->neighbor_node_end(); ++gnb_it)
-                  MatSetValue(*jac, global_offset+node_Tl_offset, (*gnb_it).second->global_offset()+ghostregion_node_Tl_offset, 0, ADD_VALUES);
+                  MatSetValue(*jac, global_offset+node_Tl_offset, (*gnb_it).first->global_offset()+ghostregion_node_Tl_offset, 0, ADD_VALUES);
               }
             }
 
@@ -606,7 +566,7 @@ void SchottkyContactBC::EBM3_Jacobian_Reserve(Mat *jac, InsertMode &add_value_fl
           FVM_Node::fvm_neighbor_node_iterator nb_it_end =  fvm_node->neighbor_node_end();
           for(; nb_it!=nb_it_end; ++nb_it)
           {
-            const FVM_Node *  fvm_nb_node = (*nb_it).second;
+            const FVM_Node *  fvm_nb_node = (*nb_it).first;
             for(unsigned int nv=0; nv<region->ebm_n_variables(); ++nv)
               bc_node_reserve.push_back(fvm_nb_node->global_offset()+nv);
           }
@@ -716,11 +676,7 @@ void SchottkyContactBC::EBM3_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add
     MatAssemblyEnd(*jac, MAT_FLUSH_ASSEMBLY);
   }
 
-  PetscInt bc_global_offset = this->global_offset();
-  PetscScalar R = ext_circuit()->R();             // resistance
-  PetscScalar C = ext_circuit()->C();             // capacitance
-  PetscScalar L = ext_circuit()->L();             // inductance
-  PetscScalar dt = SolverSpecify::dt;
+  const PetscInt bc_global_offset = this->global_offset();
 
   const PetscScalar Work_Function = this->scalar("workfunction");
   const PetscScalar Heat_Transfer = this->scalar("heat.transfer");
@@ -886,14 +842,15 @@ void SchottkyContactBC::EBM3_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add
 
             //for inter connect electrode
             if(this->is_inter_connect_bc())
+            {
+              PetscScalar R = ext_circuit()->inter_connect_resistance();
               MatSetValues(*jac, 1, &bc_global_offset, 4, &(col[0]), (R*current_emit*current_scale).getADValue(), ADD_VALUES);
+            }
             //for stand alone electrode
             else
             {
-              if(ext_circuit()->is_voltage_driven())
-                MatSetValues(*jac, 1, &bc_global_offset, 4, &(col[0]), ((L/dt+R)*current_emit*current_scale).getADValue(), ADD_VALUES);
-              if(ext_circuit()->is_current_driven())
-                MatSetValues(*jac, 1, &bc_global_offset, 4, &(col[0]), (current_emit*current_scale).getADValue(), ADD_VALUES);
+              PetscScalar mna_scaling = ext_circuit()->mna_scaling(SolverSpecify::dt);
+              MatSetValues(*jac, 1, &bc_global_offset, 4, &(col[0]), (mna_scaling*current_emit*current_scale).getADValue(), ADD_VALUES);
             }
 
             // displacement current
@@ -902,14 +859,14 @@ void SchottkyContactBC::EBM3_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add
               FVM_Node::fvm_neighbor_node_iterator nb_it = fvm_nodes[i]->neighbor_node_begin();
               for(; nb_it != fvm_nodes[i]->neighbor_node_end(); ++nb_it)
               {
-                FVM_Node *nb_node = (*nb_it).second;
+                FVM_Node *nb_node = (*nb_it).first;
                 FVM_NodeData * nb_node_data = nb_node->node_data();
                 // the psi of neighbor node
                 AutoDScalar V_nb = x[nb_node->local_offset()+0]; V_nb.setADValue(1, 1.0);
                 // distance from nb node to this node
-                PetscScalar distance = (*(fvm_nodes[i]->root_node()) - *(nb_node->root_node())).size();
+                PetscScalar distance = fvm_nodes[i]->distance(nb_node);
                 // area of out surface of control volume related with neighbor node
-                PetscScalar cv_boundary = fvm_nodes[i]->cv_surface_area(nb_node->root_node());
+                PetscScalar cv_boundary = fvm_nodes[i]->cv_surface_area(nb_node);
 
                 AutoDScalar dEdt;
                 if(SolverSpecify::TS_type==SolverSpecify::BDF2 && SolverSpecify::BDF2_LowerOrder==false) //second order
@@ -928,10 +885,16 @@ void SchottkyContactBC::EBM3_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add
 
                 //for inter connect electrode
                 if(this->is_inter_connect_bc())
-                  current_disp=R*current_disp;
-                //for stand alone electrode
-                if(ext_circuit()->is_voltage_driven())
-                  current_disp=(L/dt+R)*current_disp;
+                {
+                  PetscScalar R = ext_circuit()->inter_connect_resistance();
+                  current_disp = R*current_disp;
+                }
+                // for stand alone electrode
+                else
+                {
+                  PetscScalar mna_scaling = ext_circuit()->mna_scaling(SolverSpecify::dt);
+                  current_disp = mna_scaling*current_disp;
+                }
 
                 MatSetValue(*jac, bc_global_offset, fvm_nodes[i]->global_offset()+0, current_disp.getADValue(0), ADD_VALUES);
                 MatSetValue(*jac, bc_global_offset, nb_node->global_offset()+0, current_disp.getADValue(1), ADD_VALUES);
@@ -1017,10 +980,8 @@ void SchottkyContactBC::EBM3_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add
   //
   //
 
-  if(Genius::processor_id() == Genius::n_processors() -1)
+  if(Genius::is_last_processor())
   {
-    // here we process the external circuit, we do not use AD here
-    // NOTE current item such as (L/dt+R)*current and current has already been processed before
 
     //for inter connect electrode
     if(this->is_inter_connect_bc())
@@ -1036,21 +997,8 @@ void SchottkyContactBC::EBM3_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add
     //for stand alone electrode
     else
     {
-      if(ext_circuit()->is_voltage_driven())
-      {
-        // the external electrode equation is:
-        // f_ext = (L/dt+R)*current + (Ve-Vapp) + (L/dt+R)*C/dt*Ve - (L/dt+R)*C/dt*P - L/dt*(I+Ic);
-
-        // d(f_ext)/d(Ve)
-        MatSetValue(*jac, bc_global_offset, bc_global_offset, 1+(L/dt+R)*C/dt, ADD_VALUES);
-      }
-
-      if(ext_circuit()->is_current_driven())
-      {
-        // the external electrode equation is:
-        // f_ext = current + Ic - Iapp;
-        // so nothing to do
-      }
+      ext_circuit()->potential() = x[this->local_offset()];
+      MatSetValue(*jac, bc_global_offset, bc_global_offset, ext_circuit()->mna_jacobian(SolverSpecify::dt), ADD_VALUES);
     }
   }
 
@@ -1149,6 +1097,6 @@ void SchottkyContactBC::EBM3_Electrode_Trace(Vec lx, Mat *jac, Vec pdI_pdx, Vec 
  */
 void SchottkyContactBC::EBM3_Update_Solution(PetscScalar *)
 {
-  Parallel::sum(ext_circuit()->current_itering());
+  Parallel::sum(ext_circuit()->current());
   this->ext_circuit()->update();
 }

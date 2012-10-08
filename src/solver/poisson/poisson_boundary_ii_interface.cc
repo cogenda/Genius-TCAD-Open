@@ -259,7 +259,7 @@ void InsulatorInsulatorInterfaceBC::Poissin_Jacobian_Reserve(Mat *jac, InsertMod
 
           FVM_Node::fvm_neighbor_node_iterator  gnb_it = ghost_fvm_node->neighbor_node_begin();
           for(; gnb_it != ghost_fvm_node->neighbor_node_end(); ++gnb_it)
-            MatSetValue(*jac, fvm_nodes[i]->global_offset(), (*gnb_it).second->global_offset(), 0, ADD_VALUES);
+            MatSetValue(*jac, fvm_nodes[i]->global_offset(), (*gnb_it).first->global_offset(), 0, ADD_VALUES);
         }
       }
 

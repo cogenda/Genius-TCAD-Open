@@ -115,16 +115,6 @@ public:
   void dump_spice_matrix_petsc(const std::string &file) const;
 
   /**
-   * spice node 0 is the ground node with V=0, we should set it here
-   */
-  void ground_spice_0_node(Vec f, InsertMode &add_value_flag);
-
-  /**
-   * spice node 0 is the ground node with V=0, we should set it here
-   */
-  void ground_spice_0_node(Mat *jac);
-
-  /**
    * output information about spice node
    */
   void print_spice_node() const;

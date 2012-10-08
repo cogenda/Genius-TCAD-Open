@@ -41,6 +41,11 @@ private:
   PetscScalar FN_A;      // Coefficient of the pre-exponential term for the Fowler-Nordheim  tunneling model
   PetscScalar FN_B;      // Coefficient of the exponential term for the Fowler-Nordheim tunneling model.
 
+  PetscScalar ELECMASS;   // The relative effective mass of electron
+  PetscScalar CBET_alpha; // Coefficient of the Conduction band electron tunneling
+  PetscScalar VBHT_alpha; // Coefficient of the Valence band hole tunneling
+  PetscScalar VBET_alpha; // Coefficient of the Valence band electron tunneling
+
   void   Band_Init()
   {
     AFFINITY = 1.070000e+00*eV;
@@ -57,9 +62,17 @@ private:
     FN_A      = 6.320000E-07*A/(V*V);
     FN_B      = 2.210000E+08*V/cm;
 
+    ELECMASS   =  0.4*me;
+    CBET_alpha = 1.0;
+    VBHT_alpha = 1.0;
+    VBET_alpha = 1.0;
 #ifdef __CALIBRATE__
     parameter_map.insert(para_item("AFFINITY",  PARA("AFFINITY", "The electron affinity for the material", "eV", eV, &AFFINITY)) );
     parameter_map.insert(para_item("BANDGAP",   PARA("BANDGAP",  "The bandgap for the material", "eV", eV, &BANDGAP)) );
+    parameter_map.insert(para_item("ELECMASS",  PARA("ELECMASS", "The relative effective mass of electron", "electron mass", me, &ELECMASS)) );
+    parameter_map.insert(para_item("CBET.alpha",PARA("CBET.alpha", "Coefficient of the Conduction band electron tunneling", "-", 1.0, &CBET_alpha)) );
+    parameter_map.insert(para_item("VBHT.alpha",PARA("VBHT.alpha", "Coefficient of the Valence band hole tunneling", "-", 1.0, &VBHT_alpha)) );
+    parameter_map.insert(para_item("VBET.alpha",PARA("VBET.alpha", "Coefficient of the Valence band electron tunneling", "-", 1.0, &VBET_alpha)) );
 #endif
   }
 
@@ -110,12 +123,140 @@ public:
   PetscScalar J_FN_Tunneling(const PetscScalar &E_ins, const PetscScalar &alpha) const
   {
     PetscScalar E = fabs(E_ins) + 1*V/cm;
-    if( FN_B/E > 30.0 ) return 0.0;
-
     if(alpha == 1.0)
+    {
+      if( FN_B/E > 70.0 ) return 0.0;
       return FN_A*E_ins*E_ins*exp( - FN_B/E );
+    }
     else
+    {
+      if( FN_B/E*(1-std::pow(1.0-alpha, 1.5)) > 70.0 ) return 0.0;
       return FN_A*E_ins*E_ins/std::pow(1.0-sqrt(1.0-alpha), 2.0)*exp( - FN_B/E*(1-std::pow(1.0-alpha, 1.5)) );
+    }
+  }
+
+public:
+
+  PetscScalar J_CBET_Tunneling(const PetscScalar &m, const PetscScalar &Tl,
+                               const PetscScalar &Efn1, const PetscScalar &Efn2,
+                               const PetscScalar &Ec1,  const PetscScalar &Ec2,
+                               const PetscScalar &B1,   const PetscScalar &B2,
+                               const PetscScalar &t) const
+  {
+    std::vector<PetscScalar> JE;
+    const PetscScalar dE = 0.02*kb*Tl/e;
+    PetscScalar E=std::max(Ec1, Ec2);
+    // direct tunneling
+    for(; E<std::min(B1, B2); E+=dE)
+    {
+       PetscScalar phi1 = B1 - E;
+       PetscScalar phi2 = B2 - E;
+       PetscScalar TE = exp( - 4.0/3.0*sqrt(2*ELECMASS)/hbar*t*(phi1 + sqrt(phi1*phi2)  + phi2 )/(sqrt(phi1) + sqrt(phi2)) );
+       PetscScalar f1E = 1.0/(1.0+exp((E-Efn1)/(kb*Tl)));
+       PetscScalar f2E = 1.0/(1.0+exp((E-Efn2)/(kb*Tl)));
+       PetscScalar g1E = (E >= Ec1 ? 1.0 : 0.0);
+       PetscScalar g2E = (E >= Ec2 ? 1.0 : 0.0);
+       JE.push_back(TE*(f1E-f2E)*g1E*g2E);
+    }
+    // FN tunneling
+    for(; E<std::max(B1, B2); E+=dE)
+    {
+      PetscScalar phi = std::max(B1, B2) - E;
+      PetscScalar tbar = phi/std::abs(B1-B2)*t;
+      PetscScalar TE = exp( - 4.0/3.0*sqrt(2*ELECMASS)/hbar*tbar*(sqrt(phi)) );
+      PetscScalar f1E = 1.0/(1.0+exp((E-Efn1)/(kb*Tl)));
+      PetscScalar f2E = 1.0/(1.0+exp((E-Efn2)/(kb*Tl)));
+      PetscScalar g1E = (E >= Ec1 ? 1.0 : 0.0);
+      PetscScalar g2E = (E >= Ec2 ? 1.0 : 0.0);
+      JE.push_back(TE*(f1E-f2E)*g1E*g2E);
+    }
+
+    JE.push_back(JE[JE.size()-1]); // prevent negative value of JE.size()-1
+
+    PetscScalar J_CBET = 0.0;
+    for(unsigned int n=0; n<JE.size()-1; n++)
+    {
+      J_CBET += 0.5*(JE[n]+JE[n+1])*dE;
+    }
+    return J_CBET*CBET_alpha*e*m*kb*Tl/(2*hbar*hbar*hbar);
+  }
+
+
+  PetscScalar J_VBHT_Tunneling(const PetscScalar &m, const PetscScalar &Tl,
+                               const PetscScalar &Efp1, const PetscScalar &Efp2,
+                               const PetscScalar &Ev1,  const PetscScalar &Ev2,
+                               const PetscScalar &B1,   const PetscScalar &B2,
+                               const PetscScalar &t) const
+  {
+    std::vector<PetscScalar> JE;
+    const PetscScalar dE = 0.02*kb*Tl/e;
+    PetscScalar E=std::min(Ev1, Ev2);
+    // direct tunneling
+    for(; E>std::max(B1, B2); E-=dE)
+    {
+      PetscScalar phi1 = E - B1;
+      PetscScalar phi2 = E - B2;
+      PetscScalar TE = exp( - 4.0/3.0*sqrt(2*ELECMASS)/hbar*t*(phi1 + sqrt(phi1*phi2)  + phi2 )/(sqrt(phi1) + sqrt(phi2)) );
+      PetscScalar f1E = 1.0/(1.0+exp((Efp1-E)/(kb*Tl)));
+      PetscScalar f2E = 1.0/(1.0+exp((Efp2-E)/(kb*Tl)));
+      PetscScalar g1E = (E <= Ev1 ? 1.0 : 0.0);
+      PetscScalar g2E = (E <= Ev2 ? 1.0 : 0.0);
+      JE.push_back(TE*(f1E-f2E)*g1E*g2E);
+    }
+
+    // FN tunneling
+    for(; E>std::min(B1, B2); E-=dE)
+    {
+      PetscScalar phi = E - std::min(B1, B2);
+      PetscScalar tbar = phi/std::abs(B1-B2)*t;
+      PetscScalar TE = exp( - 4.0/3.0*sqrt(2*ELECMASS)/hbar*tbar*(sqrt(phi)) );
+      PetscScalar f1E = 1.0/(1.0+exp((Efp1-E)/(kb*Tl)));
+      PetscScalar f2E = 1.0/(1.0+exp((Efp2-E)/(kb*Tl)));
+      PetscScalar g1E = (E <= Ev1 ? 1.0 : 0.0);
+      PetscScalar g2E = (E <= Ev2 ? 1.0 : 0.0);
+      JE.push_back(TE*(f1E-f2E)*g1E*g2E);
+    }
+
+    JE.push_back(JE[JE.size()-1]); // prevent negative value of JE.size()-1
+
+    PetscScalar J_VBET = 0.0;
+    for(unsigned int n=0; n<JE.size()-1; n++)
+    {
+      J_VBET += 0.5*(JE[n]+JE[n+1])*dE;
+    }
+    return J_VBET*VBHT_alpha*e*m*kb*Tl/(2*hbar*hbar*hbar);
+  }
+
+  PetscScalar J_VBET_Tunneling(const PetscScalar &m, const PetscScalar &Tl,
+                               const PetscScalar &Efn1, const PetscScalar &Efn2,
+                               const PetscScalar &Ec1,  const PetscScalar &Ec2,
+                               const PetscScalar &Ev1,  const PetscScalar &Ev2,
+                               const PetscScalar &B1,   const PetscScalar &B2,
+                               const PetscScalar &t) const
+  {
+    std::vector<PetscScalar> JE;
+    const PetscScalar dE = 0.02*kb*Tl/e;
+    PetscScalar E=std::min(Ev1, Ev2);
+    // direct tunneling
+    for(; E<std::min(B1, B2); E+=dE)
+    {
+      PetscScalar phi1 = B1 - E;
+      PetscScalar phi2 = B2 - E;
+      PetscScalar TE = exp( - 4.0/3.0*sqrt(2*ELECMASS)/hbar*t*(phi1 + sqrt(phi1*phi2)  + phi2 )/(sqrt(phi1) + sqrt(phi2)) );
+      PetscScalar f1E = 1.0/(1.0+exp((E-Efn1)/(kb*Tl)));
+      PetscScalar f2E = 1.0/(1.0+exp((E-Efn2)/(kb*Tl)));
+      PetscScalar g   = ((E >= Ec1 && E <= Ev2) ||  (E >= Ec2 && E <= Ev1)) ? 1.0 : 0.0;
+      JE.push_back(TE*(f1E-f2E)*g);
+    }
+
+    JE.push_back(JE[JE.size()-1]); // prevent negative value of JE.size()-1
+
+    PetscScalar J_VBET = 0.0;
+    for(unsigned int n=0; n<JE.size()-1; n++)
+    {
+      J_VBET += 0.5*(JE[n]+JE[n+1])*dE;
+    }
+    return J_VBET*VBET_alpha*e*m*kb*Tl/(2*hbar*hbar*hbar);
   }
 
 public:

@@ -100,7 +100,7 @@ public:
 
 
   /**
-   * @return variable index when variable exist. else return invalid_uint
+   * @return variable index when variable exist. else return static_cast<unsigned int>(-1)
    */
   unsigned int variable_index(const std::string &v) const
   {

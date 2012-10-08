@@ -417,15 +417,15 @@ void HomoInterfaceBC::EBM3_Jacobian_Reserve(Mat *jac, InsertMode &add_value_flag
               FVM_Node::fvm_neighbor_node_iterator  nb_it = fvm_nodes[i]->neighbor_node_begin();
               for(; nb_it != fvm_nodes[i]->neighbor_node_end(); ++nb_it)
               {
-                cols.push_back((*nb_it).second->global_offset()+0);
-                cols.push_back((*nb_it).second->global_offset()+1);
-                cols.push_back((*nb_it).second->global_offset()+2);
+                cols.push_back((*nb_it).first->global_offset()+0);
+                cols.push_back((*nb_it).first->global_offset()+1);
+                cols.push_back((*nb_it).first->global_offset()+2);
                 if ( regions[i]->get_advanced_model()->enable_Tl() )
-                  cols.push_back((*nb_it).second->global_offset()+regions[i]->ebm_variable_offset(TEMPERATURE));
+                  cols.push_back((*nb_it).first->global_offset()+regions[i]->ebm_variable_offset(TEMPERATURE));
                 if ( regions[i]->get_advanced_model()->enable_Tn() )
-                  cols.push_back((*nb_it).second->global_offset()+regions[i]->ebm_variable_offset(E_TEMP));
+                  cols.push_back((*nb_it).first->global_offset()+regions[i]->ebm_variable_offset(E_TEMP));
                 if ( regions[i]->get_advanced_model()->enable_Tp() )
-                  cols.push_back((*nb_it).second->global_offset()+regions[i]->ebm_variable_offset(H_TEMP));
+                  cols.push_back((*nb_it).first->global_offset()+regions[i]->ebm_variable_offset(H_TEMP));
               }
 
               std::vector<PetscScalar> value(rows.size()*cols.size(),0);
@@ -469,9 +469,9 @@ void HomoInterfaceBC::EBM3_Jacobian_Reserve(Mat *jac, InsertMode &add_value_flag
               FVM_Node::fvm_neighbor_node_iterator  nb_it = fvm_nodes[i]->neighbor_node_begin();
               for(; nb_it != fvm_nodes[i]->neighbor_node_end(); ++nb_it)
               {
-                cols.push_back((*nb_it).second->global_offset()+0);
+                cols.push_back((*nb_it).first->global_offset()+0);
                 if ( region->get_advanced_model()->enable_Tl() )
-                  cols.push_back((*nb_it).second->global_offset()+1);
+                  cols.push_back((*nb_it).first->global_offset()+1);
               }
 
               std::vector<PetscScalar> value(rows.size()*cols.size(),0);

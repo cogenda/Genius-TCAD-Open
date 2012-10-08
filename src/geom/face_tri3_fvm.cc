@@ -23,6 +23,9 @@
 
 #include "face_tri3_fvm.h"
 #include "edge_edge2_fvm.h"
+
+// TNT matrix-vector library
+#include <TNT/tnt.h>
 #include <TNT/jama_lu.h>
 
 /*
@@ -379,6 +382,7 @@ VectorValue<AutoDScalar> Tri3_FVM::gradient( const std::vector<AutoDScalar> & va
 
 void Tri3_FVM::prepare_for_vector_reconstruct()
 {
+   //FIXME NOT work for 3D triangle
    TNT::Array2D<Real> A (n_edges(), 2, 0.0);
    TNT::Array2D<Real> AT(2, n_edges(), 0.0);
 
@@ -395,12 +399,23 @@ void Tri3_FVM::prepare_for_vector_reconstruct()
    }
 
    TNT::Array2D<Real> ATA = TNT::matmult(AT, A);
-
    JAMA::LU<Real> solver(ATA);
 
-   TNT::Array2D<Real> inv_ATA = solver.inv();
+   if( solver.isNonsingular() )
+   {
+     TNT::Array2D<Real> inv_ATA = solver.inv();
+     TNT::Array2D<Real>  M = TNT::matmult(inv_ATA, AT);
 
-   least_squares_vector_reconstruct_matrix = TNT::matmult(inv_ATA, AT);
+     for(unsigned int m=0; m<M.dim1(); m++)
+       for( unsigned int e=0; e<M.dim2(); e++ )
+         least_squares_vector_reconstruct_matrix[m][e] = M[m][e];
+   }
+   else
+   {
+     for(unsigned int m=0; m<2; m++)
+       for( unsigned int e=0; e<3; e++ )
+         least_squares_vector_reconstruct_matrix[m][e] = 0.0;
+   }
 }
 
 

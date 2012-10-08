@@ -468,6 +468,8 @@ public:
    * function for update solution value of linear poisson's equation.
    */
   virtual void LinearPoissin_Update_Solution(const PetscScalar * x);
+
+
 };
 
 

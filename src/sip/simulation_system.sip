@@ -37,10 +37,6 @@ class ExternalCircuit /NoDefaultCtors/
 %End
 public:
   enum DRIVEN{VDRIVEN, IDRIVEN, FLOAT};
-
-  double R() const;
-  double C() const;
-  double L() const;
   double Vapp() const;
   double Iapp() const;
 

@@ -117,7 +117,7 @@ void InsulatorSimulationRegion::DDM1_Function(PetscScalar * x, Vec f, InsertMode
       PetscScalar eps = 0.5*(eps1+eps2);
 
       // "flux" from node 2 to node 1
-      PetscScalar f =  eps*fvm_n1->cv_surface_area(fvm_n2->root_node())*(V2 - V1)/fvm_n1->distance(fvm_n2) ;
+      PetscScalar f =  eps*fvm_n1->cv_surface_area(fvm_n2)*(V2 - V1)/fvm_n1->distance(fvm_n2) ;
 
       // ignore thoese ghost nodes
       if( fvm_n1->on_processor() )
@@ -202,7 +202,7 @@ void InsulatorSimulationRegion::DDM1_Jacobian(PetscScalar * x, Mat *jac, InsertM
 
       PetscScalar eps = 0.5*(eps1+eps2);
 
-      AutoDScalar f =  eps*fvm_n1->cv_surface_area(fvm_n2->root_node())*(V2 - V1)/fvm_n1->distance(fvm_n2) ;
+      AutoDScalar f =  eps*fvm_n1->cv_surface_area(fvm_n2)*(V2 - V1)/fvm_n1->distance(fvm_n2) ;
 
       // ignore thoese ghost nodes
       if( fvm_n1->on_processor() )

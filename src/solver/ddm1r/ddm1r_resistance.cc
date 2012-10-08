@@ -125,7 +125,7 @@ void MetalSimulationRegion::DDM1R_Function(PetscScalar * x, Vec f, InsertMode &a
 
     {
       double length = fvm_n1->distance(fvm_n2);
-      double cv_surface_area = fvm_n1->cv_surface_area(fvm_n2->root_node());
+      double cv_surface_area = fvm_n1->cv_surface_area(fvm_n2);
       // electrostatic potential, as independent variable
       PetscScalar V1   =  x[n1_local_offset];
       PetscScalar V2   =  x[n2_local_offset];
@@ -244,7 +244,7 @@ void MetalSimulationRegion::DDM1R_Jacobian(PetscScalar * x, Mat *jac, InsertMode
     // here we use AD, however it is great overkill for such a simple problem.
     {
       double length = fvm_n1->distance(fvm_n2);
-      double cv_surface_area = fvm_n1->cv_surface_area(fvm_n2->root_node());
+      double cv_surface_area = fvm_n1->cv_surface_area(fvm_n2);
 
       // electrostatic potential, as independent variable
       AutoDScalar V1   =  x[n1_local_offset];    V1.setADValue(0,1.0);

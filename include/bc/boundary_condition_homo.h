@@ -214,6 +214,7 @@ public:
    */
   virtual void DDMAC_Fill_Matrix_Vector( Mat A, Vec b, const Mat J, const double omega, InsertMode & add_value_flag );
 
+
 #ifdef COGENDA_COMMERCIAL_PRODUCT
   //////////////////////////////////////////////////////////////////////////////////
   //----------------- functions for Gummel DDML1 solver --------------------------//
@@ -258,6 +259,7 @@ public:
   virtual void DDM1_Half_Implicit_Poisson_Correction(PetscScalar * x, Mat A, Vec r, InsertMode &add_value_flag);
 
 #endif
+
 
 };
 

@@ -79,6 +79,11 @@ namespace SolverSpecify
   extern NonLinearSolverType     NS;
 
   /**
+   * Determines when the preconditioner is rebuilt in the nonlinear solve
+   */
+  extern int     NSLagPCLU;
+
+  /**
    * linear solver scheme: LU, BCGS, GMRES ...
    */
   extern LinearSolverType        LS;
@@ -148,6 +153,11 @@ namespace SolverSpecify
    * which makes poisson's equation self-consistant
    */
   extern bool      ArtificialCarrier;
+
+  /**
+   * Poisson correction parameter
+   */
+  extern double    PoissonCorrectionParameter;
 
 
   //--------------------------------------------
@@ -336,11 +346,16 @@ namespace SolverSpecify
    */
   extern bool      UIC;
 
-
   /**
    * do operator point calculation before transient simulation, only for mixA solver
    */
   extern bool      tran_op;
+
+  /**
+   * false indicate TR based on DC state
+   * true indicate a previous TR simulation
+   */
+  extern bool      tran_histroy;
 
   /**
    * current time

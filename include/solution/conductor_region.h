@@ -224,7 +224,6 @@ public:
   virtual void DDM1_Update_Solution(PetscScalar *lxx);
 
 
-
   //////////////////////////////////////////////////////////////////////////////////
   //--------------Function and Jacobian evaluate for L1 HALL DDM------------------//
   //////////////////////////////////////////////////////////////////////////////////
@@ -438,8 +437,8 @@ public:
    * function for build RHS and matrix for half implicit current poisson correction equation.
    */
   virtual void DDM1_Half_Implicit_Poisson_Correction(PetscScalar * x, Mat A, Vec r, InsertMode &add_value_flag);
-#endif
 
+#endif
 
   //////////////////////////////////////////////////////////////////////////////////
   //-----------------  functions for Linear Poissin solver   ---------------------//
@@ -461,6 +460,7 @@ public:
    * function for update solution value of linear poisson's equation.
    */
   virtual void LinearPoissin_Update_Solution(const PetscScalar * x);
+
 
 };
 

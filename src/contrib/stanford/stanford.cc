@@ -67,6 +67,10 @@ void StanfordTIF::broadcast_solution(unsigned int root)
     }
   }
 
+  Parallel::broadcast(_acceptor_index, root);
+  Parallel::broadcast(_donor_index, root);
+  Parallel::broadcast(_mole_x_index, root);
+  Parallel::broadcast(_mole_y_index, root);
 }
 
 
@@ -84,23 +88,63 @@ void StanfordTIF::_find_solution_region_by_material()
   std::map<int, std::string> region_material;
   for(unsigned int n=0; n<_regions.size(); ++n)
   {
-    region_material[_regions[n].index] = _regions[n].material;
+    if(!_regions[n].segment)
+      region_material[_regions[n].index] = _regions[n].material;
   }
 
   for(unsigned int n=0; n<_sol_data.size(); ++n)
   {
     int node = _sol_data[n].index;
-    const std::set<int> & regions =  node_region_map.find(node)->second;
-    std::set<int>::const_iterator it = regions.begin();
-    for(; it != regions.end(); ++it)
+    std::set<int> & regions =  node_region_map.find(node)->second;
+
+    for(std::set<int>::const_iterator it = regions.begin(); it != regions.end(); ++it)
     {
       if( region_material.find(*it)->second == _sol_data[n].material )
       {
         _sol_data[n].region_index = *it;
+        regions.erase(*it); // remove candidate region
         break;
       }
     }
   }
 }
+
+
+
+double StanfordTIF::acceptor(unsigned int data_index) const
+{
+  assert(data_index < _sol_data.size());
+  if( _acceptor_index != static_cast<unsigned int>(-1) )
+    return _sol_data[data_index].data_array[_acceptor_index];
+  return 0.0;
+}
+
+
+double StanfordTIF::donor(unsigned int data_index) const
+{
+  assert(data_index < _sol_data.size());
+  if( _donor_index != static_cast<unsigned int>(-1) )
+    return _sol_data[data_index].data_array[_donor_index];
+  return 0.0;
+}
+
+double StanfordTIF::mole_x(unsigned int data_index) const
+{
+  assert(data_index < _sol_data.size());
+  if( _mole_x_index != static_cast<unsigned int>(-1) )
+    return _sol_data[data_index].data_array[_mole_x_index];
+  return 0.0;
+}
+
+
+double StanfordTIF::mole_y(unsigned int data_index) const
+{
+  assert(data_index < _sol_data.size());
+  if( _mole_y_index != static_cast<unsigned int>(-1) )
+    return _sol_data[data_index].data_array[_mole_y_index];
+  return 0.0;
+}
+
+
 
 

@@ -38,6 +38,9 @@ void InsulatorSemiconductorInterfaceBC::_find_nearest_points_in_gate_region()
   SimulationSystem  & system  = this->system();
   const MeshBase & mesh = system.mesh();
 
+  const SimulationRegion * semiconductor_region = bc_regions().first;
+  assert(semiconductor_region->type() == SemiconductorRegion);
+
   const std::vector<const Node *> & nodes = this->nodes();
 
   // build the bounding box for this boundary
@@ -65,8 +68,11 @@ void InsulatorSemiconductorInterfaceBC::_find_nearest_points_in_gate_region()
   for(unsigned int r=0; r<system.n_regions(); ++r)
   {
     const SimulationRegion * region = system.region(r);
-    // only consider nearset point on conductor or resistance region
-    if( region->type() != MetalRegion &&  region->type() != ElectrodeRegion ) continue;
+    // only consider nearset point on resistance/semiconductor region
+    if( region->type() != MetalRegion &&  region->type() != ElectrodeRegion && region->type() != SemiconductorRegion) continue;
+
+    // when the region type in the other side is semiconductor region, prevent duplicate search
+    if( region->type() == SemiconductorRegion && semiconductor_region->subdomain_id() > region->subdomain_id() ) continue;
 
     const std::pair<Point, Point> & region_bounding_box = region->boundingbox();
 
@@ -93,7 +99,8 @@ void InsulatorSemiconductorInterfaceBC::_find_nearest_points_in_gate_region()
 
       if( bc->bc_type() == ChargedContact ||
           bc->bc_type() == GateContact    ||
-          bc->bc_type() == IF_Insulator_Metal )
+          bc->bc_type() == IF_Insulator_Metal ||
+          bc->bc_type() == IF_Insulator_Semiconductor )
       {
         // save it
         NearestPoint loc;
@@ -104,13 +111,18 @@ void InsulatorSemiconductorInterfaceBC::_find_nearest_points_in_gate_region()
         loc.p = project_point;
         _node_nearest_point_map.insert(std::make_pair(nodes[n], loc));
 
+        Elem * loc_elem = const_cast<Elem *>(loc.elem);
         // save the target nodes
-        AutoPtr<Elem> side = loc.elem->build_side(loc.side);
-        for(unsigned int i=0; i<side->n_nodes(); ++i)
+        if(!loc_elem->on_local())
         {
-          Node * n = side->get_node(i);
-          target_nodes.insert(std::make_pair(n, loc.elem->subdomain_id()));
+          for(unsigned int i=0; i<loc_elem->n_nodes(); ++i)
+          {
+            Node * n = loc_elem->get_node(i);
+            target_nodes.insert(std::make_pair(n, loc_elem->subdomain_id()));
+          }
+          loc_elem->on_local() = true;
         }
+
       }
 
     }
@@ -123,18 +135,18 @@ void InsulatorSemiconductorInterfaceBC::_find_nearest_points_in_gate_region()
   for( ; node_it != target_nodes.end(); ++node_it)
   {
     Node * node = node_it->first;
-    if( node->on_local() ) continue;
-
     node->on_local() = true;
 
-    // update fvm_node in the region
     SimulationRegion * region = system.region(node_it->second);
-    FVM_Node * fvm_node = new FVM_Node( node );
-    fvm_node->set_subdomain_id(region->subdomain_id());
-    region->insert_fvm_node(fvm_node);
-
-    // mark regions need to be updated
-    modified_regions.insert(region->subdomain_id());
+    const FVM_Node * fvm_node = region->region_fvm_node(node);
+    if(!fvm_node)
+    {
+      FVM_Node * fvm_node = new FVM_Node( node );
+      fvm_node->set_subdomain_id(region->subdomain_id());
+      region->insert_fvm_node(fvm_node);
+      // mark regions need to be updated
+      modified_regions.insert(region->subdomain_id());
+    }
   }
 
   Parallel::allgather(modified_regions);

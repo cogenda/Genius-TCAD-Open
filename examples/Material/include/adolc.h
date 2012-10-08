@@ -47,6 +47,8 @@
 
 
 #include <cassert>
+#include <cstdlib>
+#include <cstring>
 #include <vector>
 #include <cmath>
 #include <limits>
@@ -56,8 +58,7 @@
 #include "acosh.hpp" // for acosh
 #include "atanh.hpp" // for atanh
 
-#include "genius_common.h"
-
+#include "genius_dll.h"
 
 // the max number of independent variable may be used by Genius
 // for EBM solver on Hex8 element, there are 6*8=48 independent variables
@@ -74,6 +75,8 @@ extern "C"
    */
   DLL_EXPORT_DECLARE  void  set_ad_number(const unsigned int p);
 }
+
+typedef double PetscScalar;
 
 
 namespace adtl

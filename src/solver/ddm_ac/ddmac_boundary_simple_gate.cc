@@ -51,13 +51,8 @@ void SimpleGateContactBC::DDMAC_Fill_Matrix_Vector ( Mat A, Vec b, const Mat J, 
   const PetscScalar Work_Function = this->scalar("workfunction");
   const PetscScalar Heat_Transfer = this->scalar("heat.transfer");
 
-  PetscScalar R                = this->ext_circuit()->R();  // resistance
-  PetscScalar C                = this->ext_circuit()->C();  // capacitance
-  PetscScalar L                = this->ext_circuit()->L();  // inductance
 
   // impedance at frequency omega
-  std::complex <PetscScalar> Z1 ( R, omega*L );
-  std::complex <PetscScalar> Y2 ( 0.0, omega*C );
   std::complex <PetscScalar> j ( 0.0, 1.0 );
 
   // for 2D mesh, z_width() is the device dimension in Z direction; for 3D mesh, z_width() is 1.0
@@ -143,8 +138,9 @@ void SimpleGateContactBC::DDMAC_Fill_Matrix_Vector ( Mat A, Vec b, const Mat J, 
     AutoDScalar D = eps_ox* ( Ve-V ) /Thick;
 
     // the 1/dt is replaced by j*omega.
-    std::complex <PetscScalar> dJdisp_dV  = Z1*S*D.getADValue ( 0 ) *j*omega*current_scale;
-    std::complex <PetscScalar> dJdisp_dVe = Z1*S*D.getADValue ( 1 ) *j*omega*current_scale;
+    std::complex<PetscScalar> mna_scaling = ext_circuit()->mna_ac_scaling(omega);
+    std::complex <PetscScalar> dJdisp_dV  = mna_scaling*S*D.getADValue ( 0 ) *j*omega*current_scale;
+    std::complex <PetscScalar> dJdisp_dVe = mna_scaling*S*D.getADValue ( 1 ) *j*omega*current_scale;
 
     // V
     MatSetValue ( A, bc_global_offset_re, fvm_node->global_offset(), dJdisp_dV.real(), ADD_VALUES );
@@ -174,22 +170,19 @@ void SimpleGateContactBC::DDMAC_Fill_Matrix_Vector ( Mat A, Vec b, const Mat J, 
   //           GND
   //
 
-  if ( Genius::processor_id() == Genius::n_processors() -1 )
+  if(Genius::is_last_processor())
   {
     // here we process the external circuit, we do not use AD here
 
-    // the external electrode equation is:
-    // f_ext = (L/dt+R)*current + (Ve-Vapp) + (L/dt+R)*C/dt*Ve - (L/dt+R)*C/dt*P - L/dt*(I+Ic);
-    // as a result, the K=d(f_ext)/d(Ve) in frequency domain is
-    std::complex <PetscScalar> K = Z1*Y2 + PetscScalar ( 1.0 );
+    std::complex <PetscScalar> K = this->ext_circuit()->mna_ac_jacobian(omega);
 
-    MatSetValue ( A, bc_global_offset_re, bc_global_offset_re,  K.real(), ADD_VALUES );
-    MatSetValue ( A, bc_global_offset_re, bc_global_offset_im, -K.imag(), ADD_VALUES );
-    MatSetValue ( A, bc_global_offset_im, bc_global_offset_re,  K.imag(), ADD_VALUES );
-    MatSetValue ( A, bc_global_offset_im, bc_global_offset_im,  K.real(), ADD_VALUES );
+    MatSetValue(A, bc_global_offset_re, bc_global_offset_re,  K.real(), ADD_VALUES);
+    MatSetValue(A, bc_global_offset_re, bc_global_offset_im, -K.imag(), ADD_VALUES);
+    MatSetValue(A, bc_global_offset_im, bc_global_offset_re,  K.imag(), ADD_VALUES);
+    MatSetValue(A, bc_global_offset_im, bc_global_offset_im,  K.real(), ADD_VALUES);
 
-    VecSetValue ( b, bc_global_offset_re, this->ext_circuit()->Vac(), ADD_VALUES );
-    VecSetValue ( b, bc_global_offset_im, 0.0, ADD_VALUES );
+    VecSetValue(b, bc_global_offset_re, this->ext_circuit()->Vac(), ADD_VALUES);
+    VecSetValue(b, bc_global_offset_im, 0.0, ADD_VALUES);
   }
 
   // the last operator is ADD_VALUES

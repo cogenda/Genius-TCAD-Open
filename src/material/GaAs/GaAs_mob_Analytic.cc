@@ -187,15 +187,8 @@ public:
 
 /*---------------------------------------------------------------
  *  the interface function called by material databse controller
- *  use Analytic model as default mobility model
  */
-extern "C"
-{
-  DLL_EXPORT_DECLARE  PMIS_Mobility* PMIS_GaAs_Mob_Default (const PMIS_Environment& env)
-  {
-    return new GSS_GaAs_Mob_Analytic(env);
-  }
-}
+
 /* alias */
 extern "C"
 {

@@ -24,7 +24,7 @@
 #include "side.h"
 #include "edge_edge2.h"
 #include "face_tri3.h"
-
+#include "sphere.h"
 
 
 // ------------------------------------------------------------
@@ -352,8 +352,9 @@ bool Tri3::contains_point ( const Point & p ) const
 }
 
 
-void Tri3::ray_hit ( const Point &p , const Point &d , IntersectionResult &result, unsigned int dim ) const
+void Tri3::ray_hit ( const Point &point , const Point &d , IntersectionResult &result, unsigned int dim ) const
 {
+  //
   Point e1 = this->point ( 1 ) - this->point ( 0 );
   Point e2 = this->point ( 2 ) - this->point ( 0 );
 
@@ -361,14 +362,14 @@ void Tri3::ray_hit ( const Point &p , const Point &d , IntersectionResult &resul
 
   double a = e1.dot ( h );
 
-  // the ray and the triangle is co-plane
+  // 2d: the ray and the triangle is co-plane
   if ( std::abs ( a ) <1e-10 )
   {
     IntersectionResult edge_intersections[3];
     for ( unsigned int s=0; s<this->n_sides(); ++s )
     {
       AutoPtr<Elem> edge = this->build_side ( s );
-      edge->ray_hit ( p, d, edge_intersections[s] );
+      edge->ray_hit ( point, d, edge_intersections[s] );
     }
 
     // miss?
@@ -432,6 +433,25 @@ void Tri3::ray_hit ( const Point &p , const Point &d , IntersectionResult &resul
     return;
   }
 
+  // 3d
+
+  // if point is far away, numerical error may cause some problem. move point something close.
+  Sphere sphere(this->bounding_sphere());
+
+  // p = point + d*t1
+  Point p = point;
+  Real t1=0, t2=0;
+  if( sphere.above_surface(point))
+  {
+    if(!sphere.intersect_point(point, d, t1, t2))
+    {
+      result.state = Missed;
+      return;
+    }
+    p = point + t1*d;
+  }
+
+
   double f = 1/a;
   Point s = p - this->point ( 0 );
 
@@ -466,7 +486,7 @@ void Tri3::ray_hit ( const Point &p , const Point &d , IntersectionResult &resul
   result.state=Intersect_Body;
   result.hit_points.resize ( 1 );
   result.hit_points[0].p = p+t*d;
-  result.hit_points[0].t = t;
+  result.hit_points[0].t = t+t1; // add t1 back
 
   // the intersection point location
   if ( std::abs ( u+v ) <1e-10 ) //

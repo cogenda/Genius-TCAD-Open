@@ -41,7 +41,7 @@ using  PhysicalUnit::s;
 
 
 FieldSource::FieldSource(SimulationSystem & system, Parser::InputParser & decks)
-    :_system(system), _decks(decks), current_waveform(0)
+  :_system(system), _decks(decks), _applied_to_system(false), current_waveform(0)
 {
 
   // check if any waveform defined
@@ -54,10 +54,12 @@ FieldSource::FieldSource(SimulationSystem & system, Parser::InputParser & decks)
       if(c.is_parameter_exist("type"))
       {
         if(c.is_enum_value("type","uniform"))            SetWaveformUniform(c);
+        else if(c.is_enum_value("type","sine"))          SetWaveformSin(c);
         else if(c.is_enum_value("type","gaussian"))      SetWaveformGauss(c);
         else if(c.is_enum_value("type","pulse"))         SetWaveformPulse(c);
         else if(c.is_enum_value("type","expression"))    SetWaveformExpr(c);
         else if(c.is_enum_value("type","shell"))         SetWaveformShell(c);
+        else if(c.is_enum_value("type","wavefile"))      SetWaveformWaveFile(c);
       }
     }
   }
@@ -102,12 +104,22 @@ FieldSource::FieldSource(SimulationSystem & system, Parser::InputParser & decks)
     // parse input card to find if light source exist
     if(c.key() == "LIGHT" )
     {
+      // uniform generation
+      if(c.is_parameter_exist("optical.gen"))
+      {
+        Light_Source * light_source = new Light_Source_Uniform(system, c);
+        add_light_source(light_source);
+        continue;
+      }
+
       // read optical wave from spectrum file
       if(c.is_parameter_exist("spectrumfile"))
       {
         parse_spectrum_file(c.get_string("spectrumfile", ""), system, c);
+        continue;
       }
-      else
+
+      // single spectrum
       {
         double wave_length   = c.get_real("wavelength", 0.532, "lambda") * PhysicalUnit::um;   // wave length
         double power         = c.get_real("intensity",  0.0) * PhysicalUnit::J/PhysicalUnit::s/PhysicalUnit::cm/PhysicalUnit::cm;      // incident power;
@@ -165,8 +177,9 @@ void FieldSource::update(double time, bool force_update_system)
   // fast detect if we need to do something
   if(!SolverSpecify::PatG && !SolverSpecify::OptG) return;
 
-  if(force_update_system)
-    this->update_system();
+  if( force_update_system )    this->update_system();
+
+  if( _applied_to_system == false ) this->update_system();
 
   // second order trapezoidal quadrature
   double particle_gen_waveform = 0.0;
@@ -249,6 +262,8 @@ void FieldSource::update_system()
 #if defined(HAVE_FENV_H) && defined(DEBUG)
   genius_assert( !fetestexcept(FE_INVALID) );
 #endif
+
+  _applied_to_system = true;
 }
 
 
@@ -441,6 +456,19 @@ void  FieldSource::SetWaveformUniform(const Parser::Card &c)
 }
 
 
+void  FieldSource::SetWaveformSin(const Parser::Card &c)
+{
+  std::string label = c.get_string("id","");
+  assert( label!="" );
+
+  double amplitude = c.get_real("amplitude", 1.0);
+  double Tdelay = c.get_real("tdelay",0.0)*s;
+  double freq = c.get_real("freq",0.0)*1.0/s;
+  double alpha= c.get_real("alpha",0.0)*1.0/s;
+
+  _waveforms[label] = new WaveformSin(label, Tdelay, 0.0, amplitude, freq, alpha);
+}
+
 
 void FieldSource::SetWaveformGauss(const Parser::Card &c)
 {
@@ -500,6 +528,20 @@ void  FieldSource::SetWaveformShell(const Parser::Card &c)
   _waveforms[label] = new WaveformShell(label, filename, funcname, s);
 
 }
+
+
+void  FieldSource::SetWaveformWaveFile(const Parser::Card &c)
+{
+
+  std::string label = c.get_string("id","");
+  assert( label!="" );
+
+  std::string filename = c.get_string("file","");
+
+  _waveforms[label] = new WaveformFile(label, filename);
+}
+
+
 
 
 

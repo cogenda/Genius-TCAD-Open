@@ -120,8 +120,11 @@ void MetalSimulationRegion::DDM1_Function(PetscScalar * x, Vec f, InsertMode &ad
       PetscScalar V1   =  x[n1_local_offset];
       PetscScalar V2   =  x[n2_local_offset];
 
+      // truncated to positive
+      double S = std::abs(fvm_n1->cv_surface_area(fvm_n2));
+
       // "flux" from node 2 to node 1
-      PetscScalar f = sigma*fvm_n1->cv_surface_area(fvm_n2->root_node())*(V2 - V1)/fvm_n1->distance(fvm_n2) ;
+      PetscScalar f = sigma*S*(V2 - V1)/fvm_n1->distance(fvm_n2) ;
 
       // ignore thoese ghost nodes
       if( fvm_n1->on_processor() )
@@ -224,7 +227,9 @@ void MetalSimulationRegion::DDM1_Jacobian(PetscScalar * x, Mat *jac, InsertMode 
       AutoDScalar V1   =  x[n1_local_offset];   V1.setADValue(0,1.0);
       AutoDScalar V2   =  x[n2_local_offset];   V2.setADValue(1,1.0);
 
-      AutoDScalar f =  sigma*fvm_n1->cv_surface_area(fvm_n2->root_node())*(V2 - V1)/fvm_n1->distance(fvm_n2) ;
+      // truncated to positive
+      double S = std::abs(fvm_n1->cv_surface_area(fvm_n2));
+      AutoDScalar f =  sigma*S*(V2 - V1)/fvm_n1->distance(fvm_n2) ;
 
       // ignore thoese ghost nodes
 

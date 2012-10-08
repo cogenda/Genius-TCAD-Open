@@ -103,6 +103,7 @@
 
 #include "parallel.h"
 #include "MXMLUtil.h"
+#include "TRexpp.h"
 
 using PhysicalUnit::A;
 using PhysicalUnit::V;
@@ -110,6 +111,11 @@ using PhysicalUnit::W;
 using PhysicalUnit::C;
 using PhysicalUnit::s;
 using PhysicalUnit::um;
+using PhysicalUnit::cm;
+
+
+//------------------------------------------------------------------------------
+
 
 //------------------------------------------------------------------------------
 SolverControl::SolverControl()
@@ -172,10 +178,14 @@ int SolverControl::mainloop()
     reset_simulation_system();
 
   // first, we should see if mesh generation card exist
-  this->do_mesh();
+  if ( decks().is_card_exist("MESH") )
+  {
+    // generate simple device mesh
+    this->do_mesh();
 
-  // then, we should see if doping profile and/or mole card exist
-  this->do_process();
+    // then, we should see if doping profile and/or mole card exist
+    this->do_process();
+  }
 
   // from above tow steps, maybe the simulation system has been build.
   // if not, user should use IMPORT command to get an (previous) system into memory.
@@ -216,8 +226,14 @@ int SolverControl::mainloop()
     if(c.key() == "REFINE.UNIFORM")
       this->do_refine_uniform( c );
 
+    if(c.key() == "REGIONSET")
+      this->do_region_set( c );
+
     if(c.key() == "PMI")
       this->set_physical_model ( c );
+
+    if(c.key() == "SOURCEAPPLY")
+      this->apply_field_source ( c );
 
     if(c.key() == "ATTACH")
       this->set_electrode_source ( c );
@@ -304,6 +320,8 @@ int  SolverControl::do_mesh()
     system().sync_print_info();
   }
 
+  //std::cout<<"Total " << Genius::memory_size().first/(1024*1024) << " " << Genius::memory_size().second/(1024*1024) <<std::endl;
+
   return 0;
 }
 
@@ -357,10 +375,13 @@ int SolverControl::set_method ( const Parser::Card & c )
   SolverSpecify::NS = SolverSpecify::nonlinear_solver_type(c.get_string("ns", "basic"));
 
   // set linear solver type
-  SolverSpecify::LS = SolverSpecify::linear_solver_type(c.get_string("ls", "bcgs"));
+  SolverSpecify::LS = SolverSpecify::linear_solver_type(c.get_string("ls", "gmres"));
 
   // set preconditioner type
-  SolverSpecify::PC = SolverSpecify::preconditioner_type(c.get_string("pc", "asm"));
+  SolverSpecify::PC = SolverSpecify::preconditioner_type(c.get_string("pc", "lu"));
+
+  // set preconditioner lag
+  SolverSpecify::NSLagPCLU                  = c.get_int("pclu.lag", 10);
 
   // set Newton damping type
   if(c.is_parameter_exist("damping"))
@@ -390,9 +411,11 @@ int SolverControl::set_method ( const Parser::Card & c )
   SolverSpecify::PC_POISSON = SolverSpecify::preconditioner_type(c.get_string("pc.poisson", "asm"));
 
   // linearize error
-  SolverSpecify::LinearizeErrorThreshold = c.get_real("halfimplicit.let", 1.0);
-  SolverSpecify::ArtificialCarrier = c.get_bool("halfimplicit.artificialcarrier", true);
-  SolverSpecify::ReSolveCarrier = c.get_bool("halfimplicit.resolvecarrier", false);
+  SolverSpecify::LinearizeErrorThreshold    = c.get_real("halfimplicit.let", 1.0);
+  SolverSpecify::ArtificialCarrier          = c.get_bool("halfimplicit.artificialcarrier", true);
+  SolverSpecify::ReSolveCarrier             = c.get_bool("halfimplicit.resolvecarrier", false);
+  SolverSpecify::PoissonCorrectionParameter = c.get_real("halfimplicit.carrierweight", 0.0);
+
 
   // ksp convergence test
   SolverSpecify::ksp_rtol                  = c.get_real("ksp.rtol", 1e-8);
@@ -406,7 +429,7 @@ int SolverControl::set_method ( const Parser::Card & c )
 
   SolverSpecify::absolute_toler            = c.get_real("absolute.tol", 1e-12);
   SolverSpecify::relative_toler            = c.get_real("relative.tol", 1e-5);
-  SolverSpecify::toler_relax               = c.get_real("toler.relax", 1e4);
+  SolverSpecify::toler_relax               = c.get_real("toler.relax", 1e4, "tol.relax");
   SolverSpecify::poisson_abs_toler         = c.get_real("poisson.tol", 1e-31)*C;
   SolverSpecify::elec_continuity_abs_toler = c.get_real("elec.continuity.tol", 1e-19)*A;
   SolverSpecify::hole_continuity_abs_toler = c.get_real("hole.continuity.tol", 1e-19)*A;
@@ -448,15 +471,17 @@ int SolverControl::set_method ( const Parser::Card & c )
  */
 int SolverControl::set_model ( const Parser::Card & c )
 {
-  std::string region_label = c.get_string("region", "");
+  std::string rgn_pattern = c.get_string("region", "");
+  TRexpp rgn_rexp;
+  rgn_rexp.Compile(rgn_pattern.c_str());
 
   AdvancedModel model;
 
   // advanced mobility model control
   model.ESurface                          = c.get_bool("esurface", true);
   model.HighFieldMobility                 = c.get_bool("highfieldmobility", true, "h.mob");
-  model.HighFieldMobilityAD               = c.get_bool("highfieldmobilityad", true, "h.mob.ad");
   model.HighFieldMobilitySelfConsistently = c.get_bool("h.mob.selfconsistent", true);
+  model.QuasiFermiCarrierTruc             = c.get_real("quasifermicarriertrucation" , 1e-2);
   if(c.is_parameter_exist("mob.force") || c.is_parameter_exist("mobility.force"))
   {
     if (c.is_enum_value("mob.force", "ej") || c.is_enum_value("mobility.force", "ej"))                 model.Mob_Force = ModelSpecify::EJ;
@@ -521,14 +546,25 @@ int SolverControl::set_model ( const Parser::Card & c )
     if (c.is_enum_value("eb.level", "all"))  { model.EB_Level = ModelSpecify::ALL;    }
   }
 
-  if( system().region(region_label)==NULL )
+  int cnt_match = 0;
+  for (int i=0; i<system().n_regions(); i++)
   {
-    MESSAGE<<"ERROR at " <<c.get_fileline()<< " MODEL: Region " << region_label << " can't be found in mesh regions." << std::endl; RECORD();
-    genius_error();
+    SimulationRegion* rgn = system().region(i);
+    const std::string& rgn_name = rgn->name();
+
+    if (!rgn_rexp.Match(rgn_name.c_str())) continue;
+    cnt_match++;
+
+    rgn->advanced_model() = model;
   }
 
 
-  system().region(region_label)->advanced_model() = model;
+  if( cnt_match==0 )
+  {
+    MESSAGE<<"ERROR at " <<c.get_fileline()<< " MODEL: Region " << rgn_pattern << " can't be found in mesh regions." << std::endl; RECORD();
+    genius_error();
+  }
+
 
   // we should check lattice temperature model, which should be set for all the regions!
   {
@@ -915,7 +951,7 @@ int SolverControl::do_solve( const Parser::Card & c )
         SolverSpecify::RejectStep= c.get_bool("rejectstep", true);
         SolverSpecify::Predict   = c.get_bool("predict", true);
         SolverSpecify::UIC       = c.get_bool("uic", false);
-        SolverSpecify::tran_op   = c.get_bool("tranop", true);
+        SolverSpecify::tran_op   = c.get_bool("tran.op", true);
 
         SolverSpecify::TStart    = c.get_real("tstart", 0.0)*s;
         SolverSpecify::TStep     = c.get_real("tstep", 1e-9)*s;
@@ -959,6 +995,9 @@ int SolverControl::do_solve( const Parser::Card & c )
             genius_error();
           }
         }
+
+        if(c.is_parameter_exist("tran.histroy"))
+          SolverSpecify::tran_histroy   = c.get_bool("tran.histroy", false);
 
         break;
       }
@@ -1057,6 +1096,7 @@ int SolverControl::do_solve( const Parser::Card & c )
     // init (user defined) hook functions here
 
     if( SolverSpecify::Type == SolverSpecify::DCSWEEP   ||
+        SolverSpecify::Type == SolverSpecify::OP        ||
         SolverSpecify::Type == SolverSpecify::TRANSIENT ||
         SolverSpecify::Type == SolverSpecify::TRACE     ||
         SolverSpecify::Solver == SolverSpecify::DDMAC
@@ -1206,15 +1246,15 @@ int  SolverControl::set_electrode_source  ( const Parser::Card & c )
 }
 
 
-
-
-
 int  SolverControl::set_physical_model  ( const Parser::Card & c )
 {
 
-  std::string region_label = c.get_string("region", "");
+  std::string rgn_pattern = c.get_string("region", "");
   std::string type         = c.get_string("type", "");
   std::string model        = c.get_string("model", "Default");
+
+  TRexpp rgn_rexp;
+  rgn_rexp.Compile(rgn_pattern.c_str());
 
   std::vector<Parser::Parameter> pmi_parameters;
 
@@ -1228,34 +1268,50 @@ int  SolverControl::set_physical_model  ( const Parser::Card & c )
     }
   }
 
-  if( system().region(region_label)==NULL )
+  int cnt_match = 0;
+  for (int i=0; i<system().n_regions(); i++)
   {
-    MESSAGE<<"ERROR at " <<c.get_fileline()<< " PMI: Region " << region_label << " can't be found in mesh regions." << std::endl; RECORD();
-    genius_error();
+    SimulationRegion* rgn = system().region(i);
+    const std::string& rgn_name = rgn->name();
+
+    if (!rgn_rexp.Match(rgn_name.c_str())) continue;
+    cnt_match++;
+
+    if ( (type.length() > 0  ) )
+    {
+      rgn->set_pmi(type, model, pmi_parameters);
+      system().get_bcs()->pmi_init_bc(rgn_name,type);
+    }
+    else
+    {
+      MESSAGE<<"ERROR at " <<c.get_fileline()<< " PMI: Must specify the type parameter." << std::endl; RECORD();
+      genius_error();
+    }
+
+    int print_verbosity = c.get_int("print", 0);
+    if ( print_verbosity > 0 )
+    {
+      // verbose output, let's print out the new material parameters
+      MESSAGE << rgn->get_pmi_info(type, print_verbosity) << std::endl;
+    }
   }
 
-  if ( (type.length() > 0  ) )
+  if( cnt_match==0 )
   {
-    system().region(region_label)->set_pmi(type, model, pmi_parameters);
-    system().get_bcs()->pmi_init_bc(region_label,type);
-  }
-  else
-  {
-    MESSAGE<<"ERROR at " <<c.get_fileline()<< " PMI: Must specify the type parameter." << std::endl; RECORD();
+    MESSAGE<<"ERROR at " << c.get_fileline()<< " PMI: Region " << rgn_pattern << " can't be found in mesh regions." << std::endl; RECORD();
     genius_error();
-  }
-
-  int print_verbosity = c.get_int("print", 0);
-  if ( print_verbosity > 0 )
-  {
-    // verbose output, let's print out the new material parameters
-    MESSAGE << system().region(region_label)->get_pmi_info(type, print_verbosity) << std::endl;
   }
 
   return 0;
 
 }
 
+
+int SolverControl::apply_field_source  ( const Parser::Card & c )
+{
+  _system->get_field_source()->update_system();
+  return 0;
+}
 
 
 
@@ -1424,6 +1480,11 @@ int SolverControl::do_import( const Parser::Card & c )
     std::string ise_filename = c.get_string("isefile", "");
     system().import_ise(ise_filename);
   }
+
+
+  //std::cout<<"Final Mesh " << _mesh->memory_size()/(1024*1024)<<std::endl;
+  //std::cout<<"Final System " << _system->memory_size()/(1024*1024)<<std::endl;
+  //std::cout<<"Total " << Genius::memory_size().first/(1024*1024) << " " << Genius::memory_size().second/(1024*1024) <<std::endl;
 
   return 0;
 }
@@ -1717,6 +1778,56 @@ int SolverControl::do_refine_uniform(const Parser::Card & c)
 }
 
 
+
+int SolverControl::do_region_set ( const Parser::Card & c)
+{
+  std::string region_name = c.get_string("region", "");
+  SimulationRegion * region = system().region(region_name);
+
+  if( region == NULL )
+  {
+    MESSAGE<<"ERROR at " <<c.get_fileline()<< " REGIONSET: region "<< region_name << " does not exist." << std::endl; RECORD();
+    genius_error();
+  }
+
+  if(c.is_parameter_exist("x.mole"))
+  {
+    double mole_x = c.get_real("x.mole", 0.0);
+    region->set_variable_data<double>("mole_x", POINT_CENTER, mole_x);
+  }
+
+  if(c.is_parameter_exist("y.mole"))
+  {
+    double mole_y = c.get_real("y.mole", 0.0);
+    region->set_variable_data<double>("mole_y", POINT_CENTER, mole_y);
+  }
+
+  if(c.is_parameter_exist("doping.na"))
+  {
+    double na = c.get_real("doping.na", 0.0)*pow(cm, -3);
+    region->set_variable_data<double>("na", POINT_CENTER, na);
+  }
+
+  if(c.is_parameter_exist("doping.nd"))
+  {
+    double nd = c.get_real("doping.nd", 0.0)*pow(cm, -3);
+    region->set_variable_data<double>("nd", POINT_CENTER, nd);
+  }
+
+  if(c.is_parameter_exist("opt.gen"))
+  {
+    double g = c.get_real("opt.gen", 0.0)*pow(cm, -3)/s;
+    region->set_variable_data<double>("optical_generation", POINT_CENTER, g);
+  }
+
+  region->reinit_after_import();
+
+  return 0;
+}
+
+
+
+
 int SolverControl::extend_to_3d ( const Parser::Card & c )
 {
   MESSAGE<<"Extend mesh to 3D...\n"<<std::endl; RECORD();
@@ -1774,6 +1885,4 @@ void SolverControlHook::post_solve()
 void SolverControlHook::post_iteration()
 {}
 
-void SolverControlHook::post_iteration(void * , void * , void * , bool &, bool &)
-{}
 

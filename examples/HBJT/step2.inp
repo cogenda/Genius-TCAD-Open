@@ -23,7 +23,7 @@ SOLVE    Type=DCSWEEP VScan=Collector VStart=0.0 VStep=0.1 VStop=3.0
 
 ATTACH   Electrode=Collector Vapp=VCC
 
-SOLVE    Type=DCSWEEP VScan=Base OUT=iv2 VStart=0.0 VStep=0.02 VStop=0.7
+SOLVE    Type=DCSWEEP VScan=Base out.prefix=iv2 VStart=0.0 VStep=0.02 VStop=0.7
 
 EXPORT   CGNSFile=bias.cgns
 

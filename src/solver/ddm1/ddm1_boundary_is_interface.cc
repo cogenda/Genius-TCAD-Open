@@ -295,7 +295,7 @@ void InsulatorSemiconductorInterfaceBC::DDM1_Jacobian_Reserve(Mat *jac, InsertMo
 
             FVM_Node::fvm_neighbor_node_iterator  gnb_it = ghost_fvm_node->neighbor_node_begin();
             for(; gnb_it != ghost_fvm_node->neighbor_node_end(); ++gnb_it)
-              MatSetValue(*jac, fvm_nodes[i]->global_offset(), (*gnb_it).second->global_offset(), 0, ADD_VALUES);
+              MatSetValue(*jac, fvm_nodes[i]->global_offset(), (*gnb_it).first->global_offset(), 0, ADD_VALUES);
 
             break;
           }
@@ -303,8 +303,6 @@ void InsulatorSemiconductorInterfaceBC::DDM1_Jacobian_Reserve(Mat *jac, InsertMo
           // Insulator-Semiconductor interface at Insulator side, we should add the rows to semiconductor region
           case InsulatorRegion:
           {
-            genius_assert(i==1);
-
             // reserve for later operator
             MatSetValue(*jac, fvm_nodes[i]->global_offset(), fvm_nodes[0]->global_offset(), 0, ADD_VALUES);
 

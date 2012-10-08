@@ -179,9 +179,9 @@ bool MediciTIF::read()
     else if (flag == "n")
     {
       SolData_t solution;
-      int material_id;
       ctmp >> solution.index >> solution.material;
       solution.index = solution.index - 1;
+      solution.region_index=-1;
       //For all data values...
       for(int i = 0; i < _sol_head.sol_num; i++)
       {
@@ -210,20 +210,13 @@ bool MediciTIF::read()
 
   _acceptor_index = _sol_head.solution_index("Accept");
   _donor_index    = _sol_head.solution_index("Donor");
+  _mole_x_index   = _sol_head.solution_index("mole_x");
+  _mole_y_index   = _sol_head.solution_index("mole_y");
 
   return true;
 
 }
 
 
-double MediciTIF::acceptor(unsigned int data_index) const
-{
-  return _sol_data[data_index].data_array[_acceptor_index];
-}
 
-
-double MediciTIF::donor(unsigned int data_index) const
-{
-  return _sol_data[data_index].data_array[_donor_index];
-}
 

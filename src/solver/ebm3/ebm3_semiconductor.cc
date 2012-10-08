@@ -295,10 +295,11 @@ void SemiconductorSimulationRegion::EBM3_Function(PetscScalar * x, Vec f, Insert
 
         if(get_advanced_model()->HighFieldMobilitySelfConsistently)
         {
+          double truc = get_advanced_model()->QuasiFermiCarrierTruc;
           // use values in the current iteration
-          V  =  x[fvm_node->local_offset() + node_psi_offset];
-          n  =  x[fvm_node->local_offset()+node_n_offset] + fvm_node_data->ni()*1e-2;
-          p  =  x[fvm_node->local_offset()+node_p_offset] + fvm_node_data->ni()*1e-2;
+          V  =  x[fvm_node->local_offset()+0];
+          n  =  std::max(x[fvm_node->local_offset()+1], truc*fvm_node_data->ni());
+          p  =  std::max(x[fvm_node->local_offset()+2], truc*fvm_node_data->ni());
         }
         else
         {
@@ -417,12 +418,12 @@ void SemiconductorSimulationRegion::EBM3_Function(PetscScalar * x, Vec f, Insert
       const double length = elem->edge_length(ne);
 
       // fvm_node of node1
-      const FVM_Node * fvm_n1 = elem->get_fvm_node(edge_nodes.first);
+      FVM_Node * fvm_n1 = elem->get_fvm_node(edge_nodes.first);
       // fvm_node of node2
-      const FVM_Node * fvm_n2 = elem->get_fvm_node(edge_nodes.second);
+      FVM_Node * fvm_n2 = elem->get_fvm_node(edge_nodes.second);
 
-      const FVM_NodeData * n1_data = fvm_n1->node_data();  genius_assert(n1_data);            // fvm_node_data of node1
-      const FVM_NodeData * n2_data = fvm_n2->node_data();  genius_assert(n2_data);            // fvm_node_data of node2
+      FVM_NodeData * n1_data = fvm_n1->node_data();  genius_assert(n1_data);            // fvm_node_data of node1
+      FVM_NodeData * n2_data = fvm_n2->node_data();  genius_assert(n2_data);            // fvm_node_data of node2
 
       double partial_area = elem->partial_area_with_edge(ne);        // partial area associated with this edge
       double partial_volume = elem->partial_volume_with_edge(ne);    // partial volume associated with this edge
@@ -794,6 +795,8 @@ void SemiconductorSimulationRegion::EBM3_Function(PetscScalar * x, Vec f, Insert
             iy.push_back( fvm_n1->global_offset() + node_p_offset );
             y.push_back ( (riin1*GIIn+riip1*GIIp)*truncated_partial_volume );
 
+            n1_data->ImpactIonization() += (riin1*GIIn+riip1*GIIp)*truncated_partial_volume/fvm_n1->volume();
+
             if (get_advanced_model()->enable_Tn())
             {
               Hn = - (Eg+1.5*kb*Tp) * riin1*GIIn + 1.5*kb*Tn * riip1*GIIp;
@@ -816,6 +819,8 @@ void SemiconductorSimulationRegion::EBM3_Function(PetscScalar * x, Vec f, Insert
 
             iy.push_back( fvm_n2->global_offset() + node_p_offset );
             y.push_back ( (riin2*GIIn+riip2*GIIp)*truncated_partial_volume );
+
+            n2_data->ImpactIonization() += (riin2*GIIn+riip2*GIIp)*truncated_partial_volume/fvm_n2->volume();
 
             if (get_advanced_model()->enable_Tn())
             {

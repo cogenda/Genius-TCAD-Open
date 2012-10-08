@@ -21,6 +21,7 @@
 
 // Local includes
 #include "edge_edge2.h"
+#include "sphere.h"
 #include "tensor_value.h"
 
 // ------------------------------------------------------------
@@ -163,8 +164,25 @@ void Edge2::connectivity(const unsigned int sc,
 }
 
 
-void Edge2::ray_hit(const Point &p , const Point &d , IntersectionResult &result, unsigned int) const
+void Edge2::ray_hit(const Point &point , const Point &d , IntersectionResult &result, unsigned int) const
 {
+  // if point is far away, numerical error may cause some problem. move point something close.
+  Sphere sphere(this->bounding_sphere());
+
+  // p = point + d*t1
+  Point p = point;
+  Real t1=0, t2=0;
+  if( sphere.above_surface(point))
+  {
+    if(!sphere.intersect_point(point, d, t1, t2))
+    {
+      result.state = Missed;
+      return;
+    }
+    p = point + t1*d;
+  }
+
+
   Point p0 = this->point(0);
   Point d0 = (this->point(1)-this->point(0)).unit();
 
@@ -183,12 +201,12 @@ void Edge2::ray_hit(const Point &p , const Point &d , IntersectionResult &result
       result.hit_points.resize(2);
 
       result.hit_points[0].p = this->point(0);
-      result.hit_points[0].t = d.dot((this->point(0) - p));
+      result.hit_points[0].t = d.dot((this->point(0) - p)) + t1;
       result.hit_points[0].point_location = on_vertex;
       result.hit_points[0].mark = 0;
 
       result.hit_points[1].p = this->point(1);
-      result.hit_points[1].t = d.dot((this->point(1) - p));
+      result.hit_points[1].t = d.dot((this->point(1) - p)) + t1;
       result.hit_points[1].point_location = on_vertex;
       result.hit_points[1].mark = 1;
 
@@ -221,7 +239,7 @@ void Edge2::ray_hit(const Point &p , const Point &d , IntersectionResult &result
     result.hit_points.resize(1);
 
     result.hit_points[0].p = near_point;
-    result.hit_points[0].t = t;
+    result.hit_points[0].t = t + t1;
     if( std::abs(t0) <1e-10)
     {
       result.hit_points[0].point_location = on_vertex;

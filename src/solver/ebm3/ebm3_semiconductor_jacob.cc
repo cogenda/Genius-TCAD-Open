@@ -133,12 +133,17 @@ void SemiconductorSimulationRegion::EBM3_Jacobian(PetscScalar * x, Mat *jac, Ins
 
         if(get_advanced_model()->HighFieldMobilitySelfConsistently)
         {
+          double truc = get_advanced_model()->QuasiFermiCarrierTruc;
           // use values in the current iteration
           V  =  x[fvm_node->local_offset()+node_psi_offset];   V.setADValue(n_node_var*nd + node_psi_offset, 1.0);
-          n  =  x[fvm_node->local_offset()+node_n_offset];     n.setADValue(n_node_var*nd + node_n_offset, 1.0);
-          p  =  x[fvm_node->local_offset()+node_p_offset];     p.setADValue(n_node_var*nd + node_p_offset, 1.0);
-          n  +=  fvm_node_data->ni()*1e-2;
-          p  +=  fvm_node_data->ni()*1e-2;
+          n  =  std::max(x[fvm_node->local_offset()+node_n_offset], truc*fvm_node_data->ni());
+          p  =  std::max(x[fvm_node->local_offset()+node_p_offset], truc*fvm_node_data->ni());
+
+          if(x[fvm_node->local_offset()+node_n_offset] > truc*fvm_node_data->ni())
+            n.setADValue(n_node_var*nd + node_n_offset, 1.0);
+
+          if(x[fvm_node->local_offset()+node_p_offset] > truc*fvm_node_data->ni())
+            p.setADValue(n_node_var*nd + node_p_offset, 1.0);
         }
         else
         {

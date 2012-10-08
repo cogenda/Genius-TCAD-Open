@@ -40,6 +40,6 @@ SOLVE
 # Use DDMAC to get the frequency response to this capacitance.
 # The result marches exactly with analytic value get from cap.cc
 METHOD   Type=DDMAC    LS=BCGS
-SOLVE    Type=ACSWEEP  ACScan=Elec1 out=ivac  F.Start=1e6 F.Multiple=1.1  F.Stop = 1e7
+SOLVE    Type=ACSWEEP  ACScan=Elec1 out.prefix=ivac  F.Start=1e6 F.Multiple=1.1  F.Stop = 1e7
 
 END

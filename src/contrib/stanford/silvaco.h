@@ -49,12 +49,6 @@ public:
    */
   virtual bool read();
 
-  /// return the acceptor in sol_data
-  virtual double acceptor(unsigned int data_index) const;
-
-  /// return the donor in sol_data
-  virtual double donor(unsigned int data_index) const;
-
 
   void export_scatter_doping_data() const;
 
@@ -73,11 +67,6 @@ private:
    */
   std::map<int, std::string> SilMat;
 
-  /// index of acceptor in sol_data
-  unsigned int _acceptor_index;
-
-  /// index of donor in sol_data
-  unsigned int _donor_index;
 
 };
 

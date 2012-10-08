@@ -1,0 +1,10 @@
+def build(bld):
+  bld.objects( source    = bld.path.ant_glob('trex.c'),
+                includes  = '. ../../..',
+                features  = 'c',
+                use       = 'opt',
+                target    = 'trex_objs',
+             )
+
+  bld.contrib_objs.append('trex_objs')
+

@@ -39,96 +39,81 @@ void ResistanceInsulatorBC::DDMAC_Fill_Matrix_Vector( Mat A, Vec b, const Mat J,
     // skip node not belongs to this processor
     if( (*node_it)->processor_id()!=Genius::processor_id() ) continue;
 
+    // we should only have one resistance region
     const SimulationRegion * resistance_region = get_fvm_node_region((*node_it), MetalRegion);
     const FVM_Node * resistance_fvm_node = get_region_fvm_node((*node_it), MetalRegion);
     unsigned int resistance_fvm_node_re = resistance_fvm_node->global_offset();
     unsigned int resistance_fvm_node_im = resistance_region->ebm_n_variables() + resistance_fvm_node->global_offset();
 
-    std::vector<const SimulationRegion *> regions;
-    std::vector<const FVM_Node *> fvm_nodes;
+    resistance_region->DDMAC_Fill_Nodal_Matrix_Vector(resistance_fvm_node, POTENTIAL, A, b, J, omega, add_value_flag);
+    if(resistance_region->get_advanced_model()->enable_Tl())
+      resistance_region->DDMAC_Fill_Nodal_Matrix_Vector(resistance_fvm_node, TEMPERATURE, A, b, J, omega, add_value_flag);
 
-    // search all the fvm_node which has *node_it as root node
+    // however, this resistance region may contact several insulator region
+
+    // search all the fvm_node which has *node_it as root node, these fvm_nodes have the same location in geometry,
+    // but belong to different regions in logic.
     BoundaryCondition::region_node_iterator  rnode_it     = region_node_begin(*node_it);
     BoundaryCondition::region_node_iterator  end_rnode_it = region_node_end(*node_it);
     for(unsigned int i=0 ; rnode_it!=end_rnode_it; ++i, ++rnode_it  )
     {
-      regions.push_back( (*rnode_it).second.first );
-      fvm_nodes.push_back( (*rnode_it).second.second );
-
-      switch ( regions[i]->type() )
+      const SimulationRegion * region = (*rnode_it).second.first;
+      if( region->type() == InsulatorRegion )
       {
-        // Electrode-Insulator interface at Insulator side
-      case InsulatorRegion:
+        //the indepedent variable number, we need 2 here.
+        adtl::AutoDScalar::numdir=2;
+
+        const FVM_Node * insulator_fvm_node = (*rnode_it).second.second;
+        const FVM_NodeData * insulator_fvm_node_data = insulator_fvm_node->node_data();
+
+        // compute displacement current
+        FVM_Node::fvm_neighbor_node_iterator nb_it = insulator_fvm_node->neighbor_node_begin();
+        for(; nb_it != insulator_fvm_node->neighbor_node_end(); ++nb_it)
         {
-          genius_assert(i==0);
+          const FVM_Node *nb_node = (*nb_it).first;
 
-          //the indepedent variable number, we need 2 here.
-          adtl::AutoDScalar::numdir=2;
+          // the psi of this node
+          AutoDScalar  V = insulator_fvm_node_data->psi(); V.setADValue(0, 1.0);
+          // the psi of neighbor node
+          AutoDScalar V_nb = nb_node->node_data()->psi(); V_nb.setADValue(1, 1.0);
 
-          const FVM_NodeData * node_data = fvm_nodes[i]->node_data();
+          // distance from nb node to this node
+          PetscScalar distance = insulator_fvm_node->distance(nb_node);
 
-          // compute displacement current
-          FVM_Node::fvm_neighbor_node_iterator nb_it = fvm_nodes[i]->neighbor_node_begin();
-          for(; nb_it != fvm_nodes[i]->neighbor_node_end(); ++nb_it)
-          {
-            const FVM_Node *nb_node = (*nb_it).second;
+          // area of out surface of control volume related with neighbor node
+          PetscScalar cv_boundary = insulator_fvm_node->cv_surface_area(nb_node);
+          AutoDScalar D = insulator_fvm_node_data->eps()*(V-V_nb)/distance;
 
-            // the psi of this node
-            AutoDScalar  V = node_data->psi(); V.setADValue(0, 1.0);
-            // the psi of neighbor node
-            AutoDScalar V_nb = nb_node->node_data()->psi(); V_nb.setADValue(1, 1.0);
+          // the 1/dt is replaced by j*omega.
+          std::complex <PetscScalar> dJdisp_dV  = -cv_boundary*D.getADValue(0)*j*omega;
+          std::complex <PetscScalar> dJdisp_dVn = -cv_boundary*D.getADValue(1)*j*omega;
 
-            // distance from nb node to this node
-            PetscScalar distance = (*(fvm_nodes[i]->root_node()) - *(nb_node->root_node())).size();
+          // V
+          MatSetValue(A, resistance_fvm_node_re, insulator_fvm_node->global_offset(), dJdisp_dV.real(), ADD_VALUES);
+          MatSetValue(A, resistance_fvm_node_re, insulator_fvm_node->global_offset()+region->ebm_n_variables(), -dJdisp_dV.imag(), ADD_VALUES);
 
-            // area of out surface of control volume related with neighbor node
-            PetscScalar cv_boundary = fvm_nodes[i]->cv_surface_area(nb_node->root_node());
-            AutoDScalar D = node_data->eps()*(V-V_nb)/distance;
+          MatSetValue(A, resistance_fvm_node_im, insulator_fvm_node->global_offset(), dJdisp_dV.imag(), ADD_VALUES);
+          MatSetValue(A, resistance_fvm_node_im, insulator_fvm_node->global_offset()+region->ebm_n_variables(),  dJdisp_dV.real(), ADD_VALUES);
 
-            // the 1/dt is replaced by j*omega.
-            std::complex <PetscScalar> dJdisp_dV  = -cv_boundary*D.getADValue(0)*j*omega;
-            std::complex <PetscScalar> dJdisp_dVn = -cv_boundary*D.getADValue(1)*j*omega;
+          // V_nb
+          MatSetValue(A, resistance_fvm_node_re, nb_node->global_offset(), dJdisp_dVn.real(), ADD_VALUES);
+          MatSetValue(A, resistance_fvm_node_re, nb_node->global_offset()+region->ebm_n_variables(), -dJdisp_dVn.imag(), ADD_VALUES);
 
-            // V
-            MatSetValue(A, resistance_fvm_node_re, fvm_nodes[i]->global_offset(), dJdisp_dV.real(), ADD_VALUES);
-            MatSetValue(A, resistance_fvm_node_re, fvm_nodes[i]->global_offset()+regions[i]->ebm_n_variables(), -dJdisp_dV.imag(), ADD_VALUES);
-
-            MatSetValue(A, resistance_fvm_node_im, fvm_nodes[i]->global_offset(), dJdisp_dV.imag(), ADD_VALUES);
-            MatSetValue(A, resistance_fvm_node_im, fvm_nodes[i]->global_offset()+regions[i]->ebm_n_variables(),  dJdisp_dV.real(), ADD_VALUES);
-
-            // V_nb
-            MatSetValue(A, resistance_fvm_node_re, nb_node->global_offset(), dJdisp_dVn.real(), ADD_VALUES);
-            MatSetValue(A, resistance_fvm_node_re, nb_node->global_offset()+regions[i]->ebm_n_variables(), -dJdisp_dVn.imag(), ADD_VALUES);
-
-            MatSetValue(A, resistance_fvm_node_im, nb_node->global_offset(), dJdisp_dVn.imag(), ADD_VALUES);
-            MatSetValue(A, resistance_fvm_node_im, nb_node->global_offset()+regions[i]->ebm_n_variables(),  dJdisp_dVn.real(), ADD_VALUES);
-          }
-
-          break;
+          MatSetValue(A, resistance_fvm_node_im, nb_node->global_offset(), dJdisp_dVn.imag(), ADD_VALUES);
+          MatSetValue(A, resistance_fvm_node_im, nb_node->global_offset()+region->ebm_n_variables(),  dJdisp_dVn.real(), ADD_VALUES);
         }
-        // Electrode-Insulator interface at Conductor side
-       case MetalRegion:
+
+        // the psi of insulator region equals to metal region
+        region->DDMAC_Force_equal(insulator_fvm_node, POTENTIAL, A, add_value_flag, resistance_region, resistance_fvm_node);
+
+        if(region->get_advanced_model()->enable_Tl())
         {
-          regions[i]->DDMAC_Fill_Nodal_Matrix_Vector(fvm_nodes[i], POTENTIAL, A, b, J, omega, add_value_flag);
-          // the psi of insulator region equals to metal region
-          regions[0]->DDMAC_Force_equal(fvm_nodes[0], POTENTIAL, A, add_value_flag, regions[i], fvm_nodes[i]);
-
-          if(regions[i]->get_advanced_model()->enable_Tl())
-          {
-            // load Jacobian entry of this node from J and fill into AC matrix A
-            regions[0]->DDMAC_Fill_Nodal_Matrix_Vector(fvm_nodes[0], TEMPERATURE, A, b, J, omega, add_value_flag, regions[i], fvm_nodes[i]);
-            regions[i]->DDMAC_Fill_Nodal_Matrix_Vector(fvm_nodes[i], TEMPERATURE, A, b, J, omega, add_value_flag);
-            regions[0]->DDMAC_Force_equal(fvm_nodes[0], TEMPERATURE, A, add_value_flag, regions[i], fvm_nodes[i]);
-          }
-
-          break;
+          // load Jacobian entry of this node from J and fill into AC matrix A
+          region->DDMAC_Fill_Nodal_Matrix_Vector(insulator_fvm_node, TEMPERATURE, A, b, J, omega, add_value_flag, resistance_region, resistance_fvm_node);
+          region->DDMAC_Force_equal(insulator_fvm_node, TEMPERATURE, A, add_value_flag, resistance_region, resistance_fvm_node);
         }
-      case VacuumRegion:
-        break;
-      default: genius_error(); //we should never reach here
       }
     }
-
   }
 
   // the last operator is ADD_VALUES

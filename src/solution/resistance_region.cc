@@ -333,7 +333,7 @@ void MetalSimulationRegion::find_low_resistance_solderpad()
       if( bc->bc_type() == SolderPad )
       {
         // SolderPad with low resistance
-        if(bc->ext_circuit()->is_voltage_driven()==true && bc->ext_circuit()->R() < 1e3*V/A)
+        if(bc->ext_circuit()->is_voltage_driven()==true && bc->ext_circuit()->serial_resistance() < 1e3*V/A)
         {  _connect_to_low_resistance_solderpad = true; return ; }
       }
     }

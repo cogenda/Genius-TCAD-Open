@@ -113,7 +113,7 @@ void SpiceMonitorHook::pre_iteration()
 /*----------------------------------------------------------------------
  *  This is executed after each (nonlinear) iteration
  */
-void SpiceMonitorHook::post_iteration(void * _f, void * _x, void * _dx, void * _w, bool & , bool &)
+void SpiceMonitorHook::post_check(void * _f, void * _x, void * _dx, void * _w, bool & , bool &)
 {
   const SimulationSystem &system = _solver.get_system();
   const SPICE_CKT * circuit = system.get_circuit();

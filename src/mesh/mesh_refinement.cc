@@ -407,7 +407,7 @@ bool MeshRefinement::refine_and_coarsen_elements (const bool maintain_level_one)
   // Finally, the new mesh needs to be prepared for use
   if (coarsening_changed_mesh || refining_changed_mesh)
   {
-    _mesh.prepare_for_use ();
+    _mesh.set_prepared(false);
 
     return true;
   }
@@ -506,7 +506,7 @@ bool MeshRefinement::coarsen_elements (const bool maintain_level_one)
 
   // Finally, the new mesh may need to be prepared for use
   if (mesh_changed)
-    _mesh.prepare_for_use ();
+    _mesh.set_prepared(false);
 
   return mesh_changed;
 }
@@ -595,7 +595,7 @@ bool MeshRefinement::refine_elements (const bool maintain_level_one)
 
   // Finally, the new mesh needs to be prepared for use
   if (mesh_changed)
-    _mesh.prepare_for_use ();
+    _mesh.set_prepared(false);
 
   return mesh_changed;
 }
@@ -1295,7 +1295,7 @@ void MeshRefinement::uniformly_refine (unsigned int n)
   }
 
   // Finally, the new mesh needs to be prepared for use
-  _mesh.prepare_for_use ();
+  _mesh.set_prepared(false);
 }
 
 
@@ -1325,7 +1325,7 @@ void MeshRefinement::uniformly_coarsen (unsigned int n)
 
 
   // Finally, the new mesh needs to be prepared for use
-  _mesh.prepare_for_use ();
+  _mesh.set_prepared(false);
 }
 
 

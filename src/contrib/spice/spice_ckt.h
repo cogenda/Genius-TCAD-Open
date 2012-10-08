@@ -100,11 +100,24 @@ public:
   const std::map<std::string, unsigned int> & get_electrode_info() const
   { return _electrode_to_spice_node_map; }
 
+
+  /**
+   * clear genius electrode info
+   */
+  void clear_electrode()
+  {
+    _spice_node_links_to_bc.clear();
+    _bc_to_spice_node_map.clear();
+  }
+
   /**
    * link genius electrode to spice node
    */
   void link_electrode(unsigned int n, const BoundaryCondition * bc)
-  {  _bc_to_spice_node_map[bc] = n; }
+  {
+    _spice_node_links_to_bc.push_back(n);
+    _bc_to_spice_node_map[bc] = n;
+  }
 
   /**
    * @return the number of electrodes
@@ -558,6 +571,12 @@ private:
    * genius electrode name -> spice node
    */
   std::map<std::string, unsigned int> _electrode_to_spice_node_map;
+
+  /**
+   * spice node which links to device electrode
+   * the order keeps the same as electrode in genius
+   */
+  std::vector<unsigned int> _spice_node_links_to_bc;
 
   /**
    * map genius electrode boundary to spice node

@@ -160,10 +160,11 @@ void SimpleGateContactBC::_find_mos_channel_elem()
 
   SemiconductorSimulationRegion * semiconductor_region = dynamic_cast<SemiconductorSimulationRegion *>(bc_regions().first);
 
+  std::set<unsigned int> elem_in_channel;
+
   std::vector<const Elem *> el;
   std::vector<unsigned int> sl;
   mesh.boundary_info->active_elem_with_boundary_id (el, sl, this->boundary_id());
-
   for(unsigned int n=0; n<el.size(); ++n)
   {
     const Elem * elem = el[n];
@@ -184,7 +185,8 @@ void SimpleGateContactBC::_find_mos_channel_elem()
       queue.pop();
 
       if( current_elem->on_processor() && (current_elem->centroid() - origin_point).size() < 20*nm )
-        semiconductor_region->_elem_in_mos_channel.insert(current_elem);
+        elem_in_channel.insert(current_elem->id());
+
       for(unsigned int i=0; i<current_elem->n_sides(); ++i)
       {
         const Elem * neighbor_elem = current_elem->neighbor(i);
@@ -198,6 +200,18 @@ void SimpleGateContactBC::_find_mos_channel_elem()
 
         visited_elem.insert(neighbor_elem);
       }
+    }
+  }
+
+  // sync
+  {
+    Parallel::allgather(elem_in_channel);
+    std::set<unsigned int>::const_iterator it = elem_in_channel.begin();
+    for(; it != elem_in_channel.end(); ++it)
+    {
+      const Elem * elem = mesh.elem(*it);
+      if(elem && elem->on_local())
+        semiconductor_region->_elem_in_mos_channel.insert(elem);
     }
   }
 }
@@ -307,10 +321,11 @@ void InsulatorSemiconductorInterfaceBC::_find_mos_channel_elem()
 
   SemiconductorSimulationRegion * semiconductor_region = dynamic_cast<SemiconductorSimulationRegion *>(bc_regions().first);
 
+  std::set<unsigned int> elem_in_channel;
+
   std::vector<const Elem *> el;
   std::vector<unsigned int> sl;
   mesh.boundary_info->active_elem_with_boundary_id (el, sl, this->boundary_id());
-
   for(unsigned int n=0; n<el.size(); ++n)
   {
     const Elem * elem = el[n];
@@ -333,13 +348,12 @@ void InsulatorSemiconductorInterfaceBC::_find_mos_channel_elem()
       const Elem * current_elem = queue.front();
       queue.pop();
 
-      semiconductor_region->_elem_in_mos_channel.insert(current_elem);
+      elem_in_channel.insert(current_elem->id());
 
       for(unsigned int i=0; i<current_elem->n_sides(); ++i)
       {
         const Elem * neighbor_elem = current_elem->neighbor(i);
         if( !neighbor_elem ) continue;
-        if( !neighbor_elem->on_processor() ) continue;
         if( neighbor_elem->subdomain_id() != semiconductor_region->subdomain_id() ) continue;
 
         if( visited_elem.find(neighbor_elem) == visited_elem.end() )
@@ -354,5 +368,16 @@ void InsulatorSemiconductorInterfaceBC::_find_mos_channel_elem()
     }
   }
 
+  // sync
+  {
+    Parallel::allgather(elem_in_channel);
+    std::set<unsigned int>::const_iterator it = elem_in_channel.begin();
+    for(; it != elem_in_channel.end(); ++it)
+    {
+      const Elem * elem = mesh.elem(*it);
+      if(elem && elem->on_local())
+        semiconductor_region->_elem_in_mos_channel.insert(elem);
+    }
+  }
 }
 

@@ -323,14 +323,14 @@ void IF_Metal_OhmicBC::_DDM2_Function_Limited_Recombination ( PetscScalar * x, V
       FVM_Node::fvm_neighbor_node_iterator nb_it = semiconductor_node->neighbor_node_begin();
       for ( ; nb_it != semiconductor_node->neighbor_node_end(); ++nb_it )
       {
-        const FVM_Node *nb_node = ( *nb_it ).second;
+        const FVM_Node *nb_node = (*nb_it).first;
         const FVM_NodeData * nb_node_data = nb_node->node_data();
         // the psi of neighbor node
         PetscScalar V_nb = x[nb_node->local_offset() +0];
         // distance from nb node to this node
         PetscScalar distance = semiconductor_node->distance ( nb_node );
         // area of out surface of control volume related with neighbor node
-        PetscScalar cv_boundary = semiconductor_node->cv_surface_area ( nb_node->root_node() );
+        PetscScalar cv_boundary = semiconductor_node->cv_surface_area ( nb_node );
         PetscScalar dEdt;
         if ( SolverSpecify::TS_type==SolverSpecify::BDF2 && SolverSpecify::BDF2_LowerOrder==false ) //second order
         {
@@ -526,14 +526,14 @@ void IF_Metal_OhmicBC::_DDM2_Function_Infinite_Recombination ( PetscScalar * x, 
       FVM_Node::fvm_neighbor_node_iterator nb_it = semiconductor_node->neighbor_node_begin();
       for ( ; nb_it != semiconductor_node->neighbor_node_end(); ++nb_it )
       {
-        const FVM_Node *nb_node = ( *nb_it ).second;
+        const FVM_Node *nb_node = (*nb_it).first;
         const FVM_NodeData * nb_node_data = nb_node->node_data();
         // the psi of neighbor node
         PetscScalar V_nb = x[nb_node->local_offset() +0];
         // distance from nb node to this node
         PetscScalar distance = semiconductor_node->distance ( nb_node );
         // area of out surface of control volume related with neighbor node
-        PetscScalar cv_boundary = semiconductor_node->cv_surface_area ( nb_node->root_node() );
+        PetscScalar cv_boundary = semiconductor_node->cv_surface_area ( nb_node );
         PetscScalar dEdt;
         if ( SolverSpecify::TS_type==SolverSpecify::BDF2 && SolverSpecify::BDF2_LowerOrder==false ) //second order
         {
@@ -684,7 +684,7 @@ void IF_Metal_OhmicBC::DDM2_Jacobian_Preprocess(PetscScalar *,Mat *jac, std::vec
       FVM_Node::fvm_neighbor_node_iterator nb_it_end = semiconductor_node->neighbor_node_end();
       for(; nb_it != nb_it_end; ++nb_it)
       {
-        const FVM_Node *  semiconductor_nb_node = (*nb_it).second;
+        const FVM_Node *  semiconductor_nb_node = (*nb_it).first;
 
         std::vector<PetscInt>    col(4);
         col[0] = semiconductor_nb_node->global_offset()+0;
@@ -887,14 +887,14 @@ void IF_Metal_OhmicBC::_DDM2_Jacobian_Limited_Recombination ( PetscScalar * x, M
       FVM_Node::fvm_neighbor_node_iterator nb_it = semiconductor_node->neighbor_node_begin();
       for ( ; nb_it != semiconductor_node->neighbor_node_end(); ++nb_it )
       {
-        const FVM_Node *nb_node = ( *nb_it ).second;
+        const FVM_Node *nb_node = (*nb_it).first;
         const FVM_NodeData * nb_node_data = nb_node->node_data();
         // the psi of neighbor node
         AutoDScalar V_nb = x[nb_node->local_offset() +0]; V_nb.setADValue ( 3, 1.0 );
         // distance from nb node to this node
         PetscScalar distance = semiconductor_node->distance ( nb_node );
         // area of out surface of control volume related with neighbor node
-        PetscScalar cv_boundary = semiconductor_node->cv_surface_area ( nb_node->root_node() );
+        PetscScalar cv_boundary = semiconductor_node->cv_surface_area ( nb_node );
         AutoDScalar dEdt;
         if ( SolverSpecify::TS_type==SolverSpecify::BDF2 && SolverSpecify::BDF2_LowerOrder==false ) //second order
         {
@@ -1074,14 +1074,14 @@ void IF_Metal_OhmicBC::_DDM2_Jacobian_Infinite_Recombination ( PetscScalar * x, 
       FVM_Node::fvm_neighbor_node_iterator nb_it = semiconductor_node->neighbor_node_begin();
       for ( ; nb_it != semiconductor_node->neighbor_node_end(); ++nb_it )
       {
-        const FVM_Node *nb_node = ( *nb_it ).second;
+        const FVM_Node *nb_node = (*nb_it).first;
         const FVM_NodeData * nb_node_data = nb_node->node_data();
         // the psi of neighbor node
         AutoDScalar V_nb = x[nb_node->local_offset() +0]; V_nb.setADValue ( 3, 1.0 );
         // distance from nb node to this node
         PetscScalar distance = semiconductor_node->distance ( nb_node );
         // area of out surface of control volume related with neighbor node
-        PetscScalar cv_boundary = semiconductor_node->cv_surface_area ( nb_node->root_node() );
+        PetscScalar cv_boundary = semiconductor_node->cv_surface_area ( nb_node );
         AutoDScalar dEdt;
         if ( SolverSpecify::TS_type==SolverSpecify::BDF2 && SolverSpecify::BDF2_LowerOrder==false ) //second order
         {
@@ -1175,7 +1175,7 @@ void IF_Metal_OhmicBC::DDM2_Jacobian_Reserve ( Mat *jac, InsertMode &add_value_f
     FVM_Node::fvm_neighbor_node_iterator nb_it = semiconductor_node->neighbor_node_begin();
     for ( ; nb_it != semiconductor_node->neighbor_node_end(); ++nb_it )
     {
-      const FVM_Node *nb_node = ( *nb_it ).second;
+      const FVM_Node *nb_node = (*nb_it).first;
       MatSetValue ( *jac, resistance_node->global_offset(), nb_node->global_offset()+0, 0, ADD_VALUES );
       MatSetValue ( *jac, resistance_node->global_offset(), nb_node->global_offset()+1, 0, ADD_VALUES );
       MatSetValue ( *jac, resistance_node->global_offset(), nb_node->global_offset()+2, 0, ADD_VALUES );
@@ -1204,7 +1204,7 @@ void IF_Metal_OhmicBC::DDM2_Jacobian_Reserve ( Mat *jac, InsertMode &add_value_f
         FVM_Node::fvm_neighbor_node_iterator nb_it = insulator_node->neighbor_node_begin();
         for ( ; nb_it != insulator_node->neighbor_node_end(); ++nb_it )
         {
-          const FVM_Node *nb_node = ( *nb_it ).second;
+          const FVM_Node *nb_node = (*nb_it).first;
           MatSetValue ( *jac, resistance_node->global_offset()+0, nb_node->global_offset()+0, 0, ADD_VALUES );
           MatSetValue ( *jac, resistance_node->global_offset()+1, nb_node->global_offset()+1, 0, ADD_VALUES );
         }

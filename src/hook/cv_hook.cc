@@ -146,11 +146,11 @@ void CVHook::post_solve()
                 FVM_Node::fvm_neighbor_node_iterator nb_it = fvm_nodes[i]->neighbor_node_begin();
                 for( ; nb_it != fvm_nodes[i]->neighbor_node_end(); ++nb_it )
                 {
-                  FVM_Node *nb_node = (*nb_it).second;
+                  FVM_Node *nb_node = (*nb_it).first;
                   FVM_NodeData * nb_node_data = nb_node->node_data();
 
-                  PetscScalar distance = (*(fvm_nodes[i]->root_node()) - *(nb_node->root_node())).size();
-                  PetscScalar cv_area = fvm_nodes[i]->cv_surface_area(nb_node->root_node());
+                  PetscScalar distance = fvm_nodes[i]->distance(nb_node);
+                  PetscScalar cv_area = fvm_nodes[i]->cv_surface_area(nb_node);
                   PetscScalar EFlux = (node_data->psi()-nb_node_data->psi())/distance;
 
                   flux_buffer.push_back(cv_area*node_data->eps()*EFlux*flux_scale);

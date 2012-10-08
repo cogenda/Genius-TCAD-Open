@@ -321,13 +321,13 @@ int  BoundaryConditionCollector::bc_setup()
             if ( Material::IsSemiconductor ( material1 ) )
             {
               _bcs[i] = new OhmicContactBC ( _system, label, false );
-              _bcs[i]->build_ext_circuit ( new ExternalCircuit );
+              _bcs[i]->build_ext_circuit ( ExternalCircuit::build_default() );
             }
             // set as solder pad when region material is metal
             else if ( _resistive_metal_mode && Material::IsResistance ( material1 ) )
             {
               _bcs[i] = new SolderPadBC ( _system, label );
-              _bcs[i]->build_ext_circuit ( new ExternalCircuit );
+              _bcs[i]->build_ext_circuit ( ExternalCircuit::build_default() );
             }
             else
             {
@@ -346,7 +346,7 @@ int  BoundaryConditionCollector::bc_setup()
           case IF_Electrode_Semiconductor  :
           {
             _bcs[i] = new OhmicContactBC ( _system, label, true );
-            _bcs[i]->build_ext_circuit ( new ExternalCircuit );
+            _bcs[i]->build_ext_circuit ( ExternalCircuit::build_default() );
             // allow one use electrode label to load the bc
             if ( Material::IsConductor ( material1 ) || Material::IsResistance ( material1 ) )
               _bcs[i]->electrode_label() = _mesh.subdomain_label_by_id ( sub_id1 );
@@ -384,7 +384,7 @@ int  BoundaryConditionCollector::bc_setup()
               _bcs[i] = new GateContactBC ( _system, label, true );
               _bcs[i]->electrode_label() = _mesh.subdomain_label_by_id ( electrode_sbd );
               _bcs[i]->scalar("workfunction") = electrode_region->get_affinity(_system.T_external());
-              _bcs[i]->build_ext_circuit ( new ExternalCircuit );
+              _bcs[i]->build_ext_circuit ( ExternalCircuit::build_default() );
             }
             break;
           }
@@ -523,6 +523,7 @@ int  BoundaryConditionCollector::bc_setup()
 
   MESSAGE<<"Boundary conditions finished.\n"<<std::endl;  RECORD();
 
+
   if(Genius::experiment_code())
   {
     MESSAGE<<"Buliding Geometry Relationship..."; RECORD();
@@ -595,10 +596,11 @@ int BoundaryConditionCollector::Set_BC_NeumannBoundary ( const Parser::Card &c )
   if( sub_ids.first == invalid_uint || sub_ids.second != invalid_uint )
   {
     MESSAGE<<"ERROR at " <<c.get_fileline()
-           << " Boundary: ID="<< Identifier << " Neumann BC should be set to region boundary face."
+           << " Boundary ID="<< Identifier << ", Neumann BC should be set to region boundary face."
            <<std::endl;
     RECORD();
     genius_error();
+    return 1;
   }
 
   // build the boundary condition parameter for this boundary
@@ -623,14 +625,27 @@ int BoundaryConditionCollector::Set_BC_OhmicContact ( const Parser::Card &c )
 {
   std::string Identifier;
   unsigned int bc_index = get_bc_from_card ( c, Identifier );
+
+  short int boundary_id = get_bd_id_by_bc_index ( bc_index );
+  const std::pair<unsigned int, unsigned int > & sub_ids = _boundary_subdomain_map[boundary_id];
+  std::string material1 = _mesh.subdomain_material ( sub_ids.first );
+  std::string material2 = _mesh.subdomain_material ( sub_ids.second );
+
+  if(!consistent_bc_by_subdomain(material1, material2, OhmicContact))
+  {
+    MESSAGE<<"ERROR at " <<c.get_fileline()
+        << " Boundary ID="<< Identifier << ", Inconsistent bc settings."
+        <<std::endl;
+    RECORD();
+    genius_error();
+    return 1;
+  }
+
   // build the boundary condition parameter for this boundary
   _bcs[bc_index] = new OhmicContactBC ( _system, Identifier, false );
   _bcs[bc_index]->T_external() = c.get_real ( "ext.temp", _system.T_external() /K ) *K;
   _bcs[bc_index]->scalar("heat.transfer") = c.get_real ( "heat.transfer",1e3 ) *J/s/pow ( cm,2 ) /K;
-  _bcs[bc_index]->build_ext_circuit ( new ExternalCircuit );
-  _bcs[bc_index]->ext_circuit()->R() = c.get_real ( "res",0.0 ) *V/A;
-  _bcs[bc_index]->ext_circuit()->C() = c.get_real ( "cap",0.0 ) *C/V;
-  _bcs[bc_index]->ext_circuit()->L() = c.get_real ( "ind",0.0 ) *V*s/A;
+  _bcs[bc_index]->build_ext_circuit ( ExternalCircuit::build(c) );
   _bcs[bc_index]->z_width() = c.get_real ( "z.width", _bcs[bc_index]->z_width() /um ) *um;
 
   if ( c.is_parameter_exist ( "potential" ) )
@@ -659,6 +674,22 @@ int BoundaryConditionCollector::Set_BC_IF_Metal_Ohmic ( const Parser::Card &c )
 {
   std::string Identifier;
   unsigned int bc_index = get_bc_from_card ( c, Identifier );
+
+  short int boundary_id = get_bd_id_by_bc_index ( bc_index );
+  const std::pair<unsigned int, unsigned int > & sub_ids = _boundary_subdomain_map[boundary_id];
+  std::string material1 = _mesh.subdomain_material ( sub_ids.first );
+  std::string material2 = _mesh.subdomain_material ( sub_ids.second );
+
+  if(!consistent_bc_by_subdomain(material1, material2, IF_Metal_Ohmic))
+  {
+    MESSAGE<<"ERROR at " <<c.get_fileline()
+        << " Boundary ID="<< Identifier << ", Inconsistent bc settings."
+        <<std::endl;
+    RECORD();
+    genius_error();
+    return 1;
+  }
+
   // build the boundary condition parameter for this boundary
   _bcs[bc_index] = new IF_Metal_OhmicBC ( _system, Identifier );
   if(c.is_parameter_exist("elec.recomb.velocity"))
@@ -685,15 +716,27 @@ int BoundaryConditionCollector::Set_BC_SchottkyContact ( const Parser::Card &c )
   std::string Identifier;
   unsigned int bc_index = get_bc_from_card ( c, Identifier );
 
+  short int boundary_id = get_bd_id_by_bc_index ( bc_index );
+  const std::pair<unsigned int, unsigned int > & sub_ids = _boundary_subdomain_map[boundary_id];
+  std::string material1 = _mesh.subdomain_material ( sub_ids.first );
+  std::string material2 = _mesh.subdomain_material ( sub_ids.second );
+
+  if(!consistent_bc_by_subdomain(material1, material2, SchottkyContact))
+  {
+    MESSAGE<<"ERROR at " <<c.get_fileline()
+        << " Boundary ID="<< Identifier << ", Inconsistent bc settings."
+        <<std::endl;
+    RECORD();
+    genius_error();
+    return 1;
+  }
+
   // build the boundary condition parameter for this boundary
   _bcs[bc_index] = new SchottkyContactBC ( _system, Identifier, false );
   _bcs[bc_index]->T_external() = c.get_real ( "ext.temp", _system.T_external() /K ) *K;
   _bcs[bc_index]->scalar("heat.transfer") = c.get_real ( "heat.transfer",1e3 ) *J/s/pow ( cm,2 ) /K;
   _bcs[bc_index]->scalar("workfunction") = c.get_real ( "workfunction",4.7 ) *V;
-  _bcs[bc_index]->build_ext_circuit ( new ExternalCircuit );
-  _bcs[bc_index]->ext_circuit()->R() = c.get_real ( "res",0.0 ) *V/A;
-  _bcs[bc_index]->ext_circuit()->C() = c.get_real ( "cap",0.0 ) *C/V;
-  _bcs[bc_index]->ext_circuit()->L() = c.get_real ( "ind",0.0 ) *V*s/A;
+  _bcs[bc_index]->build_ext_circuit ( ExternalCircuit::build(c) );
   _bcs[bc_index]->z_width() = c.get_real ( "z.width", _bcs[bc_index]->z_width() /um ) *um;
 
   if ( c.is_parameter_exist ( "potential" ) )
@@ -722,6 +765,21 @@ int BoundaryConditionCollector::Set_BC_IF_Metal_Schottky(const Parser::Card &c)
   std::string Identifier;
   unsigned int bc_index = get_bc_from_card ( c, Identifier );
 
+  short int boundary_id = get_bd_id_by_bc_index ( bc_index );
+  const std::pair<unsigned int, unsigned int > & sub_ids = _boundary_subdomain_map[boundary_id];
+  std::string material1 = _mesh.subdomain_material ( sub_ids.first );
+  std::string material2 = _mesh.subdomain_material ( sub_ids.second );
+
+  if(!consistent_bc_by_subdomain(material1, material2, IF_Metal_Schottky))
+  {
+    MESSAGE<<"ERROR at " <<c.get_fileline()
+        << " Boundary ID="<< Identifier << ", Inconsistent bc settings."
+        <<std::endl;
+    RECORD();
+    genius_error();
+    return 1;
+  }
+
   // build the boundary condition parameter for this boundary
   _bcs[bc_index] = new IF_Metal_SchottkyBC ( _system, Identifier );
   return 0;
@@ -733,15 +791,27 @@ int BoundaryConditionCollector::Set_BC_GateContact ( const Parser::Card &c )
   std::string Identifier;
   unsigned int bc_index = get_bc_from_card ( c, Identifier );
 
+  short int boundary_id = get_bd_id_by_bc_index ( bc_index );
+  const std::pair<unsigned int, unsigned int > & sub_ids = _boundary_subdomain_map[boundary_id];
+  std::string material1 = _mesh.subdomain_material ( sub_ids.first );
+  std::string material2 = _mesh.subdomain_material ( sub_ids.second );
+
+  if(!consistent_bc_by_subdomain(material1, material2, GateContact))
+  {
+    MESSAGE<<"ERROR at " <<c.get_fileline()
+        << " Boundary ID="<< Identifier << ", Inconsistent bc settings."
+        <<std::endl;
+    RECORD();
+    genius_error();
+    return 1;
+  }
+
   // build the boundary condition parameter for this boundary
   _bcs[bc_index] = new GateContactBC ( _system, Identifier, false );
   _bcs[bc_index]->T_external() = c.get_real ( "ext.temp",_system.T_external() /K ) *K;
   _bcs[bc_index]->scalar("heat.transfer") = c.get_real ( "heat.transfer",1e3 ) *J/s/pow ( cm,2 ) /K;
   _bcs[bc_index]->scalar("workfunction") = c.get_real ( "workfunction",4.17 ) *V;
-  _bcs[bc_index]->build_ext_circuit ( new ExternalCircuit );
-  _bcs[bc_index]->ext_circuit()->R() = c.get_real ( "res",0.0 ) *V/A;
-  _bcs[bc_index]->ext_circuit()->C() = c.get_real ( "cap",0.0 ) *C/V;
-  _bcs[bc_index]->ext_circuit()->L() = c.get_real ( "ind",0.0 ) *V*s/A;
+  _bcs[bc_index]->build_ext_circuit ( ExternalCircuit::build(c) );
   _bcs[bc_index]->z_width() = c.get_real ( "z.width", _bcs[bc_index]->z_width() /um ) *um;
   if ( c.is_parameter_exist ( "potential" ) )
     _bcs[bc_index]->ext_circuit()->potential() = c.get_real ( "potential", 0.0 ) *V;
@@ -762,6 +832,21 @@ int BoundaryConditionCollector::Set_BC_SimpleGateContact ( const Parser::Card &c
   std::string Identifier;
   unsigned int bc_index = get_bc_from_card ( c, Identifier );
 
+  short int boundary_id = get_bd_id_by_bc_index ( bc_index );
+  const std::pair<unsigned int, unsigned int > & sub_ids = _boundary_subdomain_map[boundary_id];
+  std::string material1 = _mesh.subdomain_material ( sub_ids.first );
+  std::string material2 = _mesh.subdomain_material ( sub_ids.second );
+
+  if(!consistent_bc_by_subdomain(material1, material2, SimpleGateContact))
+  {
+    MESSAGE<<"ERROR at " <<c.get_fileline()
+        << " Boundary ID="<< Identifier << ", Inconsistent bc settings."
+        <<std::endl;
+    RECORD();
+    genius_error();
+    return 1;
+  }
+
   // build the boundary condition parameter for this boundary
   _bcs[bc_index] = new SimpleGateContactBC ( _system, Identifier );
   _bcs[bc_index]->T_external() = c.get_real ( "ext.temp",_system.T_external() /K ) *K;
@@ -771,10 +856,7 @@ int BoundaryConditionCollector::Set_BC_SimpleGateContact ( const Parser::Card &c
   _bcs[bc_index]->scalar("eps")           = c.get_real ( "eps",3.9 ) *eps0;
   _bcs[bc_index]->scalar("qf")            = c.get_real ( "qf",1e10 ) /pow ( cm,2 );
 
-  _bcs[bc_index]->build_ext_circuit ( new ExternalCircuit );
-  _bcs[bc_index]->ext_circuit()->R() = c.get_real ( "res",0.0 ) *V/A;
-  _bcs[bc_index]->ext_circuit()->C() = c.get_real ( "cap",0.0 ) *C/V;
-  _bcs[bc_index]->ext_circuit()->L() = c.get_real ( "ind",0.0 ) *V*s/A;
+  _bcs[bc_index]->build_ext_circuit ( ExternalCircuit::build(c) );
   _bcs[bc_index]->z_width() = c.get_real ( "z.width", _bcs[bc_index]->z_width() /um ) *um;
   if ( c.is_parameter_exist ( "potential" ) )
     _bcs[bc_index]->ext_circuit()->potential() = c.get_real ( "potential", 0.0 ) *V;
@@ -788,15 +870,27 @@ int BoundaryConditionCollector::Set_BC_Solderpad ( const Parser::Card &c )
   std::string Identifier;
   unsigned int bc_index = get_bc_from_card ( c, Identifier );
 
+  short int boundary_id = get_bd_id_by_bc_index ( bc_index );
+  const std::pair<unsigned int, unsigned int > & sub_ids = _boundary_subdomain_map[boundary_id];
+  std::string material1 = _mesh.subdomain_material ( sub_ids.first );
+  std::string material2 = _mesh.subdomain_material ( sub_ids.second );
+
+  if(!consistent_bc_by_subdomain(material1, material2, SolderPad))
+  {
+    MESSAGE<<"ERROR at " <<c.get_fileline()
+        << " Boundary ID="<< Identifier << ", Inconsistent bc settings."
+        <<std::endl;
+    RECORD();
+    genius_error();
+    return 1;
+  }
+
   // build the boundary condition parameter for this boundary
   _bcs[bc_index] = new SolderPadBC ( _system, Identifier );
   _bcs[bc_index]->T_external() = c.get_real ( "ext.temp",_system.T_external() /K ) *K;
   _bcs[bc_index]->scalar("heat.transfer") = c.get_real ( "heat.transfer", 1e3 ) *J/s/pow ( cm,2 ) /K;
   //_bcs[bc_index]->Work_Function() = c.get_real ( "workfunction", 4.17 ) *V;
-  _bcs[bc_index]->build_ext_circuit ( new ExternalCircuit );
-  _bcs[bc_index]->ext_circuit()->R() = c.get_real ( "res",0.0 ) *V/A;
-  _bcs[bc_index]->ext_circuit()->C() = c.get_real ( "cap",0.0 ) *C/V;
-  _bcs[bc_index]->ext_circuit()->L() = c.get_real ( "ind",0.0 ) *V*s/A;
+  _bcs[bc_index]->build_ext_circuit ( ExternalCircuit::build(c) );
   _bcs[bc_index]->z_width() = c.get_real ( "z.width", _bcs[bc_index]->z_width() /um ) *um;
   if ( c.is_parameter_exist ( "potential" ) )
     _bcs[bc_index]->ext_circuit()->potential() = c.get_real ( "potential", 0.0 ) *V;
@@ -823,6 +917,21 @@ int BoundaryConditionCollector::Set_BC_InsulatorInterface ( const Parser::Card &
   std::string Identifier;
   unsigned int bc_index = get_bc_from_card ( c, Identifier );
 
+  short int boundary_id = get_bd_id_by_bc_index ( bc_index );
+  const std::pair<unsigned int, unsigned int > & sub_ids = _boundary_subdomain_map[boundary_id];
+  std::string material1 = _mesh.subdomain_material ( sub_ids.first );
+  std::string material2 = _mesh.subdomain_material ( sub_ids.second );
+
+  if(!consistent_bc_by_subdomain(material1, material2, IF_Insulator_Semiconductor))
+  {
+    MESSAGE<<"ERROR at " <<c.get_fileline()
+        << " Boundary ID="<< Identifier << ", Inconsistent bc settings."
+        <<std::endl;
+    RECORD();
+    genius_error();
+    return 1;
+  }
+
   // build the boundary condition parameter for this boundary
   _bcs[bc_index] = new InsulatorSemiconductorInterfaceBC ( _system, Identifier );
   _bcs[bc_index]->scalar("qf") = c.get_real ( "qf",1e10 ) /pow ( cm,2 );
@@ -837,6 +946,21 @@ int BoundaryConditionCollector::Set_BC_HeteroInterface ( const Parser::Card &c )
 {
   std::string Identifier;
   unsigned int bc_index = get_bc_from_card ( c, Identifier );
+
+  short int boundary_id = get_bd_id_by_bc_index ( bc_index );
+  const std::pair<unsigned int, unsigned int > & sub_ids = _boundary_subdomain_map[boundary_id];
+  std::string material1 = _mesh.subdomain_material ( sub_ids.first );
+  std::string material2 = _mesh.subdomain_material ( sub_ids.second );
+
+  if(!consistent_bc_by_subdomain(material1, material2, HeteroInterface))
+  {
+    MESSAGE<<"ERROR at " <<c.get_fileline()
+        << " Boundary ID="<< Identifier << ", Inconsistent bc settings."
+        <<std::endl;
+    RECORD();
+    genius_error();
+    return 1;
+  }
 
   // build the boundary condition parameter for this boundary
   _bcs[bc_index] = new HeteroInterfaceBC ( _system, Identifier );
@@ -893,9 +1017,8 @@ int BoundaryConditionCollector::Set_Electrode_OhmicContact ( const Parser::Card 
 
   for ( ; it!=bd_ids.end(); ++it )
   {
-    unsigned int sub_id1,sub_id2;
-
-    _mesh.boundary_info->get_subdomains_bd_on ( *it, sub_id1, sub_id2 );
+    unsigned int sub_id1 = _boundary_subdomain_map[*it].first;
+    unsigned int sub_id2 = _boundary_subdomain_map[*it].second;
 
     genius_assert((sub_id1==subdomain) || (sub_id2==subdomain));
 
@@ -926,10 +1049,7 @@ int BoundaryConditionCollector::Set_Electrode_OhmicContact ( const Parser::Card 
           _bcs[bc_index] = new OhmicContactBC ( _system, label, true );
           _bcs[bc_index]->T_external() = c.get_real ( "ext.temp",_system.T_external() /K ) *K;
           _bcs[bc_index]->scalar("heat.transfer") = c.get_real ( "heat.transfer",1e3 ) *J/s/pow ( cm,2 ) /K;
-          _bcs[bc_index]->build_ext_circuit ( new ExternalCircuit );
-          _bcs[bc_index]->ext_circuit()->R() = c.get_real ( "res",0.0 ) *V/A;
-          _bcs[bc_index]->ext_circuit()->C() = c.get_real ( "cap",0.0 ) *C/V;
-          _bcs[bc_index]->ext_circuit()->L() = c.get_real ( "ind",0.0 ) *V*s/A;
+          _bcs[bc_index]->build_ext_circuit ( ExternalCircuit::build(c) );
           if ( c.is_parameter_exist ( "potential" ) )
             _bcs[bc_index]->ext_circuit()->potential() = c.get_real ( "potential", 0.0 ) *V;
           _bcs[bc_index]->electrode_label()  = region_label;
@@ -991,9 +1111,8 @@ int BoundaryConditionCollector::Set_Electrode_SchottkyContact ( const Parser::Ca
 
   for ( ; it!=bd_ids.end(); ++it )
   {
-    unsigned int sub_id1,sub_id2;
-
-    _mesh.boundary_info->get_subdomains_bd_on ( *it, sub_id1, sub_id2 );
+    unsigned int sub_id1 = _boundary_subdomain_map[*it].first;
+    unsigned int sub_id2 = _boundary_subdomain_map[*it].second;
 
     genius_assert((sub_id1==subdomain) || (sub_id2==subdomain));
 
@@ -1024,10 +1143,7 @@ int BoundaryConditionCollector::Set_Electrode_SchottkyContact ( const Parser::Ca
           _bcs[bc_index] = new SchottkyContactBC ( _system, label, true );
           _bcs[bc_index]->T_external() = c.get_real ( "ext.temp",_system.T_external() /K ) *K;
           _bcs[bc_index]->scalar("heat.transfer") = c.get_real ( "heat.transfer",1e3 ) *J/s/pow ( cm,2 ) /K;
-          _bcs[bc_index]->build_ext_circuit ( new ExternalCircuit );
-          _bcs[bc_index]->ext_circuit()->R() = c.get_real ( "res",0.0 ) *V/A;
-          _bcs[bc_index]->ext_circuit()->C() = c.get_real ( "cap",0.0 ) *C/V;
-          _bcs[bc_index]->ext_circuit()->L() = c.get_real ( "ind",0.0 ) *V*s/A;
+          _bcs[bc_index]->build_ext_circuit ( ExternalCircuit::build(c) );
           if ( c.is_parameter_exist ( "potential" ) )
             _bcs[bc_index]->ext_circuit()->potential() = c.get_real ( "potential", 0.0 ) *V;
           _bcs[bc_index]->scalar("workfunction") = c.get_real ( "workfunction",4.7 ) *V;
@@ -1091,9 +1207,8 @@ int BoundaryConditionCollector::Set_Electrode_GateContact ( const Parser::Card &
 
   for ( ; it!=bd_ids.end(); ++it )
   {
-    unsigned int sub_id1,sub_id2;
-
-    _mesh.boundary_info->get_subdomains_bd_on ( *it, sub_id1, sub_id2 );
+    unsigned int sub_id1 = _boundary_subdomain_map[*it].first;
+    unsigned int sub_id2 = _boundary_subdomain_map[*it].second;
 
     genius_assert((sub_id1==subdomain) || (sub_id2==subdomain));
 
@@ -1125,10 +1240,7 @@ int BoundaryConditionCollector::Set_Electrode_GateContact ( const Parser::Card &
           _bcs[bc_index] = new GateContactBC ( _system, label, true );
           _bcs[bc_index]->T_external() = c.get_real ( "ext.temp",_system.T_external() /K ) *K;
           _bcs[bc_index]->scalar("heat.transfer") = c.get_real ( "heat.transfer",1e3 ) *J/s/pow ( cm,2 ) /K;
-          _bcs[bc_index]->build_ext_circuit ( new ExternalCircuit );
-          _bcs[bc_index]->ext_circuit()->R() = c.get_real ( "res",0.0 ) *V/A;
-          _bcs[bc_index]->ext_circuit()->C() = c.get_real ( "cap",0.0 ) *C/V;
-          _bcs[bc_index]->ext_circuit()->L() = c.get_real ( "ind",0.0 ) *V*s/A;
+          _bcs[bc_index]->build_ext_circuit ( ExternalCircuit::build(c) );
           if ( c.is_parameter_exist ( "potential" ) )
             _bcs[bc_index]->ext_circuit()->potential() = c.get_real ( "potential", 0.0 ) *V;
           _bcs[bc_index]->scalar("workfunction") = c.get_real ( "workfunction",4.17 ) *V;
@@ -1181,9 +1293,8 @@ int BoundaryConditionCollector::Set_SetFloatMetal ( const Parser::Card &c )
   std::set<short int>::iterator it = bd_ids.begin();
   for ( ; it!=bd_ids.end(); ++it )
   {
-    unsigned int sub_id1,sub_id2;
-
-    _mesh.boundary_info->get_subdomains_bd_on ( *it, sub_id1, sub_id2 );
+    unsigned int sub_id1 = _boundary_subdomain_map[*it].first;
+    unsigned int sub_id2 = _boundary_subdomain_map[*it].second;
 
     genius_assert((sub_id1==subdomain) || (sub_id2==subdomain));
 
@@ -1272,10 +1383,7 @@ int BoundaryConditionCollector::Set_InterConnect ( const Parser::Card &c )
   // build a new bc for inter connector
   BoundaryCondition * inter_connector = new ElectrodeInterConnectBC ( _system, id );
   inter_connector->set_inter_connect ( inter_connect_electrodes );
-  inter_connector->build_ext_circuit ( new ExternalCircuit );
-  inter_connector->ext_circuit()->R() = std::max ( c.get_real ( "res", 0.0 ) *V/A, 1e-3*V/A );
-  inter_connector->ext_circuit()->C() = c.get_real ( "cap", 0.0 ) *C/V;
-  inter_connector->ext_circuit()->L() = c.get_real ( "ind", 0.0 ) *V*s/A;
+  inter_connector->build_ext_circuit ( ExternalCircuit::build(c) );
   if ( c.is_parameter_exist ( "potential" ) )
     inter_connector->ext_circuit()->potential() = c.get_real ( "potential", 0.0 ) *V;
   // the default state of inter_connector is float
@@ -1292,7 +1400,6 @@ int BoundaryConditionCollector::Set_InterConnect ( const Parser::Card &c )
   {
     ( *it )->set_inter_connect ( inter_connect_electrodes );
     ( *it )->set_inter_connect_hub ( inter_connector );
-    ( *it )->ext_circuit()->R() = std::max ( ( *it )->ext_circuit()->R(), 1e-3*V/A );
   }
 
   return 0;

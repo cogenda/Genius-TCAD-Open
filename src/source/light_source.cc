@@ -280,6 +280,30 @@ void Light_Source_From_File::update_system()
 }
 
 
+
+void Light_Source_Uniform::update_system()
+{
+
+  double g = _card.get_real("optical.gen", 0.0)*pow(cm, -3)/s;
+
+  for(unsigned int n=0; n<_system.n_regions(); n++)
+  {
+    SimulationRegion * region = _system.region(n);
+
+    SimulationRegion::processor_node_iterator it = region->on_processor_nodes_begin();
+    SimulationRegion::processor_node_iterator it_end = region->on_processor_nodes_end();
+    for(; it!=it_end; ++it)
+    {
+      FVM_Node * fvm_node = (*it);
+      FVM_NodeData * node_data = fvm_node->node_data();
+
+      node_data->OptG() += g;
+    }
+  }
+
+}
+
+
 //-------------------------------------------------------------------------------------------
 
 #include "ray_tracing/ray_tracing.h"

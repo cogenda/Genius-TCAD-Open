@@ -78,14 +78,14 @@ EXPORT   CGNSFile=gate.cgns
 IMPORT   CGNSFile=gate.cgns
 METHOD   Type = DDML1    NS=Basic  LS=LU Toler.relax=1e5 Maxit=15
 ATTACH   Electrode=Gate   Vapp=VGATE
-SOLVE    Type=DCSWEEP VScan=Drain VStart=0.0 VStep=0.05 VStop=5.0 OUT=drain_nh
+SOLVE    Type=DCSWEEP VScan=Drain VStart=0.0 VStep=0.05 VStop=5.0 out.prefix=drain_nh
 #EXPORT   VTKFile=soi_noheat.vtu
 
 IMPORT   CGNSFile=gate.cgns
 ATTACH   Electrode=Gate Vapp=VGATE
 # we use ddm solver with lattice heating here.
 METHOD   Type = DDML2   NS=Basic  LS=umfpack Toler.relax=1e6 Maxit=15
-SOLVE    Type=DCSWEEP VScan=Drain VStart=0.0 VStep=0.05 VStop=5.0 OUT=drain_ht
+SOLVE    Type=DCSWEEP VScan=Drain VStart=0.0 VStep=0.05 VStop=5.0 out.prefix=drain_ht
 EXPORT   VTKFile=soi_heat.vtu
 
 END

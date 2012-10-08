@@ -460,9 +460,12 @@ bool SemiconductorSimulationRegion::highfield_mobility() const
 
 Real SemiconductorSimulationRegion::truncated_partial_area(const Elem * elem, unsigned int ne) const
 {
+  // overestimate
   //return std::abs(elem->partial_area_with_edge(ne));
-#if 1
-  Real partial_area =  elem->partial_area_with_edge_truncated(ne);
+
+#if 0
+
+  Real partial_area =  elem->partial_area_with_edge_truncated(ne); // underestimate
 
   std::pair<unsigned int, unsigned int> edge_nodes;
   elem->nodes_on_edge(ne, edge_nodes);
@@ -477,13 +480,54 @@ Real SemiconductorSimulationRegion::truncated_partial_area(const Elem * elem, un
     min_area = 0.01*nm*nm;
 
   // however, zero truncated partial area on surface will cut the current path, we here set an average "partial area"
-  if(fvm_n1->cv_surface_area(fvm_n2->root_node()) < min_area)
+  if(fvm_n1->cv_surface_area(fvm_n2) < min_area)
     partial_area = elem->partial_area_with_edge_average();
   if(partial_area<min_area && (fvm_n1->boundary_id() != BoundaryInfo::invalid_id && fvm_n2->boundary_id() != BoundaryInfo::invalid_id) )
     partial_area = elem->partial_area_with_edge_average();
 
   return std::max(min_area, partial_area);
 #endif
+
+#if 0
+  // truncation when required. the result is accurate enough. however, not positive guaranty
+  Real partial_area =  elem->partial_area_with_edge(ne);
+
+  std::pair<unsigned int, unsigned int> edge_nodes;
+  elem->nodes_on_edge(ne, edge_nodes);
+  const FVM_Node * fvm_n1 = elem->get_fvm_node(edge_nodes.first);   // fvm_node of node1
+  const FVM_Node * fvm_n2 = elem->get_fvm_node(edge_nodes.second);  // fvm_node of node2
+
+  unsigned int dim = elem->dim();
+  Real min_area = 0;
+  if( dim == 2)
+    min_area = 0.1*nm;
+  if( dim == 3)
+    min_area = 0.01*nm*nm;
+
+  if(fvm_n1->cv_surface_area(fvm_n2) < min_area)
+    partial_area = std::max(min_area, elem->partial_area_with_edge_truncated(ne));
+
+  return partial_area;
+#endif
+
+  Real partial_area =  elem->partial_area_with_edge(ne);
+
+  std::pair<unsigned int, unsigned int> edge_nodes;
+  elem->nodes_on_edge(ne, edge_nodes);
+  const FVM_Node * fvm_n1 = elem->get_fvm_node(edge_nodes.first);   // fvm_node of node1
+  const FVM_Node * fvm_n2 = elem->get_fvm_node(edge_nodes.second);  // fvm_node of node2
+
+  unsigned int dim = elem->dim();
+  Real min_area = 0;
+  if( dim == 2)
+    min_area = 0.1*nm;
+  if( dim == 3)
+    min_area = 0.01*nm*nm;
+
+  double S  = std::max(min_area, fvm_n1->cv_abs_surface_area(fvm_n2));
+  double CV = std::max(min_area, fvm_n1->cv_surface_area(fvm_n2));
+  return std::abs(partial_area)/S*CV;
+
 }
 
 
@@ -557,8 +601,6 @@ Real SemiconductorSimulationRegion::fvm_cell_quality() const
   }
 
   return fvm_cell_quality;
-
-
 }
 
 

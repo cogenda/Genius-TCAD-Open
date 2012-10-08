@@ -138,8 +138,8 @@ void ElectrodeSimulationRegion::DDM2_Function(PetscScalar * x, Vec f, InsertMode
 
 
       // "flux" from node 2 to node 1
-      PetscScalar f_psi =  eps*fvm_n1->cv_surface_area(fvm_n2->root_node())*(V2 - V1)/fvm_n1->distance(fvm_n2) ;
-      PetscScalar f_q =  kap*fvm_n1->cv_surface_area(fvm_n2->root_node())*(T2 - T1)/fvm_n1->distance(fvm_n2) ;
+      PetscScalar f_psi =  eps*fvm_n1->cv_surface_area(fvm_n2)*(V2 - V1)/fvm_n1->distance(fvm_n2) ;
+      PetscScalar f_q =  kap*fvm_n1->cv_surface_area(fvm_n2)*(T2 - T1)/fvm_n1->distance(fvm_n2) ;
 
       // ignore thoese ghost nodes
       if( fvm_n1->on_processor() )
@@ -237,8 +237,8 @@ void ElectrodeSimulationRegion::DDM2_Jacobian(PetscScalar * x, Mat *jac, InsertM
 
 
       // "flux" from node 2 to node 1
-      AutoDScalar f_psi =  eps*fvm_n1->cv_surface_area(fvm_n2->root_node())*(V2 - V1)/fvm_n1->distance(fvm_n2) ;
-      AutoDScalar f_q =  kap*fvm_n1->cv_surface_area(fvm_n2->root_node())*(T2 - T1)/fvm_n1->distance(fvm_n2) ;
+      AutoDScalar f_psi =  eps*fvm_n1->cv_surface_area(fvm_n2)*(V2 - V1)/fvm_n1->distance(fvm_n2) ;
+      AutoDScalar f_q =  kap*fvm_n1->cv_surface_area(fvm_n2)*(T2 - T1)/fvm_n1->distance(fvm_n2) ;
 
       // ignore thoese ghost nodes
       if( fvm_n1->on_processor() )

@@ -281,9 +281,9 @@ void ResistanceResistanceBC::DDM1R_Jacobian_Reserve(Mat *jac, InsertMode &add_va
       FVM_Node::fvm_neighbor_node_iterator  gnb_it = ghost_fvm_node->neighbor_node_begin();
       for(; gnb_it != ghost_fvm_node->neighbor_node_end(); ++gnb_it)
       {
-        MatSetValue(*jac, resistance_fvm_node_1->global_offset()+0, (*gnb_it).second->global_offset()+0, 0, ADD_VALUES);
-        MatSetValue(*jac, resistance_fvm_node_1->global_offset()+1, (*gnb_it).second->global_offset()+0, 0, ADD_VALUES);
-        MatSetValue(*jac, resistance_fvm_node_1->global_offset()+1, (*gnb_it).second->global_offset()+1, 0, ADD_VALUES);
+        MatSetValue(*jac, resistance_fvm_node_1->global_offset()+0, (*gnb_it).first->global_offset()+0, 0, ADD_VALUES);
+        MatSetValue(*jac, resistance_fvm_node_1->global_offset()+1, (*gnb_it).first->global_offset()+0, 0, ADD_VALUES);
+        MatSetValue(*jac, resistance_fvm_node_1->global_offset()+1, (*gnb_it).first->global_offset()+1, 0, ADD_VALUES);
       }
     }
 
@@ -310,7 +310,7 @@ void ResistanceResistanceBC::DDM1R_Jacobian_Reserve(Mat *jac, InsertMode &add_va
       FVM_Node::fvm_neighbor_node_iterator nb_it = insulator_fvm_node->neighbor_node_begin();
       for(; nb_it != insulator_fvm_node->neighbor_node_end(); ++nb_it)
       {
-        const FVM_Node *nb_node = (*nb_it).second;
+        const FVM_Node *nb_node = (*nb_it).first;
         MatSetValue(*jac, resistance_fvm_node_1->global_offset(), nb_node->global_offset(), 0, ADD_VALUES);
       }
     }

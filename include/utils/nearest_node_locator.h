@@ -52,6 +52,11 @@ public:
   Real distance_to_nearest_node(const Point &p, unsigned int subdomain) const;
 
   /**
+   * @return the nearest node of point p in specified region
+   */
+  const Node * nearest_node(const Point &p, unsigned int subdomain, Real &dist) const;
+
+  /**
    * @return the nearest nodes of point p inside given radius and in specified region
    */
   std::vector<const Node * > nearest_nodes(const Point &p, Real radius, unsigned int subdomain) const;

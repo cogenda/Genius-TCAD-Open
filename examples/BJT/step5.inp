@@ -34,7 +34,7 @@ SOLVE    Type=STEADYSTATE
 
 # Do AC sweep. Here we use LU as a very strong preconditioner
 METHOD   Type=DDMAC   LS=GMRES PC=LU
-SOLVE    Type=ACSWEEP    ACScan=Base  F.Start=1e5 F.Multiple=1.1  F.Stop = 4e9 out=ac
+SOLVE    Type=ACSWEEP    ACScan=Base  F.Start=1e5 F.Multiple=1.1  F.Stop = 4e9 out.prefix=ac
 
 EXPORT   VTK=ac.vtu
 

@@ -43,7 +43,7 @@ class MetisPartitioner : public Partitioner
   /**
    * Constructor.
    */
-  MetisPartitioner () {}
+   MetisPartitioner (const bool serial_partition=false):_serial_partition(serial_partition) {}
 
 protected:
 
@@ -55,6 +55,8 @@ protected:
 
 
 private:
+
+  const bool _serial_partition;
 };
 
 

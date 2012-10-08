@@ -125,7 +125,7 @@ int RayTraceSolver::solve()
       ray_tracing(light);
 
       //indicator
-      if(k%(n_on_processor_rays/20)==0)
+      if(k%(1+(n_on_processor_rays)/20)==0) // +1 for prevent divide by zero error
       {
         MESSAGE<< ".";
         RECORD();

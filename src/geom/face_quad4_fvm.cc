@@ -24,6 +24,9 @@
 
 #include "face_quad4_fvm.h"
 #include "edge_edge2_fvm.h"
+
+// TNT matrix-vector library
+#include <TNT/tnt.h>
 #include <TNT/jama_lu.h>
 
 
@@ -239,6 +242,7 @@ void Quad4_FVM::prepare_for_fvm()
 
 void Quad4_FVM::prepare_for_least_squares()
 {
+  //FIXME NOT work for 3D quad
   TNT::Array2D<Real> A (n_nodes(), 3, 0.0);
   TNT::Array2D<Real> AT(3, n_nodes(), 0.0);
 
@@ -257,10 +261,21 @@ void Quad4_FVM::prepare_for_least_squares()
 
   JAMA::LU<Real> solver(ATA);
 
-  TNT::Array2D<Real> inv_ATA = solver.inv();
+  if( solver.isNonsingular() )
+  {
+    TNT::Array2D<Real> inv_ATA = solver.inv();
+    TNT::Array2D<Real>  M = TNT::matmult(inv_ATA, AT);
 
-  least_squares_gradient_matrix = TNT::matmult(inv_ATA, AT);
-
+    for(int m=0; m<M.dim1()-1; m++)
+      for(int n=0; n<M.dim2(); n++ )
+        least_squares_gradient_matrix[m][n] = M[m+1][n];
+  }
+  else
+  {
+    for(int m=0; m<2; m++)
+      for(int n=0; n<4; n++ )
+        least_squares_gradient_matrix[m][n] = 0.0;
+  }
 }
 
 
@@ -276,8 +291,8 @@ VectorValue<PetscScalar> Quad4_FVM::gradient( const std::vector<PetscScalar> & v
   PetscScalar dx=0, dy=0, dz=0;
   for( unsigned int i=0; i<n_nodes(); i++ )
   {
-    dx += least_squares_gradient_matrix[1][i] * var[i];
-    dy += least_squares_gradient_matrix[2][i] * var[i];
+    dx += least_squares_gradient_matrix[0][i] * var[i];
+    dy += least_squares_gradient_matrix[1][i] * var[i];
   }
 
   return VectorValue<PetscScalar>(dx, dy, dz);
@@ -296,8 +311,8 @@ VectorValue<Complex> Quad4_FVM::gradient( const std::vector<Complex> & var) cons
   Complex dx=0, dy=0, dz=0;
   for( unsigned int i=0; i<n_nodes(); i++ )
   {
-    dx += least_squares_gradient_matrix[1][i] * var[i];
-    dy += least_squares_gradient_matrix[2][i] * var[i];
+    dx += least_squares_gradient_matrix[0][i] * var[i];
+    dy += least_squares_gradient_matrix[1][i] * var[i];
   }
 
   return VectorValue<Complex>(dx, dy, dz);
@@ -317,8 +332,8 @@ VectorValue<AutoDScalar> Quad4_FVM::gradient( const std::vector<AutoDScalar> & v
 
   for( unsigned int i=0; i<n_nodes(); i++ )
   {
-    dx += least_squares_gradient_matrix[1][i] * var[i];
-    dy += least_squares_gradient_matrix[2][i] * var[i];
+    dx += least_squares_gradient_matrix[0][i] * var[i];
+    dy += least_squares_gradient_matrix[1][i] * var[i];
   }
 
   return VectorValue<AutoDScalar>(dx, dy, dz);
@@ -327,6 +342,7 @@ VectorValue<AutoDScalar> Quad4_FVM::gradient( const std::vector<AutoDScalar> & v
 
 void Quad4_FVM::prepare_for_vector_reconstruct()
 {
+  //FIXME NOT work for 3D quad
   TNT::Array2D<Real> A (n_edges(), 2, 0.0);
   TNT::Array2D<Real> AT(2, n_edges(), 0.0);
 
@@ -346,9 +362,21 @@ void Quad4_FVM::prepare_for_vector_reconstruct()
 
   JAMA::LU<Real> solver(ATA);
 
-  TNT::Array2D<Real> inv_ATA = solver.inv();
+  if( solver.isNonsingular() )
+  {
+    TNT::Array2D<Real> inv_ATA = solver.inv();
+    TNT::Array2D<Real>  M = TNT::matmult(inv_ATA, AT);
 
-  least_squares_vector_reconstruct_matrix = TNT::matmult(inv_ATA, AT);
+    for(int m=0; m<M.dim1(); m++)
+      for(int e=0; e<M.dim2(); e++ )
+        least_squares_vector_reconstruct_matrix[m][e] = M[m][e];
+  }
+  else
+  {
+    for(int m=0; m<2; m++)
+      for(int e=0; e<4; e++ )
+        least_squares_vector_reconstruct_matrix[m][e] = 0.0;
+  }
 }
 
 

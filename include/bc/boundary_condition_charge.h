@@ -83,11 +83,6 @@ public:
   virtual PetscScalar & current()
   { return _current_flow;}
 
-  /**
-   * @return false
-   */
-  virtual bool is_electrode()  const
-    {return false;}
 
   /**
    * @return true iff this boundary has a current flow
@@ -190,6 +185,7 @@ public:
    */
   virtual void DDM1_Pre_Process();
 
+
   //////////////////////////////////////////////////////////////////////////////////
   //----------------Function and Jacobian evaluate for L2 DDM---------------------//
   //////////////////////////////////////////////////////////////////////////////////
@@ -262,6 +258,7 @@ public:
    *  evaluating matrix and rhs vector for ddm ac solver
    */
   virtual void DDMAC_Fill_Matrix_Vector( Mat A, Vec b, const Mat J, const double omega, InsertMode & add_value_flag );
+
 
 }
 ;

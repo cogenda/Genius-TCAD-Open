@@ -279,22 +279,12 @@ bool SilvacoTIF::read()
 
   _acceptor_index = _sol_head.solution_index("Acceptor");
   _donor_index    = _sol_head.solution_index("Donor");
+  _mole_x_index   = _sol_head.solution_index("mole_x");
+  _mole_y_index   = _sol_head.solution_index("mole_y");
 
   return true;
 }
 
-
-
-double SilvacoTIF::acceptor(unsigned int data_index) const
-{
-  return _sol_data[data_index].data_array[_acceptor_index];
-}
-
-
-double SilvacoTIF::donor(unsigned int data_index) const
-{
-  return _sol_data[data_index].data_array[_donor_index];
-}
 
 
 void SilvacoTIF::export_scatter_doping_data() const

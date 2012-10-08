@@ -46,16 +46,10 @@ void SchottkyContactBC::DDMAC_Fill_Matrix_Vector( Mat A, Vec b, const Mat J, con
   PetscInt bc_global_offset_re = this->global_offset();
   PetscInt bc_global_offset_im = this->global_offset()+1;
 
-  PetscScalar R = ext_circuit()->R();             // resistance
-  PetscScalar C = ext_circuit()->C();             // capacitance
-  PetscScalar L = ext_circuit()->L();             // inductance
-
   const PetscScalar Work_Function = this->scalar("workfunction");
   const PetscScalar Heat_Transfer = this->scalar("heat.transfer");
 
   // impedance at frequency omega
-  std::complex <PetscScalar> Z1(R, omega*L);
-  std::complex <PetscScalar> Y2(0.0, omega*C);
   std::complex <PetscScalar> j(0.0, 1.0);
 
   // for 2D mesh, z_width() is the device dimension in Z direction; for 3D mesh, z_width() is 1.0
@@ -218,12 +212,13 @@ void SchottkyContactBC::DDMAC_Fill_Matrix_Vector( Mat A, Vec b, const Mat J, con
 
             // compute the schottky thermal emit current
             {
+              std::complex <PetscScalar> mna_scaling = ext_circuit()->mna_ac_scaling(omega);
               AutoDScalar current_emit = -(Fn+Fp)*current_scale;
 
               std::vector< PetscScalar >  A1(n_node_var+1), A2(n_node_var+1), A3(n_node_var+1), A4(n_node_var+1);
               for(unsigned int nv=0; nv<n_node_var+1; ++nv)
               {
-                std::complex<PetscScalar> C = Z1*current_emit.getADValue(nv);
+                std::complex<PetscScalar> C = mna_scaling*current_emit.getADValue(nv);
                 A1[nv] =  C.real();
                 A2[nv] = -C.imag();
                 A3[nv] =  C.imag();
@@ -242,7 +237,7 @@ void SchottkyContactBC::DDMAC_Fill_Matrix_Vector( Mat A, Vec b, const Mat J, con
             FVM_Node::fvm_neighbor_node_iterator nb_it = fvm_nodes[i]->neighbor_node_begin();
             for(; nb_it != fvm_nodes[i]->neighbor_node_end(); ++nb_it)
             {
-              const FVM_Node *nb_node = (*nb_it).second;
+              const FVM_Node *nb_node = (*nb_it).first;
 
               // the psi of this node
               AutoDScalar  V = node_data->psi(); V.setADValue(0, 1.0);
@@ -250,15 +245,16 @@ void SchottkyContactBC::DDMAC_Fill_Matrix_Vector( Mat A, Vec b, const Mat J, con
               AutoDScalar V_nb = nb_node->node_data()->psi(); V_nb.setADValue(1, 1.0);
 
               // distance from nb node to this node
-              PetscScalar distance = (*(fvm_nodes[i]->root_node()) - *(nb_node->root_node())).size();
+              PetscScalar distance = fvm_nodes[i]->distance(nb_node);
 
               // area of out surface of control volume related with neighbor node
-              PetscScalar cv_boundary = fvm_nodes[i]->cv_surface_area(nb_node->root_node());
+              PetscScalar cv_boundary = fvm_nodes[i]->cv_surface_area(nb_node);
               AutoDScalar dE = (V-V_nb)/distance;
 
               // the 1/dt is replaced by j*omega.
-              std::complex <PetscScalar> dJdisp_dV  = Z1*cv_boundary*node_data->eps()*dE.getADValue(0)*j*omega*current_scale;
-              std::complex <PetscScalar> dJdisp_dVn = Z1*cv_boundary*node_data->eps()*dE.getADValue(1)*j*omega*current_scale;
+              std::complex <PetscScalar> mna_scaling = ext_circuit()->mna_ac_scaling(omega);
+              std::complex <PetscScalar> dJdisp_dV  = mna_scaling*cv_boundary*node_data->eps()*dE.getADValue(0)*j*omega*current_scale;
+              std::complex <PetscScalar> dJdisp_dVn = mna_scaling*cv_boundary*node_data->eps()*dE.getADValue(1)*j*omega*current_scale;
 
               // V
               MatSetValue(A, bc_global_offset_re, fvm_nodes[i]->global_offset(), dJdisp_dV.real(), ADD_VALUES);
@@ -358,14 +354,11 @@ void SchottkyContactBC::DDMAC_Fill_Matrix_Vector( Mat A, Vec b, const Mat J, con
   //           GND
   //
 
-  if(Genius::processor_id() == Genius::n_processors() -1)
+  if(Genius::is_last_processor())
   {
     // here we process the external circuit, we do not use AD here
 
-    // the external electrode equation is:
-    // f_ext = (L/dt+R)*current + (Ve-Vapp) + (L/dt+R)*C/dt*Ve - (L/dt+R)*C/dt*P - L/dt*(I+Ic);
-    // as a result, the K=d(f_ext)/d(Ve) in frequency domain is
-    std::complex <PetscScalar> K = Z1*Y2 + PetscScalar(1.0);
+    std::complex <PetscScalar> K = this->ext_circuit()->mna_ac_jacobian(omega);
 
     MatSetValue(A, bc_global_offset_re, bc_global_offset_re,  K.real(), ADD_VALUES);
     MatSetValue(A, bc_global_offset_re, bc_global_offset_im, -K.imag(), ADD_VALUES);
@@ -374,7 +367,6 @@ void SchottkyContactBC::DDMAC_Fill_Matrix_Vector( Mat A, Vec b, const Mat J, con
 
     VecSetValue(b, bc_global_offset_re, this->ext_circuit()->Vac(), ADD_VALUES);
     VecSetValue(b, bc_global_offset_im, 0.0, ADD_VALUES);
-
   }
 
   // the last operator is ADD_VALUES
@@ -476,7 +468,7 @@ void SchottkyContactBC::DDMAC_Update_Solution(const PetscScalar * lxx, const Mat
         FVM_Node::fvm_neighbor_node_iterator nb_it = fvm_node->neighbor_node_begin();
         for(; nb_it != fvm_node->neighbor_node_end(); ++nb_it)
         {
-          const FVM_Node *nb_node = (*nb_it).second;
+          const FVM_Node *nb_node = (*nb_it).first;
 
           // distance from nb node to this node
           PetscScalar distance = (*(fvm_node->root_node()) - *(nb_node->root_node())).size();
@@ -485,7 +477,7 @@ void SchottkyContactBC::DDMAC_Update_Solution(const PetscScalar * lxx, const Mat
           PetscScalar Vn_im = lxx[nb_node->local_offset() + region->ebm_n_variables() + region->ebm_variable_offset(POTENTIAL)];
 
           // area of out surface of control volume related with neighbor node
-          PetscScalar cv_boundary = fvm_node->cv_surface_area(nb_node->root_node());
+          PetscScalar cv_boundary = fvm_node->cv_surface_area(nb_node);
 
           IacRe += -omega*node_data->eps()*(V_im-Vn_im)/distance*cv_boundary*current_scale;
           IacIm +=  omega*node_data->eps()*(V_re-Vn_re)/distance*cv_boundary*current_scale;

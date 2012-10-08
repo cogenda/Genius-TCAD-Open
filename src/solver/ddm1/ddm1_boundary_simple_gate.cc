@@ -31,7 +31,7 @@
 
 using PhysicalUnit::kb;
 using PhysicalUnit::e;
-
+using PhysicalUnit::Ohm;
 
 /*---------------------------------------------------------------------
  * fill electrode potential into initial vector
@@ -52,16 +52,8 @@ void SimpleGateContactBC::DDM1_Fill_Value(Vec x, Vec L)
     //for stand alone electrode
     else
     {
-      if(ext_circuit()->is_voltage_driven())
-      {
-        const PetscScalar R = this->ext_circuit()->R();
-        VecSetValue(L, this->global_offset(), 1.0/((1.0+R)*current_scale), INSERT_VALUES);
-      }
-
-      if(ext_circuit()->is_current_driven())
-      {
-        VecSetValue(L, this->global_offset(), 1.0/(current_scale), INSERT_VALUES);
-      }
+      const PetscScalar s = ext_circuit()->electrode_scaling(SolverSpecify::dt);
+      VecSetValue(L, this->global_offset(), s, INSERT_VALUES);
     }
 
   }
@@ -129,7 +121,7 @@ void SimpleGateContactBC::DDM1_Function(PetscScalar * x, Vec f, InsertMode &add_
     // displacement current, only first order in time.
     if(SolverSpecify::TimeDependent == true)
     {
-      PetscScalar dEdt = ( (Ve-this->ext_circuit()->potential_old()) - (V-node_data->psi()) ) /Thick;
+      PetscScalar dEdt = ( (Ve-this->ext_circuit()->potential_old()) - (V-node_data->psi()) ) /Thick/SolverSpecify::dt;
       current_buffer.push_back( S*eps_ox*dEdt );
     }
   }
@@ -169,30 +161,24 @@ void SimpleGateContactBC::DDM1_Function(PetscScalar * x, Vec f, InsertMode &add_
   // NOTE: only statistic current flow belongs to on processor node
   PetscScalar current = current_scale*std::accumulate(current_buffer.begin(), current_buffer.end(), 0.0 );
 
+
+  ext_circuit()->potential() = Ve;
+  ext_circuit()->current() = current;
+
+  PetscScalar mna_scaling = ext_circuit()->mna_scaling(SolverSpecify::dt);
+
   //for inter connect electrode
   if(this->is_inter_connect_bc())
   {
-    PetscScalar R = ext_circuit()->R();                               // resistance
+    PetscScalar R = ext_circuit()->inter_connect_resistance();                               // resistance
     PetscScalar f_ext = R*current;
     VecSetValue(f, this->global_offset(), f_ext, ADD_VALUES);
   }
   // for stand alone electrode
   else
   {
-    if(ext_circuit()->is_voltage_driven())
-    {
-      PetscScalar R = ext_circuit()->R();             // resistance
-      PetscScalar L = ext_circuit()->L();             // inductance
-      PetscScalar dt = SolverSpecify::dt;
-      PetscScalar f_ext = (L/dt+R)*current;
-      VecSetValue(f, this->global_offset(), f_ext, ADD_VALUES);
-    }
-
-    if(ext_circuit()->is_current_driven())
-    {
-      PetscScalar f_ext = current;
-      VecSetValue(f, this->global_offset(), f_ext, ADD_VALUES);
-    }
+    PetscScalar f_ext = mna_scaling*current;
+    VecSetValue(f, this->global_offset(), f_ext, ADD_VALUES);
   }
 
   if(Genius::is_last_processor())
@@ -201,41 +187,16 @@ void SimpleGateContactBC::DDM1_Function(PetscScalar * x, Vec f, InsertMode &add_
     if(this->is_inter_connect_bc())
     {
       PetscScalar V_ic = x[this->inter_connect_hub()->local_offset()];  // potential at inter connect node
-      PetscScalar R = ext_circuit()->R();                               // resistance
       PetscScalar f_ext = Ve - V_ic;
       VecSetValue(f, this->global_offset(), f_ext, ADD_VALUES);
     }
     // for stand alone electrode
     else
     {
-      if(ext_circuit()->is_voltage_driven())
-      {
-        PetscScalar Vapp = ext_circuit()->Vapp();       // application voltage
-        PetscScalar R = ext_circuit()->R();             // resistance
-        PetscScalar C = ext_circuit()->C();             // capacitance
-        PetscScalar L = ext_circuit()->L();             // inductance
-        PetscScalar I = ext_circuit()->current();       // the previous step current flow into electrode
-        PetscScalar Ic = ext_circuit()->cap_current();  // the previous step current flow pass though cap to ground.
-        PetscScalar P  = ext_circuit()->potential();    // the previous step potential of the electrode
-        PetscScalar dt = SolverSpecify::dt;
-        PetscScalar f_ext = (Ve-Vapp) + (L/dt+R)*C/dt*Ve - (L/dt+R)*C/dt*P - L/dt*(I+Ic);
-        VecSetValue(f, this->global_offset(), f_ext, ADD_VALUES);
-      }
-
-      if(ext_circuit()->is_current_driven())
-      {
-        PetscScalar Iapp = ext_circuit()->Iapp();         // application current
-        PetscScalar Ic   = ext_circuit()->cap_current();  // the previous step current flow pass though cap to ground.
-        PetscScalar f_ext = Ic - Iapp;
-        VecSetValue(f, this->global_offset(), f_ext, ADD_VALUES);
-      }
+      PetscScalar f_ext = ext_circuit()->mna_function(SolverSpecify::dt);
+      VecSetValue(f, this->global_offset(), f_ext, ADD_VALUES);
     }
   }
-
-
-  // save the IV of current iteration
-  ext_circuit()->current_itering() = current;
-  ext_circuit()->potential_itering() = Ve;
 
   // the last operator is ADD_VALUES
   add_value_flag = ADD_VALUES;
@@ -289,7 +250,7 @@ void SimpleGateContactBC::DDM1_Jacobian_Reserve(Mat *jac, InsertMode &add_value_
         FVM_Node::fvm_neighbor_node_iterator nb_it_end = fvm_node->neighbor_node_end();
         for(; nb_it != nb_it_end; ++nb_it)
         {
-          const FVM_Node *  fvm_nb_node = (*nb_it).second;
+          const FVM_Node *  fvm_nb_node = (*nb_it).first;
           bc_node_reserve.push_back(fvm_nb_node->global_offset()+0);
         }
       }
@@ -345,11 +306,6 @@ void SimpleGateContactBC::DDM1_Jacobian(PetscScalar * x, Mat *jac, InsertMode &a
   const PetscScalar Work_Function = this->scalar("workfunction");
 
 
-  PetscScalar R             = this->ext_circuit()->R();  // resistance
-  PetscScalar C             = this->ext_circuit()->C();  // capacitance
-  PetscScalar L             = this->ext_circuit()->L();  // inductance
-  PetscScalar dt            = SolverSpecify::dt;
-
   // for 2D mesh, z_width() is the device dimension in Z direction; for 3D mesh, z_width() is 1.0
   PetscScalar current_scale = this->z_width();
 
@@ -386,18 +342,19 @@ void SimpleGateContactBC::DDM1_Jacobian(PetscScalar * x, Mat *jac, InsertMode &a
     // displacement current, only first order in time.
     if(SolverSpecify::TimeDependent == true)
     {
-      AutoDScalar dEdt = ( (Ve-this->ext_circuit()->potential_old()) - (V-node_data->psi()) ) /Thick;
+      AutoDScalar dEdt = ( (Ve-this->ext_circuit()->potential_old()) - (V-node_data->psi()) ) /Thick/SolverSpecify::dt;
       AutoDScalar current_disp = S*eps_ox*dEdt*current_scale;
       //for inter connect electrode
       if(this->is_inter_connect_bc())
+      {
+        PetscScalar R = ext_circuit()->inter_connect_resistance();
         current_disp = R*current_disp;
+      }
       // for stand alone electrode
       else
       {
-        if(ext_circuit()->is_voltage_driven())
-          current_disp = (L/dt+R)*current_disp;
-        else
-          current_disp = current_disp;
+        PetscScalar mna_scaling = ext_circuit()->mna_scaling(SolverSpecify::dt);
+        current_disp = mna_scaling*current_disp;
       }
       MatSetValue(*jac, bc_global_offset, fvm_node->global_offset(), current_disp.getADValue(0), ADD_VALUES);
       MatSetValue(*jac, bc_global_offset, bc_global_offset, current_disp.getADValue(1), ADD_VALUES);
@@ -436,9 +393,6 @@ void SimpleGateContactBC::DDM1_Jacobian(PetscScalar * x, Mat *jac, InsertMode &a
 
   if(Genius::is_last_processor())
   {
-    // here we process the external circuit, we do not use AD here
-    // NOTE current item such as (L/dt+R)*current and current has already been processed before
-
     //for inter connect electrode
     if(this->is_inter_connect_bc())
     {
@@ -453,21 +407,8 @@ void SimpleGateContactBC::DDM1_Jacobian(PetscScalar * x, Mat *jac, InsertMode &a
     //for stand alone electrode
     else
     {
-      if(ext_circuit()->is_voltage_driven())
-      {
-        // the external electrode equation is:
-        // f_ext = (L/dt+R)*current + (Ve-Vapp) + (L/dt+R)*C/dt*Ve - (L/dt+R)*C/dt*P - L/dt*(I+Ic);
-
-        // d(f_ext)/d(Ve)
-        MatSetValue(*jac, bc_global_offset, bc_global_offset, 1+(L/dt+R)*C/dt, ADD_VALUES);
-      }
-
-      if(ext_circuit()->is_current_driven())
-      {
-        // the external electrode equation is:
-        // f_ext = current + Ic - Iapp;
-        // so nothing to do
-      }
+      ext_circuit()->potential() = x[this->local_offset()];
+      MatSetValue(*jac, bc_global_offset, bc_global_offset, ext_circuit()->mna_jacobian(SolverSpecify::dt), ADD_VALUES);
     }
   }
 
@@ -484,6 +425,6 @@ void SimpleGateContactBC::DDM1_Jacobian(PetscScalar * x, Mat *jac, InsertMode &a
  */
 void SimpleGateContactBC::DDM1_Update_Solution(PetscScalar *)
 {
-  Parallel::sum(ext_circuit()->current_itering());
+  Parallel::sum(ext_circuit()->current());
   this->ext_circuit()->update();
 }

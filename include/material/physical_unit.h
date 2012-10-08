@@ -127,6 +127,11 @@ namespace PhysicalUnit
    */
   extern double   mA;
 
+  /**
+   *  define as V/A
+   */
+  extern double   Ohm;
+
   // Fundamental Physical Constants
 
   /**

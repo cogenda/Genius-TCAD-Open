@@ -101,24 +101,24 @@ void init_bc_type_to_bc_name_map()
     bc_type_to_bc_name[IF_Semiconductor_Vacuum         ]  = std::string("IF_Semiconductor_Vacuum");
     bc_type_to_bc_name[IF_Insulator_Vacuum             ]  = std::string("IF_Insulator_Vacuum");
     bc_type_to_bc_name[IF_Electrode_Vacuum             ]  = std::string("IF_Electrode_Vacuum");
-    bc_type_to_bc_name[IF_Metal_Vacuum            ]  = std::string("IF_Metal_Vacuum");
+    bc_type_to_bc_name[IF_Metal_Vacuum                 ]  = std::string("IF_Metal_Vacuum");
     bc_type_to_bc_name[IF_PML_Scatter                  ]  = std::string("IF_PML_Scatter");
     bc_type_to_bc_name[IF_PML_PML                      ]  = std::string("IF_PML_PML");
     bc_type_to_bc_name[IF_Electrode_Insulator          ]  = std::string("IF_Electrode_Insulator");
     bc_type_to_bc_name[IF_Insulator_Semiconductor      ]  = std::string("IF_Insulator_Semiconductor");
     bc_type_to_bc_name[IF_Insulator_Insulator          ]  = std::string("IF_Insulator_Insulator");
     bc_type_to_bc_name[IF_Electrode_Electrode          ]  = std::string("IF_Electrode_Electrode");
-    bc_type_to_bc_name[IF_Electrode_Metal         ]  = std::string("IF_Electrode_Metal");
-    bc_type_to_bc_name[IF_Insulator_Metal         ]  = std::string("IF_Insulator_Metal");
-    bc_type_to_bc_name[IF_Metal_Metal        ]  = std::string("IF_Metal_Metal");
+    bc_type_to_bc_name[IF_Electrode_Metal              ]  = std::string("IF_Electrode_Metal");
+    bc_type_to_bc_name[IF_Insulator_Metal              ]  = std::string("IF_Insulator_Metal");
+    bc_type_to_bc_name[IF_Metal_Metal                  ]  = std::string("IF_Metal_Metal");
     bc_type_to_bc_name[HomoInterface                   ]  = std::string("HomoInterface");
     bc_type_to_bc_name[HeteroInterface                 ]  = std::string("HeteroInterface");
     bc_type_to_bc_name[IF_Electrode_Semiconductor      ]  = std::string("IF_Electrode_Semiconductor");
-    bc_type_to_bc_name[IF_Metal_Semiconductor     ]  = std::string("IF_Metal_Semiconductor");
+    bc_type_to_bc_name[IF_Metal_Semiconductor          ]  = std::string("IF_Metal_Semiconductor");
     bc_type_to_bc_name[OhmicContact                    ]  = std::string("OhmicContact");
-    bc_type_to_bc_name[IF_Metal_Ohmic          ]  = std::string("IF_Metal_Ohmic");
+    bc_type_to_bc_name[IF_Metal_Ohmic                  ]  = std::string("IF_Metal_Ohmic");
     bc_type_to_bc_name[SchottkyContact                 ]  = std::string("SchottkyContact");
-    bc_type_to_bc_name[IF_Metal_Schottky       ]  = std::string("IF_Metal_Schottky");
+    bc_type_to_bc_name[IF_Metal_Schottky               ]  = std::string("IF_Metal_Schottky");
     bc_type_to_bc_name[SimpleGateContact               ]  = std::string("SimpleGateContact");
     bc_type_to_bc_name[GateContact                     ]  = std::string("GateContact");
     bc_type_to_bc_name[ChargedContact                  ]  = std::string("ChargedContact");
@@ -143,7 +143,7 @@ std::string BC_enum_to_string(BCType bc_type)
 
 
 
-BCType determine_bc_by_subdomain(const std::string & mat1, const std::string mat2, bool resistive_metal_mode)
+BCType determine_bc_by_subdomain(const std::string & mat1, const std::string & mat2, bool resistive_metal_mode)
 {
   // two materials are both semiconductor, but with different type. it is  Heterojunction
   if( IsSemiconductor(mat1) && IsSemiconductor(mat2) && FormatMaterialString(mat1) != FormatMaterialString(mat2) )
@@ -258,6 +258,73 @@ BCType determine_bc_by_subdomain(const std::string & mat1, const std::string mat
 }
 
 
+bool consistent_bc_by_subdomain(const std::string &mat1, const std::string &mat2, BCType type, bool pisces_compatible_mode)
+{
+  std::string material1 = mat1;
+  std::string material2 = mat2;
+
+  if(Material::material_type(material1) > Material::material_type(material2))
+    std::swap(material1, material2);
+
+  switch(type)
+  {
+    case OhmicContact :
+    {
+      if(IsSemiconductor(material1) && material2.empty() ) return true;
+      if(IsSemiconductor(material1) && IsInsulator(material2) ) return true;
+      if(IsSemiconductor(material1) && IsConductor(material2) ) return true;
+      return false;
+    }
+    case IF_Metal_Ohmic:
+    {
+      if(IsSemiconductor(material1) && IsResistance(material2) ) return true;
+      return false;
+    }
+    case IF_Metal_Schottky:
+    {
+      if(IsSemiconductor(material1) && IsResistance(material2) ) return true;
+      return false;
+    }
+    case SchottkyContact:
+    {
+      if(IsSemiconductor(material1) && material2.empty() ) return true;
+      if(IsSemiconductor(material1) && IsInsulator(material2) ) return true;
+      if(IsSemiconductor(material1) && IsConductor(material2) ) return true;
+      return false;
+    }
+    case GateContact:
+    {
+      if(IsInsulator(material1) && material2.empty() ) return true;
+      if(IsInsulator(material1) && IsConductor(material2) ) return true;
+      return false;
+    }
+    case SimpleGateContact:
+    {
+      if(IsSemiconductor(material1) && material2.empty() ) return true;
+      return false;
+    }
+    case IF_Insulator_Semiconductor:
+    {
+      if(IsSemiconductor(material1) && IsInsulator(material2) ) return true;
+      return false;
+    }
+    case SolderPad:
+    {
+      if(IsResistance(material1) && material2.empty() ) return true;
+      if(IsResistance(material1) && IsInsulator(material2) ) return true;
+      if(IsResistance(material2) && IsInsulator(material1) ) return true;
+      return false;
+    }
+    case HeteroInterface:
+    {
+      if(IsSemiconductor(material1) && IsSemiconductor(material2) ) return true;
+      return false;
+    }
+  }
+
+  return true;
+}
+
 
 
 BoundaryCondition::BoundaryCondition(SimulationSystem  & system, const std::string & label)
@@ -323,6 +390,32 @@ FVM_Node * BoundaryCondition::get_region_fvm_node(const Node * n, unsigned int s
 }
 
 
+std::vector<SimulationRegion *>  BoundaryCondition::extra_regions(const Node * n) const
+{
+  std::vector<SimulationRegion *> regions;
+      
+  typedef std::multimap<SimulationRegionType, std::pair<SimulationRegion *, FVM_Node *> > RegionNodeMap;
+  const RegionNodeMap & region_map = _bd_fvm_nodes.find(n)->second;
+  for(RegionNodeMap::const_iterator it = region_map.begin(); it != region_map.end(); it++)
+  {
+    SimulationRegion * r = it->second.first;
+    if( r!= _bc_regions.first && r!= _bc_regions.second )
+      regions.push_back(r);
+  }
+
+  return regions;
+}
+
+
+
+
+bool BoundaryCondition::has_associated_region(const Node * n, SimulationRegionType rt) const
+{
+  typedef std::map<const Node *, std::multimap<SimulationRegionType, std::pair<SimulationRegion *, FVM_Node *> > >::const_iterator It;
+  It it = _bd_fvm_nodes.find(n);
+  return it->second.find(rt)!=it->second.end();
+}
+
 unsigned int BoundaryCondition::n_node_neighbors(const Node * n) const
 {
   assert (n->on_processor());
@@ -338,7 +431,7 @@ unsigned int BoundaryCondition::n_node_neighbors(const Node * n) const
     FVM_Node::fvm_neighbor_node_iterator it_end = fvm_node->neighbor_node_end();
     for(; it!=it_end; ++it)
     {
-      const Node * node = (*it).first;
+      const Node * node = (*it).first->root_node();
       if( node->on_processor() )
         node_set.insert(node);
     }
@@ -362,7 +455,7 @@ std::vector<const Node *> BoundaryCondition::node_neighbors(const Node * n) cons
     FVM_Node::fvm_neighbor_node_iterator it_end = fvm_node->neighbor_node_end();
     for(; it!=it_end; ++it)
     {
-      const Node * node = (*it).first;
+      const Node * node = (*it).first->root_node();
       if( node->on_processor() )
         node_set.insert(node);
     }
@@ -385,8 +478,10 @@ void BoundaryCondition::set_boundary_info_to_fvm_node()
     std::multimap<SimulationRegionType, std::pair<SimulationRegion *, FVM_Node *> >::iterator fvm_node_it = boundary_fvm_nodes.begin();
     for(; fvm_node_it != boundary_fvm_nodes.end(); ++fvm_node_it)
     {
-      fvm_node_it->second.second->set_bc_type(this->bc_type());
-      fvm_node_it->second.second->set_boundary_id(_boundary_id);
+      FVM_Node * fvm_node = fvm_node_it->second.second;
+      genius_assert(fvm_node->boundary_id() == BoundaryInfo::invalid_id);
+      fvm_node->set_bc_type(this->bc_type());
+      fvm_node->set_boundary_id(_boundary_id);
     }
   }
 }
@@ -659,10 +754,7 @@ std::string OhmicContactBC::boundary_condition_in_string() const
 
   if(this->ext_circuit())
   {
-    ss <<"real<res>="<<this->ext_circuit()->R()/(V/A)<<" "
-       <<"real<cap>="<<this->ext_circuit()->C()/(C/V)<<" "
-       <<"real<ind>="<<this->ext_circuit()->L()/(V*s/A)<<" "
-       <<"real<potential>="<<this->ext_circuit()->potential()/V<<" ";
+    ss << this->ext_circuit()->format() <<" ";
   }
 
   if(_bd_type == BOUNDARY)
@@ -720,10 +812,7 @@ std::string SchottkyContactBC::boundary_condition_in_string() const
 
   if(this->ext_circuit())
   {
-    ss <<"real<res>="<<this->ext_circuit()->R()/(V/A)<<" "
-        <<"real<cap>="<<this->ext_circuit()->C()/(C/V)<<" "
-        <<"real<ind>="<<this->ext_circuit()->L()/(V*s/A)<<" "
-        <<"real<potential>="<<this->ext_circuit()->potential()/V<<" ";
+    ss << this->ext_circuit()->format() <<" ";
   }
 
   if(_bd_type == BOUNDARY)
@@ -776,10 +865,7 @@ std::string GateContactBC::boundary_condition_in_string() const
 
   if(this->ext_circuit())
   {
-    ss <<"real<res>="<<this->ext_circuit()->R()/(V/A)<<" "
-        <<"real<cap>="<<this->ext_circuit()->C()/(C/V)<<" "
-        <<"real<ind>="<<this->ext_circuit()->L()/(V*s/A)<<" "
-        <<"real<potential>="<<this->ext_circuit()->potential()/V<<" ";
+    ss << this->ext_circuit()->format() <<" ";
   }
 
   if(_bd_type == BOUNDARY)
@@ -812,13 +898,15 @@ std::string SimpleGateContactBC::boundary_condition_in_string() const
   <<"real<workfunction>="<<scalar("workfunction")/V<<" "
   <<"real<thickness>="<<scalar("thickness")/um<<" "
   <<"real<eps>="<<scalar("eps")<<" "
-  <<"real<qf>="<<scalar("qf")*pow(cm,2)<<" "
-  <<"real<res>="<<this->ext_circuit()->R()/(V/A)<<" "
-  <<"real<cap>="<<this->ext_circuit()->C()/(C/V)<<" "
-  <<"real<ind>="<<this->ext_circuit()->L()/(V*s/A)<<" "
-  <<"real<potential>="<<this->ext_circuit()->potential()<<" "
-  <<"real<ext.temp>="<<T_external()/K<<" "
-  <<"real<heat.transfer>="<<scalar("heat.transfer")/(J/s/pow(cm,2)/K)<<" ";
+  <<"real<qf>="<<scalar("qf")*pow(cm,2)<<" ";
+
+  if(this->ext_circuit())
+  {
+    ss << this->ext_circuit()->format() <<" ";
+  }
+
+  ss<<"real<ext.temp>="<<T_external()/K<<" "
+    <<"real<heat.transfer>="<<scalar("heat.transfer")/(J/s/pow(cm,2)/K)<<" ";
 
   if(system().mesh().mesh_dimension () == 2)
     ss<<"real<z.width>="<<z_width()/um;
@@ -859,14 +947,16 @@ std::string SolderPadBC::boundary_condition_in_string() const
 {
   std::stringstream ss;
 
-  ss <<"BOUNDARY "
+  ss  <<"BOUNDARY "
       <<"string<id>="<<this->label()<<" "
-      <<"enum<type>=SolderPad "
-      <<"real<res>="<<this->ext_circuit()->R()/(V/A)<<" "
-      <<"real<cap>="<<this->ext_circuit()->C()/(C/V)<<" "
-      <<"real<ind>="<<this->ext_circuit()->L()/(V*s/A)<<" "
-      <<"real<potential>="<<this->ext_circuit()->potential()<<" "
-      <<"real<ext.temp>="<<T_external()/K<<" "
+      <<"enum<type>=SolderPad ";
+
+  if(this->ext_circuit())
+  {
+    ss << this->ext_circuit()->format() <<" ";
+  }
+
+  ss  <<"real<ext.temp>="<<T_external()/K<<" "
       <<"real<heat.transfer>="<<scalar("heat.transfer")/(J/s/pow(cm,2)/K)<<" ";
 
   if(system().mesh().mesh_dimension () == 2)
@@ -966,12 +1056,14 @@ std::string ElectrodeInterConnectBC::boundary_condition_in_string() const
   std::stringstream ss;
 
   ss  <<"INTERCONNECT "
-      <<"string<id>="<<this->label()<<" "
-      <<"real<res>="<<this->ext_circuit()->R()/(V/A)<<" "
-      <<"real<cap>="<<this->ext_circuit()->C()/(C/V)<<" "
-      <<"real<ind>="<<this->ext_circuit()->L()/(V*s/A)<<" "
-      <<"real<potential>="<<this->ext_circuit()->potential()<<" "
-      <<"bool<float>="<<( this->ext_circuit()->is_float() ? "true" : "false" )<<" ";
+      <<"string<id>="<<this->label()<<" ";
+
+  if(this->ext_circuit())
+  {
+    ss << this->ext_circuit()->format() <<" ";
+  }
+
+  ss  <<"bool<float>="<<( this->ext_circuit()->is_float() ? "true" : "false" )<<" ";
 
   const std::vector<BoundaryCondition * > & inter_connect_bcs = this->inter_connect();
 

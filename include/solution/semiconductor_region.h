@@ -281,6 +281,11 @@ private:
    */
   Real truncated_partial_area(const Elem * elem, unsigned int ne) const;
 
+  /**
+   * elem has its circumcircle center outside the region
+   */
+  //void bad_elem_info() const;
+
 private:
 
   void DDM1_Gummel_Carrier_Electron(PetscScalar * x, Mat A, Vec r, InsertMode &add_value_flag);
@@ -632,6 +637,7 @@ public:
    * function for build RHS and matrix for half implicit poisson correction with Polsky's method.
    */
   virtual void DDM1_Half_Implicit_Poisson_Correction_Polsky(PetscScalar * x, Mat A, Vec r, InsertMode &add_value_flag);
+
 #endif
 
   //////////////////////////////////////////////////////////////////////////////////
@@ -694,6 +700,7 @@ public:
   virtual void Mob_Evaluation( std::vector< std::pair<unsigned int, unsigned int> > &edge,
                                std::vector< std::pair<double, double> > & mob,
                                std::vector< double > & weight) const;
+
 
 };
 

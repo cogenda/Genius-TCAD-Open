@@ -184,7 +184,7 @@ void InsulatorSimulationRegion::EBM3_Function(PetscScalar * x, Vec f, InsertMode
       PetscScalar eps = 0.5*(eps1+eps2);       // eps at mid point of the edge
 
       // "flux" from node 2 to node 1
-      PetscScalar f_psi =  eps*fvm_n1->cv_surface_area(fvm_n2->root_node())*(V2 - V1)/fvm_n1->distance(fvm_n2) ;
+      PetscScalar f_psi =  eps*fvm_n1->cv_surface_area(fvm_n2)*(V2 - V1)/fvm_n1->distance(fvm_n2) ;
 
       // ignore thoese ghost nodes
       if( fvm_n1->on_processor() )
@@ -212,7 +212,7 @@ void InsulatorSimulationRegion::EBM3_Function(PetscScalar * x, Vec f, InsertMode
         PetscScalar T2   =  x[n2_local_offset+node_Tl_offset];
         PetscScalar kap2 =  mt->thermal->HeatConduction(T2);
         PetscScalar kap = 0.5*(kap1+kap2);       // kapa at mid point of the edge
-        PetscScalar f_q =  kap*fvm_n1->cv_surface_area(fvm_n2->root_node())*(T2 - T1)/fvm_n1->distance(fvm_n2) ;
+        PetscScalar f_q =  kap*fvm_n1->cv_surface_area(fvm_n2)*(T2 - T1)/fvm_n1->distance(fvm_n2) ;
         // ignore thoese ghost nodes
         if( fvm_n1->on_processor() )
         {
@@ -306,7 +306,7 @@ void InsulatorSimulationRegion::EBM3_Jacobian(PetscScalar * x, Mat *jac, InsertM
 
       PetscScalar eps = 0.5*(eps1+eps2);       // eps at mid point of the edge
       // "flux" from node 2 to node 1
-      AutoDScalar f_psi =  eps*fvm_n1->cv_surface_area(fvm_n2->root_node())*(V2 - V1)/fvm_n1->distance(fvm_n2) ;
+      AutoDScalar f_psi =  eps*fvm_n1->cv_surface_area(fvm_n2)*(V2 - V1)/fvm_n1->distance(fvm_n2) ;
 
       // ignore thoese ghost nodes
       if( fvm_n1->on_processor() )
@@ -335,7 +335,7 @@ void InsulatorSimulationRegion::EBM3_Jacobian(PetscScalar * x, Mat *jac, InsertM
         PetscScalar kap2 =  mt->thermal->HeatConduction(T2.getValue());
 
         PetscScalar kap = 0.5*(kap1+kap2);       // kapa at mid point of the edge
-        AutoDScalar f_q =  kap*fvm_n1->cv_surface_area(fvm_n2->root_node())*(T2 - T1)/fvm_n1->distance(fvm_n2) ;
+        AutoDScalar f_q =  kap*fvm_n1->cv_surface_area(fvm_n2)*(T2 - T1)/fvm_n1->distance(fvm_n2) ;
 
         // ignore thoese ghost nodes
         if( fvm_n1->on_processor() )

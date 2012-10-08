@@ -179,7 +179,7 @@ void DDMMonitorHook::pre_iteration()
 /*----------------------------------------------------------------------
  *  This is executed after each (nonlinear) iteration
  */
-void DDMMonitorHook::post_iteration(void * f, void * x, void * dx, void * w, bool & , bool &)
+void DDMMonitorHook::post_check(void * f, void * x, void * dx, void * w, bool & , bool &)
 {
   // only monitor ddm solver / poisson solver
   if(!this->_ddm_solver && !this->_poisson_solver) return;

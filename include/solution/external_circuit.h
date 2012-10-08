@@ -19,19 +19,22 @@
 /*                                                                              */
 /********************************************************************************/
 
-//  $Id: external_circuit.h,v 1.10 2008/07/09 05:58:16 gdiso Exp $
 
 
 #ifndef __external_circuit_h__
 #define __external_circuit_h__
 
+#include <string>
 #include <complex>
 
+#include "genius_common.h"
 
-#include "solver_specify.h"
+
+namespace Parser{ class Card; }
+
 
 /**
- * this is a class for external circuit for electrode bcs
+ * this is a class for external circuit for electrode
  */
 class ExternalCircuit
 {
@@ -43,271 +46,71 @@ public:
    * constructor
    */
   ExternalCircuit()
-  : _res(0), _cap(0), _ind(0), _Vapp(0), _Iapp(0),
-    _potential(0), _current(0), _current_displacement(0),
-    _current_conductance(0), _current_electron(0), _current_hole(0),
-    _cap_current(0),
-    _Vac(0.0026),
-    _drv(VDRIVEN)
+  : _Vapp(0), _Iapp(0), _drv(VDRIVEN),
+    _potential(0), _current(0),
+    _current_displacement(0), _current_conductance(0),
+    _current_electron(0), _current_hole(0),
+    _Vac(0.0026)
   {}
 
   /**
    * destructor
    */
-  virtual ~ExternalCircuit(){}
-
-
-  /**
-   * @return the lumped resistor
-   */
-  virtual PetscScalar R() const
-  {return _res;}
+  virtual ~ExternalCircuit() {}
 
   /**
-   * @return writable reference to lumped resistor
+   * type of external circuit
    */
-  virtual PetscScalar & R()
-  {return _res;}
+  virtual std::string type() const = 0;
 
   /**
-   * @return the lumped capacitance
+   * format string for export
    */
-  virtual PetscScalar C() const
-  {return _cap;}
+  virtual std::string format() const = 0;
 
   /**
-   * @return writable reference to lumped capacitance
+   * create default ExternalCircuit (RCL model)
    */
-  virtual PetscScalar & C()
-  {return _cap;}
+  static ExternalCircuit * build_default();
 
   /**
-   * @return the lumped inductance
+   * create ExternalCircuit by input
    */
-  virtual PetscScalar L() const
-  {return _ind;}
+  static ExternalCircuit * build(const Parser::Card &c);
 
-  /**
-   * @return writable reference to lumped inductance
-   */
-  virtual PetscScalar & L()
-  {return _ind;}
-
-
-
-
+  // Vapp or Iapp settings 
+public:
   /**
    * @return the application voltage.
    */
-  virtual PetscScalar Vapp() const
+  Real Vapp() const
   { return _Vapp;}
 
   /**
    * @return writable reference to application voltage.
    */
-  virtual PetscScalar & Vapp()
+  Real & Vapp()
   { return _Vapp;}
 
   /**
    * @return the application current.
    */
-  virtual PetscScalar Iapp() const
+  Real Iapp() const
   { return _Iapp;}
 
   /**
    * @return writable reference to application current.
    */
-  virtual PetscScalar & Iapp()
+  Real & Iapp()
   { return _Iapp;}
-
-
-
-
-  /**
-   * @return the electrode potential.
-   */
-  virtual PetscScalar potential() const
-  { return _potential;}
-
-  /**
-   * @return writable reference to electrode potential.
-   */
-  virtual PetscScalar & potential()
-  { return _potential;}
-
-  /**
-   * @return electrode potential of last step.
-   * @note this variable is read only for other application
-   */
-  virtual PetscScalar  potential_old() const
-  { return _potential_old;}
-
-  /**
-   * @return electrode potential of current iterating.
-   * @note write only
-   */
-  virtual PetscScalar  & potential_itering()
-  { return _potential_itering;}
-
-
-  /**
-   * @return the electrode current.
-   */
-  virtual PetscScalar current() const
-  { return _current;}
-
-  /**
-   * @return writable reference to electrode current.
-   */
-  virtual PetscScalar & current()
-  { return _current;}
-
-
-  /**
-   * @return the displacement current.
-   */
-  virtual PetscScalar current_displacement() const
-  { return _current_displacement;}
-
-  /**
-   * @return writable reference to displacement current.
-   */
-  virtual PetscScalar & current_displacement()
-  { return _current_displacement;}
-
-
-  /**
-   * @return the conductance current.
-   */
-  virtual PetscScalar current_conductance() const
-  { return _current_conductance;}
-
-  /**
-   * @return writable reference to conductance current.
-   */
-  virtual PetscScalar & current_conductance()
-  { return _current_conductance;}
-
-  /**
-   * @return the electron current.
-   */
-  virtual PetscScalar current_electron() const
-  { return _current_electron;}
-
-  /**
-   * @return writable reference to electron current.
-   */
-  virtual PetscScalar & current_electron()
-  { return _current_electron;}
-
-  /**
-   * @return the hole current.
-   */
-  virtual PetscScalar current_hole() const
-  { return _current_hole;}
-
-  /**
-   * @return writable reference to hole current.
-   */
-  virtual PetscScalar & current_hole()
-  { return _current_hole;}
-
-
-  /**
-   * @return electrode current of last step.
-   * @note this variable is read only for other application
-   */
-  virtual PetscScalar  current_old() const
-  { return _current_old;}
-
-  /**
-   * @return electrode current of current iterating.
-   * @note write only
-   */
-  virtual PetscScalar  & current_itering()
-  { return _current_itering;}
-
-  /**
-   * @return cap current
-   * @note this variable is read only for other application
-   */
-  virtual PetscScalar  cap_current() const
-  { return _cap_current;}
-
-
-
-  /**
-   * @return the stimulate voltage for AC scan.
-   */
-  virtual PetscScalar Vac() const
-  { return _Vac; }
-
-  /**
-   * @return the writable reference to stimulate voltage for AC scan.
-   */
-  virtual PetscScalar & Vac()
-  { return _Vac; }
-
-  /**
-   * @return the electrode potential of AC scan.
-   */
-  virtual std::complex<PetscScalar> potential_ac() const
-  { return _potential_ac;}
-
-  /**
-   * @return writable reference to electrode potential of AC scan.
-   */
-  virtual std::complex<PetscScalar> & potential_ac()
-  { return _potential_ac;}
-
-
-  /**
-   * @return the electrode current of AC scan.
-   */
-  virtual std::complex<PetscScalar> current_ac() const
-  { return _current_ac;}
-
-  /**
-   * @return writable reference to electrode current of AC scan.
-   */
-  virtual std::complex<PetscScalar> & current_ac()
-  { return _current_ac;}
-
-
-  /**
-   * when a solution is achieved, update the potential/current
-   */
-  void update()
-  {
-    _potential_old = _potential;
-    _potential = _potential_itering;
-
-    _current_old = _current;
-    _current = _current_itering;
-
-    _cap_current_old = _cap_current;
-    _cap_current = _cap*(_potential-_potential_old)/SolverSpecify::dt;
-  }
-
-
-  /**
-   * roll back to previous solution
-   */
-  void rollback()
-  {
-    _potential = _potential_old;
-    _current = _current_old;
-    _cap_current = _cap_current_old;
-  }
-
 
   /**
    * force to ground this electrode
    */
-  virtual void ground()
+  void ground()
   {
-     _Vapp = 0.0;
-     _Iapp = 0.0;
+    _Vapp = 0.0;
+    _Iapp = 0.0;
   }
 
   /**
@@ -352,114 +155,296 @@ public:
   DRIVEN driven_state() const
   { return _drv; }
 
-private:
+  /**
+   * value of serial resistance for inter connect
+   */
+  virtual Real inter_connect_resistance() const=0;
 
   /**
-   * external lumped resistor
+   * value of serial resistance to electrode
    */
-  PetscScalar   _res;
+  virtual Real serial_resistance() const = 0;
 
   /**
-   * external lumped capacitance
+   * value of serial resistance to electrode
    */
-  PetscScalar   _cap;
+  virtual void set_serial_resistance(Real res) = 0;
 
-  /**
-   * external lumped inductance
-   */
-  PetscScalar   _ind;
+protected:
 
   /**
    * application voltage
    */
-  PetscScalar   _Vapp;
+  Real   _Vapp;
 
   /**
    * application current
    */
-  PetscScalar   _Iapp;
-
-
-  /**
-   * the potential of this electrode
-   */
-  PetscScalar      _potential;
-
-  /**
-   * the potential for this iterative cycle
-   */
-  PetscScalar      _potential_itering;
-
-  /**
-   * the potential for last step
-   */
-  PetscScalar      _potential_old;
-
-  /**
-   * the current flow out of this electrode
-   */
-  PetscScalar      _current;
-
-  /**
-   * the displacement current flow out of this electrode
-   */
-  PetscScalar      _current_displacement;
-
-  /**
-   * the conductance current flow out of this electrode
-   */
-  PetscScalar      _current_conductance;
-
-  /**
-   * the electron current flow out of this electrode
-   */
-  PetscScalar      _current_electron;
-
-  /**
-   * the hole current flow out of this electrode
-   */
-  PetscScalar      _current_hole;
-
-  /**
-   * the current for this iterative cycle
-   */
-  PetscScalar      _current_itering;
-
-  /**
-   * the current for last step
-   */
-  PetscScalar      _current_old;
-
-  /**
-   * the current which flow through lumped capacitance to ground
-   */
-  PetscScalar      _cap_current;
-
-  /**
-   * the current which flow through lumped capacitance to ground for last step
-   */
-  PetscScalar      _cap_current_old;
-
-  /**
-   * the application voltage for AC sweep.
-   */
-  PetscScalar      _Vac;
-
-  /**
-   * the (complex) electrode potential for AC sweep.
-   */
-  std::complex<PetscScalar>      _potential_ac;
-
-  /**
-   * the (complex) electrode current for AC sweep.
-   */
-  std::complex<PetscScalar>      _current_ac;
+  Real   _Iapp;
 
   /**
    * indicator this electrode is driven by voltage source or
    * current source
    */
   DRIVEN        _drv;
+
+
+  // ckt load
+public:
+
+  /**
+   * @return the electrode potential.
+   */
+  Real potential() const
+  { return _potential;}
+
+  /**
+   * @return writable reference to electrode potential.
+   */
+  Real & potential()
+  { return _potential;}
+
+  /**
+   * @return electrode potential of last step.
+   */
+  Real  potential_old() const
+  { return _potential_old;}
+
+  /**
+   * @return writable reference to electrode potential of last step.
+   */
+  Real & potential_old()
+  { return _potential_old;}
+
+  /**
+   * @return the electrode current
+   */
+  Real current() const
+  { return _current;}
+
+  /**
+   * @return the writable reference to electrode current
+   */
+  Real & current()
+  { return _current;}
+
+  /**
+   * @return electrode current of last step.
+   * @note this variable is read only for other application
+   */
+  Real  current_old() const
+  { return _current_old;}
+
+  /**
+   * use this value as scaling to electrode
+   */
+  virtual Real electrode_scaling(Real dt) const { return 1.0; }
+
+  /**
+   * use this value as scaling to Modified Nodal Analysis
+   */
+  virtual Real mna_scaling(Real dt) const { return 1.0; }
+
+  /**
+   * calculate function of Modified Nodal Analysis
+   */
+  virtual Real mna_function(Real dt) = 0;
+
+  /**
+   * calculate jacobian of Modified Nodal Analysis
+   */
+  virtual Real mna_jacobian(Real dt) = 0;
+
+  /**
+   * use this value as scaling to Modified Nodal Analysis in AC model
+   */
+  virtual std::complex <Real> mna_ac_scaling(Real omega) = 0;
+
+  /**
+   * calculate AC jacobian of Modified Nodal Analysis
+   */
+  virtual std::complex <Real> mna_ac_jacobian(Real omega) = 0;
+
+  /**
+   * when a solution is achieved, update the potential/current
+   */
+  virtual void update()
+  {
+    _potential_old = _potential;
+    _current_old = _current;
+  }
+
+  /**
+   * roll back to previous solution
+   */
+  virtual void rollback()
+  {
+    _potential = _potential_old;
+    _current   = _current_old;
+  }
+
+  /**
+   * init op state before transient simulation
+   */
+  virtual void tran_op_init()
+  {
+    _potential_old = _potential;
+    _current_old = _current;
+  }
+
+
+protected:
+  /**
+   * the potential of this electrode
+   */
+  Real      _potential;
+
+  /**
+   * the potential for last step
+   */
+  Real      _potential_old;
+
+  /**
+   * the current flow out of this electrode
+   */
+  Real      _current;
+
+  /**
+   * the current for last step
+   */
+  Real      _current_old;
+
+
+  // current statistic
+public:
+
+  /**
+   * @return the displacement current.
+   */
+  Real current_displacement() const
+  { return _current_displacement;}
+
+  /**
+   * @return writable reference to displacement current.
+   */
+  Real & current_displacement()
+  { return _current_displacement;}
+
+
+  /**
+   * @return the conductance current.
+   */
+  Real current_conductance() const
+  { return _current_conductance;}
+
+  /**
+   * @return writable reference to conductance current.
+   */
+  Real & current_conductance()
+  { return _current_conductance;}
+
+  /**
+   * @return the electron current.
+   */
+  Real current_electron() const
+  { return _current_electron;}
+
+  /**
+   * @return writable reference to electron current.
+   */
+  Real & current_electron()
+  { return _current_electron;}
+
+  /**
+   * @return the hole current.
+   */
+  Real current_hole() const
+  { return _current_hole;}
+
+  /**
+   * @return writable reference to hole current.
+   */
+  Real & current_hole()
+  { return _current_hole;}
+
+protected:
+
+  /**
+   * the displacement current flow out of this electrode
+   */
+  Real      _current_displacement;
+
+  /**
+   * the conductance current flow out of this electrode
+   */
+  Real      _current_conductance;
+
+  /**
+   * the electron current flow out of this electrode
+   */
+  Real      _current_electron;
+
+  /**
+   * the hole current flow out of this electrode
+   */
+  Real      _current_hole;
+
+  // ac settings 
+public:
+  /**
+   * @return the stimulate voltage for AC scan.
+   */
+  Real Vac() const
+  { return _Vac; }
+
+  /**
+   * @return the writable reference to stimulate voltage for AC scan.
+   */
+  Real & Vac()
+  { return _Vac; }
+
+  /**
+   * @return the electrode potential of AC scan.
+   */
+  std::complex<Real> potential_ac() const
+  { return _potential_ac;}
+
+  /**
+   * @return writable reference to electrode potential of AC scan.
+   */
+  std::complex<Real> & potential_ac()
+  { return _potential_ac;}
+
+
+  /**
+   * @return the electrode current of AC scan.
+   */
+  std::complex<Real> current_ac() const
+  { return _current_ac;}
+
+  /**
+   * @return writable reference to electrode current of AC scan.
+   */
+  std::complex<Real> & current_ac()
+  { return _current_ac;}
+
+
+protected:
+  /**
+   * the application voltage for AC sweep.
+   */
+  Real      _Vac;
+
+  /**
+   * the (complex) electrode potential for AC sweep.
+   */
+  std::complex<Real>      _potential_ac;
+
+  /**
+   * the (complex) electrode current for AC sweep.
+   */
+  std::complex<Real>      _current_ac;
+
 
 };
 

@@ -254,25 +254,38 @@ void ElectricalSource::remove_electrode_source(const std::string & electrode_lab
 
 
 
-double ElectricalSource::limit_dt(double time, double dt, double v_change, double i_change) const
+double ElectricalSource::limit_dt(double time, double dt, double dt_min, double v_change, double i_change) const
 {
-  CBIt it = _bc_source_map.begin();
   double dt_limited = dt;
+  double dv = 0;
+  double di = 0;
 
-  for(; it!=_bc_source_map.end(); ++it)
+  while( dt_limited>dt_min)
   {
-    const double vapp = this->vapp(it->first, time);
-    const double iapp = this->iapp(it->first, time);
+    dv = 0;
+    di = 0;
 
-    double vapp_next = this->vapp(it->first, time+dt_limited);
-    double iapp_next = this->iapp(it->first, time+dt_limited);
-
-    while( dt_limited>0.01*dt && (std::abs(vapp_next-vapp) > v_change || std::abs(iapp_next-iapp) > i_change) )
+    CBIt it = _bc_source_map.begin();
+    for(; it!=_bc_source_map.end(); ++it)
     {
-      dt_limited *= 0.9;
-      vapp_next = this->vapp(it->first, time+dt_limited);
-      iapp_next = this->iapp(it->first, time+dt_limited);
+      double bc_dv = 0;
+      for(unsigned int i=0; i<(*it).second.first.size(); ++i)
+        bc_dv += (*it).second.first[i]->dv_max(time, dt_limited, dt_min);
+
+      double bc_di = 0;
+      for(unsigned int i=0; i<(*it).second.second.size(); ++i)
+        bc_di += (*it).second.second[i]->di_max(time, dt_limited, dt_min);
+
+      if( std::abs(bc_dv) > std::abs(dv) )
+        dv = bc_dv;
+      if( std::abs(bc_di) > std::abs(di) )
+        di = bc_di;
     }
+
+    if(std::abs(dv) > v_change || std::abs(di) > i_change)
+      dt_limited *= 0.9;//std::min(v_change/std::abs(dv), i_change/std::abs(di));
+    else
+      break;
   }
 
   return dt_limited;

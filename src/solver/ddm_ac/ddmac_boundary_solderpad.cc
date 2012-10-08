@@ -45,15 +45,10 @@ void SolderPadBC::DDMAC_Fill_Matrix_Vector( Mat A, Vec b, const Mat J, const dou
   PetscInt bc_global_offset_re = this->global_offset();
   PetscInt bc_global_offset_im = this->global_offset()+1;
 
-  PetscScalar R = ext_circuit()->R();             // resistance
-  PetscScalar C = ext_circuit()->C();             // capacitance
-  PetscScalar L = ext_circuit()->L();             // inductance
 
   const PetscScalar Heat_Transfer = this->scalar("heat.transfer");
 
   // impedance at frequency omega
-  std::complex <PetscScalar> Z1(R, omega*L);
-  std::complex <PetscScalar> Y2(0.0, omega*C);
   std::complex <PetscScalar> j(0.0, 1.0);
 
   // for 2D mesh, z_width() is the device dimension in Z direction; for 3D mesh, z_width() is 1.0
@@ -212,14 +207,11 @@ void SolderPadBC::DDMAC_Fill_Matrix_Vector( Mat A, Vec b, const Mat J, const dou
   //           GND
   //
 
-  if(Genius::processor_id() == Genius::n_processors() -1)
+  if(Genius::is_last_processor())
   {
     // here we process the external circuit, we do not use AD here
 
-    // the external electrode equation is:
-    // f_ext = (L/dt+R)*current + (Ve-Vapp) + (L/dt+R)*C/dt*Ve - (L/dt+R)*C/dt*P - L/dt*(I+Ic);
-    // as a result, the K=d(f_ext)/d(Ve) in frequency domain is
-    std::complex <PetscScalar> K = Z1*Y2 + PetscScalar(1.0);
+    std::complex <PetscScalar> K = this->ext_circuit()->mna_ac_jacobian(omega);
 
     MatSetValue(A, bc_global_offset_re, bc_global_offset_re,  K.real(), ADD_VALUES);
     MatSetValue(A, bc_global_offset_re, bc_global_offset_im, -K.imag(), ADD_VALUES);
@@ -292,7 +284,7 @@ void SolderPadBC::DDMAC_Update_Solution(const PetscScalar * lxx, const Mat, cons
           FVM_Node::fvm_neighbor_node_iterator nb_it = fvm_node->neighbor_node_begin();
           for(; nb_it != fvm_node->neighbor_node_end(); ++nb_it)
           {
-            const FVM_Node *nb_node = (*nb_it).second;
+            const FVM_Node *nb_node = (*nb_it).first;
 
             // distance from nb node to this node
             PetscScalar distance = (*(fvm_node->root_node()) - *(nb_node->root_node())).size();
@@ -302,7 +294,7 @@ void SolderPadBC::DDMAC_Update_Solution(const PetscScalar * lxx, const Mat, cons
             std::complex<PetscScalar> Vn = std::complex<PetscScalar>(Vn_re, Vn_im);
 
             // area of out surface of control volume related with neighbor node
-            PetscScalar cv_boundary = fvm_node->cv_surface_area(nb_node->root_node());
+            PetscScalar cv_boundary = fvm_node->cv_surface_area(nb_node);
 
             Iac += sigma*(V-Vn)/distance*cv_boundary*current_scale;
           }
