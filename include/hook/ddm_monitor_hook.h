@@ -91,6 +91,12 @@ private:
   bool            _ddm_solver;
 
   /**
+   * monitor poisson solver
+   */
+  bool            _ric_solver;
+
+
+  /**
    * iteration count
    */
   unsigned int iteration_count;
@@ -138,6 +144,11 @@ private:
    * write mesh relative solution data to vtk file
    */
   void solution_to_vtk_poisson(void * _f, void * _x, void * _dx, void * _w);
+
+  /**
+   * write mesh relative solution data to vtk file
+   */
+  void solution_to_vtk_ric(void * _f, void * _x, void * _dx, void * _w);
 
   /**
    * write extra region name/material information and boundary information into xml vtk file

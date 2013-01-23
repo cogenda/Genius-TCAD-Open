@@ -81,8 +81,8 @@
   template bool         FE<_dim,_t>::is_hierarchic() const;\
   template unsigned int FE<_dim,_t>::n_dofs_per_elem(ElemType,Order);\
   template void         FE<_dim,_t>::nodal_soln(const Elem*,const Order,const std::vector<Number>&,std::vector<Number>&);
-#endif
-/*
+
+
 // The Intel 7.1 compiler out at TACC required these, but they are used
 // inside the inverse_map function so it seems like they should be instantiated
 // by the INSTANTIATE_IMAP macro above?  Also for some reason it did not
@@ -91,4 +91,6 @@
   template Point FE<_dim,LAGRANGE>::map(const Elem*,const Point&);\
   template Point FE<_dim,LAGRANGE>::map_xi(const Elem*,const Point&);\
   template Point FE<_dim,LAGRANGE>::map_eta(const Elem*,const Point&)
-*/
+
+
+#endif

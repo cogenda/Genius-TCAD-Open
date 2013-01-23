@@ -140,7 +140,14 @@ public:
    * @return sine wave when t>td, else return bias amplitude
    */
   double waveform(double t)
-  { return t>=_td ? _amplitude_bias+_amplitude*exp(-_alpha*(t-_td))*sin(2*3.14159265358979323846*_frequency*(t-_td)) : _amplitude_bias; }
+  {
+    double amp = 0.0;
+    if (t>=_td )
+      amp = _amplitude_bias+_amplitude*exp(-_alpha*(t-_td))*sin(2*3.14159265358979323846*_frequency*(t-_td));
+    else
+      amp  = _amplitude_bias;
+    return std::max(0.0, amp);
+  }
 };
 
 
@@ -226,7 +233,7 @@ public:
 
 
 /**
- * dual exponential waveform
+ * double exponential waveform
  */
 class WaveformExponential: public Waveform
 {

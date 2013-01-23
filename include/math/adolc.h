@@ -565,7 +565,9 @@ namespace adtl
   {
     AutoDScalar tmp;
     tmp.val=::pow(a.val, v);
-    PetscScalar tmp2=v*::pow(a.val, v-1);
+    PetscScalar tmp2;
+    if(v-1 < 0 && a.val==0.0) tmp2 = 0.0;
+    else tmp2=v*::pow(a.val, v-1);
     for (unsigned int _i=0; _i<AutoDScalar::numdir; ++_i)
       tmp.adval[_i]=tmp2*a.adval[_i];
     return tmp;

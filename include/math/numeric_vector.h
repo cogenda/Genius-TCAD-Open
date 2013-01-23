@@ -28,6 +28,7 @@
 
 // Local includes
 #include "genius_common.h"
+#include "genius_env.h"
 #include "auto_ptr.h"
 
 
@@ -78,8 +79,7 @@ public:
    * Builds a \p NumericVector using the linear solver package specified by
    * \p solver_package
    */
-  static AutoPtr<NumericVector<T> >
-  build();
+  static AutoPtr<NumericVector<T> >  build(const std::string & solver_package);
   
   /**
    * @returns true if the vector has been initialized,
@@ -349,34 +349,13 @@ public:
    * Computes the dot product, p = U.V
    */
   virtual T dot(const NumericVector<T>&) const = 0;
-  
+
   /**
    * Creates a copy of the global vector in the
    * local vector \p v_local.
    */
   virtual void localize (std::vector<T>& v_local) const = 0;
 
-  /**
-   * Same, but fills a \p NumericVector<T> instead of
-   * a \p std::vector.
-   */
-  virtual void localize (NumericVector<T>& v_local) const = 0;
-
-  /**
-   * Creates a local vector \p v_local containing
-   * only information relevant to this processor, as
-   * defined by the \p send_list.
-   */
-  virtual void localize (NumericVector<T>& v_local,
-			 const std::vector<unsigned int>& send_list) const = 0;
-  
-  /**
-   * Updates a local vector with selected values from neighboring
-   * processors, as defined by \p send_list.
-   */
-  virtual void localize (const unsigned int first_local_idx,
-			 const unsigned int last_local_idx,
-			 const std::vector<unsigned int>& send_list) = 0;
 
   /**
    * Creates a local copy of the global vector in
@@ -386,7 +365,8 @@ public:
    */
   virtual void localize_to_one (std::vector<T>& v_local,
 				const unsigned int proc_id=0) const = 0;
-    
+
+
   /**
    * @returns \p -1 when \p this is equivalent to \p other_vector,
    * up to the given \p threshold.  When differences occur,
@@ -430,19 +410,6 @@ public:
     genius_error();
   }
 
-  /**
-   * Creates the subvector "subvector" from the indices in the
-   * "rows" array.  Similar to the create_submatrix routine for
-   * the SparseMatrix class, it is currently only implemented for
-   * PetscVectors.
-   */
-  virtual void create_subvector(NumericVector<T>& ,
-				const std::vector<unsigned int>& ) const
-  {
-    std::cerr << "ERROR: Not Implemented in base class yet!" << std::endl;
-    genius_error();
-  }
-    
 protected:
   
   /**
@@ -502,41 +469,6 @@ NumericVector<T>::~NumericVector ()
   clear ();
 }
 
-
-
-// These should be pure virtual, not bugs waiting to happen - RHS
-/*
-template <typename T>
-inline
-NumericVector<T> & NumericVector<T>::operator= (const T) 
-{
-  //  genius_error();
-
-  return *this;
-}
-
-
-
-template <typename T>
-inline
-NumericVector<T> & NumericVector<T>::operator= (const NumericVector<T>&) 
-{
-  //  genius_error();
-
-  return *this;
-}
-
-
-
-template <typename T>
-inline
-NumericVector<T> & NumericVector<T>::operator= (const std::vector<T>&) 
-{
-  //  genius_error();
-
-  return *this;
-}
-*/
 
 
 

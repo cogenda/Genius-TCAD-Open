@@ -33,7 +33,7 @@
 
 
 //------------------------------------------------------------------
-// PointLocatorBase methods
+// SurfaceLocator methods
 
 
 SurfaceLocatorHub::SurfaceLocatorHub (const MeshBase& mesh, const SurfaceLocatorType t)

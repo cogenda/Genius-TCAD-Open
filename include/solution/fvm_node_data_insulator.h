@@ -44,9 +44,19 @@ class FVM_Insulator_NodeData : public FVM_NodeData
     enum   InsulatorData
     {
       /**
-      * electrostatic potential
-      */
-      _psi_=0,
+       * electron density
+       */
+      _n_=0,
+
+      /**
+       * hole density
+       */
+      _p_,
+
+      /**
+       * electrostatic potential
+       */
+      _psi_,
 
       /**
        * lattice temperature
@@ -90,9 +100,9 @@ class FVM_Insulator_NodeData : public FVM_NodeData
       _mu_,
 
       /**
-       * energy deposite of incident wave
+       * the _OptG_*time +  _PatG_*time
        */
-      _OptE_,
+      _Field_G_,
 
       /**
        * energy deposite of high energy particle
@@ -100,9 +110,24 @@ class FVM_Insulator_NodeData : public FVM_NodeData
       _PatE_,
 
       /**
+       * dose rate
+       */
+      _DoseRate_,
+
+      /**
        * electrostatic potential at previous time step
        */
       _psi_last_,
+
+      /**
+       * electron density at previous time step
+       */
+      _n_last_,
+
+      /**
+       * hole density at previous time step
+       */
+      _p_last_,
 
       /**
        * old electrostatic potential
@@ -235,8 +260,8 @@ class FVM_Insulator_NodeData : public FVM_NodeData
       switch ( variable )
       {
         case POTENTIAL   :  return  psi();                            /* potential */
-        case ELECTRON    :  return  0.0;                              /* electron concentration */
-        case HOLE        :  return  0.0;                              /* hole concentration */
+        case ELECTRON    :  return  n();                              /* electron concentration */
+        case HOLE        :  return  p();                              /* hole concentration */
         case TEMPERATURE :  return  T();                              /* lattice temperature */
         case E_TEMP      :  return  T();                              /* electron temperature */
         case H_TEMP      :  return  T();                              /* hole temperature */
@@ -255,6 +280,8 @@ class FVM_Insulator_NodeData : public FVM_NodeData
       switch ( variable )
       {
         case POTENTIAL   :  psi() = value;                             /* potential */
+        case ELECTRON    :  n() = value;                               /* electron concentration */
+        case HOLE        :  p() = value;                               /* hole concentration */
         case TEMPERATURE :  T() = value;                               /* lattice temperature */
         default          :  return;
       }
@@ -288,6 +315,34 @@ class FVM_Insulator_NodeData : public FVM_NodeData
      */
     virtual Real &       psi()
     { return _data_storage->scalar ( _psi_, _offset ); }
+
+
+    /**
+     * @return the electron density
+     */
+    virtual Real         n()          const
+    { return _data_storage->scalar ( _n_, _offset ); }
+
+    /**
+     * @return the writable reference to electron density
+     */
+    virtual Real &       n()
+    { return _data_storage->scalar ( _n_, _offset ); }
+
+
+
+    /**
+     * @return the hole density
+     */
+    virtual Real         p()          const
+    { return _data_storage->scalar ( _p_, _offset ); }
+
+
+    /**
+     * @return the writable reference to hole density
+     */
+    virtual Real &       p()
+    { return _data_storage->scalar ( _p_, _offset ); }
 
 
 
@@ -332,17 +387,44 @@ class FVM_Insulator_NodeData : public FVM_NodeData
     { return _data_storage->scalar ( _T_, _offset ); }
 
 
-    /**
-     * @return the optical energy
-     */
-    virtual Real         OptE()          const
-    { return _data_storage->scalar ( _OptE_, _offset ); }
 
     /**
-     * @return the writable optical energy
+     * @return the carrier generation ratio due to OptG and PatG
      */
-    virtual Real &       OptE()
-    { return _data_storage->scalar ( _OptE_, _offset ); }
+    virtual Real         Field_G()          const
+    { return _data_storage->scalar ( _Field_G_, _offset ); }
+
+    /**
+     * @return the writable carrier generation ratio due to OptG and PatG
+     */
+    virtual Real &       Field_G()
+    { return _data_storage->scalar ( _Field_G_, _offset ); }
+
+
+    /**
+     * @return the particle energy
+     */
+    virtual Real         PatE()          const
+    { return _data_storage->scalar ( _PatE_, _offset ); }
+
+    /**
+     * @return the writable particle energy
+     */
+    virtual Real &       PatE()
+    { return _data_storage->scalar ( _PatE_, _offset ); }
+
+
+   /**
+    * @return the dose rate
+    */
+    virtual Real         DoseRate()          const
+    { return _data_storage->scalar ( _DoseRate_, _offset ); }
+
+   /**
+    * @return the writable reference to dose rate
+    */
+    virtual Real &       DoseRate()
+    { return _data_storage->scalar ( _DoseRate_, _offset ); }
 
 
     /**
@@ -418,6 +500,32 @@ class FVM_Insulator_NodeData : public FVM_NodeData
      */
     virtual Real &       psi_old()
     { return _data_storage->scalar ( _psi_old_, _offset ); }
+
+
+    /**
+     * @return the electron density at previous time step
+     */
+    virtual Real         n_last()          const
+    { return _data_storage->scalar ( _n_last_, _offset ); }
+
+    /**
+     * @return the writable reference to electron density at previous time step
+     */
+    virtual Real &       n_last()
+    { return _data_storage->scalar ( _n_last_, _offset ); }
+
+
+    /**
+     * @return the hole density at previous time step
+     */
+    virtual Real         p_last()          const
+    { return _data_storage->scalar ( _p_last_, _offset ); }
+
+    /**
+     * @return the writable reference to hole density at previous time step
+     */
+    virtual Real &       p_last()
+    { return _data_storage->scalar ( _p_last_, _offset ); }
 
 
 

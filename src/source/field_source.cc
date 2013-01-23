@@ -57,6 +57,7 @@ FieldSource::FieldSource(SimulationSystem & system, Parser::InputParser & decks)
         else if(c.is_enum_value("type","sine"))          SetWaveformSin(c);
         else if(c.is_enum_value("type","gaussian"))      SetWaveformGauss(c);
         else if(c.is_enum_value("type","pulse"))         SetWaveformPulse(c);
+        else if(c.is_enum_value("type","dexp"))          SetWaveformDoubleExp(c);
         else if(c.is_enum_value("type","expression"))    SetWaveformExpr(c);
         else if(c.is_enum_value("type","shell"))         SetWaveformShell(c);
         else if(c.is_enum_value("type","wavefile"))      SetWaveformWaveFile(c);
@@ -198,7 +199,6 @@ void FieldSource::update(double time, bool force_update_system)
   for(unsigned int n=0; n<_system.n_regions(); n++)
   {
     SimulationRegion * region = _system.region(n);
-    if( region->type()== SemiconductorRegion)
     {
       SimulationRegion::processor_node_iterator it = region->on_processor_nodes_begin();
       SimulationRegion::processor_node_iterator it_end = region->on_processor_nodes_end();
@@ -235,7 +235,6 @@ void FieldSource::update_system()
   for(unsigned int n=0; n<_system.n_regions(); n++)
   {
     SimulationRegion * region = _system.region(n);
-    if( region->type()== SemiconductorRegion)
     {
       SimulationRegion::processor_node_iterator it = region->on_local_nodes_begin();
       SimulationRegion::processor_node_iterator it_end = region->on_local_nodes_end();
@@ -462,11 +461,12 @@ void  FieldSource::SetWaveformSin(const Parser::Card &c)
   assert( label!="" );
 
   double amplitude = c.get_real("amplitude", 1.0);
+  double amplitude_offset = c.get_real("amplitude.offset", 0.0);
   double Tdelay = c.get_real("tdelay",0.0)*s;
   double freq = c.get_real("freq",0.0)*1.0/s;
   double alpha= c.get_real("alpha",0.0)*1.0/s;
 
-  _waveforms[label] = new WaveformSin(label, Tdelay, 0.0, amplitude, freq, alpha);
+  _waveforms[label] = new WaveformSin(label, Tdelay, amplitude_offset, amplitude, freq, alpha);
 }
 
 
@@ -514,6 +514,21 @@ void  FieldSource::SetWaveformExpr(const Parser::Card &c)
 }
 
 
+
+void  FieldSource::SetWaveformDoubleExp(const Parser::Card &c)
+{
+  std::string label = c.get_string("id","");
+  assert( label!="" );
+
+  double Tdelay = c.get_real("tdelay",0.0)*s;
+  double trc = c.get_real("trc",1e-12)*s;
+  double tfd = c.get_real("tfd",1e-9)*s;
+  double tfc = c.get_real("tfc",1e-12)*s;
+  double Alo = c.get_real("amplitude.low",0.0);
+  double Ahi = c.get_real("amplitude.high",1.0);
+
+  _waveforms[label] = new WaveformExponential(label, Tdelay, Alo, Ahi, trc, tfd, tfc);
+}
 
 
 void  FieldSource::SetWaveformShell(const Parser::Card &c)

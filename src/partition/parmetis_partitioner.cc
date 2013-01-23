@@ -29,6 +29,8 @@
 #include "perf_log.h"
 #include "elem.h"
 
+#undef PETSC_HAVE_PARMETIS
+
 #ifdef PETSC_HAVE_PARMETIS
 
 // Include the MPI header files, which must be accessible for

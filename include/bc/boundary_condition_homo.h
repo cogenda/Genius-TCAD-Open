@@ -144,6 +144,38 @@ public:
   virtual void DDM1_Jacobian(PetscScalar * , Mat *, InsertMode &);
 
 
+
+  //////////////////////////////////////////////////////////////////////////////////
+  //-------------Function and Jacobian evaluate for Density Gradient--------------//
+  //////////////////////////////////////////////////////////////////////////////////
+
+  /**
+   * preprocess function for Density Gradient solver
+   */
+  virtual void DG_Function_Preprocess(PetscScalar *, Vec, std::vector<PetscInt>&, std::vector<PetscInt>&, std::vector<PetscInt>&);
+
+  /**
+   * build function and its jacobian for Density Gradient solver
+   */
+  virtual void DG_Function(PetscScalar * , Vec , InsertMode &);
+
+  /**
+   * reserve none zero pattern in petsc matrix.
+   */
+  virtual void DG_Jacobian_Reserve(Mat *, InsertMode &);
+
+  /**
+   * preprocess Jacobian Matrix of Density Gradient equation.
+   */
+  virtual void DG_Jacobian_Preprocess(PetscScalar *, Mat *, std::vector<PetscInt>&, std::vector<PetscInt>&, std::vector<PetscInt>&);
+
+  /**
+   * build function and its jacobian for Density Gradient solver
+   */
+  virtual void DG_Jacobian(PetscScalar * , Mat *, InsertMode &);
+
+
+
   //////////////////////////////////////////////////////////////////////////////////
   //----------------Function and Jacobian evaluate for L2 DDM---------------------//
   //////////////////////////////////////////////////////////////////////////////////

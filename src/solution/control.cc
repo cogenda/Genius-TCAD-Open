@@ -57,6 +57,7 @@
 #include "ddm1/ddm1.h"
 #include "ddm2/ddm2.h"
 #include "ebm3/ebm3.h"
+#include "dg/dg.h"
 #include "ddm_ac/ddm_ac.h"
 
 #include "ddm1r/ddm1r.h"
@@ -66,11 +67,17 @@
 #include "mixA2/mixA2.h"
 #include "mixA3/mixA3.h"
 
+
+#include "mix1/mix1.h"
+
 #include "hall/hall.h"
+
+
 
 // only commercial product support half implicit method
 #ifdef COGENDA_COMMERCIAL_PRODUCT
-  #include  "gummel/ddm1_half_implicit.h"
+  #include "ric/ric.h"
+  #include "gummel/ddm1_half_implicit.h"
 #endif
 
 
@@ -382,6 +389,8 @@ int SolverControl::set_method ( const Parser::Card & c )
 
   // set preconditioner lag
   SolverSpecify::NSLagPCLU                  = c.get_int("pclu.lag", 10);
+  // set jacobian lag
+  SolverSpecify::NSLagJacobian              = c.get_int("jacobian.lag", 1);
 
   // set Newton damping type
   if(c.is_parameter_exist("damping"))
@@ -429,36 +438,23 @@ int SolverControl::set_method ( const Parser::Card & c )
 
   SolverSpecify::absolute_toler            = c.get_real("absolute.tol", 1e-12);
   SolverSpecify::relative_toler            = c.get_real("relative.tol", 1e-5);
-  SolverSpecify::toler_relax               = c.get_real("toler.relax", 1e4, "tol.relax");
-  SolverSpecify::poisson_abs_toler         = c.get_real("poisson.tol", 1e-31)*C;
-  SolverSpecify::elec_continuity_abs_toler = c.get_real("elec.continuity.tol", 1e-19)*A;
-  SolverSpecify::hole_continuity_abs_toler = c.get_real("hole.continuity.tol", 1e-19)*A;
+  SolverSpecify::toler_relax               = c.get_real("toler.relax", 1e5, "tol.relax");
+  SolverSpecify::poisson_abs_toler         = c.get_real("poisson.tol", 1e-26)*C;
+  SolverSpecify::elec_continuity_abs_toler = c.get_real("elec.continuity.tol", 5e-18)*A;
+  SolverSpecify::hole_continuity_abs_toler = c.get_real("hole.continuity.tol", 5e-18)*A;
   SolverSpecify::heat_equation_abs_toler   = c.get_real("latt.temp.tol", 1e-11)*W;
   SolverSpecify::elec_energy_abs_toler     = c.get_real("elec.energy.tol", 1e-18)*W;
   SolverSpecify::hole_energy_abs_toler     = c.get_real("hole.energy.tol", 1e-18)*W;
-  SolverSpecify::electrode_abs_toler       = c.get_real("electrode.tol", 1e-9)*V;
-  SolverSpecify::spice_abs_toler           = c.get_real("spice.tol", 1e-15)*A;
+  SolverSpecify::electrode_abs_toler       = c.get_real("electrode.tol", 1e-14)*A;
+  SolverSpecify::spice_abs_toler           = c.get_real("spice.tol", 1e-14)*A;
 
-  SolverSpecify::elec_quantum_abs_toler    = c.get_real("elec.quantum.tol", 1e-29)*C;
-  SolverSpecify::hole_quantum_abs_toler    = c.get_real("hole.quantum.tol", 1e-29)*C;
+  SolverSpecify::elec_quantum_abs_toler    = c.get_real("elec.quantum.tol", 1e-26)*C;
+  SolverSpecify::hole_quantum_abs_toler    = c.get_real("hole.quantum.tol", 1e-26)*C;
 
   // set which solver will be used
   if(c.is_parameter_exist("type"))
   {
-    if (c.is_enum_value("type", "poisson"))                 SolverSpecify::Solver = SolverSpecify::POISSON;
-    else if (c.is_enum_value("type", "ddml1"))              SolverSpecify::Solver = SolverSpecify::DDML1;
-    else if (c.is_enum_value("type", "ddml1r"))             SolverSpecify::Solver = SolverSpecify::DDML1R;
-    else if (c.is_enum_value("type", "ddml1mix"))           SolverSpecify::Solver = SolverSpecify::DDML1MIXA;
-    else if (c.is_enum_value("type", "ddml1m"))             SolverSpecify::Solver = SolverSpecify::DDML1MIXA;
-    else if (c.is_enum_value("type", "hall"))               SolverSpecify::Solver = SolverSpecify::HALLDDML1;
-    else if (c.is_enum_value("type", "ddml2"))              SolverSpecify::Solver = SolverSpecify::DDML2;
-    else if (c.is_enum_value("type", "ddml2mix"))           SolverSpecify::Solver = SolverSpecify::DDML2MIXA;
-    else if (c.is_enum_value("type", "ddml2m"))             SolverSpecify::Solver = SolverSpecify::DDML2MIXA;
-    else if (c.is_enum_value("type", "ebml3"))              SolverSpecify::Solver = SolverSpecify::EBML3;
-    else if (c.is_enum_value("type", "ebml3mix"))           SolverSpecify::Solver = SolverSpecify::EBML3MIXA;
-    else if (c.is_enum_value("type", "ebml3m"))             SolverSpecify::Solver = SolverSpecify::EBML3MIXA;
-    else if (c.is_enum_value("type", "ddmac"))              SolverSpecify::Solver = SolverSpecify::DDMAC;
-    else if (c.is_enum_value("type", "halfimplicit"))       SolverSpecify::Solver = SolverSpecify::HALF_IMPLICIT;
+    SolverSpecify::Solver = SolverSpecify::solver_type_string_to_enum(c.get_string("type", ""));
   }
 
   return 0;
@@ -516,6 +512,9 @@ int SolverControl::set_model ( const Parser::Card & c )
   // direct tunneling
   model.DIRTunneling            = c.get_bool("dir.tunneling", false);
 
+  // tunneling self consistently
+  model.TunnelingSelfConsistently  = c.get_bool("tunneling.selfconsistent", false);
+
   // band to band tunneling
   model.BandBandTunneling = false;
   if(c.is_parameter_exist("bandbandtunneling") || c.is_parameter_exist("bbt"))
@@ -545,6 +544,13 @@ int SolverControl::set_model ( const Parser::Card & c )
     if (c.is_enum_value("eb.level", "thtl")) { model.EB_Level = ModelSpecify::TpTl;   }
     if (c.is_enum_value("eb.level", "all"))  { model.EB_Level = ModelSpecify::ALL;    }
   }
+
+  //density gradient model
+  model.QNEnabled = c.get_bool("dg.elec", false);
+  model.QPEnabled = c.get_bool("dg.hole", false);
+  model.QNFactor  = c.get_real("qnfactor", 1.0);
+  model.QPFactor  = c.get_real("qpfactor", 1.0);
+  model.QMinConcentration  = c.get_real("qminconcentration", 1.0);
 
   int cnt_match = 0;
   for (int i=0; i<system().n_regions(); i++)
@@ -643,7 +649,7 @@ int SolverControl::do_solve( const Parser::Card & c )
   // set solution type solver will do
   SolverSpecify::Type = SolverSpecify::INVALID_SolutionType;
   if(c.is_parameter_exist("type"))
-    SolverSpecify::Type = SolverSpecify::type_string_to_enum(c.get_string("type", ""));
+    SolverSpecify::Type = SolverSpecify::solution_type_string_to_enum(c.get_string("type", ""));
 
   if(c.is_parameter_exist("label"))
     SolverSpecify::label = c.get_string("label", "");
@@ -702,6 +708,7 @@ int SolverControl::do_solve( const Parser::Card & c )
           SolverSpecify::Gmin        = c.get_real("gmin", 1e-12);
 
         SolverSpecify::OpToSteady          = c.get_bool("op.steadystate", true);
+        SolverSpecify::SteadyStateThreshold= c.get_real("op.threshold", 1e-5);
 
         SolverSpecify::TStep               = c.get_real("tstep", 1e-10)*s;
         SolverSpecify::TStepMax            = c.get_real("tstepmax", 1e-7)*s;
@@ -972,6 +979,23 @@ int SolverControl::do_solve( const Parser::Card & c )
         SolverSpecify::GminInit    = c.get_real("gmin.init", 1e-6);
         SolverSpecify::Gmin        = c.get_real("gmin", 1e-12);
 
+        if(SolverSpecify::TStop <= SolverSpecify::TStart)
+        {
+          MESSAGE<<"ERROR at " <<c.get_fileline()<< " SOLVE: tstop should be later than tstart."<<std::endl; RECORD();
+          genius_error();
+        }
+
+        if(SolverSpecify::TStep <=0 )
+        {
+          MESSAGE<<"ERROR at " <<c.get_fileline()<< " SOLVE: tstep should be positive."<<std::endl; RECORD();
+          genius_error();
+        }
+
+        if(SolverSpecify::TStepMax <=0 )
+        {
+          MESSAGE<<"ERROR at " <<c.get_fileline()<< " SOLVE: tstepmax should be positive."<<std::endl; RECORD();
+          genius_error();
+        }
 
         if(c.is_parameter_exist("ts"))
         {
@@ -1021,19 +1045,27 @@ int SolverControl::do_solve( const Parser::Card & c )
       }
       case SolverSpecify::DDML1 :
       {
-        // if spice circuit exist, use MixA1Solver
         solver = new DDM1Solver(system());
         break;
       }
       case SolverSpecify::DDML1R :
       {
-        // if spice circuit exist, use MixA1Solver
         solver = new DDM1RSolver(system());
         break;
       }
       case SolverSpecify::DDML1MIXA :
       {
         solver = new MixA1Solver(system());
+        break;
+      }
+      case SolverSpecify::DDML1MIX :
+      {
+        solver = new Mix1Solver(system());
+        break;
+      }
+      case SolverSpecify::DENSITY_GRADIENT :
+      {
+        solver = new DGSolver(system());
         break;
       }
       case SolverSpecify::HALLDDML1 :
@@ -1070,6 +1102,12 @@ int SolverControl::do_solve( const Parser::Card & c )
       case SolverSpecify::HALF_IMPLICIT :
       {
         solver = new DDM1HalfImplicitSolver(system());
+        break;
+      }
+
+      case SolverSpecify::RIC :
+      {
+        solver = new RICSolver(system());
         break;
       }
 #endif
@@ -1176,24 +1214,49 @@ int SolverControl::do_solve( const Parser::Card & c )
 int  SolverControl::set_electrode_source  ( const Parser::Card & c )
 {
 
-  std::string electrode = c.get_string("electrode", "");
-
-  if( system().get_bcs()->get_bc(electrode) == NULL || system().get_bcs()->get_bc(electrode)->is_electrode() == false )
+  // A contact may have several electrode
+  std::vector<std::string> electrodes;
+  if(c.is_parameter_exist("contact"))
   {
-    MESSAGE<<"ERROR at " <<c.get_fileline()<< " ATTACH: Electrode " << electrode << " can't be found in device structure." << std::endl; RECORD();
-    genius_error();
+    std::string contact   = c.get_string("contact", "");
+    electrodes = system().get_bcs()->electrode_bc_by_contact(contact);
   }
 
+  // electrode
+  if(c.is_parameter_exist("electrode"))
+    electrodes.push_back(c.get_string("electrode", ""));
+
+  // check
+  for(unsigned int n=0; n<electrodes.size(); ++n)
+  {
+    const std::string & electrode = electrodes[n];
+    if( system().get_bcs()->get_bc(electrode) == NULL || system().get_bcs()->get_bc(electrode)->is_electrode() == false )
+    {
+      MESSAGE<<"ERROR at " <<c.get_fileline()<< " ATTACH: Electrode " << electrode << " can't be found in device structure." << std::endl; RECORD();
+      genius_error();
+    }
+  }
+
+  // const vsource / isource
   if( c.is_parameter_exist("vconst") )
   {
-    system().get_electrical_source()->attach_voltage_to_electrode(electrode, c.get_real("vconst", 0.0)*V);
-    return 0;
+    for(unsigned int n=0; n<electrodes.size(); ++n)
+    {
+      const std::string & electrode = electrodes[n];
+      system().get_electrical_source()->attach_voltage_to_electrode(electrode, c.get_real("vconst", 0.0)*V);
+      return 0;
+    }
   }
 
+  // const vsource / isource
   if ( c.is_parameter_exist("iconst") )
   {
-    system().get_electrical_source()->attach_current_to_electrode(electrode, c.get_real("iconst", 0.0)*A);
-    return 0;
+    for(unsigned int n=0; n<electrodes.size(); ++n)
+    {
+      const std::string & electrode = electrodes[n];
+      system().get_electrical_source()->attach_current_to_electrode(electrode, c.get_real("iconst", 0.0)*A);
+      return 0;
+    }
   }
 
   // check if user mixed vsource and isource
@@ -1239,10 +1302,13 @@ int  SolverControl::set_electrode_source  ( const Parser::Card & c )
     }
   }
 
-  system().get_electrical_source()->attach_sources_to_electrode(electrode, source_list);
+  for(unsigned int n=0; n<electrodes.size(); ++n)
+  {
+    const std::string & electrode = electrodes[n];
+    system().get_electrical_source()->attach_sources_to_electrode(electrode, source_list);
+  }
+
   return 0;
-
-
 }
 
 

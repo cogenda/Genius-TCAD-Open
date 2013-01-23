@@ -249,7 +249,7 @@ void FEM_LinearSolver::set_petsc_linear_solver_type(SolverSpecify::LinearSolverT
 
     case SolverSpecify::CHEBYSHEV:
       MESSAGE<< "Using CHEBYSHEV linear solver..."<<std::endl;  RECORD();
-      ierr = KSPSetType (ksp, (char*) KSPCHEBYCHEV);  genius_assert(!ierr); return;
+      ierr = KSPSetType (ksp, "chebyshev");  genius_assert(!ierr); return;
 
     case SolverSpecify::LU:
     case SolverSpecify::UMFPACK:

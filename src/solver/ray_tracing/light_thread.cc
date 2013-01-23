@@ -208,7 +208,7 @@ std::pair<LightThread *, LightThread *> LightThread::_interface_light_gen_linear
 
     if (!full_reflection) //if not full reflection
     {
-      double _polarization_angle = asin(E_perpendicular.size());
+      double _polarization_angle = asin(E_perpendicular.size()*(1-1e-10)); //prevent asin(1.0) crash. is it a bug of icc?
 
       //for reflection efficiency
       double reflect_parallel = tan(refract_angle-in_angle)/tan(in_angle+refract_angle);//Rp

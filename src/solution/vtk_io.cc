@@ -63,6 +63,7 @@ using PhysicalUnit::V;
 using PhysicalUnit::A;
 using PhysicalUnit::K;
 using PhysicalUnit::J;
+using PhysicalUnit::kg;
 
 #ifdef HAVE_VTK
 class VTKIO::XMLUnstructuredGridWriter : public vtkXMLUnstructuredGridWriter
@@ -571,13 +572,15 @@ void VTKIO::solution_to_vtk(const MeshBase& mesh, vtkUnstructuredGrid* grid)
   {
     const SimulationRegion * region = system.region(n);
     if(Material::IsSemiconductor(region->material()))
-      semiconductor_material=true;
+    { semiconductor_material=true; break; }
   }
 
 
   bool ebm_solution_data     = false;
+  bool dg_solution_data      = false;
   bool optical_generation    = false;
   bool particle_generation   = false;
+  bool field_generation      = false;
   bool ddm_ac_data           = false;
   bool optical_complex_field = false;
 
@@ -587,22 +590,28 @@ void VTKIO::solution_to_vtk(const MeshBase& mesh, vtkUnstructuredGrid* grid)
   {
     switch  (solve_history[n])
     {
-        case SolverSpecify::EBML3      :
-        case SolverSpecify::EBML3MIX   :
+      case SolverSpecify::EBML3      :
+      case SolverSpecify::EBML3MIX   :
         ebm_solution_data = true;
         break;
-        case SolverSpecify::EM_FEM_2D  :
-        case SolverSpecify::EM_FEM_3D  :
+      case SolverSpecify::DENSITY_GRADIENT :
+        dg_solution_data = true;
+        break;
+      case SolverSpecify::EM_FEM_2D  :
+      case SolverSpecify::EM_FEM_3D  :
         optical_complex_field = true;
         optical_generation = true;
         break;
-        case SolverSpecify::RAY_TRACE  :
+      case SolverSpecify::RAY_TRACE  :
         optical_generation = true;
         break;
-        case SolverSpecify::DDMAC      :
+      case SolverSpecify::DDMAC      :
         ddm_ac_data = true;
         break;
-        default : break;
+      case SolverSpecify::RIC  :
+        field_generation = true;
+        break;
+      default : break;
     }
   }
 
@@ -624,10 +633,10 @@ void VTKIO::solution_to_vtk(const MeshBase& mesh, vtkUnstructuredGrid* grid)
     // gather data from all the processor
     std::vector<float> Na, Nd, net_doping, net_charge;
     std::vector<float> psi, Ec, Ev, qFn, qFp;
-    std::vector<float> n, p, T, Tn, Tp; //scalar value
+    std::vector<float> n, p, T, Tn, Tp, Eqc, Eqv; //scalar value
     std::vector<float> mole_x, mole_y;
-    std::vector<float> OptG, OptE, PatG, PatE;
-    std::vector<float> R, Taun, Taup;
+    std::vector<float> OptG, OptE, PatG, PatE, FG, DoseRate;
+    std::vector<float> R, Rdir, Rsrh, Rauger, Taun, Taup;
     std::vector<float> II;
 
     std::vector<std::complex<float> >psi_ac, n_ac, p_ac, T_ac, Tn_ac, Tp_ac; //complex value
@@ -678,12 +687,17 @@ void VTKIO::solution_to_vtk(const MeshBase& mesh, vtkUnstructuredGrid* grid)
             Nd.push_back(static_cast<float>(node_data->Total_Nd()/concentration_scale));
             net_doping.push_back(static_cast<float>(node_data->Net_doping()/concentration_scale));
             net_charge.push_back(static_cast<float>(node_data->Net_charge()/concentration_scale));
-            n.push_back(static_cast<float>(node_data->n()/concentration_scale));
-            p.push_back(static_cast<float>(node_data->p()/concentration_scale));
             mole_x.push_back(static_cast<float>(node_data->mole_x()));
             mole_y.push_back(static_cast<float>(node_data->mole_y()));
             R.push_back(static_cast<float>(node_data->Recomb()/(concentration_scale/s)));
+            Rdir.push_back(static_cast<float>(node_data->Recomb_Dir()/(concentration_scale/s)));
+            Rsrh.push_back(static_cast<float>(node_data->Recomb_SRH()/(concentration_scale/s)));
+            Rauger.push_back(static_cast<float>(node_data->Recomb_Auger()/(concentration_scale/s)));
             II.push_back(static_cast<float>(node_data->ImpactIonization()/(concentration_scale/s)));
+            Ec.push_back(static_cast<float>(node_data->Ec()/eV));
+            Ev.push_back(static_cast<float>(node_data->Ev()/eV));
+            qFn.push_back(static_cast<float>(node_data->qFn()/eV));
+            qFp.push_back(static_cast<float>(node_data->qFp()/eV));
             /*
             Jnx.push_back(static_cast<float>(node_data->Jn()(0)/(A/cm)));
             Jny.push_back(static_cast<float>(node_data->Jn()(1)/(A/cm)));
@@ -700,10 +714,8 @@ void VTKIO::solution_to_vtk(const MeshBase& mesh, vtkUnstructuredGrid* grid)
           }
 
           psi.push_back(static_cast<float>(node_data->psi()/V));
-          Ec.push_back(static_cast<float>(node_data->Ec()/eV));
-          Ev.push_back(static_cast<float>(node_data->Ev()/eV));
-          qFn.push_back(static_cast<float>(node_data->qFn()/eV));
-          qFp.push_back(static_cast<float>(node_data->qFp()/eV));
+          n.push_back(static_cast<float>(node_data->n()/concentration_scale));
+          p.push_back(static_cast<float>(node_data->p()/concentration_scale));
           T.push_back(static_cast<float>(node_data->T()/K));
 
           if(ebm_solution_data)
@@ -712,15 +724,27 @@ void VTKIO::solution_to_vtk(const MeshBase& mesh, vtkUnstructuredGrid* grid)
             Tp.push_back(static_cast<float>(node_data->Tp()/K));
           }
 
+          if(dg_solution_data)
+          {
+            Eqc.push_back(static_cast<float>(node_data->Eqc()/eV));
+            Eqv.push_back(static_cast<float>(node_data->Eqv()/eV));
+          }
+
           if(optical_generation)
           {
-            OptE.push_back(static_cast<float>(node_data->OptE()));
+            OptE.push_back(static_cast<float>(node_data->OptE()/(eV*concentration_scale)));
             OptG.push_back(static_cast<float>(node_data->Field_G()/(concentration_scale/s)));
           }
           if(particle_generation)
           {
-            PatE.push_back(static_cast<float>(node_data->PatE()/(eV)));
+            PatE.push_back(static_cast<float>(node_data->PatE()/(eV*concentration_scale)));
             PatG.push_back(static_cast<float>(node_data->Field_G()/(concentration_scale/s)));
+          }
+
+          if(field_generation)
+          {
+            FG.push_back(static_cast<float>(node_data->Field_G()/(concentration_scale/s)));
+            DoseRate.push_back(static_cast<float>(node_data->DoseRate()/(0.01*J/kg/s)));
           }
 
           if(ddm_ac_data)
@@ -761,24 +785,28 @@ void VTKIO::solution_to_vtk(const MeshBase& mesh, vtkUnstructuredGrid* grid)
     if (Genius::processor_id() == 0)
       genius_assert( order.size() == mesh.n_nodes() );
 
-    write_node_scaler_solution(order, psi, "potential", grid);
-    write_node_scaler_solution(order, Ec,  "Ec",  grid);
-    write_node_scaler_solution(order, Ev,  "Ev",  grid);
-    write_node_scaler_solution(order, qFn, "elec_quasi_Fermi_level", grid);
-    write_node_scaler_solution(order, qFp, "hole_quasi_Fermi_level", grid);
+    write_node_scaler_solution(order, psi, "potential[V]", grid);
+    write_node_scaler_solution(order, n,   "elec_density[cm-3]", grid);
+    write_node_scaler_solution(order, p,   "hole_density[cm-3]", grid);
 
     if(semiconductor_material)
     {
-      write_node_scaler_solution(order, Na,  "Na", grid);
-      write_node_scaler_solution(order, Nd,  "Nd", grid);
-      write_node_scaler_solution(order, n,   "electron_density", grid);
-      write_node_scaler_solution(order, p,   "hole_density", grid);
-      write_node_scaler_solution(order, net_doping,  "net_doping", grid);
-      write_node_scaler_solution(order, net_charge,  "net_charge", grid);
+      write_node_scaler_solution(order, Na,  "Na[cm-3]", grid);
+      write_node_scaler_solution(order, Nd,  "Nd[cm-3]", grid);
+
+      write_node_scaler_solution(order, net_doping,  "net_doping[cm-3]", grid);
+      write_node_scaler_solution(order, net_charge,  "net_charge[cm-3]", grid);
       write_node_scaler_solution(order, mole_x, "mole_x", grid);
       write_node_scaler_solution(order, mole_y, "mole_y", grid);
-      write_node_scaler_solution(order, R, "recombination", grid);
-      write_node_scaler_solution(order, II, "impact_ionization", grid);
+      write_node_scaler_solution(order, R, "recombination[cm-3/s]", grid);
+      write_node_scaler_solution(order, Rdir, "recombination_dir[cm-3/s]", grid);
+      write_node_scaler_solution(order, Rsrh, "recombination_srh[cm-3/s]", grid);
+      write_node_scaler_solution(order, Rauger, "recombination_auger[cm-3/s]", grid);
+      write_node_scaler_solution(order, II, "impact_ionization[cm-3/s]", grid);
+      write_node_scaler_solution(order, Ec,  "Ec[eV]",  grid);
+      write_node_scaler_solution(order, Ev,  "Ev[eV]",  grid);
+      write_node_scaler_solution(order, qFn, "elec_quasi_Fermi[eV]", grid);
+      write_node_scaler_solution(order, qFp, "hole_quasi_Fermi[eV]", grid);
       //write_node_vector_solution(order, Vnx, Vny, Vnz, "Vn_node", grid);
       //write_node_vector_solution(order, Vpx, Vpy, Vpz, "Vp_node", grid);
       //write_node_vector_solution(order, Jnx, Jny, Jnz, "Jn_node", grid);
@@ -786,39 +814,50 @@ void VTKIO::solution_to_vtk(const MeshBase& mesh, vtkUnstructuredGrid* grid)
       //write_node_vector_solution(order, Ex, Ey, Ez, "E_node", grid);
     }
 
-    write_node_scaler_solution(order, T,   "temperature", grid);
+    write_node_scaler_solution(order, T,   "temperature[K]", grid);
 
     if(ebm_solution_data)
     {
-      write_node_scaler_solution(order, Tn,  "elec_temperature", grid);
-      write_node_scaler_solution(order, Tp,  "hole_temperature", grid);
+      write_node_scaler_solution(order, Tn,  "elec_temperature[K]", grid);
+      write_node_scaler_solution(order, Tp,  "hole_temperature[K]", grid);
+    }
+
+    if(dg_solution_data)
+    {
+      write_node_scaler_solution(order, Eqc,  "quantum_conduction_band[eV]", grid);
+      write_node_scaler_solution(order, Eqv,  "quantum_valence_band[eV]", grid);
     }
 
     if(ddm_ac_data)
     {
-      write_node_complex_solution(order, psi_ac, "potential_AC", grid);
-      write_node_complex_solution(order, n_ac,   "electron_AC", grid);
-      write_node_complex_solution(order, p_ac,   "hole_AC", grid);
-      write_node_complex_solution(order, T_ac,   "temperature_AC", grid);
-      write_node_complex_solution(order, Tn_ac,  "elec_temperature_AC", grid);
-      write_node_complex_solution(order, Tp_ac,  "hole_temperature_AC", grid);
+      write_node_complex_solution(order, psi_ac, "potential_AC[V]", grid);
+      write_node_complex_solution(order, n_ac,   "elec_AC[cm-3]", grid);
+      write_node_complex_solution(order, p_ac,   "hole_AC[cm-3]", grid);
+      write_node_complex_solution(order, T_ac,   "temperature_AC[K]", grid);
+      write_node_complex_solution(order, Tn_ac,  "elec_temperature_AC[K]", grid);
+      write_node_complex_solution(order, Tp_ac,  "hole_temperature_AC[K]", grid);
     }
 
     if(optical_complex_field)
     {
-      write_node_complex_solution(order, OptE_complex, "Optical_E", grid);
-      write_node_complex_solution(order, OptH_complex, "Optical_H", grid);
+      write_node_complex_solution(order, OptE_complex, "opt_E[V/cm]", grid);
+      write_node_complex_solution(order, OptH_complex, "opt_H[A/cm]", grid);
     }
 
     if(optical_generation)
     {
-      write_node_scaler_solution(order, OptE,   "optical_energy_density", grid);
-      write_node_scaler_solution(order, OptG,   "optical_generation", grid);
+      write_node_scaler_solution(order, OptE,   "optical_energy_density[eV/cm3]", grid);
+      write_node_scaler_solution(order, OptG,   "optical_generation[cm-3/s]", grid);
     }
     if(particle_generation)
     {
-      write_node_scaler_solution(order, PatE,   "radiation_energy_density", grid);
-      write_node_scaler_solution(order, PatG,   "radiation_generation", grid);
+      write_node_scaler_solution(order, PatE,   "radiation_energy_density[eV/cm3]", grid);
+      write_node_scaler_solution(order, PatG,   "radiation_generation[cm-3/s]", grid);
+    }
+    if(field_generation)
+    {
+      write_node_scaler_solution(order, FG,       "radiation_generation[cm-3/s]", grid);
+      write_node_scaler_solution(order, DoseRate, "dose_rate[rad/s]", grid);
     }
     //write_node_scaler_solution(order, Taun,   "Taun", grid);
     //write_node_scaler_solution(order, Taup,   "Taup", grid);
@@ -935,9 +974,9 @@ void VTKIO::solution_to_vtk(const MeshBase& mesh, vtkUnstructuredGrid* grid)
 
     Parallel::gather(0, order);
     //write_cell_scaler_solution(order, mos_channel_flag,  "mos channel", grid);
-    write_cell_vector_solution(order, Ex,  Ey,  Ez,  "electrical_field", grid);
-    write_cell_vector_solution(order, Jnx, Jny, Jnz, "electron_current", grid);
-    write_cell_vector_solution(order, Jpx, Jpy, Jpz, "hole_current", grid);
+    write_cell_vector_solution(order, Ex,  Ey,  Ez,  "electrical_field[V/cm]", grid);
+    write_cell_vector_solution(order, Jnx, Jny, Jnz, "elec_current[A/cm]", grid);
+    write_cell_vector_solution(order, Jpx, Jpy, Jpz, "hole_current[A/cm]", grid);
   }
 }
 

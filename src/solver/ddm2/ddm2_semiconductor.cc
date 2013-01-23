@@ -1000,8 +1000,8 @@ void SemiconductorSimulationRegion::DDM2_Jacobian(PetscScalar * x, Mat *jac, Ins
             mup1 = mt->mob->HoleMob(p1, n1, T1, Ep, Et, T1);
 
             mt->mapping(fvm_n2->root_node(), n2_data, SolverSpecify::clock);
-            mun2 = mt->mob->ElecMob(p2, n2, T1, Ep, Et, T2);
-            mup2 = mt->mob->HoleMob(p2, n2, T1, Ep, Et, T2);
+            mun2 = mt->mob->ElecMob(p2, n2, T2, Ep, Et, T2);
+            mup2 = mt->mob->HoleMob(p2, n2, T2, Ep, Et, T2);
           }
           else // ModelSpecify::EJ || ModelSpecify::EQF
           {

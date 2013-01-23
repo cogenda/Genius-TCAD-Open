@@ -198,6 +198,11 @@ public:
   void count_mesh_dimension ();
 
   /**
+   * build mesh bounding box
+   */
+  void build_mesh_bounding_box ();
+
+  /**
    * @Returns the logical dimension of the mesh.
    */
   unsigned int mesh_dimension () const
@@ -513,6 +518,11 @@ public:
   virtual void subdomain_graph(std::vector<std::vector<unsigned int> >&) const=0;
 
   /**
+   * mesh bounding box 
+   */
+  const std::pair<Point, Point> bounding_box() const { return _bounding_box; }
+
+  /**
    * Returns the number of partitions which have been defined via
    * a call to either mesh.partition() or by building a Partitioner
    * object and calling partition.  Note that the partitioner objects
@@ -805,6 +815,11 @@ protected:
    * The logical dimension of the mesh.
    */
   unsigned int _mesh_dim;
+
+  /**
+   * mesh bounding box
+   */
+  std::pair<Point, Point> _bounding_box;
 
   /**
    * Flag indicating if the mesh has been prepared for use.

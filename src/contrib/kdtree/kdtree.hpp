@@ -67,6 +67,7 @@
 #  include <map>
 #endif
 #include <algorithm>
+#include <functional>
 
 #ifdef KDTREE_DEFINE_OSTREAM_OPERATORS
 #  include <ostream>
@@ -433,6 +434,7 @@ namespace KDTree
         return _M_find_exact(_M_get_root(), __V, 0);
       }
 
+      // NOTE: see notes on find_within_range().
       size_type
         count_within_range(const_reference __V, subvalue_type const __R) const
         {
@@ -451,6 +453,7 @@ namespace KDTree
                                __REGION, __bounds, 0);
         }
 
+      // NOTE: see notes on find_within_range().
       template <typename SearchVal, class Visitor>
         Visitor
         visit_within_range(SearchVal const& V, subvalue_type const R, Visitor visitor) const
@@ -472,12 +475,16 @@ namespace KDTree
           return visitor;
         }
 
-      const_iterator
-      find_within_range_iterative(const_reference __a, const_reference __b)
-	{
-	  return const_iterator(begin());
-	}
-
+      // NOTE: this will visit points based on 'Manhattan distance' aka city-block distance
+      // aka taxicab metric. Meaning it will find all points within:
+      //    max(x_dist,max(y_dist,z_dist));
+      //  AND NOT than what you would expect: sqrt(x_dist*x_dist + y_dist*y_dist + z_dist*z_dist)
+      //
+      // This is because it converts the distance into a bounding-box 'region' and compares
+      // against that.
+      //
+      // If you want the sqrt() behaviour, ask on the mailing list for different options.
+      //
       template <typename SearchVal, typename _OutputIterator>
         _OutputIterator
         find_within_range(SearchVal const& val, subvalue_type const range,
@@ -512,7 +519,7 @@ namespace KDTree
 	      std::pair<size_type, typename _Acc::result_type> >
 	      best = _S_node_nearest (__K, 0, __val,
 				      _M_get_root(), &_M_header, _M_get_root(),
-				      sqrt(_S_accumulate_node_distance
+				      std::sqrt(_S_accumulate_node_distance
 				      (__K, _M_dist, _M_acc, _M_get_root()->_M_value, __val)),
 				      _M_cmp, _M_acc, _M_dist,
 				      always_true<value_type>());
@@ -531,7 +538,7 @@ namespace KDTree
         bool root_is_candidate = false;
 	    const _Node<_Val>* node = _M_get_root();
        { // scope to ensure we don't use 'root_dist' anywhere else
-	    distance_type root_dist = sqrt(_S_accumulate_node_distance
+	    distance_type root_dist = std::sqrt(_S_accumulate_node_distance
 	      (__K, _M_dist, _M_acc, _M_get_root()->_M_value, __val));
 	    if (root_dist <= __max)
 	      {
@@ -564,7 +571,7 @@ namespace KDTree
 	    if (__p(_M_get_root()->_M_value))
 	      {
             { // scope to ensure we don't use root_dist anywhere else
-	    distance_type root_dist = sqrt(_S_accumulate_node_distance
+	    distance_type root_dist = std::sqrt(_S_accumulate_node_distance
 		  (__K, _M_dist, _M_acc, _M_get_root()->_M_value, __val));
 		if (root_dist <= __max)
 		  {
@@ -1163,7 +1170,7 @@ namespace KDTree
       {
          typename _Base::NoLeakAlloc noleak(this);
          _Link_type new_node = noleak.get();
-         _M_construct_node(new_node, __V, __PARENT, __LEFT, __RIGHT);
+	 _Base::_M_construct_node(new_node, __V, __PARENT, __LEFT, __RIGHT);
          noleak.disconnect();
          return new_node;
       }
@@ -1181,8 +1188,8 @@ namespace KDTree
       void
       _M_delete_node(_Link_type __p)
       {
-        _M_destroy_node(__p);
-        _M_deallocate_node(__p);
+	_Base::_M_destroy_node(__p);
+        _Base::_M_deallocate_node(__p);
       }
 
       _Link_type _M_root;

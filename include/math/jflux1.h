@@ -173,4 +173,20 @@ inline AutoDScalar Ip_dd(PetscScalar Vt,const AutoDScalar &dVv,const AutoDScalar
 }
 
 
+inline PetscScalar In_uw(PetscScalar ,PetscScalar dVc,PetscScalar n1,PetscScalar n2,PetscScalar h)
+{
+  if(dVc >0)
+    return n2*dVc/h;
+  else
+    return n1*dVc/h;
+}
+
+inline AutoDScalar In_uw(PetscScalar , const AutoDScalar &dVc,const AutoDScalar &n1,const AutoDScalar &n2, PetscScalar h)
+{
+  if(dVc >0)
+    return n2*dVc/h;
+  else
+    return n1*dVc/h;
+}
+
 #endif // #define __flux1_h__

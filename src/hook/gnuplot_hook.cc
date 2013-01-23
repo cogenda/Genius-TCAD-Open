@@ -25,6 +25,11 @@
 #include <cstdlib>
 #include <iomanip>
 
+#ifdef WINDOWS
+#else
+#include <unistd.h>
+#endif
+
 #include "solver_base.h"
 #include "gnuplot_hook.h"
 #include "spice_ckt.h"
@@ -47,6 +52,10 @@ GnuplotHook::GnuplotHook(SolverBase & solver, const std::string & name, void * f
      solver_type == SolverSpecify::EBML3MIXA || solver_type == SolverSpecify::EBML3MIX
     )
     _mixA = true;
+
+  // FIXME temporary fix
+  if( SolverSpecify::Type==SolverSpecify::OP )
+    _gnuplot_file = SolverSpecify::out_prefix + ".op.dat";
 
 
   if ( !Genius::processor_id() )
@@ -130,6 +139,21 @@ void GnuplotHook::post_solve()
         {
           _out << std::setw(15) << spice_ckt->get_solution(n);
         }
+
+        const BoundaryConditionCollector * bcs = this->get_solver().get_system().get_bcs();
+        for(unsigned int n=0; n<bcs->n_bcs(); n++)
+        {
+          const BoundaryCondition * bc = bcs->get_bc(n);
+
+          // electrode
+          if( bc->bc_type() == OhmicContact )
+          {
+            //_out << std::setw(15) << bc->ext_circuit()->current_displacement()/PhysicalUnit::A;
+            _out << std::setw(15) << bc->ext_circuit()->current_electron()/PhysicalUnit::A;
+            _out << std::setw(15) << bc->ext_circuit()->current_hole()/PhysicalUnit::A;
+          }
+        }
+
       }
       else
       {
@@ -301,17 +325,34 @@ void  GnuplotHook::_write_gnuplot_head()
       {
         const SPICE_CKT * spice_ckt = this->get_solver().get_system().get_circuit();
 
-        //const std::map<unsigned int, std::string> & electrodes = spice_ckt->get_spice_node_to_electrode_info();
+
         for(unsigned int n=0; n<spice_ckt->n_ckt_nodes(); n++)
         {
           std::string electrode = spice_ckt->ckt_node_name(n);
-          //if(electrodes.find(n) != electrodes.end())
-          //  electrode = electrode + "=" + electrodes.find(n)->second;
 
           if(spice_ckt->is_voltage_node(n))
             _out << '#' <<'\t' << ++n_var <<'\t' << electrode   << " [V]"<< std::endl;
           else
             _out << '#' <<'\t' << ++n_var <<'\t' << electrode   << " [A]"<< std::endl;
+        }
+
+        // record electrode IV information
+        const BoundaryConditionCollector * bcs = this->get_solver().get_system().get_bcs();
+        // search for all the bcs
+        for(unsigned int n=0; n<bcs->n_bcs(); n++)
+        {
+          const BoundaryCondition * bc = bcs->get_bc(n);
+
+          if( bc->bc_type() == OhmicContact )
+          {
+            std::string bc_label = bc->label();
+            if(!bc->electrode_label().empty())
+              bc_label = bc->electrode_label();
+
+            //_out << '#' <<'\t' << ++n_var <<'\t' << bc_label + "_displacement_current"   << " [A]"<< std::endl;
+            _out << '#' <<'\t' << ++n_var <<'\t' << bc_label + "_electron_current"   << " [A]"<< std::endl;
+            _out << '#' <<'\t' << ++n_var <<'\t' << bc_label + "_hole_current"   << " [A]"<< std::endl;
+          }
         }
       }
       else

@@ -34,7 +34,7 @@ public:
   virtual ~MediciTIF() {}
 
   /// read MediciTIF file
-  virtual bool read();
+  virtual bool read(std::string &err);
 
 
 private:

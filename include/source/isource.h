@@ -71,12 +71,12 @@ public:
   /**
    * virtual function, @return current for a given time step
    */
-  virtual double iapp(double t)=0;
+  virtual double iapp(const double t)const=0;
 
   /**
    * @return the max value of iapp(t+delta_t)-iapp(t), delta_t in [0, dt]
    */
-  virtual double di_max(double t, double dt, double dt_min)
+  virtual double di_max(const double t, const double dt, const double dt_min) const
   {
     double i = iapp(t);
     double di = iapp(t+dt) - i;
@@ -85,6 +85,11 @@ public:
         di = iapp(clock) - i;
     return di;
   }
+
+  /**
+   * limit the dt by wave form
+   */
+  virtual void dt_critial_limit(const double t, double & dt, const double dt_min) const {}
 
   /**
    * @return const reference of label
@@ -135,14 +140,14 @@ public:
   /**
    * @return constant current when t>td, else 0
    */
-  double iapp(double t)
+  double iapp(const double t) const
   { return t>=td? Idc:0;}
 
 
   /**
    * @return the max value of iapp(t+delta_t)-iapp(t), delta_t in [0, dt]
    */
-  double di_max(double t, double dt, double dt_min)
+  double di_max(const double t, const double dt, const double dt_min) const
   {
     if(t<td && t+dt >=td) return Idc-0.0;
     return 0.0;
@@ -197,14 +202,14 @@ public:
   /**
    * @return current with sine wave when t>td, else return dc current of I0
    */
-  double iapp(double t)
+  double iapp(const double t) const
   { return t>=td? Iamp*exp(-alpha*(t-td))*sin(2*3.14159265358979323846*fre*(t-td)):0;}
 
 
   /**
    * @return the max value of iapp(t+delta_t)-iapp(t), delta_t in [0, dt]
    */
-  double di_max(double t, double dt, double dt_min)
+  double di_max(const double t, const double dt, const double dt_min) const
   {
     int cycles = fre*(t-td);
     double t1 = t;
@@ -233,6 +238,17 @@ public:
         di = it1->second - i1;
     }
     return di;
+  }
+
+  void dt_critial_limit(const double t, double & dt, const double dt_min) const
+  {
+    int cycles = fre*(t-td);
+
+    double ta1 = cycles/fre + 0.25/fre + td;
+    double ta2 = cycles/fre + 0.75/fre + td;
+
+    if( t<ta1 && t+dt>ta1 && ta1-t>=dt_min ) { dt = ta1-t; return; }
+    if( t<ta2 && t+dt>ta2 && ta2-t>=dt_min ) { dt = ta2-t; return; }
   }
 };
 
@@ -297,20 +313,22 @@ public:
   /**
    * @return waveform of pulsed source
    */
-  double iapp(double t)
+  double iapp(const double t) const
   {
-    if(t<td)
+    double _t = t;
+
+    if(_t<td)
       return I1;
     else
     {
-      t-=td;
-      while(t>pr) t-=pr;
-      if(t<tr)
-        return I1+t*(I2-I1)/tr;
-      else if(t<tr+pw)
+      _t-=td;
+      while(_t>pr) _t-=pr;
+      if(_t<tr)
+        return I1+_t*(I2-I1)/tr;
+      else if(_t<tr+pw)
         return I2;
-      else if(t<tr+pw+tf)
-        return I2-(t-tr-pw)*(I2-I1)/tf;
+      else if(_t<tr+pw+tf)
+        return I2-(_t-tr-pw)*(I2-I1)/tf;
       else    return I1;
     }
   }
@@ -318,7 +336,7 @@ public:
   /**
    * @return the max value of iapp(t+delta_t)-iapp(t), delta_t in [0, dt]
    */
-  double di_max(double t, double dt, double dt_min)
+  double di_max(const double t, const double dt, const double dt_min) const
   {
     int cycles = (t-td)/pr;
     double t1  = t;
@@ -356,6 +374,24 @@ public:
     }
     return di;
   }
+
+
+  void dt_critial_limit(const double t, double & dt, const double dt_min) const
+  {
+    int cycles = (t-td)/pr;
+
+    double ta2 = tr + cycles*pr + td;
+    double ta3 = tr + pw + cycles*pr + td;
+    double ta4 = tr + pw + tf + cycles*pr + td;
+    double ta5 = 0  + (cycles+1)*pr + td;
+
+    if( t<ta2 && t+dt>ta2 && ta2-t>=dt_min ) { dt = ta2-t; return; }
+    if( t<ta3 && t+dt>ta3 && ta3-t>=dt_min ) { dt = ta3-t; return; }
+    if( t<ta4 && t+dt>ta4 && ta4-t>=dt_min ) { dt = ta4-t; return; }
+    if( t<ta5 && t+dt>ta5 && ta5-t>=dt_min ) { dt = ta5-t; return; }
+  }
+
+
 };
 
 
@@ -414,7 +450,7 @@ public:
   /**
    * @return waveform of exponential current source
    */
-  double iapp(double t)
+  double iapp(const double t) const
   {
     if(t<=td)
       return I1;
@@ -428,7 +464,7 @@ public:
   /**
    * @return the max value of iapp(t+delta_t)-iapp(t), delta_t in [0, dt]
    */
-  double di_max(double t, double dt, double dt_min)
+  double di_max(const double t, const double dt, const double dt_min) const
   {
     double t1 = (t-td);
     double t2 = (t+dt-td);
@@ -452,6 +488,13 @@ public:
     return di;
   }
 
+  void dt_critial_limit(const double t, double & dt, const double dt_min) const
+  {
+    double ta1 = tfd;
+
+    if( t<ta1 && t+dt>ta1 && ta1-t>=dt_min ) { dt = ta1-t; return; }
+  }
+
 };
 
 
@@ -463,7 +506,7 @@ class IUSER : public ISource
 {
 private:
 
-  ExprEvalute expr_evaluator;
+  mutable ExprEvalute expr_evaluator;
 
 public:
 
@@ -473,7 +516,7 @@ public:
  /**
   * @return waveform of exponential source
   */
-  double iapp(double t)
+  double iapp(const double t) const
   {
     return expr_evaluator(0,0,0,t);
   }
@@ -532,7 +575,7 @@ public:
   /**
    * call Iapp_Shell to get the user provide current value
    */
-  double iapp(double t)
+  double iapp(const double t) const
   {
      return scale_A*Iapp_Shell(t/scale_t);
   }

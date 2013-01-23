@@ -1,7 +1,0 @@
-#!/bin/sh
-
-sed -i -e '/^#ifndef YY_NO_UNISTD_H/i\
-#ifdef YY_NO_UNISTD_H\
-#include <io.h> \
-#endif\
-' $1

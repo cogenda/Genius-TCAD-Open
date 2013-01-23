@@ -621,9 +621,16 @@ void MixA1Solver::error_norm()
   //VecScatterBegin(scatter, x, lx, INSERT_VALUES, SCATTER_FORWARD);
   //VecScatterEnd  (scatter, x, lx, INSERT_VALUES, SCATTER_FORWARD);
 
+
+  // unscale the fcuntion 
+  VecPointwiseDivide(f, f, L);
+
   // scatte global function vector f to local vector lf
   VecScatterBegin(scatter, f, lf, INSERT_VALUES, SCATTER_FORWARD);
   VecScatterEnd  (scatter, f, lf, INSERT_VALUES, SCATTER_FORWARD);
+
+  // scale the function vector back
+  VecPointwiseMult(f, f, L);
 
 
   VecGetArray(lx, &xx);  // solution value
@@ -832,6 +839,7 @@ void MixA1Solver::build_petsc_sens_residual(Vec x, Vec r)
   genius_assert( !fetestexcept(FE_INVALID) );
 #endif
 
+
   // restore array back to Vec
   VecRestoreArray(lx, &lxx);
 
@@ -842,6 +850,11 @@ void MixA1Solver::build_petsc_sens_residual(Vec x, Vec r)
 
   // scale the function vec
   VecPointwiseMult(r, r, L);
+
+  //VecView(x, PETSC_VIEWER_STDOUT_SELF);
+  //VecView(r, PETSC_VIEWER_STDOUT_SELF);
+  //getchar();
+
 
   STOP_LOG("MixA1Solver_Residual()", "MixA1Solver");
 

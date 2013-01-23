@@ -39,7 +39,9 @@
 
 
 using PhysicalUnit::um;
+using PhysicalUnit::C;
 using PhysicalUnit::J;
+using PhysicalUnit::eV;
 using PhysicalUnit::s;
 using PhysicalUnit::cm;
 using PhysicalUnit::m;
@@ -136,6 +138,7 @@ int RayTraceSolver::solve()
 
     }
 
+
     // gather energy deposit from all the processors
     Parallel::sum(_band_absorption_energy_in_elem);
     Parallel::sum(_total_absorption_energy_in_elem);
@@ -146,6 +149,11 @@ int RayTraceSolver::solve()
     MESSAGE<< "ok" <<std::endl;
     RECORD();
   }
+
+
+  statistic();
+
+
 #if defined(HAVE_FENV_H) && defined(DEBUG)
   genius_assert( !fetestexcept(FE_INVALID) );
 #endif
@@ -1202,6 +1210,7 @@ void RayTraceSolver::optical_generation(unsigned int n)
   double lamda    = _optical_sources[n].wave_length;
   double quan_eff = _optical_sources[n].eta;
 
+
   for (unsigned int i=0; i<_band_absorption_energy_in_elem.size(); i++)
   {
     const Elem * elem = mesh.elem(i);
@@ -1273,5 +1282,38 @@ void RayTraceSolver::optical_generation(unsigned int n)
   }
 
 }
+
+
+void RayTraceSolver::statistic() const 
+{
+  double energy_deposit = 0.0;
+  for(unsigned int r=0; r<_system.n_regions(); ++r)
+  {
+    const SimulationRegion * region = _system.region(r);
+    if(region->type() == SemiconductorRegion)
+    {
+      SimulationRegion::const_processor_node_iterator it = region->on_processor_nodes_begin();
+      SimulationRegion::const_processor_node_iterator it_end = region->on_processor_nodes_end();
+      for(; it!=it_end; ++it)
+      {
+        const FVM_Node * fvm_node = *it;
+        energy_deposit += fvm_node->node_data()->OptE()*fvm_node->volume();
+      }
+
+    }
+  }
+
+  Parallel::sum(energy_deposit);
+
+  /*
+  if(_dim==2)
+    std::cout << energy_deposit/(J/s/um) << std::endl;
+  else
+    std::cout << energy_deposit/(J/s) << std::endl;
+  */
+}
+
+
+
 
 

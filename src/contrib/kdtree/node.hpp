@@ -43,24 +43,6 @@ namespace KDTree
       while (__x->_M_right) __x = __x->_M_right;
       return __x;
     }
-
-#ifdef KDTREE_DEFINE_OSTREAM_OPERATORS
-
-     template <typename Char, typename Traits>
-       friend
-       std::basic_ostream<Char, Traits>&
-       operator<<(typename std::basic_ostream<Char, Traits>& out,
-                  _Node_base const& node)
-       {
-         out << &node;
-         out << " parent: " << node._M_parent;
-         out << "; left: " << node._M_left;
-         out << "; right: " << node._M_right;
-         return out;
-       }
-
-#endif
-
   };
 
   template <typename _Val>
@@ -78,6 +60,19 @@ namespace KDTree
         : _Node_base(__PARENT, __LEFT, __RIGHT), _M_value(__VALUE) {}
 
 #ifdef KDTREE_DEFINE_OSTREAM_OPERATORS
+
+     template <typename Char, typename Traits>
+       friend
+       std::basic_ostream<Char, Traits>&
+       operator<<(typename std::basic_ostream<Char, Traits>& out,
+                  _Node_base const& node)
+       {
+         out << &node;
+         out << " parent: " << node._M_parent;
+         out << "; left: " << node._M_left;
+         out << "; right: " << node._M_right;
+         return out;
+       }
 
      template <typename Char, typename Traits>
        friend
@@ -218,12 +213,12 @@ namespace KDTree
 	    typename _Dist::distance_type d = 0;
 	    for (size_t i=0; i != __k; ++i)
 	      d += _S_node_distance(i, __dist, __acc, __val, cur->_M_value);
-       d = sqrt(d);
+       d = std::sqrt(d);
 	    if (d <= __max)
           // ("bad candidate notes")
           // Changed: removed this test: || ( d == __max && cur < __best ))
           // Can't do this optimisation without checking that the current 'best' is not the root AND is not a valid candidate...
-          // This is because find_nearest() etc will call this function with the best set to _M_root EVEN IF _M_root is not a valid answer (eg too far_node away or doesn't pass the predicate test)
+          // This is because find_nearest() etc will call this function with the best set to _M_root EVEN IF _M_root is not a valid answer (eg too far away or doesn't pass the predicate test)
 	      {
 		__best = cur;
 		__max = d;
@@ -250,7 +245,7 @@ namespace KDTree
       near_node = static_cast<NodePtr>(probe->_M_left);
     if (near_node
 	// only visit node's children if node's plane intersect hypersphere
-	&& (sqrt(_S_node_distance(probe_dim % __k, __dist, __acc, __val, probe->_M_value)) <= __max))
+	&& (std::sqrt(_S_node_distance(probe_dim % __k, __dist, __acc, __val, probe->_M_value)) <= __max))
       {
 	probe = near_node;
 	++probe_dim;
@@ -276,7 +271,7 @@ namespace KDTree
 		    typename _Dist::distance_type d = 0;
 		    for (size_t i=0; i < __k; ++i)
 		      d += _S_node_distance(i, __dist, __acc, __val, probe->_M_value);
-          d = sqrt(d);
+          d = std::sqrt(d);
           if (d <= __max)  // CHANGED, see the above notes ("bad candidate notes")
 		      {
 			__best = probe;
@@ -292,7 +287,7 @@ namespace KDTree
 		  }
 		else if (far_node &&
 			 // only visit node's children if node's plane intersect hypersphere
-			 sqrt(_S_node_distance(probe_dim % __k, __dist, __acc, __val, probe->_M_value)) <= __max)
+			 std::sqrt(_S_node_distance(probe_dim % __k, __dist, __acc, __val, probe->_M_value)) <= __max)
 		  {
 		    probe = far_node;
 		    ++probe_dim;
@@ -307,7 +302,7 @@ namespace KDTree
 	      {
 		if (pprobe == near_node && far_node
 		    // only visit node's children if node's plane intersect hypersphere
-		    && sqrt(_S_node_distance(probe_dim % __k, __dist, __acc, __val, probe->_M_value)) <= __max)
+		    && std::sqrt(_S_node_distance(probe_dim % __k, __dist, __acc, __val, probe->_M_value)) <= __max)
 		  {
 		    pprobe = probe;
 		    probe = far_node;
@@ -335,7 +330,7 @@ namespace KDTree
 	      near_node = static_cast<NodePtr>(cur->_M_left);
 	    if (near_node
 		// only visit node's children if node's plane intersect hypersphere
-		&& (sqrt(_S_node_distance(cur_dim % __k, __dist, __acc, __val, cur->_M_value)) <= __max))
+		&& (std::sqrt(_S_node_distance(cur_dim % __k, __dist, __acc, __val, cur->_M_value)) <= __max))
 	      {
 		probe = near_node;
 		++probe_dim;

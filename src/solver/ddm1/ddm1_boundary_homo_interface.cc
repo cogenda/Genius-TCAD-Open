@@ -443,38 +443,31 @@ void HomoInterfaceBC::DDM1_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_v
         {
             case SemiconductorRegion :
             {
-              //the indepedent variable number, we need 6 here.
-              adtl::AutoDScalar::numdir=6;
 
-              std::vector<int> rows, cols;
+              //the indepedent variable number, we need 2 here.
+              adtl::AutoDScalar::numdir=2;
 
               // the governing equation of this fvm node
               AutoDScalar V = x[fvm_nodes[i]->local_offset()+0];  V.setADValue(0,1.0);  // psi of this node
-              AutoDScalar n = x[fvm_nodes[i]->local_offset()+1];  n.setADValue(1,1.0);  // electron density
-              AutoDScalar p = x[fvm_nodes[i]->local_offset()+2];  p.setADValue(2,1.0);  // hole density
+              AutoDScalar n = x[fvm_nodes[i]->local_offset()+1];  n.setADValue(0,1.0);  // electron density
+              AutoDScalar p = x[fvm_nodes[i]->local_offset()+2];  p.setADValue(0,1.0);  // hole density
 
-              AutoDScalar V_semi = x[fvm_nodes[0]->local_offset()+0]; V_semi.setADValue(3,1.0);
-              AutoDScalar n_semi = x[fvm_nodes[0]->local_offset()+1]; n_semi.setADValue(4,1.0);  // electron density
-              AutoDScalar p_semi = x[fvm_nodes[0]->local_offset()+2]; p_semi.setADValue(5,1.0);  // hole density
+              AutoDScalar V_semi = x[fvm_nodes[0]->local_offset()+0]; V_semi.setADValue(1,1.0);
+              AutoDScalar n_semi = x[fvm_nodes[0]->local_offset()+1]; n_semi.setADValue(1,1.0);  // electron density
+              AutoDScalar p_semi = x[fvm_nodes[0]->local_offset()+2]; p_semi.setADValue(1,1.0);  // hole density
 
               // the solution value of this node is equal to corresponding node value in the first semiconductor region
               AutoDScalar ff1 = V - V_semi;
+              MatSetValue(*jac, fvm_nodes[i]->global_offset()+0, fvm_nodes[i]->global_offset()+0, ff1.getADValue(0), ADD_VALUES);
+              MatSetValue(*jac, fvm_nodes[i]->global_offset()+0, fvm_nodes[0]->global_offset()+0, ff1.getADValue(1), ADD_VALUES);
+
               AutoDScalar ff2 = n - n_semi;
+              MatSetValue(*jac, fvm_nodes[i]->global_offset()+1, fvm_nodes[i]->global_offset()+1, ff2.getADValue(0), ADD_VALUES);
+              MatSetValue(*jac, fvm_nodes[i]->global_offset()+1, fvm_nodes[0]->global_offset()+1, ff2.getADValue(1), ADD_VALUES);
+
               AutoDScalar ff3 = p - p_semi;
-
-              rows.push_back(fvm_nodes[i]->global_offset()+0);
-              rows.push_back(fvm_nodes[i]->global_offset()+1);
-              rows.push_back(fvm_nodes[i]->global_offset()+2);
-
-              cols = rows;
-              cols.push_back(fvm_nodes[0]->global_offset()+0);
-              cols.push_back(fvm_nodes[0]->global_offset()+1);
-              cols.push_back(fvm_nodes[0]->global_offset()+2);
-
-              // set Jacobian of governing equations
-              MatSetValues(*jac, 1, &rows[0], cols.size(), &cols[0], ff1.getADValue(), ADD_VALUES);
-              MatSetValues(*jac, 1, &rows[1], cols.size(), &cols[0], ff2.getADValue(), ADD_VALUES);
-              MatSetValues(*jac, 1, &rows[2], cols.size(), &cols[0], ff3.getADValue(), ADD_VALUES);
+              MatSetValue(*jac, fvm_nodes[i]->global_offset()+2, fvm_nodes[i]->global_offset()+2, ff3.getADValue(0), ADD_VALUES);
+              MatSetValue(*jac, fvm_nodes[i]->global_offset()+2, fvm_nodes[0]->global_offset()+2, ff3.getADValue(1), ADD_VALUES);
 
               break;
             }

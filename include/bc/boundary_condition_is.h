@@ -98,7 +98,6 @@ public:
     _find_mos_channel_elem();
   }
 
-
   /**
    * @return the string which indicates the boundary condition
    */
@@ -116,8 +115,31 @@ private:
 
   void _find_mos_channel_elem();
 
-
+  /**
+   * gate current as post processor
+   */
   void _gate_current();
+
+
+  /**
+   * extra dofs due to gate current calculation
+   */
+  //void _gate_current_reserve() ;
+
+  /**
+   * gate current self consistance method
+   */
+  void _gate_current_function(PetscScalar * , Vec , InsertMode &);
+
+  /**
+   * gate current self consistance method
+   */
+  void _gate_current_jacobian_reserve(Mat *, InsertMode &);
+
+  /**
+   * gate current self consistance method
+   */
+  void _gate_current_jacobian(PetscScalar * , Mat *, InsertMode &);
 
 private:
   /**
@@ -184,6 +206,16 @@ public:
 
 
   //////////////////////////////////////////////////////////////////////////////////
+  //------------------------ Common for all DDM solver ---------------------------//
+  //////////////////////////////////////////////////////////////////////////////////
+
+  /**
+   * some bc node has extra dofs for nonlocal coupled pyhsical term i.e. tunneling
+   */
+  virtual void DDM_extra_dofs(std::map<FVM_Node *, std::pair<unsigned int, unsigned int> >&) const;
+
+
+  //////////////////////////////////////////////////////////////////////////////////
   //----------------Function and Jacobian evaluate for L1 DDM---------------------//
   //////////////////////////////////////////////////////////////////////////////////
 
@@ -223,6 +255,43 @@ public:
    */
   virtual void DDM1_Post_Process()
   { this->_gate_current(); }
+
+
+
+  //////////////////////////////////////////////////////////////////////////////////
+  //-------------Function and Jacobian evaluate for Density Gradient--------------//
+  //////////////////////////////////////////////////////////////////////////////////
+
+  /**
+   * fill solution data into petsc vector of Density Gradient equation.
+   */
+  virtual void DG_Fill_Value(Vec x, Vec L);
+
+  /**
+   * preprocess function for Density Gradient solver
+   */
+  virtual void DG_Function_Preprocess(PetscScalar *, Vec, std::vector<PetscInt>&, std::vector<PetscInt>&, std::vector<PetscInt>&);
+
+  /**
+   * build function and its jacobian for Density Gradient solver
+   */
+  virtual void DG_Function(PetscScalar * , Vec , InsertMode &);
+
+  /**
+   * reserve none zero pattern in petsc matrix.
+   */
+  virtual void DG_Jacobian_Reserve(Mat *jac, InsertMode &add_value_flag);
+
+  /**
+   * preprocess Jacobian Matrix of Density Gradient equation.
+   */
+  virtual void DG_Jacobian_Preprocess(PetscScalar *, Mat *, std::vector<PetscInt>&, std::vector<PetscInt>&, std::vector<PetscInt>&);
+
+  /**
+   * build function and its jacobian for Density Gradient solver
+   */
+  virtual void DG_Jacobian(PetscScalar * , Mat *, InsertMode &);
+
 
 
   //////////////////////////////////////////////////////////////////////////////////

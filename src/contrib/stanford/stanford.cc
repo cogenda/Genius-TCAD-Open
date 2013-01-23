@@ -23,7 +23,7 @@
 #include "stanford.h"
 #include "parallel.h"
 
-void StanfordTIF::broadcast_solution(unsigned int root)
+void StanfordTIF::broadcast(unsigned int root)
 {
 
   // broadcast SolHead_t to all processors

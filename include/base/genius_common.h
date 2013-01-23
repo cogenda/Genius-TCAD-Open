@@ -189,7 +189,8 @@ typedef float ErrorVectorReal;
 #  include <csignal>
 #  define genius_assert(a)  {  if (! (a) ) { std::cerr << "Assertion failure at " << __FILE__ << ":" << __LINE__ << std::endl; std::raise(SIGTERM); } }
 #else
-#  define genius_assert(a)  {  if (! (a) ) { std::cerr << "Assertion failure at " << __FILE__ << ":" << __LINE__ << std::endl; std::abort(); } }
+/*#  define genius_assert(a)  {  if (! (a) ) { std::cerr << "Assertion failure at " << __FILE__ << ":" << __LINE__ << std::endl; std::abort(); } }*/
+#  define genius_assert(a)  {  if (! (a) ) { std::cout << "Assertion failure at " << __FILE__ << ":" << __LINE__ << std::endl; std::abort(); } }
 #endif
 
 // The genius_error() macro prints a message and aborts the code

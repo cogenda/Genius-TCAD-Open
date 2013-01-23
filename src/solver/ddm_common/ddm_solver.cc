@@ -27,6 +27,7 @@
 #include "physical_unit.h"
 #include "electrical_source.h"
 #include "resistance_region.h"
+#include "simulation_system.h"
 #include "field_source.h"
 #include "ddm_solver.h"
 #include "parallel.h"
@@ -37,7 +38,8 @@ using PhysicalUnit::A;
 using PhysicalUnit::V;
 using PhysicalUnit::W;
 using PhysicalUnit::C;
-
+using PhysicalUnit::s;
+using PhysicalUnit::um;
 
 DDMSolverBase::DDMSolverBase(SimulationSystem & system): FVM_NonlinearSolver(system)
 {
@@ -48,6 +50,8 @@ DDMSolverBase::DDMSolverBase(SimulationSystem & system): FVM_NonlinearSolver(sys
   temperature_norm          = 0.0;
   elec_temperature_norm     = 0.0;
   hole_temperature_norm     = 0.0;
+  elec_quantum_norm         = 0.0;
+  hole_quantum_norm         = 0.0;
 
   poisson_norm              = 0.0;
   elec_continuity_norm      = 0.0;
@@ -55,10 +59,12 @@ DDMSolverBase::DDMSolverBase(SimulationSystem & system): FVM_NonlinearSolver(sys
   heat_equation_norm        = 0.0;
   elec_energy_equation_norm = 0.0;
   hole_energy_equation_norm = 0.0;
+  elec_quantum_equation_norm= 0.0;
+  hole_quantum_equation_norm= 0.0;
   electrode_norm            = 0.0;
 
   function_norm             = 0.0;
-  functions_norm.resize(7, 0.0);
+  functions_norm.resize(9, 0.0);
   nonlinear_iteration       = 0;
 }
 
@@ -86,6 +92,38 @@ int DDMSolverBase::create_solver()
   SNESSetFromOptions (snes);
 
   return FVM_NonlinearSolver::create_solver();
+}
+
+
+
+void DDMSolverBase::set_extra_matrix_nonzero_pattern()
+{
+  if(_system.get_bcs()!=NULL)
+  {
+    for(unsigned int n=0; n<_system.get_bcs()->n_bcs(); ++n )
+    {
+      const BoundaryCondition * bc = _system.get_bcs()->get_bc(n);
+      std::map<FVM_Node *, std::pair<unsigned int, unsigned int> > node_extra_dofs;
+      bc->DDM_extra_dofs(node_extra_dofs);
+
+      std::map<FVM_Node *, std::pair<unsigned int, unsigned int> >::const_iterator it = node_extra_dofs.begin();
+      for(; it != node_extra_dofs.begin(); it++)
+      {
+        const FVM_Node * fvm_node = it->first;
+        const SimulationRegion * region = _system.region(fvm_node->subdomain_id());
+        std::pair<unsigned int, unsigned int> dofs = it->second;
+
+        unsigned int local_offset = fvm_node->local_offset();
+        unsigned int local_node_dofs = this->node_dofs( region );
+
+        for(unsigned int i=0; i<local_node_dofs; ++i)
+        {
+          n_nz[local_offset + i] += dofs.first;
+          n_oz[local_offset + i] += dofs.second;
+        }
+      }
+    }
+  }
 }
 
 
@@ -152,6 +190,8 @@ int DDMSolverBase::destroy_solver()
 
   return FVM_NonlinearSolver::destroy_solver();
 }
+
+
 
 /* ----------------------------------------------------------------------------
  * compute equilibrium state
@@ -1213,9 +1253,9 @@ int DDMSolverBase::solve_transient()
   // for the first step, dt equals TStep
   SolverSpecify::dt = SolverSpecify::TStep;
 
-  MESSAGE<<"Transient compute from "<<SolverSpecify::TStart
-  <<" ps step "<<SolverSpecify::TStep
-  <<" ps to "  <<SolverSpecify::TStop<<" ps"
+  MESSAGE<<"Transient compute from "<<SolverSpecify::TStart/s*1e12
+      <<" ps step "<<SolverSpecify::TStep/s*1e12
+      <<" ps to "  <<SolverSpecify::TStop/s*1e12<<" ps"
   <<'\n';
   RECORD();
 
@@ -1234,7 +1274,7 @@ int DDMSolverBase::solve_transient()
   do
   {
     MESSAGE
-    <<"t = "<<SolverSpecify::clock<<" ps"<<'\n'
+    <<"t = "<<SolverSpecify::clock/s*1e12<<" ps, "<< "dt = " << SolverSpecify::dt/s*1e12 <<" ps"<< '\n'
     <<"--------------------------------------------------------------------------------\n";
     RECORD();
 
@@ -1584,7 +1624,12 @@ int DDMSolverBase::snes_solve_pseudo_time_step()
 /*------------------------------------------------------------------
  * snes convergence criteria
  */
-#include "private/snesimpl.h"
+#if PETSC_VERSION_LE(3, 2, 0)
+  #include "private/snesimpl.h"
+  #define SNES_CONVERGED_SNORM_RELATIVE  SNES_CONVERGED_PNORM_RELATIVE
+#else
+  #include "petsc-private/snesimpl.h"
+#endif
 void DDMSolverBase::petsc_snes_convergence_test ( PetscInt its, PetscReal , PetscReal pnorm, PetscReal fnorm, SNESConvergedReason *reason )
 {
   // update error norm
@@ -1600,8 +1645,16 @@ void DDMSolverBase::petsc_snes_convergence_test ( PetscInt its, PetscReal , Pets
     MESSAGE<<" "<<" n ";
     MESSAGE<<"| Eq(V) | "<<"| Eq(n) | "<<"| Eq(p) | ";
     MESSAGE<<"| Eq(T) | ";
-    MESSAGE<<"|Eq(Tn)|  ";
-    MESSAGE<<"|Eq(Tp)|  ";
+    if(this->solver_type() == SolverSpecify::DENSITY_GRADIENT)
+    {
+      MESSAGE<<"|Eq(Qn)|  ";
+      MESSAGE<<"|Eq(Qp)|  ";
+    }
+    else
+    {
+      MESSAGE<<"|Eq(Tn)|  ";
+      MESSAGE<<"|Eq(Tp)|  ";
+    }
     MESSAGE<<"|Eq(BC)|  ";
     MESSAGE<<"Lg(dx)"<<'\n';
     MESSAGE<<"--------------------------------------------------------------------------------\n";
@@ -1612,22 +1665,61 @@ void DDMSolverBase::petsc_snes_convergence_test ( PetscInt its, PetscReal , Pets
     functions_norm[2] = hole_continuity_norm;
     functions_norm[3] = heat_equation_norm;
     functions_norm[4] = elec_energy_equation_norm;
-    functions_norm[5] = elec_energy_equation_norm;
-    functions_norm[6] = electrode_norm;
+    functions_norm[5] = hole_energy_equation_norm;
+    functions_norm[6] = elec_quantum_equation_norm;
+    functions_norm[7] = hole_quantum_equation_norm;
+    functions_norm[8] = electrode_norm;
+  }
+
+  unsigned int dim = this->system().dim();
+  double z_width = (dim == 2 ? 1.0*um : 1.0);
+  if(dim == 2)
+  {
+    poisson_norm         *= z_width;
+    elec_continuity_norm *= z_width;
+    hole_continuity_norm *= z_width;
+    heat_equation_norm   *= z_width;
+    elec_energy_equation_norm *= z_width;
+    hole_energy_equation_norm *= z_width;
+    elec_quantum_equation_norm *= z_width;
+    hole_quantum_equation_norm *= z_width;
   }
 
   double  toler_relax = SolverSpecify::toler_relax;
   if(its)
   {
-    //toler_relax = std::max(SolverSpecify::toler_relax, 1.0/(pnorm+1e-3));
+    //toler_relax = std::max(SolverSpecify::toler_relax, 1.0/(pnorm+1e-6));
   }
-  bool  poisson_conv              = poisson_norm              < toler_relax*SolverSpecify::poisson_abs_toler;
-  bool  elec_continuity_conv      = elec_continuity_norm      < toler_relax*SolverSpecify::elec_continuity_abs_toler;
-  bool  hole_continuity_conv      = hole_continuity_norm      < toler_relax*SolverSpecify::hole_continuity_abs_toler;
-  bool  electrode_conv            = electrode_norm            < toler_relax*SolverSpecify::electrode_abs_toler;
-  bool  heat_equation_conv        = heat_equation_norm        < toler_relax*SolverSpecify::heat_equation_abs_toler;
-  bool  elec_energy_equation_conv = elec_energy_equation_norm < toler_relax*SolverSpecify::elec_energy_abs_toler;
-  bool  hole_energy_equation_conv = hole_energy_equation_norm < toler_relax*SolverSpecify::hole_energy_abs_toler;
+  bool  poisson_conv               = poisson_norm               < toler_relax*SolverSpecify::poisson_abs_toler;
+  bool  elec_continuity_conv       = elec_continuity_norm       < toler_relax*SolverSpecify::elec_continuity_abs_toler;
+  bool  hole_continuity_conv       = hole_continuity_norm       < toler_relax*SolverSpecify::hole_continuity_abs_toler;
+  bool  electrode_conv             = electrode_norm             < toler_relax*SolverSpecify::electrode_abs_toler;
+  bool  heat_equation_conv         = heat_equation_norm         < toler_relax*SolverSpecify::heat_equation_abs_toler;
+  bool  elec_energy_equation_conv  = elec_energy_equation_norm  < toler_relax*SolverSpecify::elec_energy_abs_toler;
+  bool  hole_energy_equation_conv  = hole_energy_equation_norm  < toler_relax*SolverSpecify::hole_energy_abs_toler;
+  bool  elec_quantum_equation_conv = elec_quantum_equation_norm < toler_relax*SolverSpecify::elec_quantum_abs_toler;
+  bool  hole_quantum_equation_conv = hole_quantum_equation_norm < toler_relax*SolverSpecify::hole_quantum_abs_toler;
+
+  bool conv = poisson_conv         &&
+              elec_continuity_conv &&
+              hole_continuity_conv &&
+              electrode_conv       &&
+              heat_equation_conv   &&
+              elec_energy_equation_conv &&
+              hole_energy_equation_conv &&
+              elec_quantum_equation_conv &&
+              hole_quantum_equation_conv;
+
+
+  bool abs_conv =  poisson_norm               < SolverSpecify::poisson_abs_toler         &&
+                   elec_continuity_norm       < SolverSpecify::elec_continuity_abs_toler &&
+                   hole_continuity_norm       < SolverSpecify::hole_continuity_abs_toler &&
+                   electrode_norm             < SolverSpecify::electrode_abs_toler       &&
+                   heat_equation_norm         < SolverSpecify::heat_equation_abs_toler   &&
+                   elec_energy_equation_norm  < SolverSpecify::elec_energy_abs_toler     &&
+                   hole_energy_equation_norm  < SolverSpecify::hole_energy_abs_toler     &&
+                   elec_quantum_equation_norm < SolverSpecify::elec_quantum_abs_toler    &&
+                   hole_quantum_equation_norm < SolverSpecify::hole_quantum_abs_toler;
 
 #ifdef WINDOWS
   MESSAGE.precision ( 1 );
@@ -1641,14 +1733,24 @@ void DDMSolverBase::petsc_snes_convergence_test ( PetscInt its, PetscReal , Pets
   MESSAGE<< elec_continuity_norm/A      << (elec_continuity_conv ? "* " : "  ");
   MESSAGE<< hole_continuity_norm/A      << (hole_continuity_conv ? "* " : "  ");
   MESSAGE<< heat_equation_norm/W        << (heat_equation_conv ? "* " : "  ");
-  MESSAGE<< elec_energy_equation_norm/W << (elec_energy_equation_conv ? "* " : "  ");
-  MESSAGE<< hole_energy_equation_norm/W << (hole_energy_equation_conv ? "* " : "  ");
+  if(this->solver_type() == SolverSpecify::DENSITY_GRADIENT)
+  {
+    MESSAGE<< elec_quantum_equation_norm/W << (elec_quantum_equation_conv ? "* " : "  ");
+    MESSAGE<< hole_quantum_equation_norm/W << (hole_quantum_equation_conv ? "* " : "  ");
+  }
+  else
+  {
+    MESSAGE<< elec_energy_equation_norm/W << (elec_energy_equation_conv ? "* " : "  ");
+    MESSAGE<< hole_energy_equation_norm/W << (hole_energy_equation_conv ? "* " : "  ");
+  }
   MESSAGE<< electrode_norm/A            << (electrode_conv ? "* " : "  ");
   MESSAGE<< std::fixed << std::setw(4) << (pnorm==0.0 ? -std::numeric_limits<PetscScalar>::infinity():log10(pnorm))
-    << (pnorm < SolverSpecify::relative_toler ? "*" : " ") << "\n" ;
+         << (pnorm < SolverSpecify::relative_toler ? "*" : " ") << "\n" ;
   RECORD();
   MESSAGE.precision ( 6 );
   MESSAGE<< std::scientific;
+
+
   // check for NaN (Not a Number)
   if ( fnorm != fnorm )
   {
@@ -1676,7 +1778,7 @@ void DDMSolverBase::petsc_snes_convergence_test ( PetscInt its, PetscReal , Pets
          (elec_energy_equation_norm <= SolverSpecify::PseudoTimeMethodRFTol*functions_norm[5] ) &&
          (electrode_norm <= SolverSpecify::PseudoTimeMethodRFTol*functions_norm[6] || electrode_conv ) )
       {
-        *reason = SNES_CONVERGED_PNORM_RELATIVE;
+        *reason = SNES_CONVERGED_SNORM_RELATIVE;
         goto end;
       }
     }
@@ -1688,39 +1790,18 @@ void DDMSolverBase::petsc_snes_convergence_test ( PetscInt its, PetscReal , Pets
     else
     {
       // check for absolute convergence
-      if ( its && 
-           poisson_norm               < SolverSpecify::poisson_abs_toler         &&
-           elec_continuity_norm       < SolverSpecify::elec_continuity_abs_toler &&
-           hole_continuity_norm       < SolverSpecify::hole_continuity_abs_toler &&
-           electrode_norm             < SolverSpecify::electrode_abs_toler       &&
-           heat_equation_norm         < SolverSpecify::heat_equation_abs_toler   &&
-           elec_energy_equation_norm  < SolverSpecify::elec_energy_abs_toler     &&
-           hole_energy_equation_norm  < SolverSpecify::hole_energy_abs_toler )
+      if ( its && abs_conv )
       {
         *reason = SNES_CONVERGED_FNORM_ABS;
       }
-      else if ( std::abs(fnorm-function_norm)/fnorm <= snes->rtol  &&
-                poisson_conv         &&
-                elec_continuity_conv &&
-                hole_continuity_conv &&
-                electrode_conv       &&
-                heat_equation_conv   &&
-                elec_energy_equation_conv &&
-                hole_energy_equation_conv   )
+      else if ( std::abs(fnorm-function_norm)/fnorm <= snes->rtol  && conv )
       {
         *reason = SNES_CONVERGED_FNORM_RELATIVE;
       }
       // check for relative convergence, should have at least one iteration here
-      else if ( its && pnorm < SolverSpecify::relative_toler &&
-                poisson_conv         &&
-                elec_continuity_conv &&
-                hole_continuity_conv &&
-                electrode_conv       &&
-                heat_equation_conv   &&
-                elec_energy_equation_conv &&
-                hole_energy_equation_conv   )
+      else if ( its && pnorm < SolverSpecify::relative_toler && conv)
       {
-        *reason = SNES_CONVERGED_PNORM_RELATIVE;
+        *reason = SNES_CONVERGED_SNORM_RELATIVE;
       }
     }
   }

@@ -60,6 +60,7 @@ inline int gettimeofday(struct timeval_t *tp, void *tzp)
 #include <sys/utsname.h>
 #include <sys/types.h>
 #include <pwd.h>
+#include <unistd.h>
 #endif
 
 

@@ -120,6 +120,11 @@ public:
   Vec solution_vector() const { return x; }
 
   /**
+   * @return the ksp residual history
+   */
+  std::vector<double> ksp_residual_history() const;
+
+  /**
    * create a new vector with (compatable parallel) pattern
    */
   void create_vector(Vec &);
@@ -223,7 +228,7 @@ public:
 protected:
 
 
-  /**
+  /**ksp_residual_history
    * incidate that the jacobian_matrix is never assembled
    */
   bool jacobian_matrix_first_assemble;
@@ -293,6 +298,20 @@ protected:
    */
   SNES           snes;
 
+
+#if PETSC_VERSION_GE(3,3,0)
+  /**
+   * petsc nonlinear solver linesearch contex
+   */
+  SNESLineSearch snesls;
+#else
+  /**
+   * petsc < 3.3 do not have snesls object
+   */
+  #define  snesls snes
+
+#endif
+
   /**
    * the KSP context for a SNES solver
    */
@@ -302,6 +321,11 @@ protected:
    * the PC context for KSP solver
    */
   PC             pc;
+
+  /**
+   * array for ksp residual history
+   */
+  std::vector<PetscReal> _ksp_residual_history;
 
   /**
    * Enum stating which type of nonlinear solver to use.

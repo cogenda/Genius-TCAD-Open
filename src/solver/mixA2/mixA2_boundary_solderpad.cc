@@ -152,55 +152,55 @@ void SolderPadBC::MixA_DDM2_Function(PetscScalar * x, Vec f, InsertMode &add_val
 
       switch ( region->type() )
       {
-          case MetalRegion :
+      case MetalRegion :
+        {
+          // psi of this node
+          PetscScalar V = x[fvm_node->local_offset()+0];
+          // T of this node
+          PetscScalar T = x[fvm_node->local_offset()+1];
+
+          PetscScalar f_psi = V + node_data->affinity()/e - Ve;
+
+          // add heat flux out of boundary to lattice temperature equatiuon
+          PetscScalar f_q = Heat_Transfer*(T_external()-T)*fvm_node->outside_boundary_surface_area();
+
+          // set governing equation to function vector
+          VecSetValue(f, fvm_node->global_offset()+0, f_psi, ADD_VALUES);
+          VecSetValue(f, fvm_node->global_offset()+1, f_q, ADD_VALUES);
+
+          // conductance current
+          FVM_Node::fvm_neighbor_node_iterator nb_it = fvm_node->neighbor_node_begin();
+          for(; nb_it != fvm_node->neighbor_node_end(); ++nb_it)
           {
-            // psi of this node
-            PetscScalar V = x[fvm_node->local_offset()+0];
-            // T of this node
-            PetscScalar T = x[fvm_node->local_offset()+1];
+            const FVM_Node *nb_node = (*nb_it).first;
+            const FVM_NodeData * nb_node_data = nb_node->node_data();
+            // the psi of neighbor node
+            PetscScalar V_nb = x[nb_node->local_offset()+0];
+            // distance from nb node to this node
+            PetscScalar distance = fvm_node->distance(nb_node);
+            // area of out surface of control volume related with neighbor node
+            PetscScalar cv_boundary = std::abs(fvm_node->cv_surface_area(nb_node));
 
-            PetscScalar f_psi = V + node_data->affinity()/e - Ve;
-
-            // add heat flux out of boundary to lattice temperature equatiuon
-            PetscScalar f_q = Heat_Transfer*(T_external()-T)*fvm_node->outside_boundary_surface_area();
-
-            // set governing equation to function vector
-            VecSetValue(f, fvm_node->global_offset()+0, f_psi, ADD_VALUES);
-            VecSetValue(f, fvm_node->global_offset()+1, f_q, ADD_VALUES);
-
-            // conductance current
-            FVM_Node::fvm_neighbor_node_iterator nb_it = fvm_node->neighbor_node_begin();
-            for(; nb_it != fvm_node->neighbor_node_end(); ++nb_it)
-            {
-              const FVM_Node *nb_node = (*nb_it).first;
-              const FVM_NodeData * nb_node_data = nb_node->node_data();
-              // the psi of neighbor node
-              PetscScalar V_nb = x[nb_node->local_offset()+0];
-              // distance from nb node to this node
-              PetscScalar distance = fvm_node->distance(nb_node);
-              // area of out surface of control volume related with neighbor node
-              PetscScalar cv_boundary = std::abs(fvm_node->cv_surface_area(nb_node));
-
-              // current flow
-              current_buffer.push_back( cv_boundary*sigma*(V-V_nb)/distance*current_scale );
-            }
-            break;
+            // current flow
+            current_buffer.push_back( cv_boundary*sigma*(V-V_nb)/distance*current_scale );
           }
+          break;
+        }
 
-          case InsulatorRegion:
-          {
-            const FVM_Node * fvm_node = ( *rnode_it ).second.second;
-            // psi of this node
-            PetscScalar V = x[fvm_node->local_offset()];
-            PetscScalar f_psi = (V + workfunction - Ve);
+      case InsulatorRegion:
+        {
+          const FVM_Node * fvm_node = ( *rnode_it ).second.second;
+          // psi of this node
+          PetscScalar V = x[fvm_node->local_offset()];
+          PetscScalar f_psi = (V + workfunction - Ve);
 
-            // assume heat flux out of boundary is zero
+          // assume heat flux out of boundary is zero
 
-            // set governing equation to function vector
-            VecSetValue(f, fvm_node->global_offset(), f_psi, ADD_VALUES);
-            break;
-          }
-          default: genius_error();
+          // set governing equation to function vector
+          VecSetValue(f, fvm_node->global_offset(), f_psi, ADD_VALUES);
+          break;
+        }
+      default: genius_error();
       }
     }
   }
@@ -259,45 +259,44 @@ void SolderPadBC::MixA_DDM2_Jacobian_Reserve(Mat *jac, InsertMode &add_value_fla
       MatSetValue(*jac, fvm_node->global_offset()+0, this->global_offset(), 0, ADD_VALUES);
     }
 
+  }
 
-    // reserve jacobian entries for the circuit equation
+  // reserve jacobian entries for the circuit equation
+  {
+
+    std::vector<PetscInt> bc_node_reserve;
+    for(node_it = nodes_begin(); node_it!=end_it; ++node_it )
     {
-
-      std::vector<PetscInt> bc_node_reserve;
-      for(node_it = nodes_begin(); node_it!=end_it; ++node_it )
+      // get the derivative of electrode current to ohmic node
+      const FVM_Node *  fvm_node = get_region_fvm_node(*node_it, MetalRegion);
+      if(fvm_node->on_processor())
       {
-        // get the derivative of electrode current to ohmic node
-        const FVM_Node *  fvm_node = get_region_fvm_node(*node_it, MetalRegion);
-        if(fvm_node->on_processor())
+        bc_node_reserve.push_back(fvm_node->global_offset()+0);
+
+        // get the derivative of electrode current to neighbors of bc node
+        FVM_Node::fvm_neighbor_node_iterator nb_it = fvm_node->neighbor_node_begin();
+        FVM_Node::fvm_neighbor_node_iterator nb_it_end = fvm_node->neighbor_node_end();
+        for(; nb_it != nb_it_end; ++nb_it)
         {
-          bc_node_reserve.push_back(fvm_node->global_offset()+0);
-
-          // get the derivative of electrode current to neighbors of bc node
-          FVM_Node::fvm_neighbor_node_iterator nb_it = fvm_node->neighbor_node_begin();
-          FVM_Node::fvm_neighbor_node_iterator nb_it_end = fvm_node->neighbor_node_end();
-          for(; nb_it != nb_it_end; ++nb_it)
-          {
-            const FVM_Node *  fvm_nb_node = (*nb_it).first;
-            bc_node_reserve.push_back(fvm_nb_node->global_offset()+0);
-          }
-        }
-      }
-      Parallel::allgather(bc_node_reserve);
-
-      if(Genius::processor_id() == Genius::n_processors()-1)
-      {
-        PetscInt bc_global_offset = this->global_offset();
-
-        MatSetValue(*jac, bc_global_offset, this->global_offset(), 0, ADD_VALUES);
-
-        if(bc_node_reserve.size())
-        {
-          std::vector<PetscScalar> bc_node_reserve_zero(bc_node_reserve.size(), 0.0);
-          MatSetValues(*jac, 1, &bc_global_offset, bc_node_reserve.size(), &bc_node_reserve[0], &bc_node_reserve_zero[0], ADD_VALUES);
+          const FVM_Node *  fvm_nb_node = (*nb_it).first;
+          bc_node_reserve.push_back(fvm_nb_node->global_offset()+0);
         }
       }
     }
+    Parallel::allgather(bc_node_reserve);
 
+    if(Genius::processor_id() == Genius::n_processors()-1)
+    {
+      PetscInt bc_global_offset = this->global_offset();
+
+      MatSetValue(*jac, bc_global_offset, this->global_offset(), 0, ADD_VALUES);
+
+      if(bc_node_reserve.size())
+      {
+        std::vector<PetscScalar> bc_node_reserve_zero(bc_node_reserve.size(), 0.0);
+        MatSetValues(*jac, 1, &bc_global_offset, bc_node_reserve.size(), &bc_node_reserve[0], &bc_node_reserve_zero[0], ADD_VALUES);
+      }
+    }
   }
 
 
@@ -390,71 +389,71 @@ void SolderPadBC::MixA_DDM2_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_
 
       switch ( region->type() )
       {
-          case MetalRegion :
+      case MetalRegion :
+        {
+          // psi of this node
+          AutoDScalar V = x[fvm_node->local_offset()];  V.setADValue(0, 1.0);
+
+          // the electrode potential in current iteration
+          genius_assert( local_offset()!=invalid_uint );
+          AutoDScalar Ve = x[ckt->local_offset_x(spice_node_index)];     Ve.setADValue(1, 1.0);
+
+          AutoDScalar ff = V + node_data->affinity()/e - Ve;
+
+          //governing equation of psi
+          MatSetValue(*jac, fvm_node->global_offset(), fvm_node->global_offset(), ff.getADValue(0), ADD_VALUES);
+          MatSetValue(*jac, fvm_node->global_offset(), bc_global_offset, ff.getADValue(1), ADD_VALUES);
+
+
+          // T of this node
+          AutoDScalar T = x[fvm_node->local_offset()+1];  T.setADValue(0, 1.0);
+
+          // add heat flux out of boundary to lattice temperature equatiuon
+          AutoDScalar f_q = Heat_Transfer*(T_external()-T)*fvm_node->outside_boundary_surface_area();
+          //governing equation of T
+          MatSetValue(*jac, fvm_node->global_offset()+1, fvm_node->global_offset()+1, f_q.getADValue(0), ADD_VALUES);
+
+          // conductance current
+          FVM_Node::fvm_neighbor_node_iterator nb_it = fvm_node->neighbor_node_begin();
+          for(; nb_it != fvm_node->neighbor_node_end(); ++nb_it)
           {
-            // psi of this node
-            AutoDScalar V = x[fvm_node->local_offset()];  V.setADValue(0, 1.0);
+            const FVM_Node *nb_node = (*nb_it).first;
+            const FVM_NodeData * nb_node_data = nb_node->node_data();
 
-            // the electrode potential in current iteration
-            genius_assert( local_offset()!=invalid_uint );
-            AutoDScalar Ve = x[ckt->local_offset_x(spice_node_index)];     Ve.setADValue(1, 1.0);
+            // the psi of neighbor node
+            AutoDScalar V_nb = x[nb_node->local_offset()+0]; V_nb.setADValue(1, 1.0);
 
-            AutoDScalar ff = V + node_data->affinity()/e - Ve;
+            // distance from nb node to this node
+            PetscScalar distance = fvm_node->distance(nb_node);
 
-            //governing equation of psi
-            MatSetValue(*jac, fvm_node->global_offset(), fvm_node->global_offset(), ff.getADValue(0), ADD_VALUES);
-            MatSetValue(*jac, fvm_node->global_offset(), bc_global_offset, ff.getADValue(1), ADD_VALUES);
-
-
-            // T of this node
-            AutoDScalar T = x[fvm_node->local_offset()+1];  T.setADValue(0, 1.0);
-
-            // add heat flux out of boundary to lattice temperature equatiuon
-            AutoDScalar f_q = Heat_Transfer*(T_external()-T)*fvm_node->outside_boundary_surface_area();
-            //governing equation of T
-            MatSetValue(*jac, fvm_node->global_offset()+1, fvm_node->global_offset()+1, f_q.getADValue(0), ADD_VALUES);
-
-            // conductance current
-            FVM_Node::fvm_neighbor_node_iterator nb_it = fvm_node->neighbor_node_begin();
-            for(; nb_it != fvm_node->neighbor_node_end(); ++nb_it)
-            {
-              const FVM_Node *nb_node = (*nb_it).first;
-              const FVM_NodeData * nb_node_data = nb_node->node_data();
-
-              // the psi of neighbor node
-              AutoDScalar V_nb = x[nb_node->local_offset()+0]; V_nb.setADValue(1, 1.0);
-
-              // distance from nb node to this node
-              PetscScalar distance = fvm_node->distance(nb_node);
-
-              // area of out surface of control volume related with neighbor node
-              PetscScalar cv_boundary = std::abs(fvm_node->cv_surface_area(nb_node));
+            // area of out surface of control volume related with neighbor node
+            PetscScalar cv_boundary = std::abs(fvm_node->cv_surface_area(nb_node));
 
 
-              AutoDScalar current = cv_boundary*sigma*(V-V_nb)/distance*current_scale;
+            AutoDScalar current = cv_boundary*sigma*(V-V_nb)/distance*current_scale;
 
-              MatSetValue(*jac, bc_global_offset, fvm_node->global_offset(), current.getADValue(0), ADD_VALUES);
-              MatSetValue(*jac, bc_global_offset, nb_node->global_offset(), current.getADValue(1), ADD_VALUES);
-            }
-            break;
+            MatSetValue(*jac, bc_global_offset, fvm_node->global_offset(), current.getADValue(0), ADD_VALUES);
+            MatSetValue(*jac, bc_global_offset, nb_node->global_offset(), current.getADValue(1), ADD_VALUES);
           }
-          case InsulatorRegion :
-          {
-            // psi of this node
-            AutoDScalar V = x[fvm_node->local_offset()];  V.setADValue(0, 1.0);
+          break;
+        }
+      case InsulatorRegion :
+        {
+          // psi of this node
+          AutoDScalar V = x[fvm_node->local_offset()];  V.setADValue(0, 1.0);
 
-            // the electrode potential in current iteration
-            genius_assert( local_offset()!=invalid_uint );
-            AutoDScalar Ve = x[ckt->local_offset_x(spice_node_index)];     Ve.setADValue(1, 1.0);
+          // the electrode potential in current iteration
+          genius_assert( local_offset()!=invalid_uint );
+          AutoDScalar Ve = x[ckt->local_offset_x(spice_node_index)];     Ve.setADValue(1, 1.0);
 
-            AutoDScalar ff = (V + workfunction - Ve);
+          AutoDScalar ff = (V + workfunction - Ve);
 
-            //governing equation
-            MatSetValue(*jac, fvm_node->global_offset(), fvm_node->global_offset(), ff.getADValue(0), ADD_VALUES);
-            MatSetValue(*jac, fvm_node->global_offset(), bc_global_offset, ff.getADValue(1), ADD_VALUES);
-            break;
-          }
-          default: genius_error();
+          //governing equation
+          MatSetValue(*jac, fvm_node->global_offset(), fvm_node->global_offset(), ff.getADValue(0), ADD_VALUES);
+          MatSetValue(*jac, fvm_node->global_offset(), bc_global_offset, ff.getADValue(1), ADD_VALUES);
+          break;
+        }
+      default: genius_error();
 
       }
     }

@@ -86,6 +86,12 @@ public:
   { return _resistive_metal_mode; }
 
   /**
+   * set resistive metal mode
+   */
+  void set_resistive_metal_mode(bool flag)
+  { _resistive_metal_mode = flag; }
+
+  /**
    * @brief build the simulation system from mesh and mesh boundary
    */
   void build_simulation_system();
@@ -236,6 +242,10 @@ public:
   const MeshBase & mesh() const
   { return _mesh; }
 
+  /**
+   * @return dim of the mesh
+   */
+  unsigned int dim() const;
 
   /**
    * @return Boundary Condition Collector pointer
@@ -370,6 +380,11 @@ private:
    * flag for cylindrically symmetric mesh
    */
   bool _cylindrical_mesh;
+  
+  /**
+   * enable distributed mesh 
+   */
+  bool _distributed_mesh;
 
   /**
    * the array for all the simulation region.

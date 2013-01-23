@@ -255,6 +255,7 @@ PMI_Server::PMI_Server(const PMI_Environment &env)
   ps = 1e-12*s;
   A  = C/s;
   mA = 1e-3*A;
+  Ohm= V/A;
 
   kb   = 1.3806503e-23*J/K;
   e    = 1.602176462e-19*C;
@@ -381,6 +382,39 @@ void PMIS_Optical ::post_calibrate_process()
   in.close();
 }
 
+
+const std::string& PMIS_Optical ::get_parameter_string(const int verbosity)
+{
+  std::stringstream output;
+
+  // total screen width, and column width
+  int wd = 120, wd_name=10, wd_unit=30, wd_val= 12, wd_sep=3;
+
+  // desc text skip
+  int tskip = wd_name + wd_unit + wd_val + wd_sep;
+  // desc text width
+  int twd = wd - tskip;
+
+  output << std::setw(wd_name) << "lambda (um)"
+      << std::setw(wd_val) << "  n  "
+      << std::setw(wd_val) << "  k  " << "     "
+      << std::setw(twd) << std::left << " Description " << std::right << std::endl;
+
+
+  for( unsigned int n=0; n<_wave_table.size(); ++n)
+  {
+    output << std::setw(wd_name) << _wave_table[n].wavelength
+        << std::setw(wd_val) << _wave_table[n].RefractionIndexRe
+        << std::setw(wd_val) << _wave_table[n].RefractionIndexIm << std::endl;
+  }
+
+  _param_string = output.str();
+
+  return _param_string;
+}
+
+
+
 /**
  * when refraction_data_file is not empty, read from it
  */
@@ -434,3 +468,9 @@ void PMIC_Optical ::post_calibrate_process()
 
   in.close();
 }
+
+
+
+
+
+

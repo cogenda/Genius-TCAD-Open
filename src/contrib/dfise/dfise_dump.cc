@@ -31,7 +31,7 @@
 
 void printusage()
 {
-  std::cout<<"Usage: dump_dfise [-i input] [-l] [-o output] [-s variable]\n";
+  std::cout<<"Usage: dump_dfise [-i input] [-l] [-o output] [-v variable]\n";
   std::cout<<"Options\n";
   std::cout<<"  -h\t\tDisplay this help\n";
   std::cout<<"  -i\t\tInput DFISE file without extersion (xxx for xxx.grd and xxx.dat)\n";

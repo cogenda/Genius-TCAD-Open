@@ -119,6 +119,12 @@ public:
    */
   virtual PetscReal LTE_norm()=0;
 
+
+  /**
+   * extra nonzero pattern for nonlocal term
+   */
+  virtual void set_extra_matrix_nonzero_pattern();
+
   /**
    * force carrier density to be positive during projection
    */
@@ -264,6 +270,19 @@ protected:
   PetscScalar hole_temperature_norm;
 
   /**
+   * x norm of electron quantum potential
+   */
+  PetscScalar elec_quantum_norm;
+
+  /**
+   * x norm of hole quantum potential
+   */
+  PetscScalar hole_quantum_norm;
+
+
+
+
+  /**
    * f norm of poisson's equation
    */
   PetscScalar poisson_norm;
@@ -292,6 +311,16 @@ protected:
    * f norm of hole energy balance equation
    */
   PetscScalar hole_energy_equation_norm;
+
+  /**
+   * f norm of electron quantum potential equation
+   */
+  PetscScalar elec_quantum_equation_norm;
+
+  /**
+   * f norm of hole quantum potential equation
+   */
+  PetscScalar hole_quantum_equation_norm;
 
   /**
    * f norm of electron IV equation

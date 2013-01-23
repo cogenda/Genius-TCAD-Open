@@ -59,6 +59,7 @@ namespace SolverSpecify
     MOCK_CURRENT,   // Mock's full current continuity solver (and its correction by Polsky)
     POLSKY_POISSON, // Polsky's poisson correction
     DDMAC,          // ac sweep solver
+    DENSITY_GRADIENT,
     MC,
     RAY_TRACE,      // ray tracing optical solver
     EM_FEM_2D,
@@ -69,6 +70,7 @@ namespace SolverSpecify
     MOLE_ANALYTIC,    // mole distribution solver
     OPTG_ANALYTIC,
     STRESS,
+    RIC,              // solver of radiation induced conductivity model
     SOLVER_BASE,
     INVALID_SOLVER
   };
@@ -164,8 +166,15 @@ namespace SolverSpecify
     TempII
   };
 
+  /**
+   * convert string to enum
+   */
+  extern SolverType solver_type_string_to_enum(const std::string &);
 
-
+  /**
+   * convert string to enum
+   */
+  extern SolutionType solution_type_string_to_enum(const std::string s);
 }
 
 

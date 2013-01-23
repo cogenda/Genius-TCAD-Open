@@ -83,6 +83,12 @@ namespace SolverSpecify
    */
   extern int     NSLagPCLU;
 
+
+  /**
+   * Determines when the Jacobian is rebuilt in the nonlinear solve
+   */
+  extern int     NSLagJacobian;
+
   /**
    * linear solver scheme: LU, BCGS, GMRES ...
    */
@@ -142,6 +148,12 @@ namespace SolverSpecify
    * linearize error threshold of half implicit method
    */
   extern double    LinearizeErrorThreshold;
+
+
+  /**
+   * steady state threshold (ratio to Vt) of half implicit method
+   */
+  extern double    SteadyStateThreshold;
 
   /**
    * solve carrier distribution again after poisson correction in half implicit method
@@ -618,10 +630,8 @@ namespace SolverSpecify
    */
   extern void set_default_parameter();
 
-  /**
-   * convert string to enum
-   */
-  extern SolutionType type_string_to_enum(const std::string s);
+
+  
 }
 
 

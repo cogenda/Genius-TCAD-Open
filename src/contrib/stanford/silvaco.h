@@ -47,15 +47,28 @@ public:
   /**
    * read the silvaco tif file
    */
-  virtual bool read();
+  virtual bool read(std::string &err);
+
+  /**
+   * silvaco has 3D extersion
+   */
+  virtual unsigned int dim() { return _dim; }
 
 
-  void export_scatter_doping_data() const;
+  void export_scatter_doping_na() const;
+
+  void export_scatter_doping_nd() const;
+
+private:
+
+  unsigned int _dim;
 
 
 private:
 
   std::vector<int>       _electrode_info;
+
+  std::string  _version;
 
   /**
    * implant map

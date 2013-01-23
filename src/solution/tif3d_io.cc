@@ -31,6 +31,7 @@
 #include "boundary_info.h"
 #include "mesh_communication.h"
 #include "simulation_region.h"
+#include "expr_evaluate.h"
 #include "parallel.h"
 
 
@@ -348,69 +349,96 @@ void TIF3DIO::read (const std::string& filename)
     solution_map.insert(std::make_pair(key, n));
   }
 
+  // set doping and mole fraction
+  const double concentration_scale = pow(cm, -3);
   unsigned int donor        = tif3d_reader.sol_head().solution_index("Donor");
   unsigned int acceptor     = tif3d_reader.sol_head().solution_index("Acceptor");
+
+  unsigned int mole_x       = tif3d_reader.sol_head().solution_index("mole_x");
+  unsigned int mole_y       = tif3d_reader.sol_head().solution_index("mole_y");
 
   for(unsigned int r=0; r<system.n_regions(); r++)
   {
     SimulationRegion * region = system.region(r);
 
-    switch ( region->type() )
+    if ( region->type() ==  SemiconductorRegion)
     {
-        case SemiconductorRegion :
-        {
-          SimulationRegion::local_node_iterator node_it = region->on_local_nodes_begin();
-          SimulationRegion::local_node_iterator node_it_end = region->on_local_nodes_end();
-          for(; node_it!=node_it_end; ++node_it)
-          {
-            FVM_Node * fvm_node = (*node_it);
-            FVM_NodeData * node_data = fvm_node->node_data();  genius_assert(node_data);
+      SimulationRegion::local_node_iterator node_it = region->on_local_nodes_begin();
+      SimulationRegion::local_node_iterator node_it_end = region->on_local_nodes_end();
+      for(; node_it!=node_it_end; ++node_it)
+      {
+        FVM_Node * fvm_node = (*node_it);
+        FVM_NodeData * node_data = fvm_node->node_data();  genius_assert(node_data);
 
-            // tif_node_index is the index in TIF file that this FVM node has
-            int tif_node_index = node_id_to_tif_index_map[fvm_node->root_node()->id()];
-            int region_index = r;
-            std::pair<int, int> key = std::make_pair(tif_node_index, region_index);
-            unsigned int data_index = solution_map.find(key)->second;
+        // tif_node_index is the index in TIF file that this FVM node has
+        int tif_node_index = node_id_to_tif_index_map[fvm_node->root_node()->id()];
+        int region_index = r;
+        std::pair<int, int> key = std::make_pair(tif_node_index, region_index);
+        genius_assert(solution_map.find(key)!=solution_map.end());
+        unsigned int data_index = solution_map.find(key)->second;
 
-            // doping
-            if(donor!=invalid_uint && acceptor!=invalid_uint)
-            {
-              node_data->Na()   = tif3d_reader.sol_data(data_index).data_array[acceptor] * pow(cm, -3);
-              node_data->Nd()   = tif3d_reader.sol_data(data_index).data_array[donor   ] * pow(cm, -3);
-            }
-          }
-          region->init(system.T_external());
-          break;
-        }
-        case InsulatorRegion     :
+        // doping
+        if(donor!=invalid_uint && acceptor!=invalid_uint)
         {
-          region->init(system.T_external());
-          break;
+          node_data->Na()   = tif3d_reader.sol_data(data_index).data_array[acceptor] * concentration_scale;
+          node_data->Nd()   = tif3d_reader.sol_data(data_index).data_array[donor   ] * concentration_scale;
         }
-        case ElectrodeRegion     :
-        {
-          region->init(system.T_external());
-          break;
-        }
-        case MetalRegion    :
-        {
-          region->init(system.T_external());
-          break;
-        }
-        case VacuumRegion        :
-        {
-          region->init(system.T_external());
-          break;
-        }
-        case PMLRegion           :
-        {
-          region->init(system.T_external());
-          break;
-        }
-        default: genius_error();
+
+        if(mole_x!=invalid_uint)
+          node_data->mole_x()  = tif3d_reader.sol_data(data_index).data_array[mole_x];
+
+        if(mole_y!=invalid_uint)
+          node_data->mole_y()  = tif3d_reader.sol_data(data_index).data_array[mole_y];
+      }
     }
   }
 
+  //for all the other profiles
+  const TIF3D::SolHead_t & head = tif3d_reader.sol_head();
+  for(int i=0; i<head.sol_num; i++)
+  {
+    const std::string & solname = head.sol_name_array[i];
+
+    if(solname == "Acceptor" || solname == "Donor") continue;
+    if(solname == "Net" || solname == "Total")      continue;
+    if(solname == "mole_x" || solname == "mole_y")  continue;
+
+    const std::string & solunit = head.sol_unit_array[i];
+    ConstanteExprEvalute unitexp(solunit);
+    double unit = unitexp.eval();
+
+    for(unsigned int r=0; r<system.n_regions(); r++)
+    {
+      SimulationRegion * region = system.region(r);
+
+      unsigned int  sol_index   = region->add_variable( SimulationVariable(solname, SCALAR, POINT_CENTER, solunit, invalid_uint, true, true)  );
+      genius_assert(sol_index!=invalid_uint);
+
+      SimulationRegion::local_node_iterator node_it = region->on_local_nodes_begin();
+      SimulationRegion::local_node_iterator node_it_end = region->on_local_nodes_end();
+      for(; node_it!=node_it_end; ++node_it)
+      {
+        FVM_Node * fvm_node = (*node_it);
+        FVM_NodeData * node_data = fvm_node->node_data();  genius_assert(node_data);
+
+        // tif_node_index is the index in TIF file that this FVM node has
+        int tif_node_index = node_id_to_tif_index_map[fvm_node->root_node()->id()];
+        int region_index = r;
+        std::pair<int, int> key = std::make_pair(tif_node_index, region_index);
+        if(solution_map.find(key)!=solution_map.end())
+          node_data->data<Real>(sol_index)  = tif3d_reader.sol_data(solution_map.find(key)->second).data_array[i]*unit;
+        else
+          node_data->data<Real>(sol_index)  = 0.0;
+      }
+    }
+  }
+
+  // init each region
+  for(unsigned int r=0; r<system.n_regions(); r++)
+  {
+    SimulationRegion * region = system.region(r);
+    region->init(system.T_external());
+  }
 
   system.init_region_post_process();
 

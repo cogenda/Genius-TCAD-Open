@@ -340,6 +340,9 @@ public:
   fvm_element_iterator  elem_end() const    { return  _elem_has_this_node.end(); }
 
 
+  const std::vector< std::pair<const Elem *, unsigned int> > & elem_has_this_node () const  { return _elem_has_this_node; }
+
+
   /**
    * @return the subdomains this fvm_node on
    */
@@ -429,9 +432,20 @@ public:
   PetscScalar variable(SolutionVariable var) const;
 
   /**
+   * get parameters for gradient calculation
+   */
+  const std::vector< VectorValue<Real> > & gradient() const { return _gradient; }
+
+  /**
    * @return the gradient of variable on this fvm node
    */
   VectorValue<PetscScalar> gradient(SolutionVariable var, bool ghost=false) const;
+
+
+  /**
+   * prepare gradient parameter
+   */
+  void prepare_gradient();
 
   /**
    * combine several FVM_Node with same root node
@@ -535,6 +549,11 @@ private:
    * the boundary condition type
    */
   BCType  _bc_type;
+
+  /**
+   * precomputed parameter for gradient calculation
+   */
+  std::vector< VectorValue<Real> >  _gradient;
 
   /**
    * the subdomain id of this node

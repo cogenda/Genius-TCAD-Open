@@ -97,6 +97,7 @@ void ElectrodeSimulationRegion::set_region_variables()
 
   _region_point_variables["optical_energy"  ] = SimulationVariable("optical_energy", SCALAR, POINT_CENTER, "eV", FVM_Conductor_NodeData::_OptE_, true);
   _region_point_variables["particle_energy" ] = SimulationVariable("particle_energy", SCALAR, POINT_CENTER, "eV", FVM_Conductor_NodeData::_PatE_, true);
+  _region_point_variables["dose_rate"       ] = SimulationVariable("dose_rate", SCALAR, POINT_CENTER, "J/kg/s", FVM_Conductor_NodeData::_DoseRate_, true);
 
   _region_point_variables["potential.last"  ] = SimulationVariable("potential.last", SCALAR, POINT_CENTER, "V", FVM_Conductor_NodeData::_psi_last_, true);
   _region_point_variables["potential.old"     ] = SimulationVariable("potential.old", SCALAR, POINT_CENTER, "V", FVM_Conductor_NodeData::_psi_old_, true);

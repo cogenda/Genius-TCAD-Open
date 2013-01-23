@@ -62,7 +62,7 @@ void MetalSimulationRegion::HALL_Jacobian(const VectorValue<double> &, PetscScal
 
 void MetalSimulationRegion::HALL_Time_Dependent_Function(PetscScalar * x, Vec f, InsertMode &add_value_flag)
 {
-  this->EBM3_Time_Dependent_Function(x, f, add_value_flag);
+  this->DDM1_Time_Dependent_Function(x, f, add_value_flag);
 }
 
 

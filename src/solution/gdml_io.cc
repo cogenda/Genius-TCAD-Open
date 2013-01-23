@@ -282,7 +282,7 @@ void GDMLIO::write_gdml_surface (const std::string& filename)
     {
       const SimulationRegion * region = system.region(r);
 
-      _out << "  <volume name=\"" << region->name() << "\">" << std::endl;
+      _out << "  <volume name=\"" << std::string("Logic_") + region->name() << "\">" << std::endl;
       _out << "    <materialref ref=\"" << Material::FormatMaterialString(region->material()) <<"\"/>" << std::endl;
       _out << "    <solidref ref=\"Solid_" << region->name() <<"\"/>" << std::endl;
       _out << "  </volume>" << std::endl;
@@ -295,8 +295,8 @@ void GDMLIO::write_gdml_surface (const std::string& filename)
     for( unsigned int r=0; r<system.n_regions(); r++)
     {
       const SimulationRegion * region = system.region(r);
-      _out << "    <physvol>" << std::endl;
-      _out << "       <volumeref ref=\"" << region->name() << "\"/>" << std::endl;
+      _out << "    <physvol name=\"" << region->name() << "\">" << std::endl;
+      _out << "       <volumeref ref=\"" << std::string("Logic_") + region->name() << "\"/>" << std::endl;
       _out << "    </physvol>" << std::endl;
     }
     _out << "  </volume>" << std::endl;

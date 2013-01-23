@@ -36,7 +36,7 @@ using PhysicalUnit::A;
 using PhysicalUnit::um;
 using PhysicalUnit::cm;
 using PhysicalUnit::us;
-//#define DEBUG
+#define DEBUG
 
 
 ///////////////////////////////////////////////////////////////////////

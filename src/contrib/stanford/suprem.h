@@ -40,7 +40,7 @@ public:
   virtual ~SupremTIF()  {}
 
   /// read suprem file into meta data structure
-  virtual bool read();
+  virtual bool read(std::string &err);
 
 
 private:

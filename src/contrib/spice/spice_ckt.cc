@@ -128,7 +128,9 @@ SPICE_CKT::SPICE_CKT(const std::string & ckt_file)
     assert(find_electrode);
     find_electrode(&electrodes[0], &spice_nodes[0]);
     for(unsigned int n=0; n<_n_electrode; ++n)
+    {
       _electrode_to_spice_node_map.insert(std::make_pair(std::string(electrodes[n]), spice_nodes[n]->number));
+    }
   }
 
   // read pattern of spice matrix
@@ -158,7 +160,7 @@ SPICE_CKT::SPICE_CKT(const std::string & ckt_file)
   _matrix_nonzero_pattern[0].second.push_back((double*)NULL);
   _row_to_matrix_row.resize(matrix_ptr->Size+1, 0);
   _col_to_matrix_col.resize(matrix_ptr->Size+1, 0);
-  for(int col=1; col<=matrix_ptr->Size; ++col)
+  for(int col=0; col<=matrix_ptr->Size; ++col)
     for(ElementPtr elem_ptr=matrix_ptr->FirstInCol[col]; elem_ptr; elem_ptr = elem_ptr->NextInCol)
     {
       int row = elem_ptr->Row;
@@ -264,7 +266,7 @@ void SPICE_CKT::sync()
     std::vector<unsigned int> value;
     if(Genius::processor_id()==root_id)
     {
-      std::map<std::string, unsigned int>::iterator it = _electrode_to_spice_node_map.begin();
+      std::map<std::string, unsigned int>::const_iterator it = _electrode_to_spice_node_map.begin();
       for(; it!=_electrode_to_spice_node_map.end(); ++it)
       {
         key.push_back(it->first);
@@ -786,6 +788,93 @@ unsigned int SPICE_CKT::max_row_nonzeros() const
 }
 
 
+void SPICE_CKT::build_schur_solver()
+{
+  std::vector<unsigned int> schur_block;
+  std::vector<unsigned int> non_schur_block;
+
+  for(unsigned int n=0; n<_node_info_array.size(); ++n)
+  {
+    if(_node_info_array[n].is_electrode)
+      schur_block.push_back(n);
+    else
+      non_schur_block.push_back(n);
+  }
+  assert( schur_block.size() + non_schur_block.size() == _n_nodes );
+  _schur_solver.build(_n_nodes,schur_block,non_schur_block);
+}
+
+
+int SPICE_CKT::circuit_load_schur()
+{
+  _circuit_load();
+
+  //print_ckt_matrix();
+
+  _schur_solver.MatZero();
+  _schur_solver.RHSZero();
+
+  for(unsigned int n=0; n<_n_nodes; n++)
+  {
+    std::vector<int>  col;
+    std::vector<double> values;
+    ckt_matrix_row(n, col, values);
+    for(unsigned int c=0; c<col.size(); ++c)
+    {
+      _schur_solver.MatSetValue(n, col[c], values[c]);
+    }
+    double r;
+    ckt_residual(n, r);
+    _schur_solver.RHSSetValue(n, r);
+  }
+
+  _schur_solver.SchurSolve();
+  return 0;
+}
+
+
+
+void SPICE_CKT::ckt_schur_matrix(std::vector<double> & mat)
+{ _schur_solver.SchurMatrix(mat); }
+
+
+
+void SPICE_CKT::ckt_schur_residual(std::vector<double> & vec)
+{ _schur_solver.SchueRHS(vec); }
+
+
+void SPICE_CKT::update_rhs_old_schur(const std::vector<double> &x)
+{
+  _schur_solver.SchueSolveX(x);
+  std::vector<double> rhs_x;
+  _schur_solver.XGetValue(rhs_x);
+
+  // do damping here?
+  std::vector<double> rhs(_n_nodes, 0.0);
+  for(unsigned int n=1; n<_n_nodes; ++n)
+  {
+    double f = 1.0;
+    /*
+    if(is_voltage_node(n))
+    {
+      if( std::abs(rhs_x[n-1]) > 1e-6 )
+        f = log(1+std::abs(rhs_x[n-1])/1.0)/(std::abs(rhs_x[n-1])/1.0);
+    }
+
+    if(is_current_node(n))
+    {
+      if( std::abs(rhs_x[n-1]) > 1.0 )
+        f = 1.0/std::abs(rhs_x[n-1]);
+    }
+    */
+    
+    rhs[n] = (*_p_rhs_old)[n] - f*rhs_x[n];
+  }
+
+  update_rhs_old(rhs);
+}
+
+
 void SPICE_CKT::ckt_matrix_row(unsigned int n, int &global_row, std::vector<int> & global_col, std::vector<double> & values) const
 {
   global_row = this->global_offset_f(n);
@@ -831,19 +920,48 @@ void SPICE_CKT::ckt_matrix_row(unsigned int row, std::vector<int> & col, std::ve
 
   for(unsigned int c=0; c<matrix_col.size(); ++c)
   {
-    col.push_back(_col_to_matrix_col[matrix_col[c]]);
+    col.push_back(matrix_col[c]);
     values.push_back(*matrix_col_value[c]);
   }
 
-
-  // if we have diagonal item, that's all
-  for(unsigned int c=0; c<col.size(); ++c)
-  { if(row==col[c]) return; }
-
-  //  fill 1e-20 to diagonal to avoid zero pivot?
-  col.push_back(row);
-  values.push_back(1e-20);
 }
+
+
+void SPICE_CKT::print_ckt_matrix() const
+{
+  std::cout<<"spice M"<<std::endl;
+  std::cout<<"(0, 0, 1.0)" << std::endl;
+  for(unsigned int n=1; n<_n_nodes; n++)
+  {
+    const std::vector<int> & matrix_col = _matrix_nonzero_pattern[n].first;
+    const std::vector<double *> & matrix_col_value = _matrix_nonzero_pattern[n].second;
+
+    for(unsigned int c=0; c<matrix_col.size(); ++c)
+    {
+      std::cout<<"("<<n<<", "<<matrix_col[c]<<", "<<*matrix_col_value[c]<<") ";
+    }
+    std::cout<<std::endl;
+  }
+
+  std::cout<<"spice r"<<std::endl;
+  for(unsigned int n=0; n<_n_nodes; n++)
+  {
+    double r;
+    ckt_residual(n, r);
+    std::cout<<r << " ";
+  }
+  std::cout<<std::endl;
+
+
+  std::cout<<"spice x"<<std::endl;
+  for(unsigned int n=0; n<_n_nodes; n++)
+  {
+    std::cout<<(*_p_rhs_old)[n] << " ";
+  }
+  std::cout<<std::endl;
+}
+
+
 
 
 void SPICE_CKT::ckt_residual(unsigned int n, int & global_index, double & value) const
@@ -851,7 +969,7 @@ void SPICE_CKT::ckt_residual(unsigned int n, int & global_index, double & value)
   global_index = this->global_offset_f(n);
 
   if(n==0)
-     value = (*_p_rhs_old)[0];
+     value = 0.0;
   else
   {
     const std::vector<int> & col = _matrix_nonzero_pattern[n].first;
@@ -864,7 +982,27 @@ void SPICE_CKT::ckt_residual(unsigned int n, int & global_index, double & value)
       v += (*col_value[i])*(*_p_rhs_old)[col_index];
     }
     v -= (*_p_rhs)[n];
+    value = v;
+  }
+}
 
+
+void SPICE_CKT::ckt_residual(unsigned int n, double & value) const
+{
+  if(n==0)
+    value = 0.0;
+  else
+  {
+    const std::vector<int> & col = _matrix_nonzero_pattern[n].first;
+    const std::vector<double *> & col_value = _matrix_nonzero_pattern[n].second;
+
+    double v = 0.0;
+    for(unsigned int i=0; i<col.size(); ++i)
+    {
+      unsigned int col_index = col[i];
+      v += (*col_value[i])*(*_p_rhs_old)[col_index];
+    }
+    v -= (*_p_rhs)[n];
     value = v;
   }
 }

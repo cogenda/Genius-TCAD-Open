@@ -7,7 +7,7 @@
 #define LDFUN dlsym
 
 
-PMI_Benckmark_Mob::PMI_Benckmark_Mob(const std::string &material, const std::string &model)
+PMI_Benckmark_Mob::PMI_Benckmark_Mob(const std::string &path, const std::string &material, const std::string &model)
   :dll_file(0)
 {
   cm = 1e6;
@@ -17,11 +17,11 @@ PMI_Benckmark_Mob::PMI_Benckmark_Mob(const std::string &material, const std::str
   K  = 1.0/300;
 
   // load material lib
-  std::string filename =  std::string(getenv("GENIUS_DIR")) + "/lib/lib" + material + ".so";
+  std::string filename =  path + "/lib" + material + ".so";
   dll_file = dlopen(filename.c_str(), RTLD_LAZY|RTLD_DEEPBIND);
   if(!dll_file)
   {
-    std::cerr<<"Open material file lib"<< material <<".so error." << '\n';
+    std::cerr<<"Open material file "<< filename <<" error." << '\n';
     std::cerr<<"Error code: " << dlerror() << '\n';
     throw(1);
   }

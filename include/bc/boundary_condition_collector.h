@@ -93,6 +93,7 @@ public:
     _bc_label_to_bc[bc->label()] = bc;
   }
 
+
   /**
    * @return the const bc pointer by its index
    */
@@ -137,6 +138,21 @@ public:
       return  (*_bc_label_to_bc.find(label)).second ;
     return NULL;
   }
+
+
+  /**
+   * a electrode region may have several electrode bc, get all of them
+   */
+  std::vector<std::string> electrode_bc_by_contact(const std::string & label) const
+  {
+    std::vector<std::string> electrodes;
+    for(unsigned int n=0; n<_bcs.size(); ++n)
+      if( _bcs[n]->electrode_label() == label )
+        electrodes.push_back(_bcs[n]->label());
+    return electrodes;
+  }
+
+
 
   /**
    * set the bc index and boundary id mapping
@@ -314,6 +330,11 @@ private:
   int Set_Charge(const Parser::Card &c);
 
   int Set_BC_AbsorbingBoundary(const Parser::Card &c);
+
+
+  int Set_Electrode_FixedPotential(const Parser::Card &c);
+
+  int Set_Electrode_Emit(const Parser::Card &c);
 };
 
 #endif //#ifndef __bc_collector_h__

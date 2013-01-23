@@ -69,7 +69,7 @@
 
 
 SimulationSystem::SimulationSystem(MeshBase & mesh)
-  : _mesh(mesh), _cylindrical_mesh(false), _resistive_metal_mode(false), _block_partition(true),
+  : _mesh(mesh), _cylindrical_mesh(false), _distributed_mesh(true), _resistive_metal_mode(false), _block_partition(false),
     _bcs(0), _electrical_source(0),
     _field_source(0), _spice_ckt(0), _global_z_width(false)
 {
@@ -83,7 +83,7 @@ SimulationSystem::SimulationSystem(MeshBase & mesh)
 
 
 SimulationSystem::SimulationSystem(MeshBase & mesh, Parser::InputParser & _decks)
-  :  _T_external(300.0), _mesh(mesh), _cylindrical_mesh(false), _resistive_metal_mode(false), _block_partition(true),
+  :  _T_external(300.0), _mesh(mesh), _cylindrical_mesh(false), _distributed_mesh(true), _resistive_metal_mode(false), _block_partition(false),
     _bcs(0), _electrical_source(0),
     _field_source(0), _spice_ckt(0), _global_z_width(false), _z_width(1.0)
 {
@@ -91,19 +91,39 @@ SimulationSystem::SimulationSystem(MeshBase & mesh, Parser::InputParser & _decks
   MESSAGE<<"Constructing Simulation System...\n"<<std::endl;  RECORD();
 
   // set physical unit
-  double doping_scale = 1e18;
+  double cm = 1e6;
+  double s  = 1e12;
+  double V  = 1.0;
+  double C  = 1.0/1.602176462e-19;
+  double K  = 1.0/300;
   for( _decks.begin(); !_decks.end(); _decks.next() )
   {
     Parser::Card c = _decks.get_current_card();
     if( c.key() == "GLOBAL" )   // find the global card
     {
       if( c.is_parameter_exist("dopingscale") )
-        doping_scale = c.get_real("dopingscale", 1e18);
+        cm = std::pow(c.get_real("dopingscale", 1e18), 1.0/3.0);
+
+      if( c.is_parameter_exist("cm") )
+        cm = c.get_real("cm", 1e6);
+
+      if( c.is_parameter_exist("second") )
+        s = c.get_real("second", 1e12);
+
+      if( c.is_parameter_exist("volt") )
+        V = c.get_real("volt", 1.0);
+
+      if( c.is_parameter_exist("coulomb") )
+        C = c.get_real("coulomb", 1.0/1.602176462e-19);
+
+      if( c.is_parameter_exist("kelvin") )
+        K = c.get_real("kelvin", 1.0/300);
     }
   }
 
   // set PhysicalUnit
-  PhysicalUnit::set_unit( std::pow(doping_scale,1.0/3.0) );
+  PhysicalUnit::set_unit(cm, s, V, C, K);
+
   _T_external *= PhysicalUnit::K;
   _z_width *= PhysicalUnit::um;
 
@@ -123,6 +143,7 @@ SimulationSystem::SimulationSystem(MeshBase & mesh, Parser::InputParser & _decks
       }
 
       _cylindrical_mesh = c.get_bool("cylindricalmesh", false);
+      _distributed_mesh = c.get_bool("distributedmesh", true);
       _resistive_metal_mode = c.get_bool("resistivemetal", false);
       _block_partition = c.get_bool("blockpartition", false);
 
@@ -201,6 +222,11 @@ SimulationSystem::~SimulationSystem()
 
 double SimulationSystem::z_width() const
 { return (_mesh.mesh_dimension()==2) ? _z_width : 1.0 ;}
+
+
+
+unsigned int SimulationSystem::dim() const
+{ return _mesh.mesh_dimension(); }
 
 
 void SimulationSystem::clear(bool clear_mesh)
@@ -324,6 +350,9 @@ bool SimulationSystem::has_complex_compound_semiconductor_region() const
 
 void SimulationSystem::build_simulation_system()
 {
+  // sync resistive_metal_mode
+  Parallel::broadcast(_resistive_metal_mode);
+
   // each region has its own FVM mesh
   build_region_fvm_mesh();
 
@@ -336,8 +365,8 @@ void SimulationSystem::build_simulation_system()
   // clear surface locator to save memory
   _mesh.clear_surface_locator();
 
-  // totally delete remote elems
-  if(!_field_source->request_serial_mesh() && Genius::processor_id() !=0 )
+  // delete remote elems
+  if(_distributed_mesh && !_field_source->request_serial_mesh() && Genius::processor_id() !=0 )
     _mesh.delete_remote_elements(true, true);
 
   // remove remote object in each region
@@ -369,6 +398,7 @@ void SimulationSystem::build_region_fvm_mesh()
     MESSAGE<<"  Create mesh topological information...";  RECORD();
     // 2d or 3d mesh?
     mesh.count_mesh_dimension();
+    mesh.build_mesh_bounding_box();
 
     // this function will renumber the the node/elem
     mesh.all_first_order();
@@ -394,7 +424,7 @@ void SimulationSystem::build_region_fvm_mesh()
 
     // remove remote mesh elements when processor_id > 1
     // however, keep boundary elems for later bc setup
-    if(!_field_source->request_serial_mesh() && Genius::processor_id() !=0 )
+    if(_distributed_mesh && !_field_source->request_serial_mesh() && Genius::processor_id() !=0 )
       _mesh.delete_remote_elements(true, false);
 
     MESSAGE<<std::endl;  RECORD();

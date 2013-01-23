@@ -100,6 +100,12 @@ public:
   { return _system; }
 
   /**
+   * @return const reference to system
+   */
+  const SimulationSystem & system() const
+  { return _system; }
+
+  /**
    * @return the solver type
    */
   virtual SolverSpecify::SolverType solver_type()const=0;

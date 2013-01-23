@@ -47,7 +47,7 @@ public:
    */
   ExternalCircuit()
   : _Vapp(0), _Iapp(0), _drv(VDRIVEN),
-    _potential(0), _current(0),
+    _potential(0), _potential_old(0), _current(0), _current_old(0),
     _current_displacement(0), _current_conductance(0),
     _current_electron(0), _current_hole(0),
     _Vac(0.0026)

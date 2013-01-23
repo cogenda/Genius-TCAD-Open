@@ -47,7 +47,7 @@ class PMI_Benckmark_Mob    /NoDefaultCtors/
   /**
    * constructor, take material name and the name of mobility model
    */
-  PMI_Benckmark_Mob(const std::string &material, const std::string &model);
+  PMI_Benckmark_Mob(const std::string &path, const std::string &material, const std::string &model);
 
   ~PMI_Benckmark_Mob();
 

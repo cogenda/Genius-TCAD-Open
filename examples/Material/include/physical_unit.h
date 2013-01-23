@@ -73,6 +73,11 @@ namespace PhysicalUnit
   extern double   um;
 
   /**
+   *  define as 1e-3*m
+   */
+  extern double   mm;
+
+  /**
    *  define as 1e-2*m
    */
   extern double   cm;

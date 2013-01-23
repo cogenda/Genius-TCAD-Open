@@ -53,6 +53,18 @@ public:
   PetscScalar Permeability  ()                      const { return PERMEABI; }
   PetscScalar Affinity      (const PetscScalar &Tl) const { return AFFINITY; }
 
+  PetscScalar Conductance   (const PetscScalar &Tl, const PetscScalar &E) const
+  { return 1.0/(1e+15*V/A*m); }
+  AutoDScalar Conductance   (const AutoDScalar &Tl, const AutoDScalar &E) const
+  { return 1.0/(1e+15*V/A*m); }
+
+  PetscScalar RadConductance(const PetscScalar &DRate)const
+  {
+    return 0.0;
+  }
+
+  PetscScalar Mobility      (const PetscScalar &Tl) const
+  { return 5e-11*cm*cm/V/s; }
 
   void atom_fraction(std::vector<std::string> &atoms, std::vector<double> & fraction) const
   {

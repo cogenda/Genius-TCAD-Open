@@ -260,6 +260,48 @@ public:
   virtual void DDMAC_Fill_Matrix_Vector( Mat A, Vec b, const Mat J, const double omega, InsertMode & add_value_flag );
 
 
+#ifdef COGENDA_COMMERCIAL_PRODUCT
+  //////////////////////////////////////////////////////////////////////////////////
+  //--------------Function and Jacobian evaluate for RIC Solver-------------------//
+  //////////////////////////////////////////////////////////////////////////////////
+
+  /**
+   * preprocess function for RIC solver
+   */
+  virtual void RIC_Function_Preprocess(PetscScalar *, Vec, std::vector<PetscInt>&, std::vector<PetscInt>&, std::vector<PetscInt>&);
+
+  /**
+   * build function and its jacobian for RIC solver
+   */
+  virtual void RIC_Function(PetscScalar * , Vec , InsertMode &);
+
+  /**
+   * reserve none zero pattern in petsc matrix.
+   */
+  virtual void RIC_Jacobian_Reserve(Mat *jac, InsertMode &add_value_flag);
+
+  /**
+   * preprocess Jacobian Matrix of RIC equation.
+   */
+  virtual void RIC_Jacobian_Preprocess(PetscScalar *, Mat *, std::vector<PetscInt>&, std::vector<PetscInt>&, std::vector<PetscInt>&);
+
+  /**
+   * build function and its jacobian for RIC solver
+   */
+  virtual void RIC_Jacobian(PetscScalar * , Mat *, InsertMode &);
+
+  /**
+   * update solution data of RIC solver.
+   */
+  virtual void RIC_Update_Solution(PetscScalar *);
+
+  /**
+   * function for pre process of RIC equation.
+   */
+  virtual void RIC_Pre_Process();
+
+#endif
+
 }
 ;
 

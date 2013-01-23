@@ -40,13 +40,13 @@ SupremTIF::SupremTIF(const std::string & file)
 
 
 
-bool SupremTIF::read()
+bool SupremTIF::read(std::string &err)
 {
   std::ifstream ctmp(_file.c_str(), std::ios::in);
 
   if (!ctmp.good())
   {
-    std::cerr<<"Open Suprem4GS file error."<<std::endl;
+    err = "Open Suprem4GS file error.";
     return false;
   }
 

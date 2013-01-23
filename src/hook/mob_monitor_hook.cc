@@ -267,6 +267,7 @@ void MobMonitorHook::solution_to_vtk()
 {
   std::vector<float> elec_mob(edges.size(), 0.0);
   std::vector<float> hole_mob(edges.size(), 0.0);
+  std::vector<float> surface(edges.size(), 0.0);
 
   const SimulationSystem & system = _solver.get_system();
   for(unsigned int r=0; r<system.n_regions(); r++)
@@ -287,11 +288,16 @@ void MobMonitorHook::solution_to_vtk()
       unsigned int index = edges.find(edge[n])->second;
       elec_mob[index] = mob[n].first/(cm*cm/V/s);
       hole_mob[index] = mob[n].second/(cm*cm/V/s);
+
+      const FVM_Node * f1 = region->region_fvm_node(edge[n].first);
+      const FVM_Node * f2 = region->region_fvm_node(edge[n].second);
+      surface[index] = f1->cv_surface_area(f2)/(um*um);
     }
   }
 
   write_cell_scaler_solution(elec_mob, "elec_mob");
   write_cell_scaler_solution(hole_mob, "hole_mob");
+  write_cell_scaler_solution(surface, "cv_area");
 }
 
 

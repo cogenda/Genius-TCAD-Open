@@ -43,6 +43,8 @@ def options(opt):
   opt.add_option('--with-vtk-ver', action='store', default='vtk-5.4', dest='vtk_ver', help='Version of VTK [vtk-5.4]')
   opt.add_option('--with-petsc-dir',  action='store', default='/usr/local/petsc', dest='petsc_dir', help='Directory to Petsc.')
   opt.add_option('--with-petsc-arch', action='store', default='linux-intel-cc', dest='petsc_arch', help='Petsc Arch.')
+  opt.add_option('--with-ams', action='store_true', default=False, dest='ams_enabled', help='Build with AMS')
+  opt.add_option('--with-ams-dir',  action='store', default='/usr/local/ams', dest='ams_dir', help='Directory to AMS.')
   opt.add_option('--with-slepc', action='store_true', default=False, dest='slepc_enabled', help='Build with Slepc')
   opt.add_option('--with-slepc-dir',  action='store', default='/usr/local/slepc', dest='slepc_dir', help='Directory to Slepc.')
 
@@ -657,6 +659,24 @@ stringstream message; message << "Hello"; return 0;
   # }}}
   if conf.options.slepc_enabled:
     config_slepc()
+
+
+# {{{ config_ams()
+  def config_ams():
+    base_dir = conf.options.ams_dir
+
+    conf.check_cxx(header_name='ams.h',
+                   cxxflags=[conf.env.CPPPATH_ST % os.path.join(base_dir, 'include')],
+                   uselib_store='AMS', define_name='HAVE_AMS')
+
+    libs     = ['amsacc']
+    conf.check_cxx(lib=libs,
+                   linkflags=[conf.env.LIBPATH_ST % os.path.join(base_dir, 'lib')],
+                   uselib_store='AMS', msg='Checking for library AMS')
+
+# }}}
+  if conf.options.ams_enabled:
+    config_ams()
 
 
   # {{{ NetGen

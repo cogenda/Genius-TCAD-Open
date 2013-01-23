@@ -84,7 +84,7 @@ public:
 public:
   GSS_PolySi_Optical(const PMIS_Environment &env):PMIS_Optical(env)
   {
-    PMI_Info = "This is the Default optical model of Silicon";
+    PMI_Info = "This is the optical model of PolySilicon";
     _init_default_wave_table();
   }
 

@@ -29,6 +29,7 @@
 using PhysicalUnit::A;
 using PhysicalUnit::V;
 using PhysicalUnit::cm;
+using PhysicalUnit::s;
 
 /*----------------------------------------------------------------------
  * constructor, open the file for writing
@@ -48,6 +49,10 @@ TunnelingHook::TunnelingHook ( SolverBase & solver, const std::string & name, vo
     _out << "# Variables: " << std::endl;
 
     unsigned int n_var = 0;
+
+    if(SolverSpecify::TimeDependent)
+      _out << '#' <<'\t' << ++n_var <<'\t' << "Time"      << " [s]"<< std::endl;
+
     const BoundaryConditionCollector * bcs = this->get_solver().get_system().get_bcs();
     for(unsigned int n=0; n<bcs->n_bcs(); n++)
     {
@@ -113,22 +118,36 @@ void TunnelingHook::post_solve()
     // set output width and format
     _out<< std::scientific << std::right;
 
+    if(SolverSpecify::TimeDependent)
+      _out << std::setw(15) << SolverSpecify::clock/s;
+
     const BoundaryConditionCollector * bcs = this->get_solver().get_system().get_bcs();
     for(unsigned int n=0; n<bcs->n_bcs(); n++)
     {
       const BoundaryCondition * bc = bcs->get_bc(n);
+
 
       if( bc->is_electrode() )
       {
         _out << std::setw(15) << bc->ext_circuit()->potential()/V;
       }
 
-      if ( bc->bc_type() == IF_Insulator_Semiconductor )
+      if ( bc->bc_type() == IF_Insulator_Semiconductor  )
       {
-        _out << std::setw(15) << bc->scalar("J_CBET")/(A/cm/cm)
-             << std::setw(15) << bc->scalar("J_VBHT")/(A/cm/cm)
-             << std::setw(15) << bc->scalar("J_VBET")/(A/cm/cm)
-             << std::setw(15) << (bc->scalar("J_VBHT") - bc->scalar("J_CBET") - bc->scalar("J_VBET"))/(A/cm/cm);
+        if(  bc->has_scalar("J_CBET") && bc->has_scalar("J_VBHT") && bc->has_scalar("J_VBET"))
+        {
+          _out << std::setw(15) << bc->scalar("J_CBET")/(A/cm/cm)
+               << std::setw(15) << bc->scalar("J_VBHT")/(A/cm/cm)
+               << std::setw(15) << bc->scalar("J_VBET")/(A/cm/cm)
+               << std::setw(15) << (bc->scalar("J_VBHT") - bc->scalar("J_CBET") - bc->scalar("J_VBET"))/(A/cm/cm);
+        }
+        else
+        {
+          _out << std::setw(15) << 0.0
+               << std::setw(15) << 0.0
+               << std::setw(15) << 0.0
+               << std::setw(15) << 0.0;
+        }
       }
     }
 

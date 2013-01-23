@@ -93,6 +93,11 @@ class FVM_Conductor_NodeData : public FVM_NodeData
       _PatE_,
 
       /**
+       * dose rate
+       */
+      _DoseRate_,
+
+      /**
        * electrostatic potential at previous time step
        */
       _psi_last_,
@@ -335,6 +340,19 @@ class FVM_Conductor_NodeData : public FVM_NodeData
      */
     virtual Real &       OptE()
     { return _data_storage->scalar ( _OptE_, _offset ); }
+
+
+   /**
+     * @return the dose rate
+    */
+    virtual Real         DoseRate()          const
+    { return _data_storage->scalar ( _DoseRate_, _offset ); }
+
+   /**
+     * @return the writable reference to dose rate
+    */
+    virtual Real &       DoseRate()
+    { return _data_storage->scalar ( _DoseRate_, _offset ); }
 
 
     /**

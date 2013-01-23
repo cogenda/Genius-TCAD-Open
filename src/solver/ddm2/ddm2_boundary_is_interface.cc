@@ -237,7 +237,6 @@ void InsulatorSemiconductorInterfaceBC::DDM2_Function(PetscScalar * x, Vec f, In
 
             y.push_back(ff2);
 
-            genius_assert(iy.size()==y.size());
             break;
           }
           case VacuumRegion:
@@ -254,6 +253,9 @@ void InsulatorSemiconductorInterfaceBC::DDM2_Function(PetscScalar * x, Vec f, In
 
   add_value_flag = ADD_VALUES;
 
+
+  // gate current
+  _gate_current_function(x, f, add_value_flag);
 
 }
 
@@ -339,6 +341,9 @@ void InsulatorSemiconductorInterfaceBC::DDM2_Jacobian_Reserve(Mat *jac, InsertMo
   // the last operator is ADD_VALUES
   add_value_flag = ADD_VALUES;
 
+
+  // gate current
+  _gate_current_jacobian_reserve(jac, add_value_flag);
 }
 
 
@@ -543,5 +548,8 @@ void InsulatorSemiconductorInterfaceBC::DDM2_Jacobian(PetscScalar * x, Mat *jac,
 
   // the last operator is ADD_VALUES
   add_value_flag = ADD_VALUES;
+
+  // gate current
+  _gate_current_jacobian(x, jac, add_value_flag);
 
 }

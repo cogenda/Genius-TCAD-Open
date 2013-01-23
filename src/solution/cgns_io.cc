@@ -93,6 +93,22 @@ void CGNSIO::read (const std::string& filename)
       ss >> mesh.magic_num();
     }
 
+    {
+      genius_assert(!cg_goto(fn, B, "end"));
+      int nd;
+      genius_assert(!cg_ndescriptors(&nd));
+      for(int d=1; d<=nd; ++d)
+      {
+        char descriptor_name[32];
+        char *_description;
+        genius_assert(!cg_descriptor_read(d, descriptor_name, &_description));
+
+        if(std::string(descriptor_name) == "ResistiveMetal")
+          system.set_resistive_metal_mode(true);
+        cg_free(_description);
+      }
+    }
+
     //cgns file may have several zones
     genius_assert(!cg_nzones(fn, B, &Z));
     // tell mesh structure how many zones
@@ -784,7 +800,6 @@ void CGNSIO::read (const std::string& filename)
           break;
         }
         case InsulatorRegion     :
-        case ElectrodeRegion     :
         {
           for(std::map< std::pair<std::string, std::string>, std::vector<double> >::const_iterator var_it = solution.begin();
               var_it!=solution.end(); var_it++)
@@ -816,6 +831,17 @@ void CGNSIO::read (const std::string& filename)
                   node_data->psi() = var_it->second[n] * V;
                   continue;
                 }
+                // field solution
+                if(var_it->first.second == "electron" || var_it->first.second == "elec_density")
+                {
+                  node_data->n() = var_it->second[n] * pow(cm,-3);
+                  continue;
+                }
+                if(var_it->first.second == "hole" || var_it->first.second == "hole_density")
+                {
+                  node_data->p() = var_it->second[n] * pow(cm,-3);
+                  continue;
+                }
                 if(var_it->first.second == "temperature" || var_it->first.second == "lattice_temperature" )
                 {
                   node_data->T() = var_it->second[n] * K;
@@ -837,6 +863,7 @@ void CGNSIO::read (const std::string& filename)
           break;
         }
 
+        case ElectrodeRegion     :
         case MetalRegion         :
         {
           for(std::map< std::pair<std::string, std::string>, std::vector<double> >::const_iterator var_it = solution.begin();
@@ -1040,6 +1067,11 @@ void CGNSIO::write (const std::string& filename)
     ss >> base_name;
 
     genius_assert(!cg_base_write(fn, base_name.c_str(), 3, 3, &B));
+
+    genius_assert(!cg_goto(fn,B,"end"));
+
+    if(system.resistive_metal_mode())
+      genius_assert(!cg_descriptor_write("ResistiveMetal", "true"));
   }
 
   // create cgns zone
@@ -1412,6 +1444,72 @@ void CGNSIO::write (const std::string& filename)
 
 
         case InsulatorRegion     :
+        {
+          std::vector<unsigned int> region_node_id;
+
+          std::multimap< std::string, std::pair<SimulationVariable, std::vector<double> > >  region_data;
+          typedef std::multimap< std::string, std::pair<SimulationVariable, std::vector<double> > > region_data_map;
+          region_data_map::iterator region_data_it;
+
+          region_data.insert( std::make_pair("Solution", std::make_pair(region->get_variable("potential", POINT_CENTER), std::vector<double>())) );
+          region_data.insert( std::make_pair("Solution", std::make_pair(region->get_variable("electron", POINT_CENTER), std::vector<double>())) );
+          region_data.insert( std::make_pair("Solution", std::make_pair(region->get_variable("hole", POINT_CENTER), std::vector<double>())) );
+          region_data.insert( std::make_pair("Solution", std::make_pair(region->get_variable("temperature", POINT_CENTER), std::vector<double>())) );
+
+
+          std::vector<SimulationVariable> custom_variable;
+          region->get_user_defined_variable(POINT_CENTER, SCALAR, custom_variable);
+          for(unsigned int n=0; n<custom_variable.size(); ++n)
+            region_data.insert( std::make_pair("Custom", std::make_pair(custom_variable[n], std::vector<double>())) );
+
+          SimulationRegion::const_processor_node_iterator node_it = region->on_processor_nodes_begin();
+          SimulationRegion::const_processor_node_iterator node_it_end = region->on_processor_nodes_end();
+          for(; node_it!=node_it_end; ++node_it)
+          {
+            const FVM_Node * fvm_node = (*node_it);
+            const FVM_NodeData * node_data = fvm_node->node_data();
+
+            region_node_id.push_back(fvm_node->root_node()->id());
+
+            for( region_data_it = region_data.begin(); region_data_it != region_data.end(); ++region_data_it)
+            {
+              const SimulationVariable & variable = region_data_it->second.first;
+              region_data_it->second.second.push_back( node_data->data<double>( variable.variable_index ) / variable.variable_unit );
+            }
+          }
+
+          // synchronization data with other processor
+          Parallel::gather(0, region_node_id);
+          for( region_data_it = region_data.begin(); region_data_it != region_data.end(); ++region_data_it)
+            Parallel::gather(0, region_data_it->second.second);
+
+          if( Genius::processor_id() == 0)
+          {
+            std::vector<unsigned int> region_node_local_id;
+            for(unsigned int n=0; n<region_node_id.size(); ++n)
+              region_node_local_id.push_back( node_id_to_region_node_id[region_node_id[n]]-1 );
+
+            for( region_data_it = region_data.begin(); region_data_it != region_data.end(); )
+            {
+              const std::string & sol =  region_data_it->first;
+              genius_assert(!cg_sol_write  (fn, B, Z, sol.c_str(), Vertex, &SOL));
+              std::string path = std::string("/") + base_name + "/" + zone_name + "/" + sol;
+              std::pair <region_data_map::iterator, region_data_map::iterator>  bounds = region_data.equal_range(sol);
+              while (bounds.first != bounds.second)
+              {
+                const std::string & variable =  bounds.first->second.first.variable_name;
+                std::string variable_unit = variable + ".unit";
+                std::string variable_unit_string = bounds.first->second.first.variable_unit_string;
+                genius_assert(!cg_field_write(fn, B, Z, SOL, RealDouble, variable.c_str(),  &(_sort_it(bounds.first->second.second, region_node_local_id)[0]),   &F));
+                genius_assert(!cg_gopath(fn, path.c_str()));
+                genius_assert(!cg_descriptor_write(variable_unit.c_str(), variable_unit_string.c_str()));
+                ++bounds.first;
+              }
+              region_data_it = bounds.second;
+            }
+          }
+          break;
+        }
         case ElectrodeRegion     :
         {
           std::vector<unsigned int> region_node_id;

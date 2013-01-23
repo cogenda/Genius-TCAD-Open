@@ -85,6 +85,11 @@ namespace SolverSpecify
   int     NSLagPCLU;
 
   /**
+   * Determines when the Jacobian is rebuilt in the nonlinear solve
+   */
+  int     NSLagJacobian;
+
+  /**
    * linear solver scheme: LU, BCGS, GMRES ...
    */
   LinearSolverType        LS;
@@ -144,6 +149,11 @@ namespace SolverSpecify
    */
   double    LinearizeErrorThreshold;
 
+
+  /**
+   * steady state threshold (ratio to Vt) of half implicit method
+   */
+  double    SteadyStateThreshold;
 
   /**
    * solve carrier distribution again after poisson correction in half implicit method
@@ -626,10 +636,12 @@ namespace SolverSpecify
     LS                = GMRES;
     PC                = LU_PRECOND;
     NSLagPCLU         = 10;
+    NSLagJacobian     = 1;
 #else
     LS                = BCGSL;
     PC                = ASM_PRECOND;
     NSLagPCLU         = 1;
+    NSLagJacobian     = 1;
 #endif
 
     out_append        = false;
@@ -640,6 +652,7 @@ namespace SolverSpecify
     LS_POISSON        = GMRES;
     PC_POISSON        = ASM_PRECOND;
     LinearizeErrorThreshold   = 1.0;
+    SteadyStateThreshold      = 1e-5;
     ReSolveCarrier    = false;
     ArtificialCarrier = true;
     PoissonCorrectionParameter= 0.0;
@@ -654,17 +667,17 @@ namespace SolverSpecify
 
     absolute_toler            = 1e-12;
     relative_toler            = 1e-5;
-    toler_relax               = 1e4;
-    poisson_abs_toler         = 1e-31*C;
-    elec_continuity_abs_toler = 1e-19*A;
-    hole_continuity_abs_toler = 1e-19*A;
+    toler_relax               = 1e5;
+    poisson_abs_toler         = 1e-26*C;
+    elec_continuity_abs_toler = 5e-18*A;
+    hole_continuity_abs_toler = 5e-18*A;
     heat_equation_abs_toler   = 1e-11*W;
     elec_energy_abs_toler     = 1e-18*W;
     hole_energy_abs_toler     = 1e-18*W;
-    electrode_abs_toler       = 1e-9*V;
-    spice_abs_toler           = 1e-15*A;
-    elec_quantum_abs_toler    = 1e-29*C;
-    hole_quantum_abs_toler    = 1e-29*C;
+    electrode_abs_toler       = 1e-14*A;
+    spice_abs_toler           = 1e-14*A;
+    elec_quantum_abs_toler    = 1e-26*C;
+    hole_quantum_abs_toler    = 1e-26*C;
 
     TimeDependent             = false;
     TStepMin                  = 1e-14*s;
@@ -715,7 +728,7 @@ namespace SolverSpecify
     PseudoTimeSteps             = 50;
   }
 
-  SolutionType type_string_to_enum(const std::string s)
+  SolutionType solution_type_string_to_enum(const std::string s)
   {
     if (s == "equilibrium")                   return EQUILIBRIUM;
     if (s == "steadystate")                   return STEADYSTATE;
@@ -728,5 +741,26 @@ namespace SolverSpecify
     return INVALID_SolutionType;
   }
 
+  SolverType solver_type_string_to_enum(const std::string &s)
+  {
+    if (s == "poisson")            return POISSON;
+    if (s == "ddml1")              return DDML1;
+    if (s == "ddml1r")             return DDML1R;
+    if (s == "ddml1m")             return DDML1MIXA;
+    if (s == "ddml1h")             return DDML1MIX;
+    if (s == "hall")               return HALLDDML1;
+    if (s == "ddml2")              return DDML2;
+    if (s == "ddml2m")             return DDML2MIXA;
+    if (s == "ddml2h")             return DDML2MIX;
+    if (s == "ebml3")              return EBML3;
+    if (s == "ebml3m")             return EBML3MIXA;
+    if (s == "ebml3h")             return EBML3MIX;
+    if (s == "ddmac")              return DDMAC;
+    if (s == "qddm")               return DENSITY_GRADIENT;
+    if (s == "halfimplicit")       return HALF_IMPLICIT;
+    if (s == "ric")                return RIC;
+
+    return INVALID_SOLVER;
+  }
 }
 

@@ -263,6 +263,5 @@ void FVM_PDESolver::set_serial_dof_map()
   }
 
   // set n_nz and n_oz for extra dofs
-  if(this->extra_dofs())
-    this->set_extra_matrix_nonzero_pattern();
+  this->set_extra_matrix_nonzero_pattern();
 }

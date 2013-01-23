@@ -145,6 +145,13 @@ public:
   virtual void set_region_variables();
 
 private:
+
+  /**
+   * @return truncated partial area associated with edge ne of elem
+   */
+  Real truncated_partial_area(const Elem * elem, unsigned int ne) const;
+
+private:
   /**
    * the pointer to material database
    */
@@ -276,6 +283,51 @@ public:
    * update solution data of FVM_NodeData by petsc vector of L1 HALL DDM
    */
   virtual void HALL_Update_Solution(PetscScalar *lxx);
+
+
+  //////////////////////////////////////////////////////////////////////////////////
+  //-------------Function and Jacobian evaluate for Density Gradient--------------//
+  //////////////////////////////////////////////////////////////////////////////////
+
+  /**
+   * function for get nodal variable number
+   */
+  virtual unsigned int dg_n_variables() const;
+
+  /**
+   * function for get offset of nodal variable
+   */
+  virtual unsigned int dg_variable_offset(SolutionVariable var) const;
+
+  /**
+   * function for fill vector of Density Gradient equation.
+   */
+  virtual void DG_Fill_Value(Vec x, Vec L);
+
+  /**
+   * function for evaluating Density Gradient equation.
+   */
+  virtual void DG_Function(PetscScalar * x, Vec f, InsertMode &add_value_flag);
+
+  /**
+   * function for evaluating Jacobian of Density Gradient equation.
+   */
+  virtual void DG_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_value_flag);
+
+  /**
+   * function for evaluating time derivative term of Density Gradient equation.
+   */
+  virtual void DG_Time_Dependent_Function(PetscScalar * x, Vec f, InsertMode &add_value_flag);
+
+  /**
+   * function for evaluating Jacobian of time derivative term of Density Gradient equation.
+   */
+  virtual void DG_Time_Dependent_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_value_flag);
+
+  /**
+   * function for update solution value of Density Gradient equation.
+   */
+  virtual void DG_Update_Solution(PetscScalar *lxx);
 
 
   //////////////////////////////////////////////////////////////////////////////////
@@ -469,7 +521,43 @@ public:
    */
   virtual void LinearPoissin_Update_Solution(const PetscScalar * x);
 
+#ifdef COGENDA_COMMERCIAL_PRODUCT
+  //////////////////////////////////////////////////////////////////////////////////
+  //----------------Function and Jacobian evaluate for RIC   ---------------------//
+  //////////////////////////////////////////////////////////////////////////////////
 
+  /**
+   * filling solution data from FVM_NodeData into petsc vector of RIC equation.
+   * can be used as initial data of nonlinear equation or diverged recovery.
+   */
+  virtual void RIC_Fill_Value(Vec , Vec );
+
+  /**
+   * function for evaluating RIC equation.
+   */
+  virtual void RIC_Function(PetscScalar * , Vec , InsertMode &);
+
+  /**
+   * function for evaluating Jacobian of RIC equation.
+   */
+  virtual void RIC_Jacobian(PetscScalar *, Mat *, InsertMode &);
+
+  /**
+   * function for evaluating time derivative term of RIC equation.
+   */
+  virtual void RIC_Time_Dependent_Function(PetscScalar *, Vec , InsertMode &);
+
+  /**
+   * function for evaluating Jacobian of time derivative term of RIC equation.
+   */
+  virtual void RIC_Time_Dependent_Jacobian(PetscScalar * , Mat *, InsertMode &);
+
+  /**
+   * function for update solution value of RIC equation.
+   */
+  virtual void RIC_Update_Solution(PetscScalar *);
+
+#endif
 };
 
 

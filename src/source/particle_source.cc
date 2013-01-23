@@ -24,7 +24,6 @@
 
 #include "parser.h"
 #include "mesh_base.h"
-#include "point_locator_base.h"
 #include "particle_source.h"
 #include "simulation_system.h"
 #include "simulation_region.h"

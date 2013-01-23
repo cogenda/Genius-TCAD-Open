@@ -81,6 +81,7 @@ MeshBase::~MeshBase()
 void MeshBase::prepare_for_use (const bool skip_renumber_nodes_and_elements)
 {
   this->count_mesh_dimension();
+  this->build_mesh_bounding_box();
 
   // Renumber the nodes and elements so that they in contiguous
   // blocks.  By default, skip_renumber_nodes_and_elements is false,
@@ -125,6 +126,26 @@ void MeshBase::count_mesh_dimension()
     _mesh_dim = std::max(_mesh_dim, (*el)->dim());
 
   //Parallel::max(_mesh_dim);
+}
+
+
+void MeshBase::build_mesh_bounding_box ()
+{
+  Point min(1.e30,   1.e30,  1.e30);
+  Point max(-1.e30, -1.e30, -1.e30);
+
+  const_element_iterator       el  = elements_begin();
+  const const_element_iterator end = elements_end();
+
+  for (; el != end; ++el)
+    for (unsigned int n=0; n<(*el)->n_nodes(); n++)
+      for (unsigned int i=0; i<spatial_dimension(); i++)
+  {
+    min(i) = std::min(min(i), point((*el)->node(n))(i));
+    max(i) = std::max(max(i), point((*el)->node(n))(i));
+  }
+
+  _bounding_box = std::make_pair(min, max);
 }
 
 

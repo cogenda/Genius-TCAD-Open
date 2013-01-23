@@ -307,6 +307,9 @@ void InsulatorSemiconductorInterfaceBC::EBM3_Function(PetscScalar * x, Vec f, In
     VecSetValues(f, iy.size(), &(iy[0]), &(y_new[0]), ADD_VALUES);
 
   add_value_flag = ADD_VALUES;
+
+  // gate current
+  _gate_current_function(x, f, add_value_flag);
 }
 
 
@@ -417,6 +420,9 @@ void InsulatorSemiconductorInterfaceBC::EBM3_Jacobian_Reserve(Mat *jac, InsertMo
 
   // the last operator is ADD_VALUES
   add_value_flag = ADD_VALUES;
+
+  // gate current
+  _gate_current_jacobian_reserve(jac, add_value_flag);
 
 }
 
@@ -703,4 +709,7 @@ void InsulatorSemiconductorInterfaceBC::EBM3_Jacobian(PetscScalar * x, Mat *jac,
 
   // the last operator is ADD_VALUES
   add_value_flag = ADD_VALUES;
+
+  // gate current
+  _gate_current_jacobian(x, jac, add_value_flag);
 }

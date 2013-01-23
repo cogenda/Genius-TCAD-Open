@@ -182,6 +182,53 @@ public:
   }
 
 
+  AutoDScalar J_CBET_Tunneling(const PetscScalar &m, const AutoDScalar &Tl,
+                               const AutoDScalar &Efn1, const AutoDScalar &Efn2,
+                               const AutoDScalar &Ec1,  const AutoDScalar &Ec2,
+                               const AutoDScalar &B1,   const AutoDScalar &B2,
+                               const PetscScalar &t) const
+  {
+    std::vector<AutoDScalar> JE;
+    const AutoDScalar dE = 0.02*kb*Tl/e;
+    AutoDScalar E=adtl::fmax(Ec1, Ec2);
+
+    // direct tunneling
+    for(; E<adtl::fmin(B1, B2); E+=dE)
+    {
+      AutoDScalar phi1 = B1 - E;
+      AutoDScalar phi2 = B2 - E;
+      AutoDScalar TE = exp( - 4.0/3.0*sqrt(2*ELECMASS)/hbar*t*(phi1 + sqrt(phi1*phi2)  + phi2 )/(sqrt(phi1) + sqrt(phi2)) );
+      AutoDScalar f1E = 1.0/(1.0+exp((E-Efn1)/(kb*Tl)));
+      AutoDScalar f2E = 1.0/(1.0+exp((E-Efn2)/(kb*Tl)));
+      PetscScalar g1E = (E >= Ec1 ? 1.0 : 0.0);
+      PetscScalar g2E = (E >= Ec2 ? 1.0 : 0.0);
+
+      JE.push_back(TE*(f1E-f2E)*g1E*g2E);
+    }
+    // FN tunneling
+    for(; E<adtl::fmax(B1, B2); E+=dE)
+    {
+      AutoDScalar phi = std::max(B1, B2) - E;
+      AutoDScalar tbar = phi/adtl::fabs(B1-B2)*t;
+      AutoDScalar TE = exp( - 4.0/3.0*sqrt(2*ELECMASS)/hbar*tbar*(sqrt(phi)) );
+      AutoDScalar f1E = 1.0/(1.0+exp((E-Efn1)/(kb*Tl)));
+      AutoDScalar f2E = 1.0/(1.0+exp((E-Efn2)/(kb*Tl)));
+      PetscScalar g1E = (E >= Ec1 ? 1.0 : 0.0);
+      PetscScalar g2E = (E >= Ec2 ? 1.0 : 0.0);
+      JE.push_back(TE*(f1E-f2E)*g1E*g2E);
+    }
+
+    JE.push_back(JE[JE.size()-1]); // prevent negative value of JE.size()-1
+
+    AutoDScalar J_CBET = 0.0;
+    for(unsigned int n=0; n<JE.size()-1; n++)
+    {
+      J_CBET += 0.5*(JE[n]+JE[n+1])*dE;
+    }
+    return J_CBET*CBET_alpha*e*m*kb*Tl/(2*hbar*hbar*hbar);
+  }
+
+
   PetscScalar J_VBHT_Tunneling(const PetscScalar &m, const PetscScalar &Tl,
                                const PetscScalar &Efp1, const PetscScalar &Efp2,
                                const PetscScalar &Ev1,  const PetscScalar &Ev2,
@@ -227,6 +274,54 @@ public:
     return J_VBET*VBHT_alpha*e*m*kb*Tl/(2*hbar*hbar*hbar);
   }
 
+  AutoDScalar J_VBHT_Tunneling(const PetscScalar &m, const AutoDScalar &Tl,
+                               const AutoDScalar &Efp1, const AutoDScalar &Efp2,
+                               const AutoDScalar &Ev1,  const AutoDScalar &Ev2,
+                               const AutoDScalar &B1,   const AutoDScalar &B2,
+                               const PetscScalar &t) const
+  {
+    std::vector<AutoDScalar> JE;
+    const AutoDScalar dE = 0.02*kb*Tl/e;
+    AutoDScalar E=adtl::fmin(Ev1, Ev2);
+    // direct tunneling
+    for(; E>adtl::fmax(B1, B2); E-=dE)
+    {
+      AutoDScalar phi1 = E - B1;
+      AutoDScalar phi2 = E - B2;
+      AutoDScalar TE = exp( - 4.0/3.0*sqrt(2*ELECMASS)/hbar*t*(phi1 + sqrt(phi1*phi2)  + phi2 )/(sqrt(phi1) + sqrt(phi2)) );
+      AutoDScalar f1E = 1.0/(1.0+exp((Efp1-E)/(kb*Tl)));
+      AutoDScalar f2E = 1.0/(1.0+exp((Efp2-E)/(kb*Tl)));
+      PetscScalar g1E = (E <= Ev1 ? 1.0 : 0.0);
+      PetscScalar g2E = (E <= Ev2 ? 1.0 : 0.0);
+      JE.push_back(TE*(f1E-f2E)*g1E*g2E);
+    }
+
+    // FN tunneling
+    for(; E>adtl::fmin(B1, B2); E-=dE)
+    {
+      AutoDScalar phi = E - adtl::fmin(B1, B2);
+      AutoDScalar tbar = phi/adtl::fabs(B1-B2)*t;
+      AutoDScalar TE = exp( - 4.0/3.0*sqrt(2*ELECMASS)/hbar*tbar*(sqrt(phi)) );
+      AutoDScalar f1E = 1.0/(1.0+exp((Efp1-E)/(kb*Tl)));
+      AutoDScalar f2E = 1.0/(1.0+exp((Efp2-E)/(kb*Tl)));
+      PetscScalar g1E = (E <= Ev1 ? 1.0 : 0.0);
+      PetscScalar g2E = (E <= Ev2 ? 1.0 : 0.0);
+      JE.push_back(TE*(f1E-f2E)*g1E*g2E);
+    }
+
+    JE.push_back(JE[JE.size()-1]); // prevent negative value of JE.size()-1
+
+    AutoDScalar J_VBET = 0.0;
+    for(unsigned int n=0; n<JE.size()-1; n++)
+    {
+      J_VBET += 0.5*(JE[n]+JE[n+1])*dE;
+    }
+    return J_VBET*VBHT_alpha*e*m*kb*Tl/(2*hbar*hbar*hbar);
+  }
+
+
+
+
   PetscScalar J_VBET_Tunneling(const PetscScalar &m, const PetscScalar &Tl,
                                const PetscScalar &Efn1, const PetscScalar &Efn2,
                                const PetscScalar &Ec1,  const PetscScalar &Ec2,
@@ -252,6 +347,40 @@ public:
     JE.push_back(JE[JE.size()-1]); // prevent negative value of JE.size()-1
 
     PetscScalar J_VBET = 0.0;
+    for(unsigned int n=0; n<JE.size()-1; n++)
+    {
+      J_VBET += 0.5*(JE[n]+JE[n+1])*dE;
+    }
+    return J_VBET*VBET_alpha*e*m*kb*Tl/(2*hbar*hbar*hbar);
+  }
+
+
+
+  AutoDScalar J_VBET_Tunneling(const PetscScalar &m, const AutoDScalar &Tl,
+                               const AutoDScalar &Efn1, const AutoDScalar &Efn2,
+                               const AutoDScalar &Ec1,  const AutoDScalar &Ec2,
+                               const AutoDScalar &Ev1,  const AutoDScalar &Ev2,
+                               const AutoDScalar &B1,   const AutoDScalar &B2,
+                               const PetscScalar &t) const
+  {
+    std::vector<AutoDScalar> JE;
+    const AutoDScalar dE = 0.02*kb*Tl/e;
+    AutoDScalar E=adtl::fmin(Ev1, Ev2);
+    // direct tunneling
+    for(; E<adtl::fmin(B1, B2); E+=dE)
+    {
+      AutoDScalar phi1 = B1 - E;
+      AutoDScalar phi2 = B2 - E;
+      AutoDScalar TE = exp( - 4.0/3.0*sqrt(2*ELECMASS)/hbar*t*(phi1 + sqrt(phi1*phi2)  + phi2 )/(sqrt(phi1) + sqrt(phi2)) );
+      AutoDScalar f1E = 1.0/(1.0+exp((E-Efn1)/(kb*Tl)));
+      AutoDScalar f2E = 1.0/(1.0+exp((E-Efn2)/(kb*Tl)));
+      PetscScalar g   = ((E >= Ec1 && E <= Ev2) ||  (E >= Ec2 && E <= Ev1)) ? 1.0 : 0.0;
+      JE.push_back(TE*(f1E-f2E)*g);
+    }
+
+    JE.push_back(JE[JE.size()-1]); // prevent negative value of JE.size()-1
+
+    AutoDScalar J_VBET = 0.0;
     for(unsigned int n=0; n<JE.size()-1; n++)
     {
       J_VBET += 0.5*(JE[n]+JE[n+1])*dE;

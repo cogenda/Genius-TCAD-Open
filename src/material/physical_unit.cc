@@ -21,7 +21,7 @@
 
 //  $Id: physical_unit.cc,v 1.4 2008/07/09 05:58:16 gdiso Exp $
 
-#include <cmath>
+
 #include "physical_unit.h"
 
 
@@ -65,6 +65,12 @@ namespace PhysicalUnit
    *  define as 1e-6*m
    */
   double   um;
+
+  /**
+   *  define as 1e-3*m
+   */
+  double   mm;
+
 
   /**
    *  define as 1e-2*m
@@ -174,6 +180,7 @@ namespace PhysicalUnit
     m  = 1e2*cm;
     nm = 1e-7*cm;
     um = 1e-4*cm;
+    mm = 1e-1*cm;
     J  = C*V;
     W  = J/s;
     kg = J/(m*m)*s*s;
@@ -190,7 +197,7 @@ namespace PhysicalUnit
     e    = 1.602176462e-19*C;
     me   = 9.10938188e-31*kg;
     eps0 = 8.854187818e-12*C/V/m;
-    mu0  = 12.56637061e-7*std::pow(s,2)/C*V/m;
+    mu0  = 12.56637061e-7*s*s/C*V/m;
     h    = 6.62606876e-34*J*s;
     hbar = 1.054571596e-34*J*s;
   }
@@ -208,6 +215,7 @@ namespace PhysicalUnit
     m  = 1e2*cm;
     nm = 1e-7*cm;
     um = 1e-4*cm;
+    mm = 1e-1*cm;
     J  = C*V;
     W  = J/s;
     kg = J/(m*m)*s*s;
@@ -224,7 +232,7 @@ namespace PhysicalUnit
     e    = 1.602176462e-19*C;
     me   = 9.10938188e-31*kg;
     eps0 = 8.854187818e-12*C/V/m;
-    mu0  = 12.56637061e-7*std::pow(s,2)/C*V/m;
+    mu0  = 12.56637061e-7*s*s/C*V/m;
     h    = 6.62606876e-34*J*s;
     hbar = 1.054571596e-34*J*s;
   }
@@ -241,6 +249,7 @@ namespace PhysicalUnit
     m  = 1e2*cm;
     nm = 1e-7*cm;
     um = 1e-4*cm;
+    mm = 1e-1*cm;
     J  = C*V;
     W  = J/s;
     kg = J/(m*m)*s*s;
@@ -257,7 +266,7 @@ namespace PhysicalUnit
     e    = 1.602176462e-19*C;
     me   = 9.10938188e-31*kg;
     eps0 = 8.854187818e-12*C/V/m;
-    mu0  = 12.56637061e-7*std::pow(s,2)/C*V/m;
+    mu0  = 12.56637061e-7*s*s/C*V/m;
     h    = 6.62606876e-34*J*s;
     hbar = 1.054571596e-34*J*s;
   }
@@ -276,6 +285,7 @@ namespace PhysicalUnit
     m  = 1e2*cm;
     nm = 1e-7*cm;
     um = 1e-4*cm;
+    mm = 1e-1*cm;
     J  = C*V;
     W  = J/s;
     kg = J/(m*m)*s*s;
@@ -292,7 +302,7 @@ namespace PhysicalUnit
     e    = 1.602176462e-19*C;
     me   = 9.10938188e-31*kg;
     eps0 = 8.854187818e-12*C/V/m;
-    mu0  = 12.56637061e-7*std::pow(s,2)/C*V/m;
+    mu0  = 12.56637061e-7*s*s/C*V/m;
     h    = 6.62606876e-34*J*s;
     hbar = 1.054571596e-34*J*s;
   }

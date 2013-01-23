@@ -53,8 +53,8 @@ ExternalCircuit * ExternalCircuit::build(const Parser::Card &c)
 
   if( type == "pi" )
   {
-    Real r    = std::max(1e-3, c.get_real ( "res.load", 0.0 )) *V/A;
-    Real R    = std::max(1e-3, c.get_real ( "res", 0.0 )) *V/A;
+    Real r    = std::max(1e-6, c.get_real ( "res.load", 0.0 )) *V/A;
+    Real R    = std::max(1e-6, c.get_real ( "res", 0.0 )) *V/A;
     Real cap1 = c.get_real ( "cap1", 0.0 ) *C/V;
     Real cap2 = c.get_real ( "cap2", 0.0 ) *C/V;
     return new ExternalCircuitPI(r, R, cap1, cap2);
@@ -62,8 +62,8 @@ ExternalCircuit * ExternalCircuit::build(const Parser::Card &c)
 
   if( type == "tline" )
   {
-    Real r      = std::max(1e-3, c.get_real ( "res.load", 0.0 )) *V/A;
-    Real Rl     = c.get_real ( "res.um", 0.0 ) *V/A/um;
+    Real r      = std::max(1e-6,  c.get_real ( "res.load", 0.0 )) *V/A;
+    Real Rl     = std::max(1e-12, c.get_real ( "res.um", 0.0 )) *V/A/um;
     Real capl   = c.get_real ( "cap.um", 0.0 ) *C/V/um;
     Real length = c.get_real ( "tl.length", 0.0 ) *um;
     int  div    = c.get_int  ( "tl.div", 100);

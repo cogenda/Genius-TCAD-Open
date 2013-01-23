@@ -207,6 +207,21 @@ void OhmicContactBC::Poissin_Function(PetscScalar * x, Vec f, InsertMode &add_va
             VecSetValue(f, fvm_nodes[i]->global_offset(), ff, ADD_VALUES);
             break;
           }
+          // insulator region. if a corner where semiconductor region, insulator region and  conductor region meet.
+          // the boundary for the corner point may be Ohmic. (not a nice behavier)
+          case InsulatorRegion:
+          {
+            // psi of this node
+            PetscScalar V = x[fvm_nodes[i]->local_offset()];
+
+            // the psi of this node is equal to corresponding psi of semiconductor node
+            PetscScalar ff = V + node_data->affinity()/e - ext_circuit()->Vapp();
+
+            // set governing equation to function vector
+            VecSetValue(f, fvm_nodes[i]->global_offset(), ff, ADD_VALUES);
+
+            break;
+          }
           // conductor region which has an interface with OhmicContact boundary to semiconductor region
           case ElectrodeRegion:
           {
@@ -217,35 +232,16 @@ void OhmicContactBC::Poissin_Function(PetscScalar * x, Vec f, InsertMode &add_va
             // since the region is sorted, we know region[0] is semiconductor region
             // as a result, x[fvm_nodes[0]->local_offset()] is psi for corresponding semiconductor region
             //genius_assert( regions[0]->type()==SemiconductorRegion );
-            PetscScalar V_semi = x[fvm_nodes[0]->local_offset()];
+            PetscScalar V_ref = x[fvm_nodes[0]->local_offset()];
 
             // the psi of this node is equal to corresponding psi of semiconductor node
-            PetscScalar ff = V - V_semi;
+            PetscScalar ff = V - V_ref;
             // set governing equation to function vector
             VecSetValue(f, fvm_nodes[i]->global_offset(), ff, ADD_VALUES);
 
             break;
           }
-          // insulator region. if a corner where semiconductor region, insulator region and  conductor region meet.
-          // the boundary for the corner point may be Ohmic. (not a nice behavier)
-          case InsulatorRegion:
-          {
 
-            // psi of this node
-            PetscScalar V = x[fvm_nodes[i]->local_offset()];
-
-            // since the region is sorted, we know region[0] is semiconductor region
-            // as a result, x[fvm_nodes[0]->local_offset()] is psi for corresponding semiconductor region
-            //genius_assert( regions[0]->type()==SemiconductorRegion );
-            PetscScalar V_semi = x[fvm_nodes[0]->local_offset()];
-
-            // the psi of this node is equal to corresponding psi of semiconductor node
-            PetscScalar ff = V - V_semi;
-            // set governing equation to function vector
-            VecSetValue(f, fvm_nodes[i]->global_offset(), ff, ADD_VALUES);
-
-            break;
-          }
           case VacuumRegion: break;
           default: genius_error(); //we should never reach here
       }
@@ -307,6 +303,10 @@ void OhmicContactBC::Poissin_Jacobian_Reserve(Mat *jac, InsertMode &add_value_fl
             // no need for semiconductor region
             break;
           }
+          case InsulatorRegion:
+          {
+            break;
+          }
           case ElectrodeRegion:
           {
             // insert none zero pattern
@@ -315,14 +315,7 @@ void OhmicContactBC::Poissin_Jacobian_Reserve(Mat *jac, InsertMode &add_value_fl
 
             break;
           }
-          case InsulatorRegion:
-          {
-            // insert none zero pattern
-            //MatSetValue(*jac, fvm_nodes[i]->global_offset(), fvm_nodes[i]->global_offset(), 0, ADD_VALUES);
-            MatSetValue(*jac, fvm_nodes[i]->global_offset(), fvm_nodes[0]->global_offset(), 0, ADD_VALUES);
 
-            break;
-          }
           case VacuumRegion:
           break;
           default: genius_error(); //we should never reach here
@@ -468,6 +461,24 @@ void OhmicContactBC::Poissin_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add
             MatSetValue(*jac, fvm_nodes[i]->global_offset(), fvm_nodes[i]->global_offset(), ff.getADValue(0), ADD_VALUES);
             break;
           }
+          // insulator region. if a corner where semiconductor region, insulator region and  conductor region meet.
+          // the boundary for the corner point may be Ohmic.
+          case InsulatorRegion:
+          {
+            //the indepedent variable number, we need 1 here.
+            adtl::AutoDScalar::numdir=1;
+
+            // psi of this node
+            AutoDScalar  V = x[fvm_nodes[i]->local_offset()]; V.setADValue(0,1.0);
+
+            // the psi of this node is equal to corresponding psi of semiconductor node
+            AutoDScalar  ff = V + node_data->affinity()/e - ext_circuit()->Vapp();
+
+            // set Jacobian of governing equation ff
+            MatSetValue(*jac, fvm_nodes[i]->global_offset(), fvm_nodes[i]->global_offset(), ff.getADValue(0), ADD_VALUES);
+
+            break;
+          }
           // conductor region which has an interface with OhmicContact boundary to semiconductor region
           case ElectrodeRegion:
           {
@@ -480,10 +491,10 @@ void OhmicContactBC::Poissin_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add
             // since the region is sorted, we know region[0] is semiconductor region
             // as a result, x[fvm_nodes[0]->local_offset()] is psi for corresponding semiconductor region
             //genius_assert( regions[0]->type()==SemiconductorRegion );
-            AutoDScalar  V_semi = x[fvm_nodes[0]->local_offset()]; V_semi.setADValue(1,1.0);
+            AutoDScalar  V_ref = x[fvm_nodes[0]->local_offset()]; V_ref.setADValue(1,1.0);
 
             // the psi of this node is equal to corresponding psi of semiconductor node
-            AutoDScalar  ff = V - V_semi;
+            AutoDScalar  ff = V - V_ref;
 
             // set Jacobian of governing equation ff
             MatSetValue(*jac, fvm_nodes[i]->global_offset(), fvm_nodes[i]->global_offset(), ff.getADValue(0), ADD_VALUES);
@@ -491,30 +502,7 @@ void OhmicContactBC::Poissin_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add
 
             break;
           }
-          // insulator region. if a corner where semiconductor region, insulator region and  conductor region meet.
-          // the boundary for the corner point may be Ohmic.
-          case InsulatorRegion:
-          {
-            //the indepedent variable number, we need 2 here.
-            adtl::AutoDScalar::numdir=2;
 
-            // psi of this node
-            AutoDScalar  V = x[fvm_nodes[i]->local_offset()]; V.setADValue(0,1.0);
-
-            // since the region is sorted, we know region[0] is semiconductor region
-            // as a result, x[fvm_nodes[0]->local_offset()] is psi for corresponding semiconductor region
-            //genius_assert( regions[0]->type()==SemiconductorRegion );
-            AutoDScalar  V_semi = x[fvm_nodes[0]->local_offset()]; V_semi.setADValue(1,1.0);
-
-            // the psi of this node is equal to corresponding psi of semiconductor node
-            AutoDScalar  ff = V - V_semi;
-
-            // set Jacobian of governing equation ff
-            MatSetValue(*jac, fvm_nodes[i]->global_offset(), fvm_nodes[i]->global_offset(), ff.getADValue(0), ADD_VALUES);
-            MatSetValue(*jac, fvm_nodes[i]->global_offset(), fvm_nodes[0]->global_offset(), ff.getADValue(1), ADD_VALUES);
-
-            break;
-          }
           case VacuumRegion:
           break;
           default: genius_error(); //we should never reach here

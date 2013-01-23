@@ -246,6 +246,44 @@ public:
 
 #endif
 
+
+
+#ifdef COGENDA_COMMERCIAL_PRODUCT
+  //////////////////////////////////////////////////////////////////////////////////
+  //--------------Function and Jacobian evaluate for RIC Solver-------------------//
+  //////////////////////////////////////////////////////////////////////////////////
+
+
+  /**
+   * fill solution data into petsc vector of RIC equation.
+   */
+  virtual void RIC_Fill_Value(Vec x, Vec L);
+
+  /**
+   * preprocess function for RIC solver
+   */
+  virtual void RIC_Function_Preprocess(PetscScalar *, Vec, std::vector<PetscInt>&, std::vector<PetscInt>&, std::vector<PetscInt>&);
+
+  /**
+   * build function and its jacobian for RIC solver
+   */
+  virtual void RIC_Function(PetscScalar * , Vec , InsertMode &);
+
+  /**
+   * reserve none zero pattern in petsc matrix.
+   */
+  virtual void RIC_Jacobian_Reserve(Mat *jac, InsertMode &add_value_flag);
+
+  /**
+   * preprocess Jacobian Matrix of RIC equation.
+   */
+  virtual void RIC_Jacobian_Preprocess(PetscScalar *, Mat *, std::vector<PetscInt>&, std::vector<PetscInt>&, std::vector<PetscInt>&);
+
+  /**
+   * build function and its jacobian for RIC solver
+   */
+  virtual void RIC_Jacobian(PetscScalar * , Mat *, InsertMode &);
+#endif
 };
 
 

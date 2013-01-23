@@ -54,6 +54,8 @@ using PhysicalUnit::um;
 using PhysicalUnit::V;
 using PhysicalUnit::A;
 using PhysicalUnit::K;
+using PhysicalUnit::C;
+using PhysicalUnit::W;
 
 
 #ifdef HAVE_VTK
@@ -94,6 +96,7 @@ DDMMonitorHook::DDMMonitorHook ( SolverBase & solver, const std::string & name, 
 {
   this->_poisson_solver = false;
   this->_ddm_solver = false;
+  this->_ric_solver = false;
   this->solution_count=0;
   this->iteration_count=0;
 
@@ -128,6 +131,7 @@ void DDMMonitorHook::on_init()
 {
   this->_poisson_solver = false;
   this->_ddm_solver = false;
+  this->_ric_solver = false;
 
   if(_solver.solver_type() == SolverSpecify::POISSON)
   {
@@ -140,10 +144,18 @@ void DDMMonitorHook::on_init()
       _solver.solver_type() == SolverSpecify::DDML1MIXA ||
       _solver.solver_type() == SolverSpecify::DDML2MIXA ||
       _solver.solver_type() == SolverSpecify::EBML3MIXA ||
+      _solver.solver_type() == SolverSpecify::DDML1MIX  ||
+      _solver.solver_type() == SolverSpecify::DDML2MIX  ||
+      _solver.solver_type() == SolverSpecify::EBML3MIX  ||
       _solver.solver_type() == SolverSpecify::HALLDDML1
     )
   {
     _ddm_solver = true;
+  }
+
+  if(_solver.solver_type() == SolverSpecify::RIC)
+  {
+    _ric_solver = true;
   }
 }
 
@@ -181,8 +193,8 @@ void DDMMonitorHook::pre_iteration()
  */
 void DDMMonitorHook::post_check(void * f, void * x, void * dx, void * w, bool & , bool &)
 {
-  // only monitor ddm solver / poisson solver
-  if(!this->_ddm_solver && !this->_poisson_solver) return;
+  // only monitor ddm solver / poisson / ric solver
+  if(!this->_ddm_solver && !this->_poisson_solver && !this->_ric_solver) return;
 
   if(SolverSpecify::Type == SolverSpecify::TRANSIENT)
   {
@@ -208,6 +220,9 @@ void DDMMonitorHook::post_check(void * f, void * x, void * dx, void * w, bool & 
 
   if(this->_poisson_solver)
     solution_to_vtk_poisson(f, x, dx, w);
+
+  if(this->_ric_solver)
+    solution_to_vtk_ric(f, x, dx, w);
 
   // only processor 0 write VTK file
   if(Genius::processor_id() == 0)
@@ -749,9 +764,9 @@ void DDMMonitorHook::solution_to_vtk_ddm(void * _f, void * _x, void * _dx, void 
             Nd.push_back( node_data->Total_Nd()/concentration_scale );
             net_doping.push_back( node_data->Net_doping()/concentration_scale );
 
-            fpsi.push_back( ff[fvm_node->local_offset()+0] );
-            fn.push_back  ( ff[fvm_node->local_offset()+1] );
-            fp.push_back  ( ff[fvm_node->local_offset()+2] );
+            fpsi.push_back( ff[fvm_node->local_offset()+0]/C );
+            fn.push_back  ( ff[fvm_node->local_offset()+1]/A );
+            fp.push_back  ( ff[fvm_node->local_offset()+2]/A );
 
             psi.push_back( xx[fvm_node->local_offset()+0]/V );
             n.push_back  ( xx[fvm_node->local_offset()+1]/concentration_scale );
@@ -767,7 +782,7 @@ void DDMMonitorHook::solution_to_vtk_ddm(void * _f, void * _x, void * _dx, void 
 
             if(temperature)
             {
-              fT.push_back( ff[fvm_node->local_offset()+3] );
+              fT.push_back( ff[fvm_node->local_offset()+3]/W );
               T.push_back( xx[fvm_node->local_offset()+3]/K );
               dT.push_back( -dxx[fvm_node->local_offset()+3]/K );
               T_.push_back( ww[fvm_node->local_offset()+3]/K );
@@ -807,7 +822,7 @@ void DDMMonitorHook::solution_to_vtk_ddm(void * _f, void * _x, void * _dx, void 
             Nd.push_back( 0 );
             net_doping.push_back( 0 );
 
-            fpsi.push_back( ff[fvm_node->local_offset()+0] );
+            fpsi.push_back( ff[fvm_node->local_offset()+0]/C );
             fn.push_back  ( 0 );
             fp.push_back  ( 0 );
 
@@ -825,7 +840,7 @@ void DDMMonitorHook::solution_to_vtk_ddm(void * _f, void * _x, void * _dx, void 
 
             if(temperature)
             {
-              fT.push_back( ff[fvm_node->local_offset()+1] );
+              fT.push_back( ff[fvm_node->local_offset()+1]/W );
               T.push_back( xx[fvm_node->local_offset()+1]/K );
               dT.push_back( -dxx[fvm_node->local_offset()+1]/K );
               T_.push_back( ww[fvm_node->local_offset()+1]/K );
@@ -855,44 +870,44 @@ void DDMMonitorHook::solution_to_vtk_ddm(void * _f, void * _x, void * _dx, void 
   if (Genius::processor_id() == 0)
     genius_assert( order.size() == mesh.n_nodes() );
 
-  write_node_scaler_solution(order, Na, "Na");
-  write_node_scaler_solution(order, Nd, "Nd");
-  write_node_scaler_solution(order, net_doping, "Net Doping");
+  write_node_scaler_solution(order, Na, "Na[cm-3]");
+  write_node_scaler_solution(order, Nd, "Nd[cm-3]");
+  write_node_scaler_solution(order, net_doping, "Net Doping[cm-3]");
 
-  write_node_scaler_solution(order, fpsi, "fphi");
-  write_node_scaler_solution(order, fn, "fn");
-  write_node_scaler_solution(order, fp, "fp");
+  write_node_scaler_solution(order, fpsi, "fphi[C]");
+  write_node_scaler_solution(order, fn, "fn[A]");
+  write_node_scaler_solution(order, fp, "fp[A]");
 
-  write_node_scaler_solution(order, psi, "phi");
-  write_node_scaler_solution(order, n, "n");
-  write_node_scaler_solution(order, p, "p");
+  write_node_scaler_solution(order, psi, "phi[V]");
+  write_node_scaler_solution(order, n, "n[cm-3]");
+  write_node_scaler_solution(order, p, "p[cm-3]");
 
-  write_node_scaler_solution(order, dpsi, "phi update");
-  write_node_scaler_solution(order, dn, "n update");
-  write_node_scaler_solution(order, dp, "p update");
+  write_node_scaler_solution(order, dpsi, "phi update[V]");
+  write_node_scaler_solution(order, dn, "n update[cm-3]");
+  write_node_scaler_solution(order, dp, "p update[cm-3]");
 
-  write_node_scaler_solution(order, psi_, "phi next");
-  write_node_scaler_solution(order, n_, "n next");
-  write_node_scaler_solution(order, p_, "p next");
+  write_node_scaler_solution(order, psi_, "phi next[V]");
+  write_node_scaler_solution(order, n_, "n next[cm-3]");
+  write_node_scaler_solution(order, p_, "p next[cm-3]");
 
 
   if(temperature)
   {
-    write_node_scaler_solution(order, fT, "fT");
-    write_node_scaler_solution(order, T, "T");
-    write_node_scaler_solution(order, dT, "T update");
-    write_node_scaler_solution(order, T_, "T next");
+    write_node_scaler_solution(order, fT, "fT[W]");
+    write_node_scaler_solution(order, T, "T[K]");
+    write_node_scaler_solution(order, dT, "T update[K]");
+    write_node_scaler_solution(order, T_, "T next[K]");
   }
 
   if(SolverSpecify::TimeDependent == true)
   {
-    write_node_scaler_solution(order, dndt1, "dndt BDF1");
-    write_node_scaler_solution(order, dndt2, "dndt BDF2");
-    write_node_scaler_solution(order, dpdt1, "dpdt BDF1");
-    write_node_scaler_solution(order, dpdt2, "dpdt BDF2");
+    write_node_scaler_solution(order, dndt1, "dndt BDF1[A]");
+    write_node_scaler_solution(order, dndt2, "dndt BDF2[A]");
+    write_node_scaler_solution(order, dpdt1, "dpdt BDF1[A]");
+    write_node_scaler_solution(order, dpdt2, "dpdt BDF2[A]");
   }
-  write_node_scaler_solution(order, R, "recombination");
-  write_node_scaler_solution(order, G, "generation");
+  write_node_scaler_solution(order, R, "recombination[cm-3/s]");
+  write_node_scaler_solution(order, G, "generation[cm-3/s]");
 
   VecRestoreArray(f, &ff);
   VecRestoreArray(x, &xx);
@@ -1001,13 +1016,13 @@ void DDMMonitorHook::solution_to_vtk_poisson(void * _f, void * _x, void * _dx, v
   if (Genius::processor_id() == 0)
     genius_assert( order.size() == mesh.n_nodes() );
 
-  write_node_scaler_solution(order, Na, "Na");
-  write_node_scaler_solution(order, Nd, "Nd");
-  write_node_scaler_solution(order, net_doping, "Net Doping");
+  write_node_scaler_solution(order, Na, "Na[cm-3]");
+  write_node_scaler_solution(order, Nd, "Nd[cm-3]");
+  write_node_scaler_solution(order, net_doping, "Net Doping[cm-3]");
 
-  write_node_scaler_solution(order, fpsi, "fphi");
-  write_node_scaler_solution(order, psi, "phi");
-  write_node_scaler_solution(order, dpsi, "phi update");
+  write_node_scaler_solution(order, fpsi, "fphi[C]");
+  write_node_scaler_solution(order, psi, "phi[V]");
+  write_node_scaler_solution(order, dpsi, "phi update[V]");
 
   VecRestoreArray(f, &ff);
   VecRestoreArray(x, &xx);
@@ -1015,6 +1030,163 @@ void DDMMonitorHook::solution_to_vtk_poisson(void * _f, void * _x, void * _dx, v
   VecRestoreArray(w, &ww);
 }
 
+
+void DDMMonitorHook::solution_to_vtk_ric(void * _f, void * _x, void * _dx, void * _w)
+{
+  const SimulationSystem & system = _solver.get_system();
+  Vec f  = Vec(_f);  // previous function residual
+  Vec x  = Vec(_x);  // previous iterate value
+  Vec dx = Vec(_dx); // new search direction and length
+  Vec w  = Vec(_w);  // current candidate iterate
+
+  PetscScalar    *ff;
+  PetscScalar    *xx;
+  PetscScalar    *dxx;
+  PetscScalar    *ww;
+
+  VecGetArray(f, &ff);
+  VecGetArray(x, &xx);
+  VecGetArray(dx, &dxx);
+  VecGetArray(w, &ww);
+
+  std::set<unsigned int> recorder;
+  std::vector<unsigned int> order;
+  order.reserve(mesh.n_nodes());
+
+  // gather data from all the processor
+  std::vector<float> fpsi, fn;    // residual at this iteration
+  std::vector<float> psi, n;    // solution at this iteration
+  std::vector<float> dpsi, dn; // newton update
+  std::vector<float> psi_, n_; // next solution
+  std::vector<float> dndt1, dndt2; // for time derivative
+
+
+  const float concentration_scale = pow(cm, -3);
+
+  for(unsigned int r=0; r<system.n_regions(); r++)
+  {
+    const SimulationRegion * region = system.region(r);
+
+    SimulationRegion::const_processor_node_iterator it = region->on_processor_nodes_begin();
+    SimulationRegion::const_processor_node_iterator it_end = region->on_processor_nodes_end();
+    for(; it!=it_end; ++it)
+    {
+      const FVM_Node * fvm_node = *it;
+      unsigned int id = fvm_node->root_node()->id();
+
+      // if the fvm_node lies on the interface of two material regions,
+      // we shall use the node data in the more important region.
+      // it just for visualization reason
+      if( fvm_node->boundary_id() != BoundaryInfo::invalid_id )
+      {
+        // test if we had already processed this node
+        if( recorder.find(id) != recorder.end() ) continue;
+        recorder.insert(id);
+
+        unsigned int bc_index = system.get_bcs()->get_bc_index_by_bd_id(fvm_node->boundary_id());
+        const BoundaryCondition * bc = system.get_bcs()->get_bc(bc_index);
+        fvm_node = (*bc->region_node_begin(fvm_node->root_node())).second.second;
+      }
+
+      const FVM_NodeData * node_data = fvm_node->node_data();
+
+      order.push_back(id);
+
+      switch( system.region(fvm_node->subdomain_id())->type() )
+      {
+        case InsulatorRegion :
+        {
+
+          fpsi.push_back( ff[fvm_node->local_offset()+0]/C );
+          fn.push_back  ( ff[fvm_node->local_offset()+1]/A );
+
+          psi.push_back( xx[fvm_node->local_offset()+0]/V );
+          n.push_back  ( xx[fvm_node->local_offset()+1]/concentration_scale );
+
+          dpsi.push_back( -dxx[fvm_node->local_offset()+0]/V );
+          dn.push_back  ( -dxx[fvm_node->local_offset()+1]/concentration_scale );
+
+          psi_.push_back( ww[fvm_node->local_offset()+0]/V );
+          n_.push_back  ( ww[fvm_node->local_offset()+1]/concentration_scale );
+
+
+          if(SolverSpecify::TimeDependent == true)
+          {
+            dndt1.push_back( (xx[fvm_node->local_offset()+1] - node_data->n())/SolverSpecify::dt*fvm_node->volume() / (concentration_scale/s) );
+
+            if(SolverSpecify::BDF2_LowerOrder==false)
+            {
+              const float r = SolverSpecify::dt_last/(SolverSpecify::dt_last + SolverSpecify::dt);
+              dndt2.push_back( ((2-r)/(1-r)*xx[fvm_node->local_offset()+1] - 1.0/(r*(1-r))*node_data->n() + (1-r)/r*node_data->n_last())
+                                 / (SolverSpecify::dt_last+SolverSpecify::dt) * fvm_node->volume() / (concentration_scale/s) );
+            }
+            else
+            {
+              dndt2.push_back( (xx[fvm_node->local_offset()+1] - node_data->n())/SolverSpecify::dt*fvm_node->volume() / (concentration_scale/s) );
+            }
+          }
+
+          break;
+        }
+        case ElectrodeRegion :
+        case MetalRegion :
+        {
+          fpsi.push_back( ff[fvm_node->local_offset()+0]/W );
+          fn.push_back  ( 0 );
+
+          psi.push_back( xx[fvm_node->local_offset()+0]/V );
+          n.push_back  ( 0 );
+
+          dpsi.push_back( -dxx[fvm_node->local_offset()+0]/V );
+          dn.push_back  ( 0 );
+
+          psi_.push_back( ww[fvm_node->local_offset()+0]/V );
+          n_.push_back  ( 0 );
+
+          if(SolverSpecify::TimeDependent == true)
+          {
+            dndt1.push_back( 0 );
+            dndt2.push_back( 0 );
+          }
+          break;
+        }
+        case VacuumRegion:
+          break;
+        default:
+          genius_error(); //we should never reach here
+      }
+
+    }
+  }
+
+  Parallel::gather(0, order);
+  if (Genius::processor_id() == 0)
+    genius_assert( order.size() == mesh.n_nodes() );
+
+  write_node_scaler_solution(order, fpsi, "fphi[C]");
+  write_node_scaler_solution(order, fn, "fn[A]");
+
+  write_node_scaler_solution(order, psi, "phi[V]");
+  write_node_scaler_solution(order, n, "n[cm-3]");
+
+  write_node_scaler_solution(order, dpsi, "phi update[V]");
+  write_node_scaler_solution(order, dn, "n update[cm-3]");
+
+  write_node_scaler_solution(order, psi_, "phi next[V]");
+  write_node_scaler_solution(order, n_, "n next[cm-3]");
+
+
+  if(SolverSpecify::TimeDependent == true)
+  {
+    write_node_scaler_solution(order, dndt1, "dndt BDF1[A]");
+    write_node_scaler_solution(order, dndt2, "dndt BDF2[A]");
+  }
+
+  VecRestoreArray(f, &ff);
+  VecRestoreArray(x, &xx);
+  VecRestoreArray(dx, &dxx);
+  VecRestoreArray(w, &ww);
+}
 
 
 void DDMMonitorHook::write_node_scaler_solution(const std::vector<unsigned int> & order, std::vector<float> &sol, const std::string & sol_name)

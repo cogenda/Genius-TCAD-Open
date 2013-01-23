@@ -166,9 +166,11 @@ read(const std::string & datafilename, int xColumn, int fColumn)
 void
 MonotCubicInterpolator::
 addPair(double newx, double newf) throw(const char*) {
+#if 0
   if (isnan(newx) || isinf(newx) || isnan(newf) || isinf(newf)) {
     throw("MonotCubicInterpolator: addPair() received inf/nan input.");
   }
+#endif
   data[newx] = newf ;
 
   // In a critical application, we should only update the
@@ -181,11 +183,11 @@ addPair(double newx, double newf) throw(const char*) {
 double
 MonotCubicInterpolator::
 evaluate(double x) const throw(const char*){
-
+#if 0
   if (isnan(x) || isinf(x)) {
     throw("MonotCubicInterpolator: evaluate() received inf/nan input.");
   }
-
+#endif
   // xf becomes the first (xdata,fdata) pair where xdata >= x
   map<double,double>::const_iterator xf_iterator = data.lower_bound(x);
 

@@ -35,34 +35,50 @@
 #define PETSC_VERSION_DEV
 #endif
 
+
+#ifndef PETSC_VERSION_LT
 #define PETSC_VERSION_LT(major,minor,subminor)			                    \
   ((PETSC_VERSION_MAJOR < (major) ||						    \
     (PETSC_VERSION_MAJOR == (major) && (PETSC_VERSION_MINOR < (minor) ||	    \
 				  (PETSC_VERSION_MINOR == (minor) &&		    \
 				   PETSC_VERSION_SUBMINOR < (subminor))))) ? 1 : 0)
+#endif
 
+
+#ifndef PETSC_VERSION_LE
 #define PETSC_VERSION_LE(major,minor,subminor)			                    \
   ((PETSC_VERSION_MAJOR < (major) ||						    \
     (PETSC_VERSION_MAJOR == (major) && (PETSC_VERSION_MINOR < (minor) ||	    \
 				  (PETSC_VERSION_MINOR == (minor) &&		    \
 				   PETSC_VERSION_SUBMINOR <= (subminor))))) ? 1 : 0)
+#endif
 
+
+#ifndef PETSC_VERSION_EQ
 #define PETSC_VERSION_EQ(major,minor,subminor)  \
    ((PETSC_VERSION_MAJOR == (major) && \
      PETSC_VERSION_MINOR == (minor)  && \
      PETSC_VERSION_SUBMINOR == (subminor)) ? 1 : 0 )
+#endif
 
+
+#ifndef PETSC_VERSION_GT
 #define PETSC_VERSION_GT(major,minor,subminor)			                    \
   ((PETSC_VERSION_MAJOR > (major) ||						    \
     (PETSC_VERSION_MAJOR == (major) && (PETSC_VERSION_MINOR > (minor) ||	    \
 				  (PETSC_VERSION_MINOR == (minor) &&		    \
 				   PETSC_VERSION_SUBMINOR > (subminor))))) ? 1 : 0)
+#endif
 
+
+#ifndef PETSC_VERSION_GE
 #define PETSC_VERSION_GE(major,minor,subminor)			                    \
   ((PETSC_VERSION_MAJOR > (major) ||						    \
     (PETSC_VERSION_MAJOR == (major) && (PETSC_VERSION_MINOR > (minor) ||	    \
 				  (PETSC_VERSION_MINOR == (minor) &&		    \
 				   PETSC_VERSION_SUBMINOR >= (subminor))))) ? 1 : 0)
+#endif
+
 
 #endif // HAVE_PETSC
 

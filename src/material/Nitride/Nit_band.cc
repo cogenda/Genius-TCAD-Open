@@ -88,6 +88,13 @@ public:
                                const PetscScalar &t) const
   { return 0.0; }
 
+  AutoDScalar J_CBET_Tunneling(const PetscScalar &m, const AutoDScalar &Tl,
+                               const AutoDScalar &Efn1, const AutoDScalar &Efn2,
+                               const AutoDScalar &Ec1,  const AutoDScalar &Ec2,
+                               const AutoDScalar &B1,   const AutoDScalar &B2,
+                               const PetscScalar &t) const
+  { return 0.0; }
+
 
   PetscScalar J_VBHT_Tunneling(const PetscScalar &m, const PetscScalar &Tl,
                                const PetscScalar &Efp1, const PetscScalar &Efp2,
@@ -96,11 +103,26 @@ public:
                                const PetscScalar &t) const
   { return 0.0; }
 
+  AutoDScalar J_VBHT_Tunneling(const PetscScalar &m, const AutoDScalar &Tl,
+                               const AutoDScalar &Efp1, const AutoDScalar &Efp2,
+                               const AutoDScalar &Ev1,  const AutoDScalar &Ev2,
+                               const AutoDScalar &B1,   const AutoDScalar &B2,
+                               const PetscScalar &t) const
+  { return 0.0; }
+
   PetscScalar J_VBET_Tunneling(const PetscScalar &m, const PetscScalar &Tl,
                                const PetscScalar &Efn1, const PetscScalar &Efn2,
                                const PetscScalar &Ec1,  const PetscScalar &Ec2,
                                const PetscScalar &Ev1,  const PetscScalar &Ev2,
                                const PetscScalar &B1,   const PetscScalar &B2,
+                               const PetscScalar &t) const
+  { return 0.0; }
+
+  AutoDScalar J_VBET_Tunneling(const PetscScalar &m, const AutoDScalar &Tl,
+                               const AutoDScalar &Efn1, const AutoDScalar &Efn2,
+                               const AutoDScalar &Ec1,  const AutoDScalar &Ec2,
+                               const AutoDScalar &Ev1,  const AutoDScalar &Ev2,
+                               const AutoDScalar &B1,   const AutoDScalar &B2,
                                const PetscScalar &t) const
   { return 0.0; }
 

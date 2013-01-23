@@ -112,6 +112,9 @@ void SemiconductorSimulationRegion::set_region_variables()
   _region_point_variables["temperature"        ] = SimulationVariable("temperature", SCALAR, POINT_CENTER, "K", FVM_Semiconductor_NodeData::_T_, true);
   _region_point_variables["elec_temperature"   ] = SimulationVariable("elec_temperature", SCALAR, POINT_CENTER, "K", FVM_Semiconductor_NodeData::_Tn_, true);
   _region_point_variables["hole_temperature"   ] = SimulationVariable("hole_temperature", SCALAR, POINT_CENTER, "K", FVM_Semiconductor_NodeData::_Tp_, true);
+  _region_point_variables["eqc"                ] = SimulationVariable("eqc", SCALAR, POINT_CENTER, "eV", FVM_Semiconductor_NodeData::_Eqc_, true);
+  _region_point_variables["eqv"                ] = SimulationVariable("eqv", SCALAR, POINT_CENTER, "eV", FVM_Semiconductor_NodeData::_Eqv_, true);
+
 
   _region_point_variables["density"            ] = SimulationVariable("density", SCALAR, POINT_CENTER, "g/cm^3", FVM_Semiconductor_NodeData::_density_, true);
   _region_point_variables["affinity"           ] = SimulationVariable("affinity", SCALAR, POINT_CENTER, "eV", FVM_Semiconductor_NodeData::_affinity_, true);
@@ -259,20 +262,13 @@ void SemiconductorSimulationRegion::init(PetscScalar T_external)
                         - mt->band->EgNarrowToEv(node_data->p(), node_data->n(), T_external)
                         + node_data->Eg()
                        );
-    /*
+
     // the quantum conduction band is initializted as conduction band
-    node_data->Eqc() = -(e*node_data->psi()
-                         + node_data->affinity()
-                         + mt->band->EgNarrowToEc(node_data->p(), node_data->n(), T_external)
-                         + kb*T_external*log(node_data->Nc()));
+    node_data->Eqc() = node_data->Ec();
 
     // the quantum valence band is initializted as valence band
-    node_data->Eqv() = -(e*node_data->psi()
-                         + node_data->affinity()
-                         - mt->band->EgNarrowToEv(node_data->p(), node_data->n(), T_external)
-                         - kb*T_external*log(node_data->Nv())
-                         + node_data->Eg());
-    */
+    node_data->Eqv() = node_data->Ev();
+
   }
 
   // build data structure for insulator interface

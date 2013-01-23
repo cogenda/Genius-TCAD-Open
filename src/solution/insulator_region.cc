@@ -28,6 +28,7 @@
 
 
 using PhysicalUnit::cm;
+using PhysicalUnit::nm;
 using PhysicalUnit::m;
 using PhysicalUnit::s;
 using PhysicalUnit::V;
@@ -88,6 +89,8 @@ void InsulatorSimulationRegion::set_region_variables()
   _cell_data_storage.allocate_tensor_variable( std::vector<bool>(FVM_Insulator_CellData::n_tensor(),false));
 
   // define _region_point_variables
+  _region_point_variables["electron"        ] = SimulationVariable("electron", SCALAR, POINT_CENTER, "cm^-3", FVM_Insulator_NodeData::_n_, true);
+  _region_point_variables["hole"            ] = SimulationVariable("hole", SCALAR, POINT_CENTER, "cm^-3", FVM_Insulator_NodeData::_p_, true);
   _region_point_variables["potential"       ] = SimulationVariable("potential", SCALAR, POINT_CENTER, "V", FVM_Insulator_NodeData::_psi_, true);
   _region_point_variables["temperature"     ] = SimulationVariable("temperature", SCALAR, POINT_CENTER, "K", FVM_Insulator_NodeData::_T_, true);
   _region_point_variables["density"         ] = SimulationVariable("density", SCALAR, POINT_CENTER, "g/cm^3", FVM_Insulator_NodeData::_density_, true);
@@ -98,11 +101,14 @@ void InsulatorSimulationRegion::set_region_variables()
   _region_point_variables["eps"             ] = SimulationVariable("eps", SCALAR, POINT_CENTER, "C/V/m", FVM_Insulator_NodeData::_eps_, true);
   _region_point_variables["mu"              ] = SimulationVariable("mu", SCALAR, POINT_CENTER, "s^2*V/C/m", FVM_Insulator_NodeData::_mu_, true);
 
-  _region_point_variables["optical_energy"  ] = SimulationVariable("optical_energy", SCALAR, POINT_CENTER, "eV", FVM_Insulator_NodeData::_OptE_, true);
+  _region_point_variables["field_generation"] = SimulationVariable("field_generation", SCALAR, POINT_CENTER, "cm^-3/s", FVM_Insulator_NodeData::_Field_G_, true);
   _region_point_variables["particle_energy" ] = SimulationVariable("particle_energy", SCALAR, POINT_CENTER, "eV", FVM_Insulator_NodeData::_PatE_, true);
+  _region_point_variables["dose_rate"       ] = SimulationVariable("dose_rate", SCALAR, POINT_CENTER, "J/kg/s", FVM_Insulator_NodeData::_DoseRate_, true);
 
   _region_point_variables["potential.last"  ] = SimulationVariable("potential.last", SCALAR, POINT_CENTER, "V", FVM_Insulator_NodeData::_psi_last_, true);
-  _region_point_variables["potential.old"     ] = SimulationVariable("potential.old", SCALAR, POINT_CENTER, "V", FVM_Insulator_NodeData::_psi_old_, true);
+  _region_point_variables["potential.old"   ] = SimulationVariable("potential.old", SCALAR, POINT_CENTER, "V", FVM_Insulator_NodeData::_psi_old_, true);
+  _region_point_variables["electron.last"   ] = SimulationVariable("electron.last", SCALAR, POINT_CENTER, "cm^-3", FVM_Insulator_NodeData::_n_last_, true);
+  _region_point_variables["hole.last"       ] = SimulationVariable("hole.last", SCALAR, POINT_CENTER, "cm^-3", FVM_Insulator_NodeData::_p_last_, true);
   _region_point_variables["temperature.last"] = SimulationVariable("temperature.last", SCALAR, POINT_CENTER, "K", FVM_Insulator_NodeData::_T_last_, true);
 
   _region_point_variables["efield"        ] = SimulationVariable("efield", VECTOR, POINT_CENTER, "V/cm", FVM_Insulator_NodeData::_E_, true);
@@ -151,6 +157,8 @@ void InsulatorSimulationRegion::init(PetscScalar T_external)
 
     // the initial vacuum potential is equal to electron affinity potential
     node_data->psi() = -node_data->affinity();
+    node_data->n() = 0.0;//1.0*pow(cm, -3);
+    node_data->p() = 0.0;//1.0*pow(cm, -3);
   }
 
 }
@@ -183,6 +191,80 @@ void InsulatorSimulationRegion::reinit_after_import()
   }
 
   //NOTE T and psi are read from data file!
+}
+
+
+
+Real InsulatorSimulationRegion::truncated_partial_area(const Elem * elem, unsigned int ne) const
+{
+  // overestimate
+  //return std::abs(elem->partial_area_with_edge(ne));
+
+#if 0
+
+  Real partial_area =  elem->partial_area_with_edge_truncated(ne); // underestimate
+
+  std::pair<unsigned int, unsigned int> edge_nodes;
+  elem->nodes_on_edge(ne, edge_nodes);
+  const FVM_Node * fvm_n1 = elem->get_fvm_node(edge_nodes.first);   // fvm_node of node1
+  const FVM_Node * fvm_n2 = elem->get_fvm_node(edge_nodes.second);  // fvm_node of node2
+
+  unsigned int dim = elem->dim();
+  Real min_area = 0;
+  if( dim == 2)
+    min_area = 0.1*nm;
+  if( dim == 3)
+    min_area = 0.01*nm*nm;
+
+  // however, zero truncated partial area on surface will cut the current path, we here set an average "partial area"
+  if(fvm_n1->cv_surface_area(fvm_n2) < min_area)
+    partial_area = elem->partial_area_with_edge_average();
+  if(partial_area<min_area && (fvm_n1->boundary_id() != BoundaryInfo::invalid_id && fvm_n2->boundary_id() != BoundaryInfo::invalid_id) )
+    partial_area = elem->partial_area_with_edge_average();
+
+  return std::max(min_area, partial_area);
+#endif
+
+#if 0
+  // truncation when required. the result is accurate enough. however, not positive guaranty
+  Real partial_area =  elem->partial_area_with_edge(ne);
+
+  std::pair<unsigned int, unsigned int> edge_nodes;
+  elem->nodes_on_edge(ne, edge_nodes);
+  const FVM_Node * fvm_n1 = elem->get_fvm_node(edge_nodes.first);   // fvm_node of node1
+  const FVM_Node * fvm_n2 = elem->get_fvm_node(edge_nodes.second);  // fvm_node of node2
+
+  unsigned int dim = elem->dim();
+  Real min_area = 0;
+  if( dim == 2)
+    min_area = 0.1*nm;
+  if( dim == 3)
+    min_area = 0.01*nm*nm;
+
+  if(fvm_n1->cv_surface_area(fvm_n2) < min_area)
+    partial_area = std::max(min_area, elem->partial_area_with_edge_truncated(ne));
+
+  return partial_area;
+#endif
+
+  Real partial_area =  elem->partial_area_with_edge(ne);
+
+  std::pair<unsigned int, unsigned int> edge_nodes;
+  elem->nodes_on_edge(ne, edge_nodes);
+  const FVM_Node * fvm_n1 = elem->get_fvm_node(edge_nodes.first);   // fvm_node of node1
+  const FVM_Node * fvm_n2 = elem->get_fvm_node(edge_nodes.second);  // fvm_node of node2
+
+  unsigned int dim = elem->dim();
+  Real min_area = 0;
+  if( dim == 2)
+    min_area = 0.1*nm;
+  if( dim == 3)
+    min_area = 0.01*nm*nm;
+
+  double S  = std::max(min_area, fvm_n1->cv_abs_surface_area(fvm_n2));
+  double CV = std::max(min_area, fvm_n1->cv_surface_area(fvm_n2));
+  return std::abs(partial_area)/S*CV;
+
 }
 
 

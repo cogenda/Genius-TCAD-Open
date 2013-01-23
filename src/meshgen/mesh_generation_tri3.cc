@@ -37,7 +37,7 @@
 
 #include "point.h"
 #include "boundary_info.h"
-
+#include "physical_unit.h"
 
 #include "perf_log.h"
 
@@ -1015,18 +1015,7 @@ int MeshGeneratorTri3::do_mesh()
 
   MESSAGE<<"Generating Tri3 mesh by MeshGeneratorTri3...\n"; RECORD();
 
-  // reset default dimension scale value if user provide it
-  for( _decks.begin(); !_decks.end(); _decks.next() )
-  {
-    Parser::Card c = _decks.get_current_card();
-
-    if(c.key() == "GLOBAL")
-    {
-      dscale  = pow(c.get_real("dopingscale",1e18), 1.0/3)/1e4;
-      _decks.breakloop();
-      break;
-    }
-  }
+  dscale = PhysicalUnit::um;
 
 
   // build x-y grid skeleton

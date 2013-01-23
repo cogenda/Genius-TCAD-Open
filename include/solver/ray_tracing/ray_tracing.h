@@ -348,6 +348,12 @@ private:
    * convert energy to optical Generation
    */
   void optical_generation(unsigned int );
+
+  /**
+   * calculate total optical carrier generation
+   * incident optical energy and total deposite energy
+   */
+  void statistic() const;
 };
 
 #endif

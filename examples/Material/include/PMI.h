@@ -220,11 +220,11 @@ protected:
   //--------------------------------------------------------------------
   // dimension system for material database, it should keep the same as main program
 
-  PetscScalar cm,s,V,C,K;                  // basic unit
+  PetscScalar cm, s, V, C, K;                  // basic unit
 
-  PetscScalar m,um,J,W,kg,g,eV,ps,A,mA;    // derived unit
+  PetscScalar m, um, J, W, kg, g, eV, ps, A, mA, Ohm;    // derived unit
 
-  PetscScalar kb,e,me,eps0,mu0,h,hbar;     // hpysical constant
+  PetscScalar kb, e, me, eps0, mu0, h, hbar;     // hpysical constant
 
 protected:
 
@@ -1215,6 +1215,12 @@ public:
 
 
   /**
+   * an interface for main code to get a string representation of the
+   * current parameter values in the material database
+   */
+  virtual const std::string& get_parameter_string(const int verbosity=0);
+
+  /**
    * @return the complex refraction index of material
    */
   virtual std::complex<PetscScalar> RefractionIndex(PetscScalar lamda, PetscScalar Tl, PetscScalar Eg=0) const=0;
@@ -1291,6 +1297,26 @@ public:
   virtual PetscScalar Affinity      (const PetscScalar &Tl) const=0;
 
   /**
+   * @return the electrical conductance of material
+   */
+  virtual PetscScalar Conductance   (const PetscScalar &Tl, const PetscScalar &E)  const=0;
+
+  /**
+   * @return the electrical conductance of material
+   */
+  virtual AutoDScalar Conductance   (const AutoDScalar &Tl, const AutoDScalar &E)  const=0;
+
+  /**
+   * @return the radiation induced conductance of material, DRate in the unit of Gy/s
+   */
+  virtual PetscScalar RadConductance   (const PetscScalar &DRate)  const=0;
+
+  /**
+   * @return the mobility of material
+   */
+  virtual PetscScalar Mobility   (const PetscScalar &Tl) const=0;
+
+  /**
    * get the atom fraction of this material.
    */
   virtual void atom_fraction(std::vector<std::string> &atoms, std::vector<double> & fraction) const = 0;
@@ -1357,6 +1383,12 @@ class PMII_BandStructure : public PMII_Server
                                        const PetscScalar &B1,   const PetscScalar &B2,
                                        const PetscScalar &t) const = 0;
 
+  virtual AutoDScalar J_CBET_Tunneling(const PetscScalar &m, const AutoDScalar &Tl,
+                                       const AutoDScalar &Efn1, const AutoDScalar &Efn2,
+                                       const AutoDScalar &Ec1,  const AutoDScalar &Ec2,
+                                       const AutoDScalar &B1,   const AutoDScalar &B2,
+                                       const PetscScalar &t) const = 0;
+
 
   /**
    * Valence band hole tunneling
@@ -1367,6 +1399,12 @@ class PMII_BandStructure : public PMII_Server
                                        const PetscScalar &B1,   const PetscScalar &B2,
                                        const PetscScalar &t) const = 0;
 
+  virtual AutoDScalar J_VBHT_Tunneling(const PetscScalar &m, const AutoDScalar &Tl,
+                                       const AutoDScalar &Efn1, const AutoDScalar &Efn2,
+                                       const AutoDScalar &Ec1,  const AutoDScalar &Ec2,
+                                       const AutoDScalar &B1,   const AutoDScalar &B2,
+                                       const PetscScalar &t) const = 0;
+
   /**
    * Valence band electron tunneling
    */
@@ -1375,6 +1413,13 @@ class PMII_BandStructure : public PMII_Server
                                        const PetscScalar &Ec1,  const PetscScalar &Ec2,
                                        const PetscScalar &Ev1,  const PetscScalar &Ev2,
                                        const PetscScalar &B1,   const PetscScalar &B2,
+                                       const PetscScalar &t) const = 0;
+
+  virtual AutoDScalar J_VBET_Tunneling(const PetscScalar &m, const AutoDScalar &Tl,
+                                       const AutoDScalar &Efn1, const AutoDScalar &Efn2,
+                                       const AutoDScalar &Ec1,  const AutoDScalar &Ec2,
+                                       const AutoDScalar &Ev1,  const AutoDScalar &Ev2,
+                                       const AutoDScalar &B1,   const AutoDScalar &B2,
                                        const PetscScalar &t) const = 0;
 
 };

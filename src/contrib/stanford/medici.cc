@@ -35,13 +35,13 @@ MediciTIF::MediciTIF(const std::string & file)
 
 
 
-bool MediciTIF::read()
+bool MediciTIF::read(std::string &err)
 {
   std::ifstream ctmp(_file.c_str(), std::ios::in);
 
   if (!ctmp.good())
   {
-    std::cerr<<"Open Medici TIF file error."<<std::endl;
+    err = "Open Medici TIF file error.";
     return false;
   }
 

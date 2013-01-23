@@ -38,6 +38,8 @@
 class BoundaryCondition;
 typedef struct sCKTnode CKTnode;
 
+#include "schur_solver.h"
+
 
 /**
  * mixed type simulation with ngspice
@@ -100,7 +102,6 @@ public:
   const std::map<std::string, unsigned int> & get_electrode_info() const
   { return _electrode_to_spice_node_map; }
 
-
   /**
    * clear genius electrode info
    */
@@ -118,6 +119,11 @@ public:
     _spice_node_links_to_bc.push_back(n);
     _bc_to_spice_node_map[bc] = n;
   }
+
+  /**
+   * after electrode settings, we can init schur solver now
+   */
+  void build_schur_solver();
 
   /**
    * @return the number of electrodes
@@ -232,6 +238,16 @@ public:
   void ckt_matrix_row(unsigned int row, std::vector<int> & col, std::vector<double> & values) const;
 
   /**
+   * output ckt matrix
+   */
+  void print_ckt_matrix() const;
+
+  /**
+   * get dense schur matrix
+   */
+  void ckt_schur_matrix(std::vector<double> & mat);
+
+  /**
    * get spice rhs
    */
   double rhs(unsigned int n) const;
@@ -242,9 +258,14 @@ public:
   double rhs_old(unsigned int n) const;
 
   /**
-   * write to spice rhs_old
+   * write solution to spice rhs_old, which is used by ckt_load
    */
   void update_rhs_old(const std::vector<double> &rhs);
+
+  /**
+   * write solution to spice rhs_old, which is used by ckt_load
+   */
+  void update_rhs_old_schur(const std::vector<double> &x);
 
   /**
    * save rhs_old to _previous_solution
@@ -270,6 +291,16 @@ public:
   void ckt_residual(unsigned int n, int & global_index, double & value) const;
 
   /**
+   * give a spice row number (begin with 0), get the residual
+   */
+  void ckt_residual(unsigned int n, double & value) const;
+
+  /**
+   * get ckt res
+   */
+  void ckt_schur_residual(std::vector<double> & vec);
+
+  /**
    * @return the 2-norm of residual
    */
   double ckt_residual_norm2() const;
@@ -277,8 +308,7 @@ public:
   /**
    * @return  Mode of operation of the circuit
    */
-  long ckt_mode() const
-  { return *_ckt_mode; }
+  long ckt_mode() const  { return *_ckt_mode; }
 
   /**
    * set circuit mode
@@ -481,6 +511,12 @@ public:
   int circuit_load()
   { return _circuit_load(); }
 
+
+  /**
+   * load circuit, build schur matrix
+   */
+  int circuit_load_schur();
+
   /**
    * load nodeset as initial guess
    */
@@ -601,6 +637,11 @@ private:
    * converged solution
    */
   std::vector<double> _solution;
+
+  /**
+   * spice schur solver
+   */
+  SchurSolver _schur_solver;
 
   /**
    * pointer to spice rhs

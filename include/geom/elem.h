@@ -579,6 +579,11 @@ class Elem :    public DofObject
   virtual PetscScalar interpolation( const std::vector<PetscScalar> & , const Point &) const;
 
   /**
+   * @return the interpolated value at given point
+   */
+  virtual AutoDScalar interpolation( const std::vector<AutoDScalar> & , const Point &) const;
+
+  /**
    * @return the (length/area/volume) of the geometric element.
    * however, we should never get here
    */

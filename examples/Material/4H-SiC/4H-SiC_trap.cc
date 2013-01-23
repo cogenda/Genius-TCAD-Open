@@ -922,8 +922,8 @@ public:
       output   << std::setw(wd_name)   << it->profile_name
                << std::setw(wd_narrow) << it->prefactor
                << std::setw(wd_narrow) << it->E_t
-               << std::setw(wd_wide)   << it->sigma_n
-               << std::setw(wd_wide)   << it->sigma_p
+               << std::setw(wd_wide)   << it->sigma_n /(cm*cm)
+               << std::setw(wd_wide)   << it->sigma_p /(cm*cm)
                << std::setw(wd_narrow) << it->g_n
                << std::setw(wd_narrow) << it->g_p
                << std::endl;
@@ -954,10 +954,10 @@ public:
       }
 
       output   << std::setw(wd_name)   << it->interface_name
-               << std::setw(wd_narrow) << it->interface_density
+               << std::setw(wd_narrow) << it->interface_density * (cm*cm)
                << std::setw(wd_narrow) << it->E_t
-               << std::setw(wd_wide)   << it->sigma_n
-               << std::setw(wd_wide)   << it->sigma_p
+               << std::setw(wd_wide)   << it->sigma_n / (cm*cm)
+               << std::setw(wd_wide)   << it->sigma_p / (cm*cm)
                << std::setw(wd_narrow) << it->g_n
                << std::setw(wd_narrow) << it->g_p
                << std::endl;

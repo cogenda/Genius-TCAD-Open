@@ -485,6 +485,11 @@ public:
   virtual void prepare_for_use_parallel();
 
   /**
+   * sync the volume for on local fvm_node
+   */
+  virtual void sync_fvm_node_volume();
+
+  /**
    * delete fvm_node NOT on this processor, dangerous
    */
   void remove_remote_object();
@@ -598,6 +603,13 @@ public:
    */
   template <typename T>
   bool sync_point_variable(const std::string &v);
+
+
+  /**
+   * @return ChargeIntegralBC pointer if this region is a floating metal
+   * NULL others
+   */
+  virtual BoundaryCondition * floating_metal() const;
 
   /**
    * @return the optical refraction index of the region
@@ -911,7 +923,7 @@ public:
    * can be used as initial data of nonlinear equation or diverged recovery.
    *
    * @param x                global solution vector
-   * @param L                the left scaling vector, usually contains the cell volumn
+   * @param L                the left scaling vector, usually contains the cell volume
    * @note fill items of global solution vector with belongs to local processor
    * each derived region should override it
    */
@@ -988,7 +1000,7 @@ public:
    * can be used as initial data of nonlinear equation or diverged recovery.
    *
    * @param x                global solution vector
-   * @param L                the left scaling vector, usually contains the cell volumn
+   * @param L                the left scaling vector, usually contains the cell volume
    * @note fill items of global solution vector with belongs to local processor
    * each derived region should override it
    */
@@ -1121,7 +1133,7 @@ public:
    * can be used as initial data of nonlinear equation or diverged recovery.
    *
    * @param x                global solution vector
-   * @param L                the left scaling vector, usually contains the cell volumn
+   * @param L                the left scaling vector, usually contains the cell volume
    * @note fill items of global solution vector with belongs to local processor
    * each derived region should override it
    */
@@ -1247,6 +1259,8 @@ public:
   virtual void DDM1R_Update_Solution(PetscScalar *lxx)
   { this->DDM1_Update_Solution(lxx); }
 
+
+
   //////////////////////////////////////////////////////////////////////////////////
   //--------------Function and Jacobian evaluate for L1 Hall DDM------------------//
   //////////////////////////////////////////////////////////////////////////////////
@@ -1258,7 +1272,7 @@ public:
    * can be used as initial data of nonlinear equation or diverged recovery.
    *
    * @param x                global solution vector
-   * @param L                the left scaling vector, usually contains the cell volumn
+   * @param L                the left scaling vector, usually contains the cell volume
    * @note fill items of global solution vector with belongs to local processor
    * each derived region should override it
    */
@@ -1348,6 +1362,98 @@ public:
 
 
   //////////////////////////////////////////////////////////////////////////////////
+  //-------------Function and Jacobian evaluate for Density Gradient--------------//
+  //////////////////////////////////////////////////////////////////////////////////
+
+
+
+  /**
+   * @brief virtual function for get nodal variable number
+   * @note depedent on Density Gradient settings
+   * each derived region should override it
+   */
+  virtual unsigned int dg_n_variables() const=0;
+
+  /**
+   * @brief virtual function for get offset of nodal variable
+   * @return local offset of variable var to global offset
+   * @note depedent on Density Gradient settings
+   * each derived region should override it
+   */
+  virtual unsigned int dg_variable_offset(SolutionVariable var) const=0;
+
+
+  /**
+   * @brief virtual function for fill vector of Density Gradient equation.
+   *
+   * filling solution data from FVM_NodeData into petsc vector of Density Gradient equation.
+   * can be used as initial data of nonlinear equation or diverged recovery.
+   *
+   * @param x                global solution vector
+   * @param L                the left scaling vector, usually contains the cell volume
+   * @note fill items of global solution vector with belongs to local processor
+   * each derived region should override it
+   */
+  virtual void DG_Fill_Value(Vec x, Vec L)=0;
+
+  /**
+   * @brief virtual function for evaluating Density Gradient equation.
+   *
+   * @param x                local unknown vector
+   * @param f                petsc global function vector
+   * @param add_value_flag   flag for last operator is ADD_VALUES
+   *
+   * @note each derived region should override it
+   */
+  virtual void DG_Function(PetscScalar * x, Vec f, InsertMode &add_value_flag)=0;
+
+  /**
+   * @brief virtual function for evaluating Jacobian of Density Gradient equation.
+   *
+   * @param x                local unknown vector
+   * @param jac              petsc global jacobian matrix
+   * @param add_value_flag   flag for last operator is ADD_VALUES
+   *
+   * @note each derived region should override it
+   */
+  virtual void DG_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_value_flag)=0;
+
+  /**
+   * @brief virtual function for evaluating time derivative term of Density Gradient equation.
+   *
+   * @param x                local unknown vector
+   * @param f                petsc global function vector
+   * @param add_value_flag   flag for last operator is ADD_VALUES
+   *
+   * @note each derived region should override it
+   */
+  virtual void DG_Time_Dependent_Function(PetscScalar * x, Vec f, InsertMode &add_value_flag)=0;
+
+  /**
+   * @brief virtual function for evaluating Jacobian of time derivative term of Density Gradient equation.
+   *
+   * @param x                local unknown vector
+   * @param jac              petsc global jacobian matrix
+   * @param add_value_flag   flag for last operator is ADD_VALUES
+   *
+   * @note each derived region should override it
+   */
+  virtual void DG_Time_Dependent_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_value_flag)=0;
+
+
+  /**
+   * @brief virtual function for update solution value of Density Gradient equation.
+   *
+   * update solution data of FVM_NodeData by petsc vector of Density Gradient equation.
+   *
+   * @param x                global solution vector
+   *
+   * @note each derived region should override it
+   */
+  virtual void DG_Update_Solution(PetscScalar *lxx)=0;
+
+
+  //////////////////////////////////////////////////////////////////////////////////
   //----------------Function and Jacobian evaluate for L2 DDM---------------------//
   //////////////////////////////////////////////////////////////////////////////////
 
@@ -1360,7 +1466,7 @@ public:
    * can be used as initial data of nonlinear equation or diverged recovery.
    *
    * @param x                global solution vector
-   * @param L                the left scaling vector, usually contains the cell volumn
+   * @param L                the left scaling vector, usually contains the cell volume
    * @note fill items of global solution vector with belongs to local processor
    * each derived region should override it
    */
@@ -1506,7 +1612,7 @@ public:
    * can be used as initial data of nonlinear equation or diverged recovery.
    *
    * @param x                global solution vector
-   * @param L                the left scaling vector, usually contains the cell volumn
+   * @param L                the left scaling vector, usually contains the cell volume
    * @note fill items of global solution vector with belongs to local processor
    * each derived region should override it
    */
@@ -1603,7 +1709,7 @@ public:
    * filling solution data from FVM_NodeData into petsc vector of level 3 EBM equation.
    *
    * @param x                global solution vector
-   * @param L                the left scaling vector, usually contains the cell volumn
+   * @param L                the left scaling vector, usually contains the cell volume
    * @note fill items of global solution vector with belongs to local processor
    * each derived region should override it
    */
@@ -1904,6 +2010,87 @@ public:
                                std::vector< std::pair<double, double> > & mob,
                                std::vector< double > & weight) const {}
 
+
+
+
+#ifdef COGENDA_COMMERCIAL_PRODUCT
+
+
+  //////////////////////////////////////////////////////////////////////////////////
+  //----------------Function and Jacobian evaluate for RIC   ---------------------//
+  //////////////////////////////////////////////////////////////////////////////////
+
+
+
+  /**
+   * @brief virtual function for fill vector of RIC equation.
+   *
+   * filling solution data from FVM_NodeData into petsc vector of RIC equation.
+   * can be used as initial data of nonlinear equation or diverged recovery.
+   *
+   * @param x                global solution vector
+   * @param L                the left scaling vector, usually contains the cell volume
+   * @note fill items of global solution vector with belongs to local processor
+   * each derived region should override it
+   */
+  virtual void RIC_Fill_Value(Vec x, Vec L)=0;
+
+  /**
+   * @brief virtual function for evaluating RIC equation.
+   *
+   * @param x                local unknown vector
+   * @param f                petsc global function vector
+   * @param add_value_flag   flag for last operator is ADD_VALUES
+   *
+   * @note each derived region should override it
+   */
+  virtual void RIC_Function(PetscScalar * x, Vec f, InsertMode &add_value_flag)=0;
+
+  /**
+   * @brief virtual function for evaluating Jacobian of RIC equation.
+   *
+   * @param x                local unknown vector
+   * @param jac              petsc global jacobian matrix
+   * @param add_value_flag   flag for last operator is ADD_VALUES
+   *
+   * @note each derived region should override it
+   */
+  virtual void RIC_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_value_flag)=0;
+
+  /**
+   * @brief virtual function for evaluating time derivative term of RIC equation.
+   *
+   * @param x                local unknown vector
+   * @param f                petsc global function vector
+   * @param add_value_flag   flag for last operator is ADD_VALUES
+   *
+   * @note each derived region should override it
+   */
+  virtual void RIC_Time_Dependent_Function(PetscScalar * x, Vec f, InsertMode &add_value_flag)=0;
+
+  /**
+   * @brief virtual function for evaluating Jacobian of time derivative term of RIC equation.
+   *
+   * @param x                local unknown vector
+   * @param jac              petsc global jacobian matrix
+   * @param add_value_flag   flag for last operator is ADD_VALUES
+   *
+   * @note each derived region should override it
+   */
+  virtual void RIC_Time_Dependent_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_value_flag)=0;
+
+  /**
+   * @brief virtual function for update solution value of RIC equation.
+   *
+   * update solution data of FVM_NodeData by petsc vector of RIC equation.
+   *
+   * @param x                global solution vector
+   *
+   * @note each derived region should override it
+   */
+  virtual void RIC_Update_Solution(PetscScalar *lxx)=0;
+
+#endif
 
 };
 

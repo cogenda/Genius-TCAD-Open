@@ -140,6 +140,11 @@ public:
   //virtual int solve_iv_trace();
 
   /**
+   * function for line search post check. update SPICE solution here
+   */
+  virtual void sens_line_search_post_check(Vec x, Vec y, Vec w, PetscBool *changed_y, PetscBool *changed_w);
+
+  /**
    * function for convergence test of pseudo time step method
    */
   virtual bool pseudo_time_step_convergence_test() { return true; }

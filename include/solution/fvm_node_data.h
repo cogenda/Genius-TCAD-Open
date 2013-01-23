@@ -166,6 +166,31 @@ public:
   virtual Real &       Tp()
   { return FVM_NodeData::_scalar_dummy_; }
 
+
+  /**
+   * @return the quantum conduction band
+   */
+  virtual Real         Eqc()          const
+  { return 0; }
+
+  /**
+   * @return the writable reference to quantum conduction band
+   */
+  virtual Real &       Eqc()
+  { return FVM_NodeData::_scalar_dummy_; }
+
+  /**
+   * @return the quantum valence band
+   */
+  virtual Real         Eqv()          const
+  { return 0; }
+
+  /**
+   * @return the writable reference to quantum valence band
+   */
+  virtual Real &       Eqv()
+  { return FVM_NodeData::_scalar_dummy_; }
+
   /**
    * @return the statistic potential
    */
@@ -655,6 +680,18 @@ public:
   virtual Real &       PatE()
   { return FVM_NodeData::_scalar_dummy_; }
 
+
+  /**
+   * @return the dose rate, Gy/s
+   */
+  virtual Real         DoseRate()          const
+  { return 0; }
+
+  /**
+   * @return the writable reference to dose rate
+   */
+  virtual Real &       DoseRate()
+  { return FVM_NodeData::_scalar_dummy_; }
 
   /**
    * @return the electron injected in to the FVM cell.

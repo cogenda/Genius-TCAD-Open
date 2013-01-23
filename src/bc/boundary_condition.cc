@@ -73,6 +73,8 @@ void init_bc_name_to_bc_type_map()
     bc_name_to_bc_type["absorbingboundary"        ]  = AbsorbingBoundary;
     bc_name_to_bc_type["sourceboundary"           ]  = SourceBoundary;
     bc_name_to_bc_type["floatmetal"               ]  = ChargedContact;
+    bc_name_to_bc_type["fixedpotential"           ]  = FixedPotential;
+    bc_name_to_bc_type["emit"                     ]  = Emit;
   }
 }
 
@@ -273,6 +275,7 @@ bool consistent_bc_by_subdomain(const std::string &mat1, const std::string &mat2
       if(IsSemiconductor(material1) && material2.empty() ) return true;
       if(IsSemiconductor(material1) && IsInsulator(material2) ) return true;
       if(IsSemiconductor(material1) && IsConductor(material2) ) return true;
+      if(IsSemiconductor(material1) && IsResistance(material2) ) return true;
       return false;
     }
     case IF_Metal_Ohmic:
@@ -290,12 +293,14 @@ bool consistent_bc_by_subdomain(const std::string &mat1, const std::string &mat2
       if(IsSemiconductor(material1) && material2.empty() ) return true;
       if(IsSemiconductor(material1) && IsInsulator(material2) ) return true;
       if(IsSemiconductor(material1) && IsConductor(material2) ) return true;
+      if(IsSemiconductor(material1) && IsResistance(material2) ) return true;
       return false;
     }
     case GateContact:
     {
       if(IsInsulator(material1) && material2.empty() ) return true;
       if(IsInsulator(material1) && IsConductor(material2) ) return true;
+      if(IsInsulator(material1) && IsResistance(material2) ) return true;
       return false;
     }
     case SimpleGateContact:
@@ -559,6 +564,9 @@ bool BoundaryCondition::has_flag(const std::string & name) const
 #include "boundary_condition_simplegate.h"
 #include "boundary_condition_homo.h"
 #include "boundary_condition_solderpad.h"
+#include "boundary_condition_iv.h"
+#include "boundary_condition_ev.h"
+#include "boundary_condition_ee.h"
 
 #include "boundary_condition_electrode_interconnect.h"
 #include "boundary_condition_charge_integral.h"
@@ -719,6 +727,21 @@ AbsorbingBC::AbsorbingBC(SimulationSystem  & system, const std::string & label):
   MESSAGE<<"  Initializing \""<< label <<"\" as Absorbing boundary..."<<std::endl; RECORD();
 }
 
+
+InsulatorVacuumInterfaceBC::InsulatorVacuumInterfaceBC(SimulationSystem  & system, const std::string & label): BoundaryCondition(system,label)
+{
+  MESSAGE<<"  Initializing \""<< label <<"\" as Insulator Vacuum Interface..."<<std::endl; RECORD();
+}
+
+ElectrodeVacuumInterfaceBC::ElectrodeVacuumInterfaceBC(SimulationSystem  & system, const std::string & label): BoundaryCondition(system,label)
+{
+  MESSAGE<<"  Initializing \""<< label <<"\" as Electrode Vacuum Interface..."<<std::endl; RECORD();
+}
+
+ElectrodeElectrodeInterfaceBC::ElectrodeElectrodeInterfaceBC(SimulationSystem  & system, const std::string & label): BoundaryCondition(system,label)
+{
+  MESSAGE<<"  Initializing \""<< label <<"\" as Electrode Electrode Interface..."<<std::endl; RECORD();
+}
 
 //---------------------------------------------------------------------------------
 // the string which indicates the boundary condition
@@ -1103,6 +1126,45 @@ std::string AbsorbingBC::boundary_condition_in_string() const
   <<"string<id>="<<this->label()<<" "
   <<"enum<type>=AbsorbingBoundary "
   <<std::endl;
+
+  return ss.str();
+}
+
+
+std::string InsulatorVacuumInterfaceBC::boundary_condition_in_string() const
+{
+  std::stringstream ss;
+
+  ss <<"#BOUNDARY "
+      <<"string<id>="<<this->label()<<" "
+      <<"  <<the interface between insulator region and vacuum region>>"
+      <<std::endl;
+
+  return ss.str();
+}
+
+
+std::string ElectrodeVacuumInterfaceBC::boundary_condition_in_string() const
+{
+  std::stringstream ss;
+
+  ss <<"#BOUNDARY "
+      <<"string<id>="<<this->label()<<" "
+      <<"  <<the interface between electrode region and vacuum region>>"
+      <<std::endl;
+
+  return ss.str();
+}
+
+
+std::string ElectrodeElectrodeInterfaceBC::boundary_condition_in_string() const
+{
+  std::stringstream ss;
+
+  ss <<"#BOUNDARY "
+      <<"string<id>="<<this->label()<<" "
+      <<"  <<the interface between electrode region and electrode region>>"
+      <<std::endl;
 
   return ss.str();
 }

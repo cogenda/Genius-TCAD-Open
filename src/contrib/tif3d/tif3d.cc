@@ -139,6 +139,19 @@ int TIF3D::read()
       }
     }
 
+     // solution units
+    else if (flag == 'U' || flag == 'u')
+    {
+      int unit_num;
+      ctmp >> unit_num;
+      for(int i = 0; i < unit_num; i++)
+      {
+        std::string sol_unit;
+        ctmp >> sol_unit;
+        _sol_head.sol_unit_array.push_back(sol_unit);
+      }
+    }
+
     // solution data
     else if (flag == 'N' || flag == 'n')
     {

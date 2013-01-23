@@ -111,7 +111,7 @@ public:
    * Enables out-of-mesh mode.  In this mode, if asked to find a point
    * that is contained in no mesh at all, the point locator will
    * return a NULL pointer instead of crashing.  Per default, this
-   * mode is off.
+   * mode is on.
    */
   virtual void enable_out_of_mesh_mode (void) = 0;
 

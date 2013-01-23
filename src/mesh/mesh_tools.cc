@@ -27,7 +27,7 @@
 #include "mesh_base.h"
 #include "elem.h"
 #include "sphere.h"
-
+#include "parallel.h"
 
 
 
@@ -114,12 +114,35 @@ void MeshTools::find_boundary_nodes (const MeshBase& mesh,
 }
 
 
-
 MeshTools::BoundingBox MeshTools::bounding_box(const MeshBase& mesh)
 {
   // processor bounding box with no arguments
   // computes the global bounding box
-  return processor_bounding_box(mesh);
+  return  processor_bounding_box(mesh);
+}
+
+
+MeshTools::BoundingBox MeshTools::global_bounding_box(const MeshBase& mesh)
+{
+  // processor bounding box with no arguments
+  // computes the global bounding box
+  BoundingBox box = processor_bounding_box(mesh, Genius::processor_id());
+
+  std::vector<double> low;
+  std::vector<double> upp;
+
+  low.push_back(box.first[0]);
+  low.push_back(box.first[1]);
+  low.push_back(box.first[2]);
+
+  upp.push_back(box.second[0]);
+  upp.push_back(box.second[1]);
+  upp.push_back(box.second[2]);
+
+  Parallel::min(low);
+  Parallel::max(upp);
+
+  return BoundingBox(Point(low[0], low[1], low[2]), Point(upp[0], upp[1], upp[2]));
 }
 
 
@@ -158,10 +181,10 @@ MeshTools::BoundingBox MeshTools::processor_bounding_box (const MeshBase& mesh, 
   {
     for (unsigned int n=0; n<mesh.n_nodes(); n++)
       for (unsigned int i=0; i<mesh.spatial_dimension(); i++)
-      {
-        min(i) = std::min(min(i), mesh.point(n)(i));
-        max(i) = std::max(max(i), mesh.point(n)(i));
-      }
+    {
+      min(i) = std::min(min(i), mesh.point(n)(i));
+      max(i) = std::max(max(i), mesh.point(n)(i));
+    }
   }
   // if a specific processor id is specified then we need
   // to only consider those elements living on that processor
@@ -173,17 +196,16 @@ MeshTools::BoundingBox MeshTools::processor_bounding_box (const MeshBase& mesh, 
     for (; el != end; ++el)
       for (unsigned int n=0; n<(*el)->n_nodes(); n++)
         for (unsigned int i=0; i<mesh.spatial_dimension(); i++)
-        {
-          min(i) = std::min(min(i), mesh.point((*el)->node(n))(i));
-          max(i) = std::max(max(i), mesh.point((*el)->node(n))(i));
-        }
+    {
+      min(i) = std::min(min(i), mesh.point((*el)->node(n))(i));
+      max(i) = std::max(max(i), mesh.point((*el)->node(n))(i));
+    }
   }
 
   const BoundingBox ret_val(min, max);
 
   return ret_val;
 }
-
 
 
 Sphere MeshTools::processor_bounding_sphere (const MeshBase& mesh, const unsigned int pid)

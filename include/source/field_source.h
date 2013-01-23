@@ -195,6 +195,11 @@ private:
   /**
    * private functions for setting each waveform
    */
+  void  SetWaveformDoubleExp(const Parser::Card &c);
+
+  /**
+   * private functions for setting each waveform
+   */
   void  SetWaveformExpr(const Parser::Card &c);
 
   /**

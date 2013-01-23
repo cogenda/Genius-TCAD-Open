@@ -274,6 +274,44 @@ public:
   virtual void EBM3_Update_Solution(PetscScalar *x)
   { charge_integral_update_solution(x); }
 
+
+#ifdef COGENDA_COMMERCIAL_PRODUCT
+  //////////////////////////////////////////////////////////////////////////////////
+  //----------------Function and Jacobian evaluate for RIC   ---------------------//
+  //////////////////////////////////////////////////////////////////////////////////
+
+  /**
+   * fill solution data into petsc vector of RIC equation.
+   */
+  virtual void RIC_Fill_Value(Vec x, Vec L)
+  { charge_integral_fill_value(x, L); }
+
+  /**
+   * build function and its jacobian for RIC solver, nothing to do
+   */
+  virtual void RIC_Function(PetscScalar *x , Vec f, InsertMode &add_value_flag)
+  { charge_integral_function(x, f, add_value_flag); }
+
+  /**
+   * reserve none zero pattern in petsc matrix.
+   */
+  virtual void RIC_Jacobian_Reserve(Mat *jac, InsertMode &add_value_flag)
+  { charge_integral_reserve(jac, add_value_flag); }
+
+  /**
+   * build function and its jacobian for RIC solver, nothing to do
+   */
+  virtual void RIC_Jacobian(PetscScalar *x , Mat *jac, InsertMode &add_value_flag)
+  { charge_integral_jacobian(x, jac, add_value_flag); }
+
+  /**
+   * update solution data of RIC solver.
+   */
+  virtual void RIC_Update_Solution(PetscScalar *x)
+  { charge_integral_update_solution(x); }
+
+#endif
+
 };
 
 

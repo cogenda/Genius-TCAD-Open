@@ -122,6 +122,13 @@ namespace MeshTools
    */
   BoundingBox  processor_bounding_box (const MeshBase& mesh, const unsigned int pid = invalid_uint);
 
+   /**
+   * @returns two points defining a cartesian box that bounds the
+   * mesh.  The first entry in the pair is the mininum, the second
+   * is the maximim.
+   */
+  BoundingBox  global_bounding_box (const MeshBase& mesh);
+
   /**
    * Same, but returns a sphere instead of a box.
    */

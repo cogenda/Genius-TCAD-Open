@@ -35,6 +35,9 @@
 
 using PhysicalUnit::V;
 using PhysicalUnit::A;
+using PhysicalUnit::W;
+using PhysicalUnit::C;
+using PhysicalUnit::um;
 
 int MixASolverBase::create_solver()
 {
@@ -77,13 +80,6 @@ int MixASolverBase::destroy_solver()
   return FVM_NonlinearSolver::destroy_solver();
 }
 
-
-
-
-int MixASolverBase::pre_solve_process(bool load_solution)
-{
-  return DDMSolverBase::pre_solve_process(load_solution);
-}
 
 
 
@@ -144,6 +140,8 @@ void MixASolverBase::link_electrode_to_spice_node()
  */
 void MixASolverBase::set_extra_matrix_nonzero_pattern()
 {
+
+  DDMSolverBase::set_extra_matrix_nonzero_pattern();
 
   //spice ckt should know offset in petsc matrix and local scatter vec
   _circuit->set_offset(n_global_dofs-this->extra_dofs(),
@@ -309,6 +307,38 @@ void MixASolverBase::spice_fill_value(Vec x, Vec L)
 
 
 
+
+
+
+int MixASolverBase::pre_solve_process(bool load_solution)
+{
+  // spice voltage source/current source maybe changed, here we load solution vector again 
+  if(Genius::is_last_processor())
+  {
+    std::vector<int> ix;
+    std::vector<PetscScalar> y;
+
+    for(unsigned int n=0; n<_circuit->n_ckt_nodes(); ++n)
+    {
+      ix.push_back(_circuit->global_offset_x(n));
+      y.push_back(_circuit->rhs_old(n));
+    }
+
+    if( ix.size() )
+    {
+      VecSetValues(x, ix.size(), &ix[0], &y[0], INSERT_VALUES) ;
+    }
+  }
+
+  VecAssemblyBegin(x);
+  VecAssemblyEnd(x);
+
+  return DDMSolverBase::pre_solve_process(load_solution);
+}
+
+
+
+
 void MixASolverBase::build_spice_function(PetscScalar *lxx, Vec f, InsertMode &add_value_flag)
 {
 
@@ -321,12 +351,6 @@ void MixASolverBase::build_spice_function(PetscScalar *lxx, Vec f, InsertMode &a
   // only the last processor do this
   if(Genius::is_last_processor())
   {
-    // insert x into spice rhs old
-    std::vector<double> rhs;
-    for(unsigned int n=0; n<_circuit->n_ckt_nodes(); ++n)
-      rhs.push_back(lxx[_circuit->local_offset_x(n)]);
-    _circuit->update_rhs_old(rhs);
-
     // ask spice to build new rhs and matrix
     _circuit->circuit_load();
 
@@ -417,7 +441,6 @@ void MixASolverBase::dump_spice_matrix_petsc(const std::string &file) const
 
 
 
-
 void MixASolverBase::print_spice_node() const
 {
   if(Genius::is_last_processor())
@@ -433,6 +456,36 @@ void MixASolverBase::print_spice_node() const
   }
 }
 
+
+void MixASolverBase::sens_line_search_post_check(Vec x, Vec y, Vec w, PetscBool *changed_y, PetscBool *changed_w)
+{
+#if 1
+  //PetscScalar    *xx;
+  //PetscScalar    *yy;
+  PetscScalar    *ww;
+
+  //VecGetArray(x, &xx);  // previous iterate value
+  //VecGetArray(y, &yy);  // new search direction and length
+  VecGetArray(w, &ww);  // current candidate iterate
+
+
+  if(Genius::is_last_processor())
+  {
+    // insert x into spice rhs old
+    std::vector<double> rhs;
+    for(unsigned int n=0; n<_circuit->n_ckt_nodes(); ++n)
+      rhs.push_back(ww[_circuit->array_offset_x(n)]);
+    _circuit->update_rhs_old(rhs);
+  }
+
+
+  //VecRestoreArray(x, &xx);
+  //VecRestoreArray(y, &yy);
+  VecRestoreArray(w, &ww);
+#endif
+
+  FVM_NonlinearSolver::sens_line_search_post_check(x, y, w, changed_y, changed_w);
+}
 
 
 /* ----------------------------------------------------------------------------
@@ -714,7 +767,9 @@ int MixASolverBase::solve_dcop(bool tran_op)
 
   print_spice_node();
 
+
   SolverSpecify::tran_histroy = false;
+
 
   return 0;
 }
@@ -1396,7 +1451,12 @@ int MixASolverBase::solve_transient()
 /*------------------------------------------------------------------
  * snes convergence criteria
  */
-#include "private/snesimpl.h"
+#if PETSC_VERSION_LE(3, 2, 0)
+  #include "private/snesimpl.h"
+  #define SNES_CONVERGED_SNORM_RELATIVE  SNES_CONVERGED_PNORM_RELATIVE
+#else
+  #include "petsc-private/snesimpl.h"
+#endif
 void MixASolverBase::petsc_snes_convergence_test(PetscInt its, PetscReal , PetscReal pnorm, PetscReal fnorm, SNESConvergedReason *reason)
 {
   // update error norm
@@ -1420,17 +1480,21 @@ void MixASolverBase::petsc_snes_convergence_test(PetscInt its, PetscReal , Petsc
     RECORD();
   }
 
+  unsigned int dim = this->system().dim();
+  double z_width = (dim == 2 ? 1.0*um : 1.0);
+
   double  toler_relax = SolverSpecify::toler_relax;
   if(its)
-    toler_relax = std::max(SolverSpecify::toler_relax, 0.1/(pnorm+1e-8));
-
-  bool  poisson_conv              = poisson_norm              < toler_relax*SolverSpecify::poisson_abs_toler;
-  bool  elec_continuity_conv      = elec_continuity_norm      < toler_relax*SolverSpecify::elec_continuity_abs_toler;
-  bool  hole_continuity_conv      = hole_continuity_norm      < toler_relax*SolverSpecify::hole_continuity_abs_toler;
-  bool  spice_conv                = spice_norm                < toler_relax*SolverSpecify::spice_abs_toler;
-  bool  heat_equation_conv        = heat_equation_norm        < toler_relax*SolverSpecify::heat_equation_abs_toler;
-  bool  elec_energy_equation_conv = elec_energy_equation_norm < toler_relax*SolverSpecify::elec_energy_abs_toler;
-  bool  hole_energy_equation_conv = hole_energy_equation_norm < toler_relax*SolverSpecify::hole_energy_abs_toler;
+  {
+    //toler_relax = std::max(SolverSpecify::toler_relax, 1/(pnorm+1e-6));
+  }
+  bool  poisson_conv              = poisson_norm*z_width              < toler_relax*SolverSpecify::poisson_abs_toler;
+  bool  elec_continuity_conv      = elec_continuity_norm*z_width      < toler_relax*SolverSpecify::elec_continuity_abs_toler;
+  bool  hole_continuity_conv      = hole_continuity_norm*z_width      < toler_relax*SolverSpecify::hole_continuity_abs_toler;
+  bool  spice_conv                = spice_norm                        < toler_relax*SolverSpecify::spice_abs_toler;
+  bool  heat_equation_conv        = heat_equation_norm*z_width        < toler_relax*SolverSpecify::heat_equation_abs_toler;
+  bool  elec_energy_equation_conv = elec_energy_equation_norm*z_width < toler_relax*SolverSpecify::elec_energy_abs_toler;
+  bool  hole_energy_equation_conv = hole_energy_equation_norm*z_width < toler_relax*SolverSpecify::hole_energy_abs_toler;
 
 #ifdef WINDOWS
   MESSAGE.precision(1);
@@ -1441,13 +1505,27 @@ void MixASolverBase::petsc_snes_convergence_test(PetscInt its, PetscReal , Petsc
 
   MESSAGE<< std::setw(3) << its << " " ;
   MESSAGE<< std::scientific;
-  MESSAGE<< poisson_norm << (poisson_conv ? "* " : "  ");
-  MESSAGE<< elec_continuity_norm << (elec_continuity_conv ? "* " : "  ");
-  MESSAGE<< hole_continuity_norm << (hole_continuity_conv ? "* " : "  ");
-  MESSAGE<< heat_equation_norm   << (heat_equation_conv ? "* " : "  ");
-  MESSAGE<< elec_energy_equation_norm << (elec_energy_equation_conv ? "* " : "  ");
-  MESSAGE<< hole_energy_equation_norm << (hole_energy_equation_conv ? "* " : "  ");
-  MESSAGE<< spice_norm << (spice_conv ? "* " : "  ");
+  if(dim == 2)
+  {
+    MESSAGE<< poisson_norm*z_width/C << (poisson_conv ? "* " : "  ");
+    MESSAGE<< elec_continuity_norm*z_width/A << (elec_continuity_conv ? "* " : "  ");
+    MESSAGE<< hole_continuity_norm*z_width/A << (hole_continuity_conv ? "* " : "  ");
+    MESSAGE<< heat_equation_norm*z_width/W   << (heat_equation_conv ? "* " : "  ");
+    MESSAGE<< elec_energy_equation_norm*z_width/W << (elec_energy_equation_conv ? "* " : "  ");
+    MESSAGE<< hole_energy_equation_norm*z_width/W << (hole_energy_equation_conv ? "* " : "  ");
+  }
+
+  if(dim == 3)
+  {
+    MESSAGE<< poisson_norm/C << (poisson_conv ? "* " : "  ");
+    MESSAGE<< elec_continuity_norm/A << (elec_continuity_conv ? "* " : "  ");
+    MESSAGE<< hole_continuity_norm/A << (hole_continuity_conv ? "* " : "  ");
+    MESSAGE<< heat_equation_norm/W   << (heat_equation_conv ? "* " : "  ");
+    MESSAGE<< elec_energy_equation_norm/W << (elec_energy_equation_conv ? "* " : "  ");
+    MESSAGE<< hole_energy_equation_norm/W << (hole_energy_equation_conv ? "* " : "  ");
+  }
+  
+  MESSAGE<< spice_norm/A << (spice_conv ? "* " : "  ");
   MESSAGE<< std::fixed << std::setw(4) << (pnorm==0.0 ? -std::numeric_limits<PetscScalar>::infinity():log10(pnorm))
     << (pnorm < SolverSpecify::relative_toler ? "*" : " ") << "\n" ;
   RECORD();
@@ -1474,7 +1552,8 @@ void MixASolverBase::petsc_snes_convergence_test(PetscInt its, PetscReal , Petsc
     else
     {
       // check for absolute convergence
-      if ( poisson_norm               < SolverSpecify::poisson_abs_toler         &&
+      if ( its &&
+           poisson_norm               < SolverSpecify::poisson_abs_toler         &&
            elec_continuity_norm       < SolverSpecify::elec_continuity_abs_toler &&
            hole_continuity_norm       < SolverSpecify::hole_continuity_abs_toler &&
            spice_norm                 < SolverSpecify::spice_abs_toler       &&
@@ -1505,7 +1584,7 @@ void MixASolverBase::petsc_snes_convergence_test(PetscInt its, PetscReal , Petsc
                 elec_energy_equation_conv &&
                 hole_energy_equation_conv   )
       {
-        *reason = SNES_CONVERGED_PNORM_RELATIVE;
+        *reason = SNES_CONVERGED_SNORM_RELATIVE;
       }
     }
   }

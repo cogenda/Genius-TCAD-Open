@@ -2075,6 +2075,27 @@ namespace Parallel
     STOP_LOG("broadcast()", "Parallel");
   }
 
+  template <>
+  inline void broadcast (bool &data, const unsigned int root_id)
+  {
+    if (Genius::n_processors() == 1)
+    {
+      assert (Genius::processor_id() == root_id);
+      return;
+    }
+
+    START_LOG("broadcast()", "Parallel");
+
+    int idata = data ? 1:0;
+    // Spread data to remote processors.
+    const int ierr = MPI_Bcast (&idata, 1, MPI_INT, root_id, Genius::comm_world());
+    assert (ierr == MPI_SUCCESS);
+
+    data = (idata==1);
+
+    STOP_LOG("broadcast()", "Parallel");
+  }
+
 
   template <typename T>
   inline void broadcast (std::complex<T> &data, const unsigned int root_id)

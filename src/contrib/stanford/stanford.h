@@ -47,7 +47,12 @@ public:
   /**
    * read file
    */
-  virtual bool read()=0;
+  virtual bool read(std::string &err)=0;
+
+  /**
+   * DIM, most TIF is 2D, except silvaco has 3D extersion
+   */
+  virtual unsigned int dim() { return 2; }
 
   /**
    * sync mesh
@@ -55,9 +60,9 @@ public:
   //void broadcast_mesh(unsigned int root = 0);
 
   /**
-   * sync solution data
+   * sync  data
    */
-  void broadcast_solution(unsigned int root = 0);
+  void broadcast(unsigned int root = 0);
 
 
   /// debug only
@@ -203,6 +208,40 @@ public:
 
 
   /**
+   * Prism structure
+   */
+  struct Prism_t
+  {
+
+    /**
+     * Prism index (sequential, starts at 0)
+     */
+    int  index;
+
+    /**
+     * region index
+     */
+    int  region;
+
+    /**
+     * tri index, the Prism made of 
+     */
+    int tri;
+
+    /**
+     * top plane
+     */
+    int z1;
+
+    /**
+     * bot plane
+     */
+    int z2;
+
+  };
+
+
+  /**
    * Region information structure,
    * NOTE: when tri_num==0, region is a boundary segment
    */
@@ -253,6 +292,10 @@ public:
      * edge index for edge on boundary of a region
      */
     std::vector<int> boundary;
+
+    int z1;
+
+    int z2;
   };
 
 
@@ -315,6 +358,11 @@ public:
     int region_index;
 
     /**
+     * z plane index
+     */
+    int zplane;
+
+    /**
      * solution data array. the data has the same order as sol_name_array in SolHead_t
      */
     std::vector<double> data_array;
@@ -330,6 +378,9 @@ public:
 
   const std::vector<Tri_t> & tif_tris() const
     { return  _tris; }
+
+  const std::vector<Prism_t> & tif_prisms() const
+    { return  _prisms; }
 
   const std::vector<Region_t> & region_array() const
     { return _regions; }
@@ -359,6 +410,18 @@ public:
 
   Tri_t & tri(unsigned int n)
   { return _tris[n]; }
+
+  const Prism_t & prism(unsigned int n) const
+  { return _prisms[n]; }
+
+  Prism_t & prism(unsigned int n)
+  { return _prisms[n]; }
+
+  int nz() const
+  { return _z_slice.size(); }
+
+  double z(unsigned int n) const
+  { return _z_slice[n]; }
 
   const Region_t & region(unsigned int n) const
     { return _regions[n]; }
@@ -393,6 +456,10 @@ protected:
   std::vector<Edge_t>    _edges;
 
   std::vector<Tri_t>     _tris;
+
+  std::vector<double>    _z_slice;
+
+  std::vector<Prism_t>   _prisms;
 
   std::vector<Region_t>  _regions;
 

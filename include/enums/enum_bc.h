@@ -209,6 +209,16 @@ enum BCType
    */
   SourceBoundary      = 0x1002,
 
+  /**
+   * metal region with fixed potential, only used in RIC model 
+   */
+  FixedPotential      = 0x1010,
+
+  /**
+   * metal region with electron emit, only used in RIC model
+   */
+  Emit                = 0x1020,
+
 
   INVALID_BC_TYPE     = 0xffff           // should always be last
 

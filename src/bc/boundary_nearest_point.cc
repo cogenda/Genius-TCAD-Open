@@ -131,6 +131,7 @@ void InsulatorSemiconductorInterfaceBC::_find_nearest_points_in_gate_region()
 
   // set all target node not on this processor as local, create FVM_Node .
   std::set<unsigned int> modified_regions;
+
   std::multimap<Node *, unsigned int>::iterator node_it = target_nodes.begin();
   for( ; node_it != target_nodes.end(); ++node_it)
   {
@@ -157,6 +158,7 @@ void InsulatorSemiconductorInterfaceBC::_find_nearest_points_in_gate_region()
   {
     SimulationRegion * region = system.region(*region_it);
     region->rebuild_region_fvm_node_list();
+    region->sync_fvm_node_volume();
   }
 #endif
 }

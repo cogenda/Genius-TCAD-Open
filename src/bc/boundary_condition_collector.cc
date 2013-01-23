@@ -32,6 +32,8 @@
 #include "mxml.h"
 #include "MXMLUtil.h"
 #include "perf_log.h"
+#include "TRexpp.h"
+
 
 // all the derived boundary conditions
 #include "boundary_condition_abs.h"
@@ -51,6 +53,10 @@
 #include "boundary_condition_simplegate.h"
 #include "boundary_condition_homo.h"
 #include "boundary_condition_solderpad.h"
+#include "boundary_condition_iv.h"
+#include "boundary_condition_ev.h"
+#include "boundary_condition_ee.h"
+
 
 #include "boundary_condition_electrode_interconnect.h"
 #include "boundary_condition_charge_integral.h"
@@ -245,6 +251,8 @@ int  BoundaryConditionCollector::bc_setup()
         case SchottkyContact             :  { if ( Set_Electrode_SchottkyContact ( c ) )    return 1; break;}
         case GateContact                 :  { if ( Set_Electrode_GateContact ( c ) )        return 1; break;}
         case ChargedContact              :  { if ( Set_SetFloatMetal ( c ) )                return 1; break;}
+        case FixedPotential              :  { if ( Set_Electrode_FixedPotential ( c ) )     return 1; break;}
+        case Emit                        :  { if ( Set_Electrode_Emit ( c ) )               return 1; break;}
         default:
         {
           MESSAGE<<"ERROR: Unrecognized CONTACT "<< contact_string << "." << std::endl;  RECORD();
@@ -360,7 +368,7 @@ int  BoundaryConditionCollector::bc_setup()
           case IF_Insulator_Semiconductor  :  _bcs[i] = new InsulatorSemiconductorInterfaceBC ( _system, label );      break;
           case IF_Semiconductor_Vacuum     :  _bcs[i] = new NeumannBC ( _system, label );                              break;
           case IF_Insulator_Insulator      :  _bcs[i] = new InsulatorInsulatorInterfaceBC ( _system, label );          break;
-          case IF_Insulator_Vacuum         :  _bcs[i] = new NeumannBC ( _system, label );                              break;
+          case IF_Insulator_Vacuum         :  _bcs[i] = new InsulatorVacuumInterfaceBC ( _system, label );             break;
           case IF_Electrode_Insulator      :
           {
             // if the electrode has a semicoductor neighbor, set it to ElectrodeInsulatorInterfaceBC
@@ -396,7 +404,7 @@ int  BoundaryConditionCollector::bc_setup()
           }
           case IF_Insulator_Metal          :  _bcs[i] = new ResistanceInsulatorBC ( _system, label );                  break;
           case IF_Metal_Metal              :  _bcs[i] = new ResistanceResistanceBC ( _system, label );                 break;
-          case IF_Electrode_Vacuum         :  _bcs[i] = new NeumannBC ( _system, label );                              break;
+          case IF_Electrode_Vacuum         :  _bcs[i] = new ElectrodeVacuumInterfaceBC ( _system, label );             break;
           case IF_Metal_Vacuum             :
           {
             _bcs[i] = new NeumannBC ( _system, label );
@@ -634,7 +642,7 @@ int BoundaryConditionCollector::Set_BC_OhmicContact ( const Parser::Card &c )
   if(!consistent_bc_by_subdomain(material1, material2, OhmicContact))
   {
     MESSAGE<<"ERROR at " <<c.get_fileline()
-        << " Boundary ID="<< Identifier << ", Inconsistent bc settings."
+        << " Boundary ID="<< Identifier << ", Type=Ohmic, inconsistent bc settings."
         <<std::endl;
     RECORD();
     genius_error();
@@ -683,7 +691,7 @@ int BoundaryConditionCollector::Set_BC_IF_Metal_Ohmic ( const Parser::Card &c )
   if(!consistent_bc_by_subdomain(material1, material2, IF_Metal_Ohmic))
   {
     MESSAGE<<"ERROR at " <<c.get_fileline()
-        << " Boundary ID="<< Identifier << ", Inconsistent bc settings."
+        << " Boundary ID="<< Identifier << ", Type=Ohmic, inconsistent interface settings."
         <<std::endl;
     RECORD();
     genius_error();
@@ -724,7 +732,7 @@ int BoundaryConditionCollector::Set_BC_SchottkyContact ( const Parser::Card &c )
   if(!consistent_bc_by_subdomain(material1, material2, SchottkyContact))
   {
     MESSAGE<<"ERROR at " <<c.get_fileline()
-        << " Boundary ID="<< Identifier << ", Inconsistent bc settings."
+        << " Boundary ID="<< Identifier << ", Type=Schottky, inconsistent bc settings."
         <<std::endl;
     RECORD();
     genius_error();
@@ -773,7 +781,7 @@ int BoundaryConditionCollector::Set_BC_IF_Metal_Schottky(const Parser::Card &c)
   if(!consistent_bc_by_subdomain(material1, material2, IF_Metal_Schottky))
   {
     MESSAGE<<"ERROR at " <<c.get_fileline()
-        << " Boundary ID="<< Identifier << ", Inconsistent bc settings."
+        << " Boundary ID="<< Identifier << ", Type=Schottky, inconsistent interface settings."
         <<std::endl;
     RECORD();
     genius_error();
@@ -799,7 +807,7 @@ int BoundaryConditionCollector::Set_BC_GateContact ( const Parser::Card &c )
   if(!consistent_bc_by_subdomain(material1, material2, GateContact))
   {
     MESSAGE<<"ERROR at " <<c.get_fileline()
-        << " Boundary ID="<< Identifier << ", Inconsistent bc settings."
+        << " Boundary ID="<< Identifier << ", Type=Gate, inconsistent bc settings."
         <<std::endl;
     RECORD();
     genius_error();
@@ -840,7 +848,7 @@ int BoundaryConditionCollector::Set_BC_SimpleGateContact ( const Parser::Card &c
   if(!consistent_bc_by_subdomain(material1, material2, SimpleGateContact))
   {
     MESSAGE<<"ERROR at " <<c.get_fileline()
-        << " Boundary ID="<< Identifier << ", Inconsistent bc settings."
+        << " Boundary ID="<< Identifier << ", Type=SimpleGate, inconsistent bc settings."
         <<std::endl;
     RECORD();
     genius_error();
@@ -878,7 +886,7 @@ int BoundaryConditionCollector::Set_BC_Solderpad ( const Parser::Card &c )
   if(!consistent_bc_by_subdomain(material1, material2, SolderPad))
   {
     MESSAGE<<"ERROR at " <<c.get_fileline()
-        << " Boundary ID="<< Identifier << ", Inconsistent bc settings."
+        << " Boundary ID="<< Identifier << ", Type=SolderPad, inconsistent bc settings."
         <<std::endl;
     RECORD();
     genius_error();
@@ -925,7 +933,7 @@ int BoundaryConditionCollector::Set_BC_InsulatorInterface ( const Parser::Card &
   if(!consistent_bc_by_subdomain(material1, material2, IF_Insulator_Semiconductor))
   {
     MESSAGE<<"ERROR at " <<c.get_fileline()
-        << " Boundary ID="<< Identifier << ", Inconsistent bc settings."
+        << " Boundary ID="<< Identifier << ", Type=InsulatorInterface, inconsistent interface settings."
         <<std::endl;
     RECORD();
     genius_error();
@@ -955,7 +963,7 @@ int BoundaryConditionCollector::Set_BC_HeteroInterface ( const Parser::Card &c )
   if(!consistent_bc_by_subdomain(material1, material2, HeteroInterface))
   {
     MESSAGE<<"ERROR at " <<c.get_fileline()
-        << " Boundary ID="<< Identifier << ", Inconsistent bc settings."
+        << " Boundary ID="<< Identifier << ", Type=HeteroJunction, inconsistent interface settings."
         <<std::endl;
     RECORD();
     genius_error();
@@ -1304,8 +1312,12 @@ int BoundaryConditionCollector::Set_SetFloatMetal ( const Parser::Card &c )
     // delete previous bc if exist
     if ( _bcs[bc_index]!=NULL ) delete _bcs[bc_index];
 
-    // on the region outer boundary, should not exist
-    genius_assert( sub_id2 != invalid_uint );
+    // on the region outer boundary, should exist
+    if( sub_id2 == invalid_uint )
+    {
+      std::cerr<<"ERROR at " <<c.get_fileline() << " CONTACT: region "<< region_label <<" should be surrounded by insulator." << std::endl;
+      genius_error();
+    }
 
     std::string material1 = _mesh.subdomain_material ( sub_id1 );
     std::string material2 = _mesh.subdomain_material ( sub_id2 );
@@ -1471,6 +1483,207 @@ int BoundaryConditionCollector::Set_BC_AbsorbingBoundary ( const Parser::Card &c
   int bc_index = get_bc_index_by_bd_id ( bd_id );
 
   _bcs[bc_index] = new AbsorbingBC ( _system, Identifier );
+
+  return 0;
+}
+
+
+
+int BoundaryConditionCollector::Set_Electrode_FixedPotential ( const Parser::Card &c )
+{
+  // get the region label from user input
+  std::string rgn_pattern = c.get_string ( "id", "" );
+  TRexpp rgn_rexp;
+  rgn_rexp.Compile(rgn_pattern.c_str());
+
+  std::vector<std::string> regions;
+  for (unsigned int i=0; i<_system.n_regions(); i++)
+  {
+    const SimulationRegion* rgn = _system.region(i);
+    const std::string& rgn_name = rgn->name();
+
+    if (rgn_rexp.Match(rgn_name.c_str())) 
+      regions.push_back(rgn_name);
+  }
+
+  if ( regions.empty() )
+  {
+    std::cerr<<"ERROR at " <<c.get_fileline() << " CONTACT: region "<< rgn_pattern <<" can't be found in mesh structure." <<std::endl;
+    genius_error();
+  }
+
+  for(unsigned int n=0; n<regions.size(); ++n)
+  {
+    const std::string & region_label = regions[n];
+    unsigned int subdomain = _mesh.subdomain_id_by_label ( region_label );
+
+    // the region should be electrode with material "Elec"
+    std::string region_material = _mesh.subdomain_material(subdomain);
+    if(!_resistive_metal_mode)
+    {
+      if ( !Material::IsConductor(region_material) && !Material::IsResistance(region_material))
+      {
+        std::cerr<<"ERROR at " <<c.get_fileline() << " CONTACT: region "<< region_label <<" should be conductor or resistance material." <<std::endl;
+        genius_error();
+      }
+    }
+    else
+    {
+      if ( !Material::IsConductor(region_material) )
+      {
+        std::cerr<<"ERROR at " <<c.get_fileline() << " CONTACT: region "<< region_label <<" should be conductor with material \"Elec\"." <<std::endl;
+        genius_error();
+      }
+    }
+
+    std::set<short int> bd_ids;
+    _mesh.boundary_info->get_boundary_ids_by_subdomain ( subdomain, bd_ids );
+
+    // search in the boundary label, which has the format as region1_to_region2,
+    // test if region_label matches region1 or region2.
+
+    std::set<short int>::iterator it = bd_ids.begin();
+
+    for ( ; it!=bd_ids.end(); ++it )
+    {
+      unsigned int sub_id1 = _boundary_subdomain_map[*it].first;
+      unsigned int sub_id2 = _boundary_subdomain_map[*it].second;
+
+      genius_assert((sub_id1==subdomain) || (sub_id2==subdomain));
+
+      int bc_index = get_bc_index_by_bd_id ( *it );
+      std::string label = _mesh.boundary_info->get_label_by_id ( *it );
+
+      // delete previous bc if exist
+      if ( _bcs[bc_index]!=NULL ) delete _bcs[bc_index];
+
+      // on the region outer boundary, should be set to NeumannBC
+      // at the same time, the NeumannBC here is considered as heat sink
+      // with a very high heat transfer rate
+      if ( sub_id2==invalid_uint )
+      {
+        _bcs[bc_index] = new NeumannBC ( _system, label );
+        _bcs[bc_index]->scalar("heat.transfer") = 1e3*J/s/pow ( cm,2 ) /K;
+        _bcs[bc_index]->z_width() = c.get_real ( "z.width", _bcs[bc_index]->z_width() /um ) *um;
+        continue;
+      }
+
+      std::string material1 = _mesh.subdomain_material ( sub_id1 );
+      std::string material2 = _mesh.subdomain_material ( sub_id2 );
+
+      switch ( determine_bc_by_subdomain ( material1, material2, _resistive_metal_mode ) )
+      {
+        case IF_Electrode_Insulator  :
+        {
+          _bcs[bc_index] = new OhmicContactBC ( _system, label, true );
+          _bcs[bc_index]->T_external() = c.get_real ( "ext.temp",_system.T_external() /K ) *K;
+          _bcs[bc_index]->scalar("heat.transfer") = c.get_real ( "heat.transfer",1e3 ) *J/s/pow ( cm,2 ) /K;
+          _bcs[bc_index]->build_ext_circuit ( ExternalCircuit::build(c) );
+          if ( c.is_parameter_exist ( "potential" ) )
+            _bcs[bc_index]->ext_circuit()->potential() = c.get_real ( "potential", 0.0 ) *V;
+          _bcs[bc_index]->electrode_label()  = region_label;
+          break;
+        }
+        case IF_Electrode_Electrode      :  _bcs[bc_index] = new ElectrodeElectrodeInterfaceBC(_system, label); break;
+        case IF_Electrode_Vacuum         :  _bcs[bc_index] = new NeumannBC ( _system, label );                  break;
+        default: break;
+      }
+      // override electrode z.width
+      _bcs[bc_index]->z_width() = c.get_real ( "z.width", _bcs[bc_index]->z_width() /um ) *um;
+    }
+  }
+
+  return 0;
+}
+
+
+int BoundaryConditionCollector::Set_Electrode_Emit ( const Parser::Card &c )
+{
+  // get the region label from user input
+  std::string region_label = c.get_string ( "id", "" );
+  if ( _system.region ( region_label ) == NULL )
+  {
+    std::cerr<<"ERROR at " <<c.get_fileline() << " CONTACT: region "<< region_label <<" can't be found in mesh structure." <<std::endl;
+    genius_error();
+  }
+
+  unsigned int subdomain = _mesh.subdomain_id_by_label ( region_label );
+
+  // the region should be electrode with material "Elec"
+  std::string region_material = _mesh.subdomain_material(subdomain);
+  if(!_resistive_metal_mode)
+  {
+    if ( !Material::IsConductor(region_material) && !Material::IsResistance(region_material))
+    {
+      std::cerr<<"ERROR at " <<c.get_fileline() << " CONTACT: region "<< region_label <<" should be conductor or resistance material." <<std::endl;
+      genius_error();
+    }
+  }
+  else
+  {
+    if ( !Material::IsConductor(region_material) )
+    {
+      std::cerr<<"ERROR at " <<c.get_fileline() << " CONTACT: region "<< region_label <<" should be conductor with material \"Elec\"." <<std::endl;
+      genius_error();
+    }
+  }
+
+  std::set<short int> bd_ids;
+  _mesh.boundary_info->get_boundary_ids_by_subdomain ( subdomain, bd_ids );
+
+  // search in the boundary label, which has the format as region1_to_region2,
+  // test if region_label matches region1 or region2.
+
+  std::set<short int>::iterator it = bd_ids.begin();
+
+  for ( ; it!=bd_ids.end(); ++it )
+  {
+    unsigned int sub_id1 = _boundary_subdomain_map[*it].first;
+    unsigned int sub_id2 = _boundary_subdomain_map[*it].second;
+
+    genius_assert((sub_id1==subdomain) || (sub_id2==subdomain));
+
+    int bc_index = get_bc_index_by_bd_id ( *it );
+    std::string label = _mesh.boundary_info->get_label_by_id ( *it );
+
+    // delete previous bc if exist
+    if ( _bcs[bc_index]!=NULL ) delete _bcs[bc_index];
+
+    // on the region outer boundary, should be set to NeumannBC
+    // at the same time, the NeumannBC here is considered as heat sink
+    // with a very high heat transfer rate
+    if ( sub_id2==invalid_uint )
+    {
+      _bcs[bc_index] = new NeumannBC ( _system, label );
+      _bcs[bc_index]->scalar("heat.transfer") = 1e3*J/s/pow ( cm,2 ) /K;
+      _bcs[bc_index]->z_width() = c.get_real ( "z.width", _bcs[bc_index]->z_width() /um ) *um;
+      continue;
+    }
+
+    std::string material1 = _mesh.subdomain_material ( sub_id1 );
+    std::string material2 = _mesh.subdomain_material ( sub_id2 );
+
+    switch ( determine_bc_by_subdomain ( material1, material2, _resistive_metal_mode ) )
+    {
+      case IF_Electrode_Insulator  :
+      {
+        _bcs[bc_index] = new SchottkyContactBC ( _system, label, true );
+        _bcs[bc_index]->T_external() = c.get_real ( "ext.temp",_system.T_external() /K ) *K;
+        _bcs[bc_index]->scalar("heat.transfer") = c.get_real ( "heat.transfer",1e3 ) *J/s/pow ( cm,2 ) /K;
+        _bcs[bc_index]->build_ext_circuit ( ExternalCircuit::build(c) );
+        if ( c.is_parameter_exist ( "potential" ) )
+          _bcs[bc_index]->ext_circuit()->potential() = c.get_real ( "potential", 0.0 ) *V;
+        _bcs[bc_index]->electrode_label()  = region_label;
+        break;
+      }
+      case IF_Electrode_Electrode      :  genius_error(); break;
+      case IF_Electrode_Vacuum         :  _bcs[bc_index] = new NeumannBC ( _system, label );                              break;
+      default: break;
+    }
+    // override electrode z.width
+    _bcs[bc_index]->z_width() = c.get_real ( "z.width", _bcs[bc_index]->z_width() /um ) *um;
+
+  }
 
   return 0;
 }

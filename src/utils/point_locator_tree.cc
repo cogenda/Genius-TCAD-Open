@@ -37,7 +37,7 @@ PointLocatorTree::PointLocatorTree (const MeshBase& mesh,
   PointLocatorBase (mesh,master),
   _tree            (NULL),
   _element         (NULL),
-  _out_of_mesh_mode(false)
+  _out_of_mesh_mode(true)
 {
   this->init(Trees::NODES);
 }
@@ -51,7 +51,7 @@ PointLocatorTree::PointLocatorTree (const MeshBase& mesh,
   PointLocatorBase (mesh,master),
   _tree            (NULL),
   _element         (NULL),
-  _out_of_mesh_mode(false)
+  _out_of_mesh_mode(true)
 {
   this->init(build_type);
 }
@@ -114,7 +114,7 @@ void PointLocatorTree::init (const Trees::BuildType build_type)
 	      // Build the bounding box for the mesh.  If the delta-z bound is
 	      // negligibly small then we can use a quadtree.
 	      {
-		MeshTools::BoundingBox bbox = MeshTools::bounding_box(this->_mesh);
+                MeshTools::BoundingBox bbox = MeshTools::global_bounding_box(this->_mesh);
 
 		const Real
 		  Dx = bbox.second(0) - bbox.first(0),

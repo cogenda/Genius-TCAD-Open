@@ -205,6 +205,7 @@ void SimulationRegion::rebuild_region_fvm_node_list()
     if( fvm_node->on_processor() )
       _region_image_node.push_back(fvm_node);
   }
+
 }
 
 
@@ -357,27 +358,7 @@ void SimulationRegion::prepare_for_use_parallel()
       _region_neighbors.push_back( _subdomain_id_to_region_map.find(*it)->second );
   }
 
-  // reset fvm_node volumn for all the FVM_Node (also sync ghost nodes)
-  //NOTE zero/negative fvm_node volumn due to bad mesh will cause simulation fail.
-  // here we force all the fvm_node volumn to be positive
-  {
-    std::map<unsigned int, Real> fvm_node_volumn_map;
-    std::map<unsigned int, FVM_Node *>::iterator nodes_it = _region_node.begin();
-    for(; nodes_it != _region_node.end(); ++nodes_it)
-    {
-      const FVM_Node * fvm_node = (*nodes_it).second;
-      if( !fvm_node->on_processor() ) continue;
-      fvm_node_volumn_map.insert( std::make_pair(fvm_node->root_node()->id(), fvm_node->volume()) );
-    }
-
-    Parallel::allgather(fvm_node_volumn_map);
-    const double min_fvm_volumn = 1*std::pow(PhysicalUnit::nm, 3);
-    for(nodes_it = _region_node.begin(); nodes_it != _region_node.end(); ++nodes_it)
-    {
-      FVM_Node * fvm_node = (*nodes_it).second;
-      fvm_node->set_control_volume( std::max(min_fvm_volumn, std::abs(fvm_node_volumn_map.find(fvm_node->root_node()->id())->second)) );
-    }
-  }
+  sync_fvm_node_volume();
 
   // hanging node flag
   {
@@ -391,6 +372,35 @@ void SimulationRegion::prepare_for_use_parallel()
 
   STOP_LOG("prepare_for_use_parallel()", "SimulationRegion");
 }
+
+
+
+void SimulationRegion::sync_fvm_node_volume()
+{
+  // reset fvm_node volume for all the FVM_Node (also sync ghost nodes)
+  //NOTE zero/negative fvm_node volume due to bad mesh will cause simulation fail.
+  // here we force all the fvm_node volume to be positive
+  {
+    std::map<unsigned int, Real> fvm_node_volume_map;
+    std::map<unsigned int, FVM_Node *>::iterator nodes_it = _region_node.begin();
+    for(; nodes_it != _region_node.end(); ++nodes_it)
+    {
+      const FVM_Node * fvm_node = (*nodes_it).second;
+      if( !fvm_node->on_processor() ) continue;
+      fvm_node_volume_map.insert( std::make_pair(fvm_node->root_node()->id(), fvm_node->volume()) );
+    }
+
+    Parallel::allgather(fvm_node_volume_map);
+    const double min_fvm_volume = 1*std::pow(PhysicalUnit::nm, 3);
+    for(nodes_it = _region_node.begin(); nodes_it != _region_node.end(); ++nodes_it)
+    {
+      FVM_Node * fvm_node = (*nodes_it).second;
+      fvm_node->set_control_volume( std::max(min_fvm_volume, std::abs(fvm_node_volume_map.find(fvm_node->root_node()->id())->second)) );
+    }
+  }
+
+}
+
 
 
 Real SimulationRegion::fvm_cell_quality() const
@@ -743,6 +753,7 @@ bool SimulationRegion::sync_point_variable(const std::string &var_name)
     _node_data_storage.data<T>(variable_index, offset) = value;
   }
 
+  return true;
 }
 
 
@@ -776,6 +787,22 @@ std::string SimulationRegion::get_pmi_info(const std::string& type, const int ve
   output << "------------------------------------------------------------------------------------------------------------------------";
   return output.str();
 }
+
+
+
+BoundaryCondition * SimulationRegion::floating_metal() const
+{
+  std::map<short int, BoundaryCondition *>::const_iterator it = _region_boundaries.begin();
+  std::map<short int, BoundaryCondition *>::const_iterator it_end = _region_boundaries.end();
+  for(; it!=it_end; it++)
+  {
+    BoundaryCondition * bc = it->second;
+    if( bc->bc_type() == ChargedContact )
+      return bc->inter_connect_hub();
+  }
+  return 0;
+}
+
 
 
 void SimulationRegion::add_hanging_node_on_side(const Node * node, const Elem * elem, unsigned int s)
@@ -854,4 +881,7 @@ bool SimulationRegion::set_variable_data< VectorValue<Real> >(const std::string 
 template
 bool SimulationRegion::set_variable_data< TensorValue<Real> >(const std::string &var_name, DataLocation location, const TensorValue<Real> sv);
 
+
+template
+bool SimulationRegion::sync_point_variable<Real>(const std::string &var_name);
 

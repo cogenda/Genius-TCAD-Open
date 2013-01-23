@@ -33,7 +33,7 @@
 
 // Forward declarations
 class MeshBase;
-
+class StanfordTIF;
 
 
 /**
@@ -73,6 +73,10 @@ public:
 private:
 
   const std::string _format;
+
+  void read_2d(StanfordTIF *);
+
+  void read_3d_silvaco(StanfordTIF *);
 
 };
 

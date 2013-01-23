@@ -32,6 +32,8 @@ def build(bld):
                ('PML',      'PML'),
                ('PolySi',   'PolySi'),
                ('PPolySi',  'PPolySi'),
+               ('Kapton',   'Kapton'),
+               ('Epoxy',    'Epoxy'),
                ('3C-SiC',   'SiC3C'),
                ('4H-SiC',   'SiC4H'),
                ('SiGe',     'SiGe'),

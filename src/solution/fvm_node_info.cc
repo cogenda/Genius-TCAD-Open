@@ -654,10 +654,13 @@ PetscScalar FVM_Node::variable(SolutionVariable var) const
 }
 
 
-VectorValue<PetscScalar> FVM_Node::gradient(SolutionVariable var, bool ghost) const
+void FVM_Node::prepare_gradient()
 {
-  PetscScalar a=0,b=0,c=0,d=0,e=0,f=0;
-  PetscScalar r1=0,r2=0,r3=0;
+  Real a=0,b=0,c=0,d=0,e=0,f=0;
+  std::vector<Real> r1;
+  std::vector<Real> r2;
+  std::vector<Real> r3;
+  unsigned int neighbors = _fvm_node_neighbor.size();
 
   fvm_neighbor_node_iterator neighbor_it = this->neighbor_node_begin();
   fvm_neighbor_node_iterator neighbor_it_end =  this->neighbor_node_end();
@@ -666,11 +669,10 @@ VectorValue<PetscScalar> FVM_Node::gradient(SolutionVariable var, bool ghost) co
     const FVM_Node * neighbor_node = neighbor_it->first;
     genius_assert(neighbor_node->on_local());
 
-    PetscScalar w = 1.0/ this->distance(neighbor_node);
-    PetscScalar dx = neighbor_node->root_node()->x() - this->root_node()->x();
-    PetscScalar dy = neighbor_node->root_node()->y() - this->root_node()->y();
-    PetscScalar dz = neighbor_node->root_node()->z() - this->root_node()->z();
-    PetscScalar dphi = neighbor_node->variable(var) - this->variable(var);
+    Real w = 1.0/ this->distance(neighbor_node);
+    Real dx = neighbor_node->root_node()->x() - this->root_node()->x();
+    Real dy = neighbor_node->root_node()->y() - this->root_node()->y();
+    Real dz = neighbor_node->root_node()->z() - this->root_node()->z();
     a += w*dx*dx;
     b += w*dx*dy;
     c += w*dx*dz;
@@ -678,12 +680,92 @@ VectorValue<PetscScalar> FVM_Node::gradient(SolutionVariable var, bool ghost) co
     e += w*dy*dz;
     f += w*dz*dz;
 
-    r1 += w*dx*dphi;
-    r2 += w*dy*dphi;
-    r3 += w*dz*dphi;
+    r1.push_back(w*dx);
+    r2.push_back(w*dy);
+    r3.push_back(w*dz);
   }
 
-  if(ghost)
+  genius_assert(r1.size() == neighbors);
+  genius_assert(r2.size() == neighbors);
+  genius_assert(r3.size() == neighbors);
+
+  if(_ghost_nodes)
+  {
+    std::map< FVM_Node *, std::pair<unsigned int, Real> >::const_iterator g_it = _ghost_nodes->begin();
+    for( ; g_it != _ghost_nodes->end(); ++g_it)
+    {
+      const FVM_Node *ghost_node = g_it->first;
+      if(!ghost_node) continue;
+
+      neighbors += ghost_node->_fvm_node_neighbor.size();
+
+      fvm_neighbor_node_iterator neighbor_it = ghost_node->neighbor_node_begin();
+      fvm_neighbor_node_iterator neighbor_it_end =  ghost_node->neighbor_node_end();
+      for(;neighbor_it!=neighbor_it_end; ++neighbor_it)
+      {
+        const FVM_Node * neighbor_node = neighbor_it->first;
+        genius_assert(neighbor_node->on_local());
+
+        Real w = 1.0/ ghost_node->distance(neighbor_node);
+        Real dx = neighbor_node->root_node()->x() - ghost_node->root_node()->x();
+        Real dy = neighbor_node->root_node()->y() - ghost_node->root_node()->y();
+        Real dz = neighbor_node->root_node()->z() - ghost_node->root_node()->z();
+        a += w*dx*dx;
+        b += w*dx*dy;
+        c += w*dx*dz;
+        d += w*dy*dy;
+        e += w*dy*dz;
+        f += w*dz*dz;
+
+        r1.push_back(w*dx);
+        r2.push_back(w*dy);
+        r3.push_back(w*dz);
+      }
+    }
+  }
+
+  // for 2D case, f is 0, which breaks LU solver
+  // so we set it to 1.0
+  if(fabs(f)<1e-6) f=1.0;
+
+  TNT::Array2D<Real> A (3, 3);
+  A[0][0] = a; A[0][1] = b; A[0][2] = c;
+  A[1][0] = b; A[1][1] = d; A[1][2] = e;
+  A[2][0] = c; A[2][1] = e; A[2][2] = f;
+  JAMA::LU<Real> solver(A);
+  TNT::Array2D<Real> inv_A = solver.inv();
+
+  _gradient.reserve(neighbors);
+  for(unsigned int i=0; i<neighbors; i++)
+  {
+    TNT::Array1D<Real> r(3, 0.0);
+    r[0] = r1[i];
+    r[1] = r2[i];
+    r[2] = r3[i];
+
+    TNT::Array1D<Real> s = inv_A*r;
+    VectorValue<Real> p(s[0],s[1],s[2]);
+    _gradient.push_back(p);
+  }
+
+}
+
+
+VectorValue<PetscScalar> FVM_Node::gradient(SolutionVariable var, bool ghost) const
+{
+
+  std::vector<PetscScalar> dphi_array;
+  fvm_neighbor_node_iterator neighbor_it = this->neighbor_node_begin();
+  fvm_neighbor_node_iterator neighbor_it_end =  this->neighbor_node_end();
+  for(;neighbor_it!=neighbor_it_end; ++neighbor_it)
+  {
+    const FVM_Node * neighbor_node = neighbor_it->first;
+    genius_assert(neighbor_node->on_local());
+    PetscScalar dphi = neighbor_node->variable(var) - this->variable(var);
+    dphi_array.push_back(dphi);
+  }
+
+  if(ghost && _ghost_nodes)
   {
     std::map< FVM_Node *, std::pair<unsigned int, Real> >::const_iterator g_it = _ghost_nodes->begin();
     for( ; g_it != _ghost_nodes->end(); ++ g_it)
@@ -697,44 +779,19 @@ VectorValue<PetscScalar> FVM_Node::gradient(SolutionVariable var, bool ghost) co
       {
         const FVM_Node * neighbor_node = neighbor_it->first;
         genius_assert(neighbor_node->on_local());
-
-        PetscScalar w = 1.0/ ghost_node->distance(neighbor_node);
-        PetscScalar dx = neighbor_node->root_node()->x() - ghost_node->root_node()->x();
-        PetscScalar dy = neighbor_node->root_node()->y() - ghost_node->root_node()->y();
-        PetscScalar dz = neighbor_node->root_node()->z() - ghost_node->root_node()->z();
         PetscScalar dphi = neighbor_node->variable(var) - ghost_node->variable(var);
-        a += w*dx*dx;
-        b += w*dx*dy;
-        c += w*dx*dz;
-        d += w*dy*dy;
-        e += w*dy*dz;
-        f += w*dz*dz;
-
-        r1 += w*dx*dphi;
-        r2 += w*dy*dphi;
-        r3 += w*dz*dphi;
+        dphi_array.push_back(dphi);
       }
     }
   }
 
-  // for 2D case, f is 0, which breaks LU solver
-  // so we set it to 1.0
-  if(fabs(f)<1e-6) f=1.0;
+  VectorValue<PetscScalar> grad;
+  for(unsigned int n=0; n<dphi_array.size(); ++n )
+  {
+    grad += dphi_array[n]*_gradient[n];
+  }
 
-  TNT::Array2D<Real> A (3, 3);
-  TNT::Array1D<Real> r (3);
-  A[0][0] = a; A[0][1] = b; A[0][2] = c;
-  A[1][0] = b; A[1][1] = d; A[1][2] = e;
-  A[2][0] = c; A[2][1] = e; A[2][2] = f;
-
-  r[0] = r1;
-  r[1] = r2;
-  r[2] = r3;
-
-  JAMA::LU<Real> solver(A);
-  TNT::Array1D<Real> dphi = solver.solve(r);
-
-  return VectorValue<PetscScalar>(dphi[0], dphi[1], dphi[2]);
+  return grad;
 }
 
 
@@ -766,6 +823,8 @@ void FVM_Node::prepare_for_use()
   //std::vector< std::pair<FVM_Node *, Real> >(_fvm_node_neighbor).swap(_fvm_node_neighbor);
   FNLess less;
   std::sort( _fvm_node_neighbor.begin(), _fvm_node_neighbor.end(), less );
+
+  prepare_gradient();
 }
 
 

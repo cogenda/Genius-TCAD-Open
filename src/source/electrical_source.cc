@@ -282,10 +282,21 @@ double ElectricalSource::limit_dt(double time, double dt, double dt_min, double 
         di = bc_di;
     }
 
+
     if(std::abs(dv) > v_change || std::abs(di) > i_change)
       dt_limited *= 0.9;//std::min(v_change/std::abs(dv), i_change/std::abs(di));
     else
       break;
+  }
+
+  CBIt it = _bc_source_map.begin();
+  for(; it!=_bc_source_map.end(); ++it)
+  {
+    for(unsigned int i=0; i<(*it).second.first.size(); ++i)
+      (*it).second.first[i]->dt_critial_limit(time, dt_limited, dt_min);
+
+    for(unsigned int i=0; i<(*it).second.second.size(); ++i)
+      (*it).second.second[i]->dt_critial_limit(time, dt_limited, dt_min);
   }
 
   return dt_limited;

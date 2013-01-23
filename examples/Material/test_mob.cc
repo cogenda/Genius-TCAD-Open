@@ -4,7 +4,7 @@
 
 int main(int argc, char ** args)
 {
-  PMI_Benckmark_Mob * mob = new PMI_Benckmark_Mob("Si", "Lucent");
+  PMI_Benckmark_Mob * mob = new PMI_Benckmark_Mob("/home/gdiso/genius/lib/", "Si", "Lucent");
   mob->set_doping(1e18, 0.0);
   std::cout<<mob->mob_electron(1e18, 0, 0, 0, 300)<<std::endl;
 

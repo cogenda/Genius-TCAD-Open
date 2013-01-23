@@ -646,9 +646,15 @@ void MixA2Solver::error_norm()
   //VecScatterBegin(scatter, x, lx, INSERT_VALUES, SCATTER_FORWARD);
   //VecScatterEnd  (scatter, x, lx, INSERT_VALUES, SCATTER_FORWARD);
 
+  // unscale the fcuntion
+  VecPointwiseDivide(f, f, L);
+
   // scatte global function vector f to local vector lf
   VecScatterBegin(scatter, f, lf, INSERT_VALUES, SCATTER_FORWARD);
   VecScatterEnd  (scatter, f, lf, INSERT_VALUES, SCATTER_FORWARD);
+
+  // scale the function vector back
+  VecPointwiseMult(f, f, L);
 
 
   VecGetArray(lx, &xx);  // solution value

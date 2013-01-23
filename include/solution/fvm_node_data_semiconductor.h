@@ -77,6 +77,16 @@ class FVM_Semiconductor_NodeData : public FVM_NodeData
       _Tp_,
 
       /**
+       * quantum conduction band, used in density gradient model simulation
+       */
+      _Eqc_,
+
+      /**
+       * quantum valence band, used in density gradient model simulation
+       */
+      _Eqv_,
+
+      /**
        * the density of the material
        */
       _density_,
@@ -440,6 +450,8 @@ class FVM_Semiconductor_NodeData : public FVM_NodeData
         case TEMPERATURE    :  return  T();                              /* lattice temperature */
         case E_TEMP         :  return  Tn();                             /* electron temperature */
         case H_TEMP         :  return  Tp();                             /* hole temperature */
+        case EQC            :  return  Eqc();                            /* quantum conduction band */
+        case EQV            :  return  Eqv();                            /* quantum valence band */
 
         case DOPING         :  return  Net_doping();                     /* net doping */
         case DOPING_Na      :  return  Total_Na();                       /* acceptor */
@@ -620,6 +632,31 @@ class FVM_Semiconductor_NodeData : public FVM_NodeData
      */
     virtual Real &       Tp()
     { return _data_storage->scalar ( _Tp_, _offset ); }
+
+
+    /**
+     * @return the quantum conduction band
+     */
+    virtual Real         Eqc()          const
+    { return _data_storage->scalar ( _Eqc_, _offset ); }
+
+    /**
+     * @return the writable reference to quantum conduction band
+     */
+    virtual Real &       Eqc()
+    { return _data_storage->scalar ( _Eqc_, _offset ); }
+
+    /**
+     * @return the quantum valence band
+     */
+    virtual Real         Eqv()          const
+    { return _data_storage->scalar ( _Eqv_, _offset ); }
+
+    /**
+     * @return the writable reference to quantum valence band
+     */
+    virtual Real &       Eqv()
+    { return _data_storage->scalar ( _Eqv_, _offset ); }
 
 
     /**

@@ -29,7 +29,7 @@
 
 
 //stuff for the Silvaco read write
-SilvacoTIF::SilvacoTIF(const std::string & file) : StanfordTIF(file)
+SilvacoTIF::SilvacoTIF(const std::string & file) : StanfordTIF(file), _dim(2)
 {
   // init SilImp
   SilImp[   0] = "Vacancy";
@@ -52,6 +52,9 @@ SilvacoTIF::SilvacoTIF(const std::string & file) : StanfordTIF(file)
   SilImp[ 153] = "ArsenicActive";
   SilImp[ 154] = "AntimonyActive";
 
+  SilImp[ 513] = "Region";
+  SilImp[ 600] = "ZPlaneIndex";
+
   // init SilMat
   SilMat[   0] = "Gas";
   SilMat[   1] = "Oxide";
@@ -73,13 +76,13 @@ SilvacoTIF::SilvacoTIF(const std::string & file) : StanfordTIF(file)
 
 
 //Silvaco storage format
-bool SilvacoTIF::read()
+bool SilvacoTIF::read(std::string &err)
 {
   std::ifstream ctmp(_file.c_str(), std::ios::in);
 
   if (!ctmp.good())
   {
-    std::cerr<<"Open silvaco file error."<<std::endl;
+    err = "Open silvaco file error.";
     return false;
   }
 
@@ -89,6 +92,33 @@ bool SilvacoTIF::read()
   {
     switch(flag)
     {
+    case 'v' :
+      {
+        ctmp >> _version;
+        if( _version != "ATLAS" && _version != "ATHENA" )
+        {
+          err = "Only support silvaco ATLAS/ATHENA file, but get " + _version + " file.";
+          return false;
+        }
+        break;
+      }
+    case 'k' :
+      {
+        if( _version == "ATLAS" )
+        {
+          unsigned int dmesh;
+          double dm1, dm2;
+          ctmp >> _dim >> dmesh >> dm1 >> dm2;
+        }
+
+        if( _version == "ATHENA" )
+        {
+          _dim = 2;
+          std::string rubbish;
+          std::getline(ctmp, rubbish);
+        }
+        break;
+      }
       // node coordinate
     case 'c' :
       {
@@ -135,6 +165,29 @@ bool SilvacoTIF::read()
       }
       break;
 
+    case 'Z' :
+      {
+        int index;
+        double z;
+        ctmp >> index >> z;
+        _z_slice.push_back(z);
+        break;
+      }
+
+    case 'P' :
+      {
+        Prism_t Prism;
+        int z1, z2;
+        ctmp >> Prism.index >> Prism.tri >> Prism.region >> z1 >> z2;
+        Prism.index = Prism.index-1;
+        Prism.tri = Prism.tri-1;
+        Prism.region = Prism.region-1;
+        Prism.z1 = z1-1;
+        Prism.z2 = z2-1;
+
+        _prisms.push_back(Prism);
+        break;
+      }
       //region
     case 'r' :
       {
@@ -185,20 +238,29 @@ bool SilvacoTIF::read()
 
         int region_flag;
         int electrode_index;
+        int z;
         int unknow;
         for(unsigned int i=0; i<_electrode_info.size(); ++i)
         {
           switch(_electrode_info[i])
           {
+          case 42 :
+              ctmp >> region_flag;
+              region.segment = (region_flag==2);
+              break;
           case 43 :
             ctmp >> region.name;
 	    // remove "" if exist
 	    if(region.name.at(0)=='"')
 	      region.name = region.name.substr(1, region.name.size()-2);
 	    break;
-          case 42 :
-            ctmp >> region_flag;
-            region.segment = (region_flag==2);
+          case 44 :
+            ctmp >> region.z2;
+            region.z2 = region.z2 -1;
+            break;
+          case 45:
+            ctmp >> region.z1;
+            region.z1 = region.z1 -1;
             break;
           case 46 :
             ctmp >> electrode_index;
@@ -236,6 +298,7 @@ bool SilvacoTIF::read()
             sol_name = SilImp[loc];
           else
             sol_name = "unknow";
+
           _sol_head.sol_name_array.push_back(sol_name);
         }
       }
@@ -254,6 +317,22 @@ bool SilvacoTIF::read()
         //For all data values...
         for(int i = 0; i < _sol_head.sol_num; i++)
         {
+          if( _sol_head.sol_name_array[i] == "Region" )
+          {
+            ctmp >> solution.region_index ;
+            solution.region_index =  solution.region_index-1;
+            solution.data_array.push_back(solution.region_index);
+            continue;
+          }
+
+          if( _sol_head.sol_name_array[i] == "ZPlaneIndex" )
+          {
+            ctmp >> solution.zplane ;
+            solution.zplane =  solution.zplane-1;
+            solution.data_array.push_back(solution.zplane);
+            continue;
+          }
+
           double dval;
           ctmp >> dval;
           solution.data_array.push_back(dval);
@@ -271,25 +350,40 @@ bool SilvacoTIF::read()
   }
   ctmp.close();
 
-  //statistic how many triangles in each region
-  for(unsigned int n=0; n<_tris.size(); ++n)
-    _regions[_tris[n].region].tri_num++;
+  if(_dim == 2)
+  {
+    //statistic how many triangles in each region
+    for(unsigned int n=0; n<_tris.size(); ++n)
+      _regions[_tris[n].region].tri_num++;
 
-  _find_solution_region_by_material();
+    _find_solution_region_by_material();
+  }
+
+
+  //std::cout<<_sol_head.sol_num << std::endl;
+
+
 
   _acceptor_index = _sol_head.solution_index("Acceptor");
   _donor_index    = _sol_head.solution_index("Donor");
   _mole_x_index   = _sol_head.solution_index("mole_x");
   _mole_y_index   = _sol_head.solution_index("mole_y");
 
+  //std::cout << _acceptor_index << std::endl;
+  //std::cout << _donor_index << std::endl;
+
+
+  //export_scatter_doping_na();
+  //export_scatter_doping_nd();
+  
   return true;
 }
 
 
 
-void SilvacoTIF::export_scatter_doping_data() const
+void SilvacoTIF::export_scatter_doping_na() const
 {
-  std::string filename = _file+".doping";
+  std::string filename = _file+".na";
   std::ofstream fout( filename.c_str(), std::ofstream::trunc);
 
   int donor = _sol_head.solution_index("Donor");
@@ -300,7 +394,7 @@ void SilvacoTIF::export_scatter_doping_data() const
   for( ; data_it != _sol_data.end(); ++data_it)
   {
     int index = data_it->index;
-    double doping = data_it->data_array[donor] - data_it->data_array[acceptor];
+    double doping = data_it->data_array[acceptor];
     if(node_doping.find(index)!=node_doping.end())
     {
       double origin_doping = node_doping.find(index)->second;
@@ -321,6 +415,43 @@ void SilvacoTIF::export_scatter_doping_data() const
 
   fout.close();
 }
+
+
+void SilvacoTIF::export_scatter_doping_nd() const
+{
+  std::string filename = _file+".nd";
+  std::ofstream fout( filename.c_str(), std::ofstream::trunc);
+
+  int donor = _sol_head.solution_index("Donor");
+  int acceptor = _sol_head.solution_index("Acceptor");
+  std::map<int, double> node_doping;
+
+  std::vector<SolData_t>::const_iterator data_it = _sol_data.begin();
+  for( ; data_it != _sol_data.end(); ++data_it)
+  {
+    int index = data_it->index;
+    double doping = data_it->data_array[donor];
+    if(node_doping.find(index)!=node_doping.end())
+    {
+      double origin_doping = node_doping.find(index)->second;
+      if( fabs(doping) > fabs(origin_doping) )
+        node_doping.insert(std::make_pair(index, doping));
+    }
+    else
+      node_doping.insert(std::make_pair(index, doping));
+  }
+
+  std::vector<Node_t>::const_iterator node_it= _nodes.begin();
+  for(; node_it!= _nodes.end(); ++node_it)
+  {
+    int index = node_it->index;
+    assert(node_doping.find(index)!=node_doping.end());
+    fout << node_it->x << " " << node_it->y << " " << node_doping.find(index)->second << std::endl;
+  }
+
+  fout.close();
+}
+
 
 
 

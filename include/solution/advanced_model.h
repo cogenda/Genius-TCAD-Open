@@ -55,6 +55,7 @@ struct AdvancedModel
     HotCarrierInjection = false;
     DIRTunneling = false;
     FNTunneling = false;
+    TunnelingSelfConsistently = false;
     BandBandTunneling = false;
 
     ImpactIonization = false;
@@ -65,8 +66,11 @@ struct AdvancedModel
 
     Trap=false;
 
+    QNEnabled = false;
+    QPEnabled = false;
     QNFactor = 1.0;
     QPFactor = 1.0;
+    QMinConcentration = 1.0;
 
     EB_Level = ModelSpecify::NONE;
   }
@@ -126,7 +130,7 @@ struct AdvancedModel
 
 
   //-----------------------------------------------------------
-  // parameters for direct tunneling
+  // parameters for tunneling
   //-----------------------------------------------------------
 
   /**
@@ -134,15 +138,16 @@ struct AdvancedModel
    */
   bool    DIRTunneling;
 
-
-  //-----------------------------------------------------------
-  // parameters for Fowler-Nordheim tunneling
-  //-----------------------------------------------------------
-
   /**
    * specify if Fowler-Nordheim tunneling should be supported
-   */
+   */;
   bool    FNTunneling;
+
+
+  /**
+   * tunneling(including dir and fn) self consistently
+   */
+  bool    TunnelingSelfConsistently;
 
 
   //-----------------------------------------------------------
@@ -198,6 +203,16 @@ struct AdvancedModel
   //------------------------------------------------------
 
   /**
+   * flag for electron quantum potential
+   */
+  bool    QNEnabled;
+
+  /**
+   * flag for hole quantum potential
+   */
+  bool    QPEnabled;
+
+  /**
    * damping factor for electron quantum potential
    */
   double  QNFactor;
@@ -206,6 +221,12 @@ struct AdvancedModel
    * damping factor for hole quantum potential
    */
   double  QPFactor;
+
+  /**
+   * min concentration for DG solver
+   * this is a factor to nie, default is 1.0
+   */
+  double  QMinConcentration;
 
 
   //------------------------------------------------------

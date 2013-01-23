@@ -222,6 +222,11 @@ public:
     std::vector<std::string> sol_name_array;
 
     /**
+     * the unit of each solution variables
+     */
+    std::vector<std::string> sol_unit_array;
+
+    /**
      * clear solution head structure
      */
     void clear()

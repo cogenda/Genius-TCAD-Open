@@ -271,6 +271,7 @@ Al
 {
         property = Resistance
         alias    = Aluminum
+        alias    = G4_Al
         color    = 0x4d7f94ff
 }
 
@@ -278,6 +279,7 @@ Au
 {
         property = Resistance
         alias    = Gold
+        alias    = G4_Au
         color    = 0xffd700ff
 }
 
@@ -285,6 +287,7 @@ Ag
 {
         property = Resistance
         alias    = Silver
+        alias    = G4_Ag
         color    = 0x008b00ff
 }
 
@@ -292,6 +295,7 @@ Cu
 {
         property = Resistance
         alias    = Copper
+        alias    = G4_Cu
         color    = 0xff7f50ff
 }
 
@@ -319,6 +323,7 @@ Ti
 {
         property = Resistance
         alias    = Titanium
+        alias    = G4_Ti
         color    = 0xe0eeeeff
 }
 
@@ -326,6 +331,7 @@ Co
 {
         property = Resistance
         alias    = Cobalt
+        alias    = G4_Co
         color    = 0xcdc9c9ff
 }
 
@@ -334,6 +340,7 @@ Ni
 {
         property = Resistance
         alias    = Nickel
+        alias    = G4_Ni
         color    = 0xeeeed0ff
 }
 
@@ -343,6 +350,7 @@ W
         property = Resistance
         alias    = Tungsten
         alias    = Wolfram
+        alias    = G4_W
         color    = 0xd0d0f0ff
 }
 
@@ -350,6 +358,7 @@ Ta
 {
         property = Resistance
         alias    = Tantalum
+        alias    = G4_Ta
         color    = 0xeee9e9ff
 }
 
@@ -357,6 +366,7 @@ Pt
 {
         property = Resistance
         alias    = Platinum
+        alias    = G4_Pt
         color    = 0xadc9a9ff
 }
 
@@ -434,6 +444,31 @@ PZT
         alias    = PbZrTiO3
         color    = 0x057d05ff
 }
+
+
+Kapton
+{
+        property = Insulator
+        alias    = G4_KAPTON
+        alias    = Polyimide
+        color    = 0xc07235ff
+}
+
+
+Epoxy
+{
+        property = Insulator
+        color    = 0xf0ffabff
+}
+
+
+Teflon
+{
+        property = Insulator
+        alias    = G4_TEFLON
+        color    = 0xe0e275ff
+}
+
 
 
 Air

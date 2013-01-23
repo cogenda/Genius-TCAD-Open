@@ -40,6 +40,8 @@
     TEMPERATURE,   /* lattice temperature */
     E_TEMP,        /* electron temperature */
     H_TEMP,        /* hole temperature */
+    EQC,           /* quantum conduction band */
+    EQV,           /* quantum valence band */
     QFN,           /* electron quasi-Fermi level */
     QFP,           /* hole quasi-Fermi level */
 

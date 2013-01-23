@@ -208,6 +208,41 @@ public:
 
 
   //////////////////////////////////////////////////////////////////////////////////
+  //---------------Function and Jacobian evaluate for Mixed DDML1-----------------//
+  //////////////////////////////////////////////////////////////////////////////////
+
+  /**
+   * fill solution data into petsc vector of level 1 DDM equation.
+   */
+  virtual void Mix_DDM1_Fill_Value(Vec x, Vec L);
+
+  /**
+   * preprocess function for Mixed DDML1 solver
+   */
+  virtual void Mix_DDM1_Function_Preprocess(PetscScalar *, Vec, std::vector<PetscInt>&, std::vector<PetscInt>&, std::vector<PetscInt>&);
+
+  /**
+   * build function and its jacobian for Mixed DDML1 solver
+   */
+  virtual void Mix_DDM1_Function(PetscScalar * , Vec , InsertMode &);
+
+  /**
+   * reserve none zero pattern in petsc matrix.
+   */
+  virtual void Mix_DDM1_Jacobian_Reserve(Mat *, InsertMode &);
+
+  /**
+   * preprocess Jacobian Matrix for Mixed type level 1 DDM equation.
+   */
+  virtual void Mix_DDM1_Jacobian_Preprocess(PetscScalar *, Mat *, std::vector<PetscInt> &,  std::vector<PetscInt> &, std::vector<PetscInt> &);
+
+  /**
+   * build function and its jacobian for Mixed DDML1 solver
+   */
+  virtual void Mix_DDM1_Jacobian(PetscScalar * , Mat *, InsertMode &);
+
+
+  //////////////////////////////////////////////////////////////////////////////////
   //----------Function and Jacobian evaluate for Advanced Mixed DDML1-------------//
   //////////////////////////////////////////////////////////////////////////////////
 
