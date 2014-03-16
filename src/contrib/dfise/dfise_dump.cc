@@ -24,9 +24,16 @@
 #include <sstream>
 #include <fstream>
 
+
 #include "vector_value.h"
 #include "tensor_value.h"
 #include "dfise.h"
+
+#ifdef WINDOWS
+  #include <io.h>      // for windows _access function
+#else
+  #include <unistd.h>  // for POSIX access function
+#endif
 
 
 void printusage()
