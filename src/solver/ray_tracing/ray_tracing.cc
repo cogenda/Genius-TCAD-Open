@@ -31,12 +31,14 @@
 #include "mesh_tools.h"
 #include "field_source.h"
 #include "light_lenses.h"
+#include "object_tree.h"
 #include "ray_tracing/light_thread.h"
-#include "ray_tracing/object_tree.h"
 #include "ray_tracing/ray_tracing.h"
 #include "ray_tracing/anti_reflection_coating.h"
 #include "parallel.h"
+#include "expr_evaluate.h"
 
+#define DEBUG
 
 using PhysicalUnit::um;
 using PhysicalUnit::C;
@@ -48,11 +50,12 @@ using PhysicalUnit::m;
 using PhysicalUnit::eps0;
 using PhysicalUnit::mu0;
 using PhysicalUnit::h;
-
+using PhysicalUnit::W;
 
 
 RayTraceSolver::RayTraceSolver(SimulationSystem & system, const Parser::Card & c)
-    : SolverBase(system), _card(c), surface_elem_tree(0)
+  : SolverBase(system), _card(c), surface_elem_tree(0),
+   _incident_power(0.0), _pass_power(0.0), _escape_power(0.0), _absorb_power(0.0)
 {
   system.record_active_solver(this->solver_type());
 }
@@ -68,7 +71,7 @@ int RayTraceSolver::create_solver()
   genius_assert(mesh.is_serial());
 
   // do necessary precomputation for fast ray tracing
-  surface_elem_tree = new ObjectTree(mesh);
+  surface_elem_tree = new ObjectTree(mesh, Trees::ELEMENTS_ON_BOUNDARY);
   build_elems_node_map();
   build_elems_edge_map();
   build_boundary_elems_map();
@@ -89,6 +92,9 @@ int RayTraceSolver::solve()
 {
   START_LOG("solve()", "RayTraceSolver");
 
+  ExprEvalute * grating_expr_eva = 0;
+  if(!_grating_expr.empty()) grating_expr_eva = new ExprEvalute(_grating_expr);
+
   // for each wavelentgh
   for(unsigned int n=0; n<_optical_sources.size(); ++n)
   {
@@ -96,7 +102,7 @@ int RayTraceSolver::solve()
     double intensity = _optical_sources[n].power;
     double power     = _dim==2 ? intensity*_wave_plane.min_dist : intensity*_wave_plane.ray_area();
 
-    build_region_refractive_index(lamda);
+    build_elem_refractive_index(lamda);
 
     // clear and re-create the array to record energy deposition
     _band_absorption_energy_in_elem.clear();
@@ -112,16 +118,27 @@ int RayTraceSolver::solve()
     unsigned int n_on_processor_rays = _wave_plane.n_on_processor_rays();
     for(unsigned int k=0; k<n_on_processor_rays; ++k)
     {
+      double ray_power = power;
+      if(grating_expr_eva)
+      {
+        Point offset = _wave_plane.ray_start_point(k) - _wave_plane.center;
+        ray_power *= grating_expr_eva->eval(offset.x(), offset.y(), offset.z(), 0.0);
+      }
+
       // create ray
       LightThread * light = new  LightThread(_wave_plane.ray_start_point(k),
                                              _wave_plane.norm,
                                              _wave_plane.E_dir,
                                              lamda,
-                                             power,
-                                             power
+                                             ray_power,
+                                             ray_power
                                             );
 
-      if(!_lenses->empty())  light = (*_lenses) << light;
+      if(!_lenses->empty())
+      {
+        light = (*_lenses) << light;
+        if(!light) continue;
+      }
 
       // call function ray_tracing to process a single ray
       ray_tracing(light);
@@ -157,6 +174,12 @@ int RayTraceSolver::solve()
 #if defined(HAVE_FENV_H) && defined(DEBUG)
   genius_assert( !fetestexcept(FE_INVALID) );
 #endif
+
+#if defined(HAVE_FENV_H)
+  feclearexcept(FE_ALL_EXCEPT);
+#endif
+
+
 
   STOP_LOG("solve()", "RayTraceSolver");
 
@@ -275,8 +298,8 @@ void RayTraceSolver::create_rays()
     E_dir = Point(sin(phi)*cos(theta), cos(phi), sin(phi)*sin(theta));
   }
 
-  // check if E//k
-  if( std::abs(dir.dot(E_dir)) > 1.0 - 1e-3 )
+  // check if E_|_k
+  if( std::abs(dir.dot(E_dir)) > 1e-3 )
   {
     MESSAGE<<"\nERROR at " <<_card.get_fileline()<< " Ray Tracing: E vector not perpendicular to wave vector." << std::endl; RECORD();
     genius_error();
@@ -326,8 +349,10 @@ void RayTraceSolver::create_rays()
   else
     _wave_plane.min_dist = min_dist/_card.get_real("ray.density", 10.0);
 
-  // this vector stores all the ray start points
-  std::vector<Point> ray_start_points;
+  if(_card.is_parameter_exist("ray.grating"))
+    _grating_expr = _card.get_string("ray.grating",  "");
+
+
 
   //3D mesh
   if(surface_elem_tree->is_octree())
@@ -352,12 +377,27 @@ void RayTraceSolver::create_rays()
 
     // how many rays in one of the direction
     int n_rays_half = int(ceil(_wave_plane.R/_wave_plane.min_dist));
+
+    unsigned int count=0;
     for(int i=-n_rays_half; i<=n_rays_half; ++i)
       for(int j=-n_rays_half; j<=n_rays_half; ++j)
       {
+        if(Genius::processor_id() != (count++)%Genius::n_processors()) continue;
+
         Point s = _wave_plane.center + i*_wave_plane.min_dist*d1 + j*_wave_plane.min_dist*d2;
-        if(surface_elem_tree->hit_boundbox(s, dir))
-          ray_start_points.push_back(s);
+        // limit the ray start point inside the radius
+        if( (s - _wave_plane.center).size() > _wave_plane.R ) continue;
+
+        if(_lenses->empty())
+        {
+          //skip rays not hit the boundbox of surface_elem_tree
+          if(surface_elem_tree->hit_boundbox(s, dir))
+            _wave_plane.ray_start_points.push_back(s);
+        }else
+        {
+          // no optimize when lens exist
+          _wave_plane.ray_start_points.push_back(s);
+        }
       }
     _dim = 3;
   }
@@ -369,23 +409,31 @@ void RayTraceSolver::create_rays()
     Point d = dir.cross(z_axis);
 
     int n_rays_half = int(ceil(_wave_plane.R/_wave_plane.min_dist));
+
+    unsigned int count=0;
     for(int i=-n_rays_half; i<=n_rays_half; ++i)
     {
+      if(Genius::processor_id() != (count++)%Genius::n_processors()) continue;
+
       Point s = _wave_plane.center + i*_wave_plane.min_dist*d;
-      if(surface_elem_tree->hit_boundbox(s, dir))
-        ray_start_points.push_back(s);
+      if(_lenses->empty())
+      {
+        //skip rays not hit the boundbox of surface_elem_tree
+        if(surface_elem_tree->hit_boundbox(s, dir))
+          _wave_plane.ray_start_points.push_back(s);
+      }else
+      {
+        // no optimize when lens exist
+        _wave_plane.ray_start_points.push_back(s);
+      }
     }
 
     _dim = 2;
   }
 
   // compute start point on all the processors
-  _total_rays = ray_start_points.size();
-  unsigned int on_process_rays = ray_start_points.size()/Genius::n_processors();
-  unsigned int begin = on_process_rays*Genius::processor_id();
-  unsigned int end   = std::min(begin+on_process_rays, ray_start_points.size());
-  for(unsigned int n=begin; n<end; ++n)
-    _wave_plane.ray_start_points.push_back(ray_start_points[n]);
+  _total_rays = _wave_plane.ray_start_points.size();
+  Parallel::sum(_total_rays);
 
 }
 
@@ -496,23 +544,59 @@ void RayTraceSolver::parse_spectrum_file(const std::string & filename)
 
 }
 
-void RayTraceSolver::build_region_refractive_index(double lamda)
+
+void RayTraceSolver::build_elem_refractive_index(double lambda)
 {
-  _region_refractive_index.clear();
+  _elem_refractive_index.clear();
 
-  for(unsigned int n=0; n<_system.n_regions(); ++n)
+  std::map<unsigned int, Complex> r_table;
+
+  const MeshBase & mesh = _system.mesh();
+  MeshBase::const_element_iterator       el  = mesh.elements_begin();
+  const MeshBase::const_element_iterator end = mesh.elements_end();
+  for (; el != end; ++el)
   {
-    SimulationRegion* region = _system.region(n);
-    Complex r_index = region->get_optical_refraction(lamda);
+    const Elem * elem = *el;
+    if(!elem->on_processor()) continue;
 
-    std::pair<double, double> refract_index = std::make_pair(r_index.real(), r_index.imag());
+    const SimulationRegion * region = _system.region(elem->subdomain_id());
 
-    _region_refractive_index[n] = refract_index;
+    Complex r_index;
+    for(unsigned int nd = 0; nd < elem->n_nodes(); nd++)
+    {
+      const FVM_Node * fvm_node = elem->get_fvm_node(nd);
+      r_index += region->get_optical_refraction(fvm_node, lambda);
+    }
+
+    r_index /= elem->n_nodes();
+    r_table.insert( std::make_pair(elem->id(), r_index) );
   }
 
-  // set env refractive index
-  _region_refractive_index[invalid_uint] = std::make_pair(1.0, 0.0);
+  Parallel::allgather(r_table);
+
+
+  std::map<unsigned int, Complex>::const_iterator it= r_table.begin();
+  for(; it != r_table.end(); ++it)
+    _elem_refractive_index.push_back(it->second);
 }
+
+
+double RayTraceSolver::get_refractive_index_re(const Elem *elem) const
+{
+  if(elem)
+    return _elem_refractive_index[elem->id()].real();
+  return 1.0;
+}
+
+
+double RayTraceSolver::get_refractive_index_im(const Elem *elem) const
+{
+  if(elem)
+    return _elem_refractive_index[elem->id()].imag();
+  return 0.0;
+}
+
+
 
 
 void RayTraceSolver::build_elem_carrier_density()
@@ -619,8 +703,11 @@ void RayTraceSolver::build_anti_reflection_coating_surface_map()
       std::vector<double>  raw = bc->scalar_array("coatings");
       for(unsigned int i=0; i <raw.size(); )
       {
-        arc->layer_refractive_index.push_back( std::complex<double>(raw[i++],  -raw[i++]) );
-        arc->layer_thickness.push_back(raw[i++]*um);
+        double n = raw[i++];
+        double k = raw[i++];
+        double thick = raw[i++];
+        arc->layer_refractive_index.push_back( std::complex<double>(n, -k) );
+        arc->layer_thickness.push_back(thick*um);
         arc->layers++;
       }
 
@@ -774,6 +861,8 @@ void RayTraceSolver::ray_tracing(LightThread *ray)
   std::stack<LightThread *> ray_stack;
   ray_stack.push(ray);
 
+  _incident_power += ray->power();
+
   while(!ray_stack.empty())
   {
     LightThread * current_ray = ray_stack.top();
@@ -785,8 +874,13 @@ void RayTraceSolver::ray_tracing(LightThread *ray)
     if(current_ray->hit_elem==NULL)
     {
       // find the first element this ray hit
-      const Elem * elem = surface_elem_tree->hit(current_ray);
-      if(elem==NULL) {delete current_ray; continue;}
+      const Elem * elem = surface_elem_tree->hit(current_ray->start_point(), current_ray->dir());
+
+      // not hit any elem
+      if(elem==NULL)
+      {
+        _pass_power+=current_ray->power(); delete current_ray; continue;
+      }
 
       current_ray->hit_elem = elem;
 
@@ -813,7 +907,8 @@ void RayTraceSolver::ray_tracing(LightThread *ray)
           assert(_dim==3); //only valid for 3d mesh
           unsigned int edge_index = hit_point.mark;
           AutoPtr<Elem> edge = elem->build_edge(edge_index);
-          assert(_boundary_edge_to_elem_side_map.find(edge.get())!=_boundary_edge_to_elem_side_map.end());
+          if(_boundary_edge_to_elem_side_map.find(edge.get())==_boundary_edge_to_elem_side_map.end())
+          { _pass_power+=current_ray->power(); delete current_ray; continue;}
           hit_elems = _boundary_edge_to_elem_side_map.find(edge.get())->second;
           break;
         }
@@ -821,7 +916,8 @@ void RayTraceSolver::ray_tracing(LightThread *ray)
         {
           unsigned int vertex_index = hit_point.mark;
           const Node * current_node = elem->get_node(vertex_index);
-          assert(_boundary_node_to_elem_side_map.find(current_node)!=_boundary_node_to_elem_side_map.end());
+          if(_boundary_node_to_elem_side_map.find(current_node)==_boundary_node_to_elem_side_map.end())
+          { _pass_power+=current_ray->power(); delete current_ray; continue;}
           hit_elems = _boundary_node_to_elem_side_map.find(current_node)->second;
           break;
         }
@@ -837,7 +933,8 @@ void RayTraceSolver::ray_tracing(LightThread *ray)
         Point p = hit_point.p;
         Point norm = boundary_elem->outside_unit_normal(side);
         //the surface norm should has a angle >90 degree to ray dir
-        if(norm.dot(current_ray->dir()) > -1e-10) continue;
+        if(norm.dot(current_ray->dir()) > -1e-10)
+        { _pass_power+=current_ray->power(); continue; }
 
         // if reflect surface
         if(is_full_reflect_surface(boundary_elem, side))
@@ -846,23 +943,29 @@ void RayTraceSolver::ray_tracing(LightThread *ray)
           // some stupid skill: shift the reflect ray to prevent it hit this elem again
           reflect_ray->start_point() = reflect_ray->start_point() + 1e-6*reflect_ray->dir();
           // the reflect ray hit the mesh again?
-          const Elem *surface_elem = surface_elem_tree->hit(reflect_ray);
+          const Elem *surface_elem = surface_elem_tree->hit(reflect_ray->start_point(), reflect_ray->dir());
           if(surface_elem && surface_elem!=elem)
           {
             reflect_ray->hit_elem = this->ray_hit(reflect_ray->start_point(), reflect_ray->dir(), surface_elem, reflect_ray->result);
             if(reflect_ray->hit_elem)
               ray_stack.push(reflect_ray);
             else
+            {
+              _escape_power += reflect_ray->power();
               delete reflect_ray;
+            }
           }
           else
+          {
+            _escape_power += reflect_ray->power();
             delete reflect_ray;
+          }
           continue;
         }
 
 
-        double n1 = get_refractive_index_re(boundary_elem->subdomain_id(side));
-        double n2 = get_refractive_index_re(boundary_elem->subdomain_id());
+        double n1 = get_refractive_index_re(boundary_elem->neighbor(side));
+        double n2 = get_refractive_index_re(boundary_elem);
 
         // if we have a anti reflection coating
         const ARCoatings * arc = is_anti_reflection_coating_surface(boundary_elem, side);
@@ -879,7 +982,10 @@ void RayTraceSolver::ray_tracing(LightThread *ray)
           if(refract_ray->hit_elem)
             ray_stack.push(refract_ray);
           else
+          { // the refract ray has already penetrat through the device?
+            _escape_power += refract_ray->power();
             delete refract_ray;
+          }
         }
 
         // for reflect ray
@@ -889,17 +995,23 @@ void RayTraceSolver::ray_tracing(LightThread *ray)
           // some stupid skill: shift the reflect ray to prevent it hit this elem again
           reflect_ray->start_point() = reflect_ray->start_point() + 1e-8*reflect_ray->dir();
           // the refract ray hit the mesh again?
-          const Elem *surface_elem = surface_elem_tree->hit(reflect_ray);
+          const Elem *surface_elem = surface_elem_tree->hit(reflect_ray->start_point(), reflect_ray->dir());
           if(surface_elem && surface_elem!=elem)
           {
             reflect_ray->hit_elem = this->ray_hit(reflect_ray->start_point(), reflect_ray->dir(), surface_elem, reflect_ray->result);
             if(reflect_ray->hit_elem)
               ray_stack.push(reflect_ray);
             else
+            {
+              _escape_power += reflect_ray->power();
               delete reflect_ray;
+            }
           }
           else
+          {
+            _escape_power += reflect_ray->power();
             delete reflect_ray;
+          }
         }
       }
 
@@ -912,8 +1024,7 @@ void RayTraceSolver::ray_tracing(LightThread *ray)
     if( current_ray->result.hit_points.size() != 2 )
     {
       // FIXME, should not happen...
-      delete current_ray;
-      continue;
+      _pass_power += current_ray->power(); delete current_ray; continue;
     }
 
     // calculate energy deposit
@@ -921,12 +1032,13 @@ void RayTraceSolver::ray_tracing(LightThread *ray)
     Hit_Point  end_point = current_ray->result.hit_points[1];
 
 
-    double a_band = 4*3.14159265358979*this->get_refractive_index_im(elem->subdomain_id())/current_ray->wavelength();
+    double a_band = 4*3.14159265358979*this->get_refractive_index_im(elem)/current_ray->wavelength();
     double a_tail = 0.0;
     double a_fc   = this->get_free_carrier_absorption(elem, current_ray->wavelength());
 
     std::vector<double> energy_deposit = current_ray->advance_to(end_point.p, a_band, a_tail, a_fc);
     double total_energy_deposit = std::accumulate(energy_deposit.begin(), energy_deposit.end(), 0.0);
+    _absorb_power+= total_energy_deposit;
 
     switch(current_ray->result.state)
     {
@@ -969,7 +1081,7 @@ void RayTraceSolver::ray_tracing(LightThread *ray)
 
 
     if(current_ray->is_dead())
-    { delete current_ray; continue; }
+    { _pass_power += current_ray->power(); delete current_ray; continue; }
 
     // safe guard: when the number of rays in stack exceed 1000, we may fall into endless loop
     // force to exit
@@ -979,6 +1091,7 @@ void RayTraceSolver::ray_tracing(LightThread *ray)
       {
         LightThread * current_ray = ray_stack.top();
         ray_stack.pop();
+        _pass_power += current_ray->power();
         delete current_ray;
       }
       return;
@@ -1004,12 +1117,12 @@ void RayTraceSolver::ray_tracing(LightThread *ray)
         {
           // if reflect surface
           if(is_surface(elem, side) && is_full_reflect_surface(elem, side))
-          {  delete current_ray; continue; }
+          {  _escape_power += current_ray->power(); delete current_ray; continue; }
 
           Point p = end_point.p;
           Point norm = - elem->outside_unit_normal(side);
-          double n1 = get_refractive_index_re(elem->subdomain_id());
-          double n2 = get_refractive_index_re(elem->subdomain_id(side));
+          double n1 = get_refractive_index_re(elem);
+          double n2 = get_refractive_index_re(elem->neighbor(side));
           //generate reflect/refract rays
           std::pair<LightThread *, LightThread *> ray_pair = current_ray->interface_light_gen_linear_polarized(p, norm, n1, n2);
 
@@ -1080,14 +1193,15 @@ void RayTraceSolver::ray_tracing(LightThread *ray)
             unsigned int side = elems[n].second;
 
             // if reflect surface
-            if(is_surface(boundary_elem, side) && is_full_reflect_surface(boundary_elem, side)) continue;
+            if(is_surface(boundary_elem, side) && is_full_reflect_surface(boundary_elem, side))
+            { _escape_power += current_ray->power();  continue; }
 
             Point norm = boundary_elem->outside_unit_normal(side);
             //the surface norm should has a angle >90 degree to ray dir
-            if(norm.dot(current_ray->dir()) > -1e-10) continue;
+            if(norm.dot(current_ray->dir()) > -1e-10) { _escape_power += current_ray->power();  continue; }
 
-            double n1 = get_refractive_index_re(boundary_elem->subdomain_id(side));
-            double n2 = get_refractive_index_re(boundary_elem->subdomain_id());
+            double n1 = get_refractive_index_re(boundary_elem->neighbor(side));
+            double n2 = get_refractive_index_re(boundary_elem);
             //generate reflect/refract rays
             std::pair<LightThread *, LightThread *> ray_pair = current_ray->interface_light_gen_linear_polarized(p, norm, n1, n2);
 
@@ -1099,7 +1213,10 @@ void RayTraceSolver::ray_tracing(LightThread *ray)
               if(refract_ray->hit_elem)
                 ray_stack.push(refract_ray);
               else
+              {
+                _escape_power += refract_ray->power();
                 delete refract_ray;
+              }
             }
 
             // for reflect ray
@@ -1110,7 +1227,10 @@ void RayTraceSolver::ray_tracing(LightThread *ray)
               if(reflect_ray->hit_elem)
                 ray_stack.push(reflect_ray);
               else
+              {
+                _escape_power += reflect_ray->power();
                 delete reflect_ray;
+              }
             }
           }
 
@@ -1148,6 +1268,9 @@ void RayTraceSolver::ray_tracing(LightThread *ray)
             if(norm.dot(current_ray->dir()) > -1e-10) continue;
             effective_faces++;
           }
+          if(effective_faces ==0)
+          { _escape_power += current_ray->power(); delete current_ray; continue; }
+
           current_ray->power() = current_ray->power()/effective_faces;
 
           for(unsigned int n=0; n<elems.size(); ++n)
@@ -1156,14 +1279,15 @@ void RayTraceSolver::ray_tracing(LightThread *ray)
             unsigned int side = elems[n].second;
 
             // if reflect surface
-            if(is_surface(boundary_elem, side) && is_full_reflect_surface(boundary_elem, side)) continue;
+            if(is_surface(boundary_elem, side) && is_full_reflect_surface(boundary_elem, side))
+            { _escape_power += current_ray->power(); continue; }
 
             Point norm = boundary_elem->outside_unit_normal(side);
             //the surface norm should has a angle >90 degree to ray dir
-            if(norm.dot(current_ray->dir()) > -1e-10) continue;
+            if(norm.dot(current_ray->dir()) > -1e-10) { _escape_power += current_ray->power(); continue; }
 
-            double n1 = get_refractive_index_re(boundary_elem->subdomain_id(side));
-            double n2 = get_refractive_index_re(boundary_elem->subdomain_id());
+            double n1 = get_refractive_index_re(boundary_elem->neighbor(side));
+            double n2 = get_refractive_index_re(boundary_elem);
             //generate reflect/refract rays
             std::pair<LightThread *, LightThread *> ray_pair = current_ray->interface_light_gen_linear_polarized(p, norm, n1, n2);
 
@@ -1175,7 +1299,10 @@ void RayTraceSolver::ray_tracing(LightThread *ray)
               if(refract_ray->hit_elem)
                 ray_stack.push(refract_ray);
               else
+              {
+                _escape_power += refract_ray->power();
                 delete refract_ray;
+              }
             }
 
             // for reflect ray
@@ -1186,7 +1313,10 @@ void RayTraceSolver::ray_tracing(LightThread *ray)
               if(reflect_ray->hit_elem)
                 ray_stack.push(reflect_ray);
               else
+              {
+                _escape_power += reflect_ray->power();
                 delete reflect_ray;
+              }
             }
           }
           delete current_ray;
@@ -1207,31 +1337,21 @@ void RayTraceSolver::optical_generation(unsigned int n)
   const MeshBase &mesh = _system.mesh();
 
   double c = 1.0/sqrt(eps0*mu0);
-  double lamda    = _optical_sources[n].wave_length;
+  double lambda    = _optical_sources[n].wave_length;
   double quan_eff = _optical_sources[n].eta;
-
+  double E_photon = h*c/lambda;
 
   for (unsigned int i=0; i<_band_absorption_energy_in_elem.size(); i++)
   {
     const Elem * elem = mesh.elem(i);
     if(!elem->on_local()) continue; //skip nonlocal elements
+    if(!elem->is_fvm_elem()) continue; //skip non fvm elements
 
     SimulationRegion* elem_region = _system.region(elem->subdomain_id());
 
     // only semiconductor region generating carriers
     if(elem_region->type() == SemiconductorRegion)
     {
-      double Eg = elem_region->get_optical_Eg(elem_region->T_external());
-      double E_photon = h*c/lamda;
-      if(_optical_sources[n].eta_auto)
-      {
-        // calculate optical gen quantum efficiency
-        quan_eff = floor(E_photon/Eg);
-      }
-
-      double gen = _band_absorption_energy_in_elem[i]/E_photon*quan_eff;
-      double heat = _band_absorption_energy_in_elem[i] - Eg*gen;
-
       double volumn = 0;
       for(unsigned int nd=0; nd<elem->n_nodes(); nd++)
       {
@@ -1240,11 +1360,21 @@ void RayTraceSolver::optical_generation(unsigned int n)
 
       for(unsigned int nd=0; nd<elem->n_nodes(); nd++)
       {
-        const Node* node = elem->get_node(nd);
         double vol_ratio = elem->partial_volume_truncated(nd)/(volumn+1e-10);
 
-        FVM_Node* fvm_node = elem_region->region_fvm_node(node);
+        FVM_Node* fvm_node = elem->get_fvm_node(nd);
         assert(fvm_node->node_data());
+
+        double Eg = elem_region->get_optical_Eg(fvm_node);
+
+        if(_optical_sources[n].eta_auto)
+        {
+          // calculate optical gen quantum efficiency
+          quan_eff = std::min(1.0, floor(E_photon/Eg));
+        }
+
+        double gen = _band_absorption_energy_in_elem[i]/E_photon*quan_eff;
+        double heat = _band_absorption_energy_in_elem[i] - Eg*gen;
 
         fvm_node->node_data()->OptG() += gen*vol_ratio/fvm_node->volume();
         fvm_node->node_data()->OptQ() += heat*vol_ratio/fvm_node->volume();
@@ -1284,8 +1414,9 @@ void RayTraceSolver::optical_generation(unsigned int n)
 }
 
 
-void RayTraceSolver::statistic() const 
+void RayTraceSolver::statistic()
 {
+  /*
   double energy_deposit = 0.0;
   for(unsigned int r=0; r<_system.n_regions(); ++r)
   {
@@ -1304,6 +1435,23 @@ void RayTraceSolver::statistic() const
   }
 
   Parallel::sum(energy_deposit);
+  */
+
+  Parallel::sum(_incident_power);
+  Parallel::sum(_pass_power);
+  Parallel::sum(_escape_power);
+  Parallel::sum(_absorb_power);
+
+  double unit = (_dim==2 ? W/um : W);
+  std::string unit_string = (_dim==2 ? "W/um" : "W");
+
+  MESSAGE<<"Ray tracing statistic:" << std::endl;
+  MESSAGE<<"  Incident ray (after optical grating) power    : " << _incident_power/unit << ' ' << unit_string << std::endl;
+  MESSAGE<<"    Pass away power : " << _pass_power/unit     << ' ' << unit_string << std::endl;
+  MESSAGE<<"    Escaped power   : " << _escape_power/unit   << ' ' << unit_string << std::endl;
+  MESSAGE<<"    Absorbed power  : " << _absorb_power/unit   << ' ' << unit_string << std::endl;
+  MESSAGE<< std::endl;
+  RECORD();
 
   /*
   if(_dim==2)

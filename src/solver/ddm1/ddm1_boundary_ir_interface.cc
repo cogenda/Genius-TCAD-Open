@@ -164,7 +164,7 @@ void ResistanceInsulatorBC::DDM1_Function(PetscScalar * x, Vec f, InsertMode &ad
           // distance from nb node to this node
           PetscScalar distance = insulator_fvm_node->distance(nb_node);
           // area of out surface of control volume related with neighbor node
-          PetscScalar cv_boundary = std::abs(insulator_fvm_node->cv_surface_area(nb_node));
+          PetscScalar cv_boundary = insulator_fvm_node->cv_surface_area(nb_node);
           PetscScalar dEdt;
           if(SolverSpecify::TS_type==SolverSpecify::BDF2 && SolverSpecify::BDF2_LowerOrder==false) //second order
           {
@@ -202,71 +202,13 @@ void ResistanceInsulatorBC::DDM1_Function(PetscScalar * x, Vec f, InsertMode &ad
 
 
 
-/*---------------------------------------------------------------------
- * reserve non zero pattern in jacobian matrix for DDML1 solver
- */
-void ResistanceInsulatorBC::DDM1_Jacobian_Reserve(Mat *jac, InsertMode &add_value_flag)
-{
-
-  // ADD 0 to some position of Jacobian matrix to prevent MatAssembly expurgation these position.
-
-  // since we will use ADD_VALUES operat, check the matrix state.
-  if( (add_value_flag != ADD_VALUES) && (add_value_flag != NOT_SET_VALUES) )
-  {
-    MatAssemblyBegin(*jac, MAT_FLUSH_ASSEMBLY);
-    MatAssemblyEnd(*jac, MAT_FLUSH_ASSEMBLY);
-  }
-
-  // search for all the node with this boundary type
-  BoundaryCondition::const_node_iterator node_it = nodes_begin();
-  BoundaryCondition::const_node_iterator end_it = nodes_end();
-  for(; node_it!=end_it; ++node_it )
-  {
-    // skip node not belongs to this processor
-    if( (*node_it)->processor_id()!=Genius::processor_id() ) continue;
-
-    // we should only have one resistance region
-    const FVM_Node * resistance_fvm_node = get_region_fvm_node((*node_it), MetalRegion);
-
-    // search all the fvm_node which has *node_it as root node, these fvm_nodes have the same location in geometry,
-    // but belong to different regions in logic.
-    BoundaryCondition::region_node_iterator  rnode_it     = region_node_begin(*node_it);
-    BoundaryCondition::region_node_iterator  end_rnode_it = region_node_end(*node_it);
-    for(unsigned int i=0 ; rnode_it!=end_rnode_it; ++i, ++rnode_it  )
-    {
-      const SimulationRegion * region = (*rnode_it).second.first;
-      const FVM_Node * fvm_node = (*rnode_it).second.second;
-
-      if( region->type() != InsulatorRegion ) continue;
-      // reserve for later operator
-      {
-        MatSetValue(*jac, fvm_node->global_offset(), resistance_fvm_node->global_offset(), 0, ADD_VALUES);
-
-        //reserve for displacement current
-        MatSetValue(*jac, resistance_fvm_node->global_offset(), fvm_node->global_offset(), 0, ADD_VALUES);
-        FVM_Node::fvm_neighbor_node_iterator nb_it = fvm_node->neighbor_node_begin();
-        for(; nb_it != fvm_node->neighbor_node_end(); ++nb_it)
-        {
-          const FVM_Node *nb_node = (*nb_it).first;
-          MatSetValue(*jac, resistance_fvm_node->global_offset(), nb_node->global_offset(), 0, ADD_VALUES);
-        }
-      }
-    }
-
-  }
-
-  // the last operator is ADD_VALUES
-  add_value_flag = ADD_VALUES;
-
-}
-
 
 
 
 /*---------------------------------------------------------------------
  * do pre-process to jacobian matrix for DDML1 solver
  */
-void ResistanceInsulatorBC::DDM1_Jacobian_Preprocess(PetscScalar *, Mat *jac, std::vector<PetscInt> &src_row,
+void ResistanceInsulatorBC::DDM1_Jacobian_Preprocess(PetscScalar *, SparseMatrix<PetscScalar> *jac, std::vector<PetscInt> &src_row,
     std::vector<PetscInt> &dst_row, std::vector<PetscInt> &clear_row)
 {
   BoundaryCondition::const_node_iterator node_it = nodes_begin();
@@ -294,17 +236,10 @@ void ResistanceInsulatorBC::DDM1_Jacobian_Preprocess(PetscScalar *, Mat *jac, st
 /*---------------------------------------------------------------------
  * build function and its jacobian for DDML1 solver
  */
-void ResistanceInsulatorBC::DDM1_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_value_flag)
+void ResistanceInsulatorBC::DDM1_Jacobian(PetscScalar * x, SparseMatrix<PetscScalar> *jac, InsertMode &add_value_flag)
 {
   // the Jacobian of Resistance-Insulator boundary condition is processed here
   // we use AD again. no matter it is overkill here.
-
-  // since we will use ADD_VALUES operat, check the matrix state.
-  if( (add_value_flag != ADD_VALUES) && (add_value_flag != NOT_SET_VALUES) )
-  {
-    MatAssemblyBegin(*jac, MAT_FLUSH_ASSEMBLY);
-    MatAssemblyEnd(*jac, MAT_FLUSH_ASSEMBLY);
-  }
 
   PetscScalar dt = SolverSpecify::dt;
 
@@ -338,8 +273,8 @@ void ResistanceInsulatorBC::DDM1_Jacobian(PetscScalar * x, Mat *jac, InsertMode 
       AutoDScalar f_phi =  V_insulator - V_resistance;
 
       // set Jacobian of governing equation ff. since these rows are erased, ADD_VALUES is equal to INSERT_VALUES
-      MatSetValue(*jac, insulator_fvm_node->global_offset(), resistance_fvm_node->global_offset(), f_phi.getADValue(0), ADD_VALUES);
-      MatSetValue(*jac, insulator_fvm_node->global_offset(), insulator_fvm_node->global_offset(), f_phi.getADValue(1), ADD_VALUES);
+      jac->add( insulator_fvm_node->global_offset(),  resistance_fvm_node->global_offset(),  f_phi.getADValue(0) );
+      jac->add( insulator_fvm_node->global_offset(),  insulator_fvm_node->global_offset(),  f_phi.getADValue(1) );
 
 
       // displacement current
@@ -358,7 +293,7 @@ void ResistanceInsulatorBC::DDM1_Jacobian(PetscScalar * x, Mat *jac, InsertMode 
           PetscScalar distance = insulator_fvm_node->distance(nb_node);
 
           // area of out surface of control volume related with neighbor node
-          PetscScalar cv_boundary = std::abs(insulator_fvm_node->cv_surface_area(nb_node));
+          PetscScalar cv_boundary = insulator_fvm_node->cv_surface_area(nb_node);
           AutoDScalar dEdt;
           if(SolverSpecify::TS_type==SolverSpecify::BDF2 && SolverSpecify::BDF2_LowerOrder==false) //second order
           {
@@ -374,8 +309,8 @@ void ResistanceInsulatorBC::DDM1_Jacobian(PetscScalar * x, Mat *jac, InsertMode 
 
           AutoDScalar current_disp = cv_boundary*insulator_fvm_node_data->eps()*dEdt;
 
-          MatSetValue(*jac, resistance_fvm_node->global_offset(), insulator_fvm_node->global_offset(), -current_disp.getADValue(1), ADD_VALUES);
-          MatSetValue(*jac, resistance_fvm_node->global_offset(), nb_node->global_offset(), -current_disp.getADValue(0), ADD_VALUES);
+          jac->add( resistance_fvm_node->global_offset(),  insulator_fvm_node->global_offset(),  -current_disp.getADValue(1) );
+          jac->add( resistance_fvm_node->global_offset(),  nb_node->global_offset(),  -current_disp.getADValue(0) );
         }
       }
 
@@ -396,5 +331,6 @@ void ResistanceInsulatorBC::DDM1_Update_Solution(PetscScalar *)
 {
   Parallel::sum(this->current());
 }
+
 
 

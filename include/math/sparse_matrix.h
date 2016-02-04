@@ -33,9 +33,8 @@
 
 // forward declarations
 template <typename T> class SparseMatrix;
-template <typename T> class DenseMatrix;
 template <typename T> inline std::ostream& operator << (std::ostream& os, const SparseMatrix<T>& m);
-namespace SparsityPattern { class Graph; }
+
 
 
 /**
@@ -84,9 +83,7 @@ public:
    */
   static AutoPtr<SparseMatrix<T> >  build(const std::string & solver_package,
                                           const unsigned int m,   const unsigned int n,
-                                          const unsigned int m_l, const unsigned int n_l,
-                                          const std::vector<int> &n_nz=std::vector<int>(),
-                                          const std::vector<int> &n_oz=std::vector<int>());
+                                          const unsigned int m_l, const unsigned int n_l);
 
   /**
    * @returns true if the matrix has been initialized,
@@ -101,7 +98,16 @@ public:
    * not overload this method.
    */
   virtual void get_sparsity_pattern (std::vector<int> &n_nz, std::vector<int> &n_oz) {}
+  
+  
+  /**
+   * get the matrix nonzero pattern. When your \p SparseMatrix<T>
+   * implementation does not need this data simply do
+   * not overload this method.
+   */
+  virtual void get_nonzero_pattern (std::vector< std::vector<int> > & nz) {}
 
+  
   /**
    * Initialize a Sparse matrix
    */
@@ -186,15 +192,27 @@ public:
                     const unsigned int j,
                     const T value) = 0;
 
+                    
   /**
-   * Add the full matrix to the
-   * Sparse matrix.  This is useful
-   * for adding an element matrix
-   * at assembly time
+   * Add a row to the Sparse matrix.  
    */
-  virtual void add_matrix (const DenseMatrix<T> &dm,
-                           const std::vector<unsigned int> &rows,
-                           const std::vector<unsigned int> &cols) = 0;
+  virtual void add_row (unsigned int row, 
+                        const std::vector<unsigned int> &cols, 
+                        const T* dm) = 0;
+
+  /**
+   * Add a row to the Sparse matrix.  
+   */
+  virtual void add_row (unsigned int row, 
+                        unsigned int n, const unsigned int * cols, 
+                        const T* dm) = 0;
+
+  /**
+   * Add a row to the Sparse matrix.  
+   */
+  virtual void add_row (unsigned int row, 
+                        int n, const int * cols, 
+                        const T* dm) = 0;
 
   /**
    * Add the full matrix to the
@@ -202,22 +220,42 @@ public:
    * for adding an element matrix
    * at assembly time
    */
-  virtual void add_matrix (const T* dm,
-                           unsigned int m, unsigned int * rows,
-                           unsigned int n, unsigned int * cols) = 0;
+  virtual void add_matrix (const std::vector<unsigned int> &rows,
+                           const std::vector<unsigned int> &cols,
+                           const T* dm) = 0;
+
+  /**
+   * Add the full matrix to the
+   * Sparse matrix.  This is useful
+   * for adding an element matrix
+   * at assembly time
+   */
+  virtual void add_matrix (unsigned int m, unsigned int * rows,
+                           unsigned int n, unsigned int * cols,
+                           const T* dm) = 0;
 
 
   /**
    * Add the source row entries to the destination row
    */
-  virtual void add_row_to_row(const std::vector<unsigned int> &src_rows,
-                              const std::vector<unsigned int> &dst_rows) = 0;
+  virtual void add_row_to_row(const std::vector<int> &src_rows,
+                              const std::vector<int> &dst_rows) = 0;
 
+                              
   /**
    * clear the given row and fill diag with given value
    */
-  virtual void clear_row(const std::vector<unsigned int> &rows, const T diag=T(0.0) ) = 0;
+  virtual void clear_row(int row, const T diag=T(0.0) ) = 0;
+  
+  /**
+   * clear the given row and fill diag with given value
+   */
+  virtual void clear_row(const std::vector<int> &rows, const T diag=T(0.0) ) = 0;
 
+  /**
+   * get a local row from Sparse matrix.  
+   */                      
+  virtual void get_row (unsigned int row, int n, const int * cols, T* dm) = 0;
 
   /**
    * Return the value of the entry
@@ -240,30 +278,6 @@ public:
   virtual T operator () (const unsigned int i,
                          const unsigned int j) const = 0;
 
-  /**
-   * Return the l1-norm of the matrix, that is
-   * \f$|M|_1=max_{all columns j}\sum_{all 
-   * rows i} |M_ij|\f$,
-   * (max. sum of columns).
-   * This is the
-   * natural matrix norm that is compatible
-   * to the l1-norm for vectors, i.e.
-   * \f$|Mv|_1\leq |M|_1 |v|_1\f$.
-   */
-  virtual Real l1_norm () const = 0;
-
-  /**
-   * Return the linfty-norm of the
-   * matrix, that is
-   * \f$|M|_\infty=max_{all rows i}\sum_{all 
-   * columns j} |M_ij|\f$,
-   * (max. sum of rows).
-   * This is the
-   * natural matrix norm that is compatible
-   * to the linfty-norm of vectors, i.e.
-   * \f$|Mv|_\infty \leq |M|_\infty |v|_\infty\f$.
-   */
-  virtual Real linfty_norm () const = 0;
 
   /**
    * see if Sparse matrix has been closed

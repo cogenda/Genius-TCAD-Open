@@ -71,13 +71,16 @@ void InsulatorSemiconductorInterfaceBC::_find_nearest_points_in_gate_region()
     // only consider nearset point on resistance/semiconductor region
     if( region->type() != MetalRegion &&  region->type() != ElectrodeRegion && region->type() != SemiconductorRegion) continue;
 
+    // skip region has this bc
+    if( region == bc_regions().first || region == bc_regions().second ) continue;
+
     // when the region type in the other side is semiconductor region, prevent duplicate search
     if( region->type() == SemiconductorRegion && semiconductor_region->subdomain_id() > region->subdomain_id() ) continue;
 
     const std::pair<Point, Point> & region_bounding_box = region->boundingbox();
 
-    Real distance = MeshTools::minimal_distance(region_bounding_box, boundary_bounding_box);
-    if( distance < 1e-6*nm || distance > 30*nm ) continue; // skip adjacent and far away regions
+    //Real distance = MeshTools::minimal_distance(region_bounding_box, boundary_bounding_box);
+    //if( distance < 1e-6*nm || distance > 30*nm ) continue; // skip adjacent and far away regions
 
 
     for(unsigned int n=0; n<nodes.size(); ++n)

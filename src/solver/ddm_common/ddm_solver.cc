@@ -22,6 +22,9 @@
 //  $Id: ddm_solver.cc,v 1.11 2008/07/09 05:58:16 gdiso Exp $
 #include <iomanip>
 #include <stack>
+#include <deque>
+#include <numeric>
+
 
 #include "solver_specify.h"
 #include "physical_unit.h"
@@ -41,7 +44,7 @@ using PhysicalUnit::C;
 using PhysicalUnit::s;
 using PhysicalUnit::um;
 
-DDMSolverBase::DDMSolverBase(SimulationSystem & system): FVM_NonlinearSolver(system)
+DDMSolverBase::DDMSolverBase(SimulationSystem & system): FVM_FlexNonlinearSolver(system)
 {
   // do clear
   potential_norm            = 0.0;
@@ -80,9 +83,9 @@ int DDMSolverBase::create_solver()
   //NOTE Tolerances here only be set as a reference
 
   //abstol = 1e-15                  - absolute convergence tolerance
-  //rtol   = 1e-14                  - relative convergence tolerance
+  //rtol   = 1e-10                  - relative convergence tolerance
   //stol   = 1e-9                   - convergence tolerance in terms of the norm of the change in the solution between steps
-  SNESSetTolerances(snes, 1e-15, 1e-14, 1e-9, SolverSpecify::MaxIteration, 1000);
+  SNESSetTolerances(snes, 1e-15, 1e-10, 1e-9, SolverSpecify::MaxIteration, 1000);
 
   // rtol   = SolverSpecify::ksp_rtol  - the relative convergence tolerance (relative decrease in the residual norm)
   // abstol = 1e-20                    - the absolute convergence tolerance (absolute size of the residual norm)
@@ -91,13 +94,14 @@ int DDMSolverBase::create_solver()
   // user can do further adjusment from command line
   SNESSetFromOptions (snes);
 
-  return FVM_NonlinearSolver::create_solver();
+  return FVM_FlexNonlinearSolver::create_solver();
 }
 
 
 
 void DDMSolverBase::set_extra_matrix_nonzero_pattern()
 {
+#if 0
   if(_system.get_bcs()!=NULL)
   {
     for(unsigned int n=0; n<_system.get_bcs()->n_bcs(); ++n )
@@ -124,6 +128,7 @@ void DDMSolverBase::set_extra_matrix_nonzero_pattern()
       }
     }
   }
+#endif
 }
 
 
@@ -154,15 +159,23 @@ int DDMSolverBase::post_solve_process()
             {
               mxml_node_t *eVolt = mxmlNewElement(eLabel, "voltage");
               std::string bcLabel = SolverSpecify::Electrode_VScan[0];
-              double volt = bcs->get_bc(bcLabel)->ext_circuit()->Vapp()/PhysicalUnit::V;
-              mxmlAdd(eVolt, MXML_ADD_AFTER, NULL, MXMLQVariant::makeQVFloat(volt));
+              std::vector<BoundaryCondition *> bc_scan = bcs->get_bcs_by_electrode_label(bcLabel);
+              if(!bc_scan.empty())
+              {
+                double volt = bc_scan[0]->ext_circuit()->Vapp()/PhysicalUnit::V;
+                mxmlAdd(eVolt, MXML_ADD_AFTER, NULL, MXMLQVariant::makeQVFloat(volt));
+              }
             }
             else if (!SolverSpecify::Electrode_IScan.empty())
             {
               mxml_node_t *eCurr = mxmlNewElement(eLabel, "current");
               std::string bcLabel = SolverSpecify::Electrode_IScan[0];
-              double curr = bcs->get_bc(bcLabel)->ext_circuit()->Iapp()/PhysicalUnit::A;
-              mxmlAdd(eCurr, MXML_ADD_AFTER, NULL, MXMLQVariant::makeQVFloat(curr));
+              std::vector<BoundaryCondition *> bc_scan = bcs->get_bcs_by_electrode_label(bcLabel);
+              if(!bc_scan.empty())
+              {
+                double curr = bc_scan[0]->ext_circuit()->Iapp()/PhysicalUnit::A;
+                mxmlAdd(eCurr, MXML_ADD_AFTER, NULL, MXMLQVariant::makeQVFloat(curr));
+              }
             }
           }
           break;
@@ -176,7 +189,7 @@ int DDMSolverBase::post_solve_process()
       mxmlAdd(eSolution, MXML_ADD_AFTER, NULL, eTerm);
   }
 
-  return FVM_NonlinearSolver::post_solve_process();
+  return FVM_FlexNonlinearSolver::post_solve_process();
 }
 
 int DDMSolverBase::destroy_solver()
@@ -188,9 +201,96 @@ int DDMSolverBase::destroy_solver()
   feclearexcept(FE_INVALID);
 #endif
 
-  return FVM_NonlinearSolver::destroy_solver();
+  return FVM_FlexNonlinearSolver::destroy_solver();
 }
 
+
+
+bool DDMSolverBase::heat_sink() const
+{
+  bool sink = false;
+
+  if(_system.get_bcs()!=NULL)
+  {
+    for(unsigned int n=0; n<_system.get_bcs()->n_bcs(); ++n )
+    {
+      const BoundaryCondition * bc = _system.get_bcs()->get_bc(n);
+      if( bc->boundary_type() == BOUNDARY && bc->has_scalar("heat.transfer") && bc->scalar("heat.transfer") > 0.0 )
+        sink = true;
+    }
+  }
+
+  return sink;
+}
+
+
+PetscReal DDMSolverBase::common_model_voltage() const
+{
+  PetscReal Vcomm=0.0;
+  unsigned int n = 0;
+
+  if(Genius::is_last_processor())
+  {
+    for(unsigned int b=0; b<_system.get_bcs()->n_bcs(); b++)
+    {
+      BoundaryCondition * bc = _system.get_bcs()->get_bc(b);
+      if(bc->is_electrode())
+      {
+        //get voltage from petsc solution vector x
+        PetscInt    ix = bc->global_offset();
+        PetscScalar V;
+        VecGetValues(x, 1, &ix, &V);
+        Vcomm += V;
+        n++;
+      }
+    }
+
+    if(n) Vcomm /= n;
+  }
+
+  Parallel::broadcast(Vcomm, Genius::last_processor_id());
+  return Vcomm;
+}
+
+
+
+#if PETSC_VERSION_LE(3,1,0)
+#define SNES_DIVERGED_LINE_SEARCH SNES_DIVERGED_LS_FAILURE
+#endif
+void DDMSolverBase::snes_solve()
+{
+  START_LOG("snes_solve()", "DDMSolverBase");
+
+#if defined(HAVE_FENV_H)
+  feclearexcept (FE_ALL_EXCEPT);
+#endif
+  // do snes solve
+  SNESSolve ( snes, PETSC_NULL, x );
+
+  // get the converged reason
+  SNESConvergedReason reason;
+  SNESGetConvergedReason ( snes,&reason );
+
+  // if Line search failed, disable Line search
+  if ( reason == SNES_DIVERGED_LINE_SEARCH || reason == SNES_DIVERGED_LOCAL_MIN )
+  {
+    MESSAGE <<"------> nonlinear solver " << SNESConvergedReasons[reason] <<". Disable Line Search.\n\n\n";
+    RECORD();
+#if PETSC_VERSION_GE(3,3,0)
+    SNESLineSearchSetType(snesls, SNESLINESEARCHBASIC);
+#else
+    SNESLineSearchSet(snesls, SNESLineSearchNo,PETSC_NULL);
+#endif
+    this->diverged_recovery();
+    SNESSolve ( snes, PETSC_NULL, x );
+  }
+
+#if defined(HAVE_FENV_H)
+  feclearexcept (FE_ALL_EXCEPT);
+#endif
+
+  STOP_LOG("snes_solve()", "DDMSolverBase");
+}
 
 
 /* ----------------------------------------------------------------------------
@@ -208,6 +308,7 @@ int DDMSolverBase::solve_equ()
   _system.get_bcs()->all_electrode_ground();
 
   // not time dependent
+  SolverSpecify::tran_histroy = false;
   SolverSpecify::TimeDependent = false;
   SolverSpecify::dt = 1e100;
   SolverSpecify::clock = 0.0;
@@ -216,10 +317,7 @@ int DDMSolverBase::solve_equ()
   this->pre_solve_process();
 
   // here call Petsc to solve the nonlinear equations
-  sens_solve();
-
-  // call post_solve_process
-  this->post_solve_process();
+  snes_solve();
 
   // get the converged reason
   SNESConvergedReason reason;
@@ -237,9 +335,16 @@ int DDMSolverBase::solve_equ()
     RECORD();
   }
 
-  SolverSpecify::tran_histroy = false;
+  // ok, converged
+  if(reason >0)
+  {
+    // call post_solve_process
+    this->post_solve_process();
+    return 0;
+  }
 
-  return 0;
+  // not converged
+  return 1;
 }
 
 
@@ -258,42 +363,46 @@ int DDMSolverBase::solve_steadystate()
   _system.get_field_source()->update ( 0 );
 
   // not time dependent
+  SolverSpecify::tran_histroy = false;
   SolverSpecify::TimeDependent = false;
   SolverSpecify::dt = 1e100;
   SolverSpecify::clock = 0.0;
 
   if(SolverSpecify::PseudoTimeMethod)
-    snes_solve_pseudo_time_step();
-  else
+    return snes_solve_pseudo_time_step();
+
+  // call pre_solve_process
+  this->pre_solve_process();
+
+  // here call Petsc to solve the nonlinear equations
+  snes_solve();
+
+  // get the converged reason
+  SNESConvergedReason reason;
+  SNESGetConvergedReason ( snes, &reason );
+
+  // linear solver iteration
+  PetscInt lits;
+  SNESGetLinearSolveIterations(snes, &lits);
+
+  // print convergence/divergence reason
   {
-    // call pre_solve_process
-    this->pre_solve_process();
-
-    // here call Petsc to solve the nonlinear equations
-    sens_solve();
-
-    // call post_solve_process
-    this->post_solve_process();
-
-    // get the converged reason
-    SNESConvergedReason reason;
-    SNESGetConvergedReason ( snes, &reason );
-
-    // linear solver iteration
-    PetscInt lits;
-    SNESGetLinearSolveIterations(snes, &lits);
-
-    // print convergence/divergence reason
-    {
-      MESSAGE <<"--------------------------------------------------------------------------------\n"
-              <<"      "<<SNESConvergedReasons[reason]<<", total linear iteration " << lits << "\n\n\n";
-      RECORD();
-    }
+    MESSAGE <<"--------------------------------------------------------------------------------\n"
+            <<"      "<<SNESConvergedReasons[reason]<<", total linear iteration " << lits << "\n\n\n";
+    RECORD();
   }
 
-  SolverSpecify::tran_histroy = false;
+  // ok, converged
+  if(reason >0)
+  {
+    // call post_solve_process
+    this->post_solve_process();
+    return 0;
+  }
 
-  return 0;
+  // not converged
+  return 1;
+
 }
 
 
@@ -305,6 +414,7 @@ int DDMSolverBase::solve_steadystate()
  */
 int DDMSolverBase::solve_dcsweep()
 {
+  int ierr = 0;
 
   // set electrode with transient time 0 value of stimulate source(s)
   _system.get_electrical_source()->update ( 0 );
@@ -370,6 +480,7 @@ int DDMSolverBase::solve_dcsweep()
       // set current vscan voltage to corresponding electrode
       _system.get_electrical_source()->assign_voltage_to ( SolverSpecify::Electrode_VScan, Vscan );
       _system.get_field_source()->update ( 0, SolverSpecify::SourceCoupled );
+      SolverSpecify::Electrode_VScan_Voltage = Vscan;
 
       // call pre_solve_process
       if ( SolverSpecify::DC_Cycles == 0 )
@@ -378,7 +489,7 @@ int DDMSolverBase::solve_dcsweep()
         this->pre_solve_process ( false );
 
       // here call Petsc to solve the nonlinear equations
-      sens_solve();
+      snes_solve();
 
       // get the converged reason
       SNESConvergedReason reason;
@@ -454,6 +565,7 @@ int DDMSolverBase::solve_dcsweep()
         {
           MESSAGE <<". Failed in the first step.\n\n\n";
           RECORD();
+          ierr = 1;
           break;
         }
 
@@ -461,6 +573,7 @@ int DDMSolverBase::solve_dcsweep()
         {
           MESSAGE <<". Too many failed steps, give up tring.\n\n\n";
           RECORD();
+          ierr=1;
           break;
         }
 
@@ -542,6 +655,7 @@ int DDMSolverBase::solve_dcsweep()
       // set iscan current to corresponding electrode
       _system.get_electrical_source()->assign_current_to ( SolverSpecify::Electrode_IScan, Iscan );
       _system.get_field_source()->update ( 0, SolverSpecify::SourceCoupled );
+      SolverSpecify::Electrode_IScan_Current = Iscan;
 
       // call pre_solve_process
       if ( SolverSpecify::DC_Cycles == 0 )
@@ -549,7 +663,7 @@ int DDMSolverBase::solve_dcsweep()
       else
         this->pre_solve_process ( false );
 
-      sens_solve();
+      snes_solve();
       // get the converged reason
       SNESConvergedReason reason;
       SNESGetConvergedReason ( snes,&reason );
@@ -621,12 +735,14 @@ int DDMSolverBase::solve_dcsweep()
         {
           MESSAGE <<". Failed in the first step.\n\n\n";
           RECORD();
+          ierr = 1;
           break;
         }
         if ( I_retry.size() >=8 )
         {
           MESSAGE <<". Too many failed steps, give up tring.\n\n\n";
           RECORD();
+          ierr = 1;
           break;
         }
 
@@ -678,12 +794,14 @@ int DDMSolverBase::solve_dcsweep()
 
   SolverSpecify::tran_histroy = false;
 
-  return 0;
+  return ierr;
 }
 
 
 int DDMSolverBase::solve_op()
 {
+  int ierr = 0;
+
   // set electrode with transient time 0 value of stimulate source(s)
   _system.get_field_source()->update ( 0 );
 
@@ -753,7 +871,7 @@ int DDMSolverBase::solve_op()
     else
       this->pre_solve_process ( false );
 
-    sens_solve();
+    snes_solve();
     // get the converged reason
     SNESConvergedReason reason;
     SNESGetConvergedReason ( snes,&reason );
@@ -771,6 +889,7 @@ int DDMSolverBase::solve_op()
       if ( diverged_retry >= 8 ) //failed 8 times, stop tring
       {
         MESSAGE<<"------> Too many failed steps, give up tring.\n\n\n"; RECORD();
+        ierr = 1;
         break;
       }
 
@@ -872,7 +991,7 @@ int DDMSolverBase::solve_op()
 
   SolverSpecify::tran_histroy = false;
 
-  return 0;
+  return ierr;
 }
 
 
@@ -920,8 +1039,11 @@ void DDMSolverBase::solve_iv_trace_begin()
 #endif
     }
 
-
-    ierr = KSPSetOperators(kspc, J, J, SAME_NONZERO_PATTERN); genius_assert(!ierr);
+#if PETSC_VERSION_GE(3,5,0)
+      ierr = KSPSetOperators(kspc, J, J);genius_assert(!ierr);
+#else
+      ierr = KSPSetOperators(kspc, J, J, SAME_NONZERO_PATTERN);genius_assert(!ierr);
+#endif
   }
 }
 
@@ -1007,11 +1129,15 @@ int DDMSolverBase::solve_iv_trace()
   // call pre_solve_process
   this->pre_solve_process();
   // here call Petsc to solve the nonlinear equations
-  sens_solve();
+  snes_solve();
 
   // get the converged reason
   SNESConvergedReason reason;
   SNESGetConvergedReason ( snes, &reason );
+
+  // linear solver iteration
+  PetscInt lits;
+  SNESGetLinearSolveIterations(snes, &lits);
 
   if(reason<0)
   {
@@ -1020,9 +1146,7 @@ int DDMSolverBase::solve_iv_trace()
     goto trace_end;
   }
 
-  // linear solver iteration
-  PetscInt lits;
-  SNESGetLinearSolveIterations(snes, &lits);
+
 
   MESSAGE
       <<"--------------------------------------------------------------------------------\n"
@@ -1048,7 +1172,7 @@ int DDMSolverBase::solve_iv_trace()
       MESSAGE << "Trace "<< electrode_trace <<" for VTrace=" << V << "(V), V=" << Potential << "(V)\n"; RECORD();
 
       this->pre_solve_process(false);
-      sens_solve();
+      snes_solve();
 
       SNESGetConvergedReason(snes,&reason);
       if(reason<0)
@@ -1082,7 +1206,11 @@ int DDMSolverBase::solve_iv_trace()
     // calculate the dynamic resistance of IV curve by different approximation
     this->set_trace_electrode(bc_trace);
 
-    KSPSetOperators(kspc,J,J,SAME_NONZERO_PATTERN);
+#if PETSC_VERSION_GE(3,5,0)
+    KSPSetOperators(kspc, J, J);
+#else
+    KSPSetOperators(kspc, J, J, SAME_NONZERO_PATTERN);
+#endif
     KSPSolve(kspc, pdF_pdV, pdx_pdV); // KSPSolve(ksp, b, x)
     VecDot(pdI_pdx, pdx_pdV, &dI_dV);
 
@@ -1220,6 +1348,7 @@ trace_end:
  */
 int DDMSolverBase::solve_transient()
 {
+  int ierr = 0;
 
   // init aux vectors used in transient simulation
   VecDuplicate ( x, &x_n );
@@ -1270,6 +1399,8 @@ int DDMSolverBase::solve_transient()
 
   double dt_dynamic_factor = 1.0;
 
+  std::deque<double> time_step_success;
+  double average_time_step = SolverSpecify::dt;
   // the main loop of transient solver.
   do
   {
@@ -1289,7 +1420,7 @@ int DDMSolverBase::solve_transient()
     else
       this->pre_solve_process ( false );
 
-    sens_solve();
+    snes_solve();
     // get the converged reason
     SNESConvergedReason reason;
     SNESGetConvergedReason ( snes,&reason );
@@ -1310,6 +1441,7 @@ int DDMSolverBase::solve_transient()
         MESSAGE
         <<"------> Too many failed steps, give up tring.\n\n\n";
         RECORD();
+        ierr = 1;
         break;
       }
 
@@ -1365,7 +1497,7 @@ int DDMSolverBase::solve_transient()
         diverged_retry = 0;
         autostep_retry++;
 
-        MESSAGE<<"------> LTE too large, time step rejected...\n\n\n";
+        MESSAGE<<"------> Local truncation error too large, time step rejected...\n\n\n";
         RECORD();
 
         // reduce time step by a factor of 0.9*r
@@ -1420,6 +1552,10 @@ int DDMSolverBase::solve_transient()
     // call post_solve_process
     this->post_solve_process();
 
+    time_step_success.push_back(SolverSpecify::dt);
+    if(time_step_success.size()>5) time_step_success.pop_front();
+    average_time_step = std::accumulate(time_step_success.begin(), time_step_success.end(), 0.0)/time_step_success.size();
+
     // clear the counter
     diverged_retry = 0;
 
@@ -1433,17 +1569,20 @@ int DDMSolverBase::solve_transient()
     // prepare for next time step
     SolverSpecify::dt *= dt_dynamic_factor;
 
+    // limit the time step by 200% of average time step in previous 5 steps
+    SolverSpecify::dt = std::min(2.0*average_time_step, SolverSpecify::dt);
+
     // limit the max time step by TStepMin/TStepMax
     if ( SolverSpecify::dt < SolverSpecify::TStepMin )
       SolverSpecify::dt = SolverSpecify::TStepMin;
-    if ( SolverSpecify::dt > SolverSpecify::TStepMax )
+    if ( SolverSpecify::TStepMax>0 && SolverSpecify::dt > SolverSpecify::TStepMax )
       SolverSpecify::dt = SolverSpecify::TStepMax;
 
     // limit time step by changes of external source, i.e. max allowed changes of vsource
     SolverSpecify::dt = _system.get_electrical_source()->limit_dt(SolverSpecify::clock, SolverSpecify::dt, SolverSpecify::TStepMin, SolverSpecify::VStepMax, SolverSpecify::IStepMax);
 
     // limit time step by field source
-    SolverSpecify::dt = _system.get_field_source()->limit_dt(SolverSpecify::clock, SolverSpecify::dt);
+    SolverSpecify::dt = _system.get_field_source()->limit_dt(SolverSpecify::clock, SolverSpecify::dt, SolverSpecify::TStepMin);
 
     // set clock to next time step
     SolverSpecify::clock += SolverSpecify::dt;
@@ -1524,13 +1663,15 @@ int DDMSolverBase::solve_transient()
 
   SolverSpecify::tran_histroy = true;
 
-  return 0;
+  return ierr;
 }
 
 
 
 int DDMSolverBase::snes_solve_pseudo_time_step()
 {
+  int ierr= 0;
+
   // diverged counter
   int diverged_retry=0;
 
@@ -1547,7 +1688,7 @@ int DDMSolverBase::snes_solve_pseudo_time_step()
     else
       this->pre_solve_process ( false );
 
-    sens_solve();
+    snes_solve();
     // get the converged reason
     SNESConvergedReason reason;
     SNESGetConvergedReason ( snes,&reason );
@@ -1564,6 +1705,7 @@ int DDMSolverBase::snes_solve_pseudo_time_step()
       if ( diverged_retry >= 8 ) //failed 8 times, stop tring
       {
         MESSAGE<<"------> Too many failed steps, give up tring.\n\n\n"; RECORD();
+        ierr = 1;
         break;
       }
 
@@ -1615,7 +1757,7 @@ int DDMSolverBase::snes_solve_pseudo_time_step()
   }
 
 
-  return 0;
+  return ierr;
 }
 
 
@@ -1624,12 +1766,19 @@ int DDMSolverBase::snes_solve_pseudo_time_step()
 /*------------------------------------------------------------------
  * snes convergence criteria
  */
-#if PETSC_VERSION_LE(3, 2, 0)
-  #include "private/snesimpl.h"
-  #define SNES_CONVERGED_SNORM_RELATIVE  SNES_CONVERGED_PNORM_RELATIVE
-#else
-  #include "petsc-private/snesimpl.h"
+#if PETSC_VERSION_LT(3, 6, 0)
+  #if PETSC_VERSION_LE(3, 2, 0)
+    #include "private/snesimpl.h"
+    #define SNES_CONVERGED_SNORM_RELATIVE  SNES_CONVERGED_PNORM_RELATIVE
+  #else
+    #include "petsc-private/snesimpl.h"
+  #endif
 #endif
+
+#if PETSC_VERSION_GE(3, 6, 0)
+  #include <petsc/private/snesimpl.h>
+#endif
+
 void DDMSolverBase::petsc_snes_convergence_test ( PetscInt its, PetscReal , PetscReal pnorm, PetscReal fnorm, SNESConvergedReason *reason )
 {
   // update error norm
@@ -1721,6 +1870,13 @@ void DDMSolverBase::petsc_snes_convergence_test ( PetscInt its, PetscReal , Pets
                    elec_quantum_equation_norm < SolverSpecify::elec_quantum_abs_toler    &&
                    hole_quantum_equation_norm < SolverSpecify::hole_quantum_abs_toler;
 
+  bool div = pnorm > 1e5 ||
+             poisson_norm > SolverSpecify::divergence_factor*SolverSpecify::poisson_abs_toler ||
+             elec_continuity_norm > SolverSpecify::divergence_factor*SolverSpecify::elec_continuity_abs_toler ||
+             hole_continuity_norm > SolverSpecify::divergence_factor*SolverSpecify::hole_continuity_abs_toler ||
+             electrode_norm       > SolverSpecify::divergence_factor*SolverSpecify::electrode_abs_toler;
+
+
 #ifdef WINDOWS
   MESSAGE.precision ( 1 );
 #else
@@ -1760,6 +1916,10 @@ void DDMSolverBase::petsc_snes_convergence_test ( PetscInt its, PetscReal , Pets
   {
     *reason = SNES_DIVERGED_FUNCTION_COUNT;
   }
+  else if (its > 4 && div)
+  {
+    *reason = SNES_DIVERGED_FUNCTION_DOMAIN;
+  }
 
   if ( *reason == SNES_CONVERGED_ITERATING )
   {
@@ -1794,7 +1954,7 @@ void DDMSolverBase::petsc_snes_convergence_test ( PetscInt its, PetscReal , Pets
       {
         *reason = SNES_CONVERGED_FNORM_ABS;
       }
-      else if ( std::abs(fnorm-function_norm)/fnorm <= snes->rtol  && conv )
+      else if ( std::abs(fnorm-function_norm)/fnorm <=  SolverSpecify::snes_rtol  && conv )
       {
         *reason = SNES_CONVERGED_FNORM_RELATIVE;
       }

@@ -39,7 +39,7 @@ Sphere::Sphere () :
 
 Sphere::Sphere (const Point& c,  const Real   r)
 {
-  assert (r > 0.);
+  assert (r > 0.0);
 
   this->create_from_center_radius (c, r);
 }
@@ -136,15 +136,15 @@ void Sphere::create_from_center_radius (const Point& c, const Real r)
   this->center() = c;
   this->radius() = r;
 
-  assert (this->radius() > 0.);
+  assert (this->radius() > 0.0);
 }
 
 
 
 bool Sphere::intersects (const Sphere& other_sphere) const
 {
-  assert ( this->radius() > 0. );
-  assert ( other_sphere.radius() > 0. );
+  assert ( this->radius() > 0.0 );
+  assert ( other_sphere.radius() > 0.0 );
 
   const Real distance = (this->center() - other_sphere.center()).size();
 
@@ -158,7 +158,7 @@ bool Sphere::intersects (const Sphere& other_sphere) const
 
 bool Sphere::above_surface (const Point& p) const
 {
-  assert (this->radius() > 0.);
+  assert (this->radius() > 0.0);
 
   // create a vector from the center to the point.
   const Point w = p - this->center();
@@ -173,7 +173,7 @@ bool Sphere::above_surface (const Point& p) const
 
 bool Sphere::below_surface (const Point& p) const
 {
-  assert (this->radius() > 0.);
+  assert (this->radius() > 0.0);
 
   return ( !this->above_surface (p) );
 }
@@ -182,8 +182,8 @@ bool Sphere::below_surface (const Point& p) const
 
 bool Sphere::on_surface (const Point& p) const
 {
-  assert (this->radius() > 0.);
-  const Real eps = 1e-8*this->radius();
+  assert (this->radius() > 0.0);
+  const Real eps = std::max(1e-6*this->radius(), 1e-10);
 
   // Create a vector from the center to the point.
   const Point w = p - this->center();
@@ -200,7 +200,7 @@ bool Sphere::on_surface (const Point& p) const
 
 Point Sphere::closest_point (const Point& p) const
 {
-  assert (this->radius() > 0.);
+  assert (this->radius() > 0.0);
 
   // get the normal from the surface in the direction
   // of p
@@ -224,7 +224,7 @@ bool Sphere::intersect_point (const Point& p, const Point &r, Real &t1, Real &t2
 
   Real d = sqrt(_rad*_rad - h*h);
   t1 = t - d;
-  t2 = t + d; 
+  t2 = t + d;
   return true;
 }
 
@@ -234,7 +234,7 @@ bool Sphere::intersect_point (const Point& p, const Point &r, Real &t1, Real &t2
 
 Point Sphere::unit_normal (const Point& p) const
 {
-  assert (this->radius() > 0.);
+  assert (this->radius() > 0.0);
 
   assert ( !(p == this->center()) );
 

@@ -200,6 +200,14 @@ namespace Parallel
 
   //-------------------------------------------------------------------
   /**
+   * Take a local variable and replace it with the maximum of it's abs values
+   * on all processors
+   */
+  template <typename T>
+  inline void maxabs(T &r);
+
+  //-------------------------------------------------------------------
+  /**
    * Take a vector of local variables and replace each entry with the maximum
    * of it's values on all processors
    */
@@ -526,6 +534,11 @@ namespace Parallel
   template<>
   inline MPI_Datatype datatype<long double>() { return MPI_LONG_DOUBLE; }
 
+#if (WITH_PETSCSCALAR_FLOAT128 && __GNUC__ >= 4 && __GNUC_MINOR__ >=6)    
+  template<>
+  inline MPI_Datatype datatype<__float128>() { return MPIU___FLOAT128; }
+#endif
+
   template<>
   inline MPI_Datatype datatype_with_int<short int>() { return MPI_SHORT_INT; }
 
@@ -546,6 +559,8 @@ namespace Parallel
 
   template<>
   inline MPI_Datatype datatype_with_int<long double>() { return MPI_LONG_DOUBLE_INT; }
+  
+  
 
   template <typename T>
   inline bool verify(const T &r)
@@ -685,6 +700,34 @@ namespace Parallel
     }
 
     STOP_LOG("max()", "Parallel");
+  }
+
+
+
+  template <typename T>
+  inline void maxabs(T &r)
+  {
+    START_LOG("maxabs()", "Parallel");
+
+    if (Genius::n_processors() > 1)
+    {
+      T temp_max, temp_min;
+      MPI_Allreduce (&r,
+                     &temp_max,
+                     1,
+                     datatype<T>(),
+                     MPI_MAX,
+                     Genius::comm_world());
+      MPI_Allreduce (&r,
+                     &temp_min,
+                     1,
+                     datatype<T>(),
+                     MPI_MIN,
+                     Genius::comm_world());
+      r = std::abs(temp_max) > std::abs(temp_min) ? temp_max : temp_min;
+    }
+
+    STOP_LOG("maxabs()", "Parallel");
   }
 
 
@@ -1818,7 +1861,7 @@ namespace Parallel
     std::vector<std::complex<T> > r_src(r);
 
     // now resize it to hold the global data
-    r.resize(globalsize);
+    r.resize(globalsize/2);
 
     // and get the data from the remote processors.
     // Pass NULL if our vector is empty.
@@ -2006,9 +2049,10 @@ namespace Parallel
       key.push_back((*map_it).first);
       value.push_back((*map_it).second);
     }
-
+    
     allgather(key);
     allgather(value);
+ 
     genius_assert(key.size()==value.size());
 
     for(unsigned int n=0; n<key.size(); ++n)
@@ -2416,6 +2460,9 @@ namespace Parallel
 
   template <typename T>
   inline void max(T &) {}
+
+  template <typename T>
+  inline void maxabs(T &) {}
 
   template <typename T>
   inline void max(std::vector<T> &) {}

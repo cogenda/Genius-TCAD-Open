@@ -263,96 +263,13 @@ void ResistanceResistanceBC::DDM2_Function(PetscScalar * x, Vec f, InsertMode &a
 
 
 
-/*---------------------------------------------------------------------
- * reserve non zero pattern in jacobian matrix for DDML2 solver
- */
-void ResistanceResistanceBC::DDM2_Jacobian_Reserve(Mat *jac, InsertMode &add_value_flag)
-{
 
-  // ADD 0 to some position of Jacobian matrix to prevent MatAssembly expurgation these position.
-
-  // since we will use ADD_VALUES operat, check the matrix state.
-  if( (add_value_flag != ADD_VALUES) && (add_value_flag != NOT_SET_VALUES) )
-  {
-    MatAssemblyBegin(*jac, MAT_FLUSH_ASSEMBLY);
-    MatAssemblyEnd(*jac, MAT_FLUSH_ASSEMBLY);
-  }
-
-  const SimulationRegion * _r1 = bc_regions().first;
-  const SimulationRegion * _r2 = bc_regions().second;
-
-  // search for all the node with this boundary type
-  BoundaryCondition::const_node_iterator node_it = nodes_begin();
-  BoundaryCondition::const_node_iterator end_it = nodes_end();
-
-  for(; node_it!=end_it; ++node_it )
-  {
-    // skip node not belongs to this processor
-    if( (*node_it)->processor_id()!=Genius::processor_id() ) continue;
-
-    const FVM_Node * resistance_fvm_node_1  = get_region_fvm_node ( ( *node_it ), _r1 );
-    const FVM_NodeData * resistance_node_data_1 = resistance_fvm_node_1->node_data();
-
-    const FVM_Node * resistance_fvm_node_2 = get_region_fvm_node ( ( *node_it ), _r2 );
-    const FVM_NodeData * resistance_node_data_2 = resistance_fvm_node_2->node_data();
-
-    // reserve items for all the ghost nodes
-    FVM_Node::fvm_ghost_node_iterator gn_it = resistance_fvm_node_1->ghost_node_begin();
-    for(; gn_it != resistance_fvm_node_1->ghost_node_end(); ++gn_it)
-    {
-      const FVM_Node * ghost_fvm_node = (*gn_it).first;
-      MatSetValue(*jac, resistance_fvm_node_1->global_offset()+0, ghost_fvm_node->global_offset()+0, 0, ADD_VALUES);
-      MatSetValue(*jac, resistance_fvm_node_1->global_offset()+1, ghost_fvm_node->global_offset()+1, 0, ADD_VALUES);
-
-      FVM_Node::fvm_neighbor_node_iterator  gnb_it = ghost_fvm_node->neighbor_node_begin();
-      for(; gnb_it != ghost_fvm_node->neighbor_node_end(); ++gnb_it)
-      {
-        MatSetValue(*jac, resistance_fvm_node_1->global_offset()+0, (*gnb_it).first->global_offset()+0, 0, ADD_VALUES);
-        MatSetValue(*jac, resistance_fvm_node_1->global_offset()+1, (*gnb_it).first->global_offset()+1, 0, ADD_VALUES);
-      }
-    }
-
-    MatSetValue(*jac, resistance_fvm_node_2->global_offset()+0, resistance_fvm_node_1->global_offset()+0, 0, ADD_VALUES);
-    MatSetValue(*jac, resistance_fvm_node_2->global_offset()+1, resistance_fvm_node_1->global_offset()+1, 0, ADD_VALUES);
-
-    // search all the fvm_node which has *node_it as root node, these fvm_nodes have the same location in geometry,
-    // but belong to different regions in logic.
-    BoundaryCondition::region_node_iterator  rnode_it     = region_node_begin(*node_it);
-    BoundaryCondition::region_node_iterator  end_rnode_it = region_node_end(*node_it);
-    for(unsigned int i=0 ; rnode_it!=end_rnode_it; ++i, ++rnode_it  )
-    {
-      const SimulationRegion * region = (*rnode_it).second.first;
-      if ( region->type() != InsulatorRegion ) continue;
-
-      const FVM_Node * insulator_fvm_node = (*rnode_it).second.second;
-
-      // reserve for later operator
-      MatSetValue(*jac, insulator_fvm_node->global_offset()+0, resistance_fvm_node_1->global_offset()+0, 0, ADD_VALUES);
-      MatSetValue(*jac, insulator_fvm_node->global_offset()+0, resistance_fvm_node_2->global_offset()+0, 0, ADD_VALUES);
-      MatSetValue(*jac, insulator_fvm_node->global_offset()+1, resistance_fvm_node_1->global_offset()+1, 0, ADD_VALUES);
-
-      MatSetValue(*jac, resistance_fvm_node_1->global_offset()+0, insulator_fvm_node->global_offset()+0, 0, ADD_VALUES);
-      MatSetValue(*jac, resistance_fvm_node_1->global_offset()+1, insulator_fvm_node->global_offset()+1, 0, ADD_VALUES);
-      FVM_Node::fvm_neighbor_node_iterator nb_it = insulator_fvm_node->neighbor_node_begin();
-      for(; nb_it != insulator_fvm_node->neighbor_node_end(); ++nb_it)
-      {
-        const FVM_Node *nb_node = (*nb_it).first;
-        MatSetValue(*jac, resistance_fvm_node_1->global_offset()+0, nb_node->global_offset()+0, 0, ADD_VALUES);
-        MatSetValue(*jac, resistance_fvm_node_1->global_offset()+1, nb_node->global_offset()+1, 0, ADD_VALUES);
-      }
-    }
-  }
-
-  // the last operator is ADD_VALUES
-  add_value_flag = ADD_VALUES;
-
-}
 
 
 /*---------------------------------------------------------------------
  * do pre-process to jacobian matrix for DDML2 solver
  */
-void ResistanceResistanceBC::DDM2_Jacobian_Preprocess(PetscScalar *,Mat *jac, std::vector<PetscInt> &src_row,
+void ResistanceResistanceBC::DDM2_Jacobian_Preprocess(PetscScalar *,SparseMatrix<PetscScalar> *jac, std::vector<PetscInt> &src_row,
     std::vector<PetscInt> &dst_row, std::vector<PetscInt> &clear_row)
 {
   const SimulationRegion * _r1 = bc_regions().first;
@@ -403,15 +320,8 @@ void ResistanceResistanceBC::DDM2_Jacobian_Preprocess(PetscScalar *,Mat *jac, st
 /*---------------------------------------------------------------------
  * build function and its jacobian for DDML2 solver
  */
-void ResistanceResistanceBC::DDM2_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_value_flag)
+void ResistanceResistanceBC::DDM2_Jacobian(PetscScalar * x, SparseMatrix<PetscScalar> *jac, InsertMode &add_value_flag)
 {
-  // since we will use ADD_VALUES operat, check the matrix state.
-  if( (add_value_flag != ADD_VALUES) && (add_value_flag != NOT_SET_VALUES) )
-  {
-    MatAssemblyBegin(*jac, MAT_FLUSH_ASSEMBLY);
-    MatAssemblyEnd(*jac, MAT_FLUSH_ASSEMBLY);
-  }
-
   const SimulationRegion * _r1 = bc_regions().first;
   const SimulationRegion * _r2 = bc_regions().second;
 
@@ -451,8 +361,8 @@ void ResistanceResistanceBC::DDM2_Jacobian(PetscScalar * x, Mat *jac, InsertMode
     AutoDScalar f_psi_metal = (e*V_resistance_1 + affinite_resistance_1) - (e*V_resistance_2 + affinite_resistance_2);
 
     // set Jacobian of governing equation f_psi
-    MatSetValue(*jac, resistance_fvm_node_2->global_offset(), resistance_fvm_node_1->global_offset(), f_psi_metal.getADValue(0), ADD_VALUES);
-    MatSetValue(*jac, resistance_fvm_node_2->global_offset(), resistance_fvm_node_2->global_offset(), f_psi_metal.getADValue(1), ADD_VALUES);
+    jac->add( resistance_fvm_node_2->global_offset(),  resistance_fvm_node_1->global_offset(),  f_psi_metal.getADValue(0) );
+    jac->add( resistance_fvm_node_2->global_offset(),  resistance_fvm_node_2->global_offset(),  f_psi_metal.getADValue(1) );
 
 
     // T of this node
@@ -465,8 +375,8 @@ void ResistanceResistanceBC::DDM2_Jacobian(PetscScalar * x, Mat *jac, InsertMode
     AutoDScalar f_T = T_resistance_1 - T_resistance_2;
 
     // set Jacobian of governing equation f_T
-    MatSetValue(*jac, resistance_fvm_node_2->global_offset()+1, resistance_fvm_node_1->global_offset()+1, f_T.getADValue(0), ADD_VALUES);
-    MatSetValue(*jac, resistance_fvm_node_2->global_offset()+1, resistance_fvm_node_2->global_offset()+1, f_T.getADValue(1), ADD_VALUES);
+    jac->add( resistance_fvm_node_2->global_offset()+1,  resistance_fvm_node_1->global_offset()+1,  f_T.getADValue(0) );
+    jac->add( resistance_fvm_node_2->global_offset()+1,  resistance_fvm_node_2->global_offset()+1,  f_T.getADValue(1) );
 
 
     // if we have insulator node?
@@ -489,17 +399,17 @@ void ResistanceResistanceBC::DDM2_Jacobian(PetscScalar * x, Mat *jac, InsertMode
         AutoDScalar f_psi_insulator = V_insulator - 0.5*(V_resistance_1+V_resistance_2);
 
         // set Jacobian of governing equation f_psi_insulator
-        MatSetValue(*jac, insulator_fvm_node->global_offset(), resistance_fvm_node_1->global_offset(), f_psi_insulator.getADValue(0), ADD_VALUES);
-        MatSetValue(*jac, insulator_fvm_node->global_offset(), resistance_fvm_node_2->global_offset(), f_psi_insulator.getADValue(1), ADD_VALUES);
-        MatSetValue(*jac, insulator_fvm_node->global_offset(), insulator_fvm_node->global_offset(), f_psi_insulator.getADValue(2), ADD_VALUES);
+        jac->add( insulator_fvm_node->global_offset(),  resistance_fvm_node_1->global_offset(),  f_psi_insulator.getADValue(0) );
+        jac->add( insulator_fvm_node->global_offset(),  resistance_fvm_node_2->global_offset(),  f_psi_insulator.getADValue(1) );
+        jac->add( insulator_fvm_node->global_offset(),  insulator_fvm_node->global_offset(),  f_psi_insulator.getADValue(2) );
 
         // the T of this node is equal to corresponding T of  node in the first resistance region
         // since T should be continuous for the interface
         AutoDScalar f_T = T_insulator - T_resistance_1;
 
         // set Jacobian of governing equation f_T
-        MatSetValue(*jac, insulator_fvm_node->global_offset()+1, resistance_fvm_node_1->global_offset()+1, f_T.getADValue(0), ADD_VALUES);
-        MatSetValue(*jac, insulator_fvm_node->global_offset()+1, insulator_fvm_node->global_offset()+1, f_T.getADValue(2), ADD_VALUES);
+        jac->add( insulator_fvm_node->global_offset()+1,  resistance_fvm_node_1->global_offset()+1,  f_T.getADValue(0) );
+        jac->add( insulator_fvm_node->global_offset()+1,  insulator_fvm_node->global_offset()+1,  f_T.getADValue(2) );
 
         // displacement current
         if(SolverSpecify::TimeDependent == true)
@@ -534,8 +444,8 @@ void ResistanceResistanceBC::DDM2_Jacobian(PetscScalar * x, Mat *jac, InsertMode
 
             AutoDScalar current_disp = cv_boundary*insulator_fvm_node_data->eps()*dEdt;
 
-            MatSetValue(*jac, resistance_fvm_node_1->global_offset(), insulator_fvm_node->global_offset(), -current_disp.getADValue(0), ADD_VALUES);
-            MatSetValue(*jac, resistance_fvm_node_1->global_offset(), nb_node->global_offset(), -current_disp.getADValue(1), ADD_VALUES);
+            jac->add( resistance_fvm_node_1->global_offset(),  insulator_fvm_node->global_offset(),  -current_disp.getADValue(0) );
+            jac->add( resistance_fvm_node_1->global_offset(),  nb_node->global_offset(),  -current_disp.getADValue(1) );
           }
         }
       }
@@ -546,3 +456,4 @@ void ResistanceResistanceBC::DDM2_Jacobian(PetscScalar * x, Mat *jac, InsertMode
   // the last operator is ADD_VALUES
   add_value_flag = ADD_VALUES;
 }
+

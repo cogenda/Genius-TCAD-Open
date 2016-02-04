@@ -313,7 +313,10 @@ namespace Material
         }
         if(basic->calibrate(pmi_parameters))
         {
-          MESSAGE<<"WARNING: PMI "<< material <<" Basic Parameter calibrating has mismatch(es)!\n"; RECORD();
+          MESSAGE<<"WARNING: PMI "<< material <<" Basic Parameter calibrating has mismatch(es)!\n";
+          MESSAGE<<basic->calibrate_error_info();
+          RECORD();
+          basic->calibrate_error_info().clear();
         }
         break;
       }
@@ -332,7 +335,10 @@ namespace Material
         }
         if(band->calibrate(pmi_parameters))
         {
-          MESSAGE<<"WARNING: PMI "<< material <<" Band Structure calibrating has mismatch(es)!\n"; RECORD();
+          MESSAGE<<"WARNING: PMI "<< material <<" Band Structure calibrating has mismatch(es)!\n";
+          MESSAGE<<band->calibrate_error_info();
+          RECORD();
+          band->calibrate_error_info().clear();
         }
         break;
       }
@@ -351,7 +357,10 @@ namespace Material
         }
         if(mob->calibrate(pmi_parameters))
         {
-          MESSAGE<<"WARNING: PMI "<< material <<" Mobility calibrating has mismatch(es)!\n"; RECORD();
+          MESSAGE<<"WARNING: PMI "<< material <<" Mobility calibrating has mismatch(es)!\n";
+          MESSAGE<<mob->calibrate_error_info();
+          RECORD();
+          mob->calibrate_error_info().clear();
         }
         break;
       }
@@ -370,7 +379,10 @@ namespace Material
         }
         if(gen->calibrate(pmi_parameters))
         {
-          MESSAGE<<"WARNING: PMI "<< material <<" Impact Ionization calibrating has mismatch(es)!\n"; RECORD();
+          MESSAGE<<"WARNING: PMI "<< material <<" Impact Ionization calibrating has mismatch(es)!\n";
+          MESSAGE<<gen->calibrate_error_info();
+          RECORD();
+          gen->calibrate_error_info().clear();
         }
         break;
       }
@@ -389,7 +401,10 @@ namespace Material
         }
         if(thermal->calibrate(pmi_parameters))
         {
-          MESSAGE<<"WARNING: PMI "<< material <<" Thermal Parameter calibrating has mismatch(es)!\n"; RECORD();
+          MESSAGE<<"WARNING: PMI "<< material <<" Thermal Parameter calibrating has mismatch(es)!\n";
+          MESSAGE<<thermal->calibrate_error_info();
+          RECORD();
+          thermal->calibrate_error_info().clear();
         }
         break;
       }
@@ -408,7 +423,10 @@ namespace Material
         }
         if(optical->calibrate(pmi_parameters))
         {
-          MESSAGE<<"WARNING: PMI "<< material <<" Optical Parameter calibrating has mismatch(es)!\n"; RECORD();
+          MESSAGE<<"WARNING: PMI "<< material <<" Optical Parameter calibrating has mismatch(es)!\n";
+          MESSAGE<<optical->calibrate_error_info();
+          RECORD();
+          optical->calibrate_error_info().clear();
         }
         break;
       }
@@ -427,7 +445,8 @@ namespace Material
         }
         if(trap->calibrate(pmi_parameters))
         {
-          MESSAGE<<"WARNING: PMI "<< material <<" Trap Parameter calibrating has mismatch(es)!\n"; RECORD();
+          MESSAGE<<"WARNING: PMI "<< material << " " << trap->calibrate_error_info(); RECORD();
+          trap->calibrate_error_info().clear();
         }
         break;
       }
@@ -588,7 +607,10 @@ namespace Material
         }
         if(basic->calibrate(pmi_parameters))
         {
-          MESSAGE<<"WARNING: PMI "<< material <<" Basic Parameter calibrating has mismatch(es)!\n"; RECORD();
+          MESSAGE<<"WARNING: PMI "<< material <<" Basic Parameter calibrating has mismatch(es)!\n";
+          MESSAGE<<basic->calibrate_error_info();
+          RECORD();
+          basic->calibrate_error_info().clear();
         }
         break;
       }
@@ -607,7 +629,10 @@ namespace Material
         }
         if(band->calibrate(pmi_parameters))
         {
-          MESSAGE<<"WARNING: PMI "<< material <<" BandStructure Parameter calibrating has mismatch(es)!\n"; RECORD();
+          MESSAGE<<"WARNING: PMI "<< material <<" BandStructure Parameter calibrating has mismatch(es)!\n";
+          MESSAGE<<band->calibrate_error_info();
+          RECORD();
+          band->calibrate_error_info().clear();
         }
         break;
       }
@@ -626,7 +651,10 @@ namespace Material
         }
         if(thermal->calibrate(pmi_parameters))
         {
-          MESSAGE<<"WARNING: PMI "<< material <<" Thermal Parameter calibrating has mismatch(es)!\n"; RECORD();
+          MESSAGE<<"WARNING: PMI "<< material <<" Thermal Parameter calibrating has mismatch(es)!\n";
+          MESSAGE<<thermal->calibrate_error_info();
+          RECORD();
+          thermal->calibrate_error_info().clear();
         }
         break;
       }
@@ -645,7 +673,10 @@ namespace Material
         }
         if(optical->calibrate(pmi_parameters))
         {
-          MESSAGE<<"WARNING: PMI "<< material <<" Optical Parameter calibrating has mismatch(es)!\n"; RECORD();
+          MESSAGE<<"WARNING: PMI "<< material <<" Optical Parameter calibrating has mismatch(es)!\n";
+          MESSAGE<<optical->calibrate_error_info();
+          RECORD();
+          optical->calibrate_error_info().clear();
         }
         break;
       }
@@ -793,7 +824,10 @@ namespace Material
         }
         if(basic->calibrate(pmi_parameters))
         {
-          MESSAGE<<"WARNING: PMI "<< material <<" Basic Parameter calibrating has mismatch(es)!\n"; RECORD();
+          MESSAGE<<"WARNING: PMI "<< material <<" Basic Parameter calibrating has mismatch(es)!\n";
+          MESSAGE<<basic->calibrate_error_info();
+          RECORD();
+          basic->calibrate_error_info().clear();
         }
         break;
       }
@@ -812,7 +846,10 @@ namespace Material
         }
         if(thermal->calibrate(pmi_parameters))
         {
-          MESSAGE<<"WARNING: PMI "<< material <<" Thermal Parameter calibrating has mismatch(es)!\n"; RECORD();
+          MESSAGE<<"WARNING: PMI "<< material <<" Thermal Parameter calibrating has mismatch(es)!\n";
+          MESSAGE<<thermal->calibrate_error_info();
+          RECORD();
+          thermal->calibrate_error_info().clear();
         }
         break;
       }
@@ -831,7 +868,10 @@ namespace Material
         }
         if(optical->calibrate(pmi_parameters))
         {
-          MESSAGE<<"WARNING: PMI "<< material <<" Optical Parameter calibrating has mismatch(es)!\n"; RECORD();
+          MESSAGE<<"WARNING: PMI "<< material <<" Optical Parameter calibrating has mismatch(es)!\n";
+          MESSAGE<<optical->calibrate_error_info();
+          RECORD();
+          optical->calibrate_error_info().clear();
         }
         break;
       }

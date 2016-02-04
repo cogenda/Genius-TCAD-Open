@@ -30,8 +30,8 @@ std::map<unsigned int,  SimulationRegion *>  SimulationRegion::_subdomain_id_to_
 
 
 
-SimulationRegion::SimulationRegion(const std::string &name, const std::string &material, const double T, const double z)
-  :_region_name(name), _region_material(material), _T_external(T), _z_width(z)
+SimulationRegion::SimulationRegion(const std::string &name, const std::string &material, const double T, unsigned int dim, const double z)
+  :_region_name(name), _region_material(material), _T_external(T), _mesh_dim(dim), _z_width(z)
 {}
 
 
@@ -75,6 +75,8 @@ void SimulationRegion::region_node(std::vector<unsigned int> & nodes) const
 {
   parallel_only();
 
+  nodes.clear();
+
   for(unsigned int n=0; n<_region_processor_node.size(); ++n)
   {
     const FVM_Node * fvm_node = _region_processor_node[n];
@@ -85,6 +87,26 @@ void SimulationRegion::region_node(std::vector<unsigned int> & nodes) const
   std::sort(nodes.begin(), nodes.end());
 }
 
+
+void SimulationRegion::region_node_vol(std::vector<double> & vols) const
+{
+  parallel_only();
+
+  vols.clear();
+
+  std::map<unsigned int, double> node_vol_map;
+  for(unsigned int n=0; n<_region_processor_node.size(); ++n)
+  {
+    const FVM_Node * fvm_node = _region_processor_node[n];
+    node_vol_map[fvm_node->root_node()->id()]= fvm_node->volume();
+  }
+
+  Parallel::allgather( node_vol_map );
+
+  std::map<unsigned int, double>::const_iterator it=node_vol_map.begin();
+  for( ; it!=node_vol_map.end(); ++it)
+    vols.push_back(it->second);
+}
 
 
 FVM_Node * SimulationRegion::region_fvm_node(const Node* node) const
@@ -391,7 +413,7 @@ void SimulationRegion::sync_fvm_node_volume()
     }
 
     Parallel::allgather(fvm_node_volume_map);
-    const double min_fvm_volume = 1*std::pow(PhysicalUnit::nm, 3);
+    const double min_fvm_volume = std::pow(0.01*PhysicalUnit::nm, (double)_mesh_dim);
     for(nodes_it = _region_node.begin(); nodes_it != _region_node.end(); ++nodes_it)
     {
       FVM_Node * fvm_node = (*nodes_it).second;
@@ -632,7 +654,7 @@ bool SimulationRegion::get_variable_data(const std::string &var_name, DataLocati
 
     const SimulationVariable & variable = _region_point_variables.find(var_name)->second;
     unsigned int variable_index = variable.variable_index;
-    Real unit = variable.variable_unit;
+    PetscScalar unit = variable.variable_unit;
 
     std::map<unsigned int, T> value;
     for(unsigned int n=0; n<_region_processor_node.size(); ++n)
@@ -655,7 +677,7 @@ bool SimulationRegion::get_variable_data(const std::string &var_name, DataLocati
 
     const SimulationVariable & variable = _region_cell_variables.find(var_name)->second;
     unsigned int variable_index = variable.variable_index;
-    Real unit = variable.variable_unit;
+    PetscScalar unit = variable.variable_unit;
 
     std::map<unsigned int, T> value;
     for(unsigned int n=0; n<_region_cell.size(); ++n)
@@ -681,7 +703,7 @@ bool SimulationRegion::get_variable_data(const std::string &var_name, DataLocati
 
 
 template <typename T>
-bool SimulationRegion::set_variable_data(const std::string &var_name, DataLocation location, const T val) 
+bool SimulationRegion::set_variable_data(const std::string &var_name, DataLocation location, const T val)
 {
   parallel_only();
 
@@ -691,7 +713,7 @@ bool SimulationRegion::set_variable_data(const std::string &var_name, DataLocati
 
     const SimulationVariable & variable = _region_point_variables.find(var_name)->second;
     unsigned int variable_index = variable.variable_index;
-    Real unit = variable.variable_unit;
+    PetscScalar unit = variable.variable_unit;
 
     for(unsigned int n=0; n<_region_processor_node.size(); ++n)
     {
@@ -707,7 +729,7 @@ bool SimulationRegion::set_variable_data(const std::string &var_name, DataLocati
 
     const SimulationVariable & variable = _region_cell_variables.find(var_name)->second;
     unsigned int variable_index = variable.variable_index;
-    Real unit = variable.variable_unit;
+    PetscScalar unit = variable.variable_unit;
 
     std::map<unsigned int, T> value;
     for(unsigned int n=0; n<_region_cell.size(); ++n)
@@ -724,6 +746,51 @@ bool SimulationRegion::set_variable_data(const std::string &var_name, DataLocati
   return true;
 
 }
+
+
+template <typename T>
+bool SimulationRegion::set_variable_data(const std::string &var_name, DataLocation location, const T val, const double unit)
+{
+  parallel_only();
+
+  if( location == POINT_CENTER )
+  {
+    if( _region_point_variables.find(var_name) == _region_point_variables.end() ) return false;
+
+    const SimulationVariable & variable = _region_point_variables.find(var_name)->second;
+    unsigned int variable_index = variable.variable_index;
+
+    for(unsigned int n=0; n<_region_processor_node.size(); ++n)
+    {
+      const FVM_Node * fvm_node = _region_processor_node[n];
+      unsigned int offset = fvm_node->node_data()->offset();
+      _node_data_storage.data<T>(variable_index, offset) = val*(PetscScalar)unit;
+    }
+  }
+
+  if( location == CELL_CENTER )
+  {
+    if( _region_cell_variables.find(var_name) == _region_cell_variables.end() ) return false;
+
+    const SimulationVariable & variable = _region_cell_variables.find(var_name)->second;
+    unsigned int variable_index = variable.variable_index;
+
+    std::map<unsigned int, T> value;
+    for(unsigned int n=0; n<_region_cell.size(); ++n)
+    {
+      const Elem * elem = _region_cell[n];
+      if( elem->on_processor() )
+      {
+        unsigned int offset = _region_cell_data[n]->offset();
+        _cell_data_storage.data<T>(variable_index, offset) = val*(PetscScalar)unit;
+      }
+    }
+  }
+
+  return true;
+
+}
+
 
 
 template <typename T>
@@ -857,31 +924,44 @@ size_t SimulationRegion::memory_size() const
 
 //explicit instantiation
 template
-bool SimulationRegion::get_variable_data<Real>(const std::string &var_name, DataLocation location, std::vector<Real> &sv) const;
+bool SimulationRegion::get_variable_data<PetscScalar>(const std::string &var_name, DataLocation location, std::vector<PetscScalar> &sv) const;
 
 template
-bool SimulationRegion::get_variable_data<Complex>(const std::string &var_name, DataLocation location, std::vector<Complex> &sv) const;
+bool SimulationRegion::get_variable_data< std::complex<PetscScalar> >(const std::string &var_name, DataLocation location, std::vector< std::complex<PetscScalar> > &sv) const;
 
 template
-bool SimulationRegion::get_variable_data< VectorValue<Real> >(const std::string &var_name, DataLocation location, std::vector< VectorValue<Real> > &sv) const;
+bool SimulationRegion::get_variable_data< VectorValue<PetscScalar> >(const std::string &var_name, DataLocation location, std::vector< VectorValue<PetscScalar> > &sv) const;
 
 template
-bool SimulationRegion::get_variable_data< TensorValue<Real> >(const std::string &var_name, DataLocation location, std::vector< TensorValue<Real> > &sv) const;
+bool SimulationRegion::get_variable_data< TensorValue<PetscScalar> >(const std::string &var_name, DataLocation location, std::vector< TensorValue<PetscScalar> > &sv) const;
 
 //explicit instantiation
 template
-bool SimulationRegion::set_variable_data<Real>(const std::string &var_name, DataLocation location, const Real sv);
+bool SimulationRegion::set_variable_data<PetscScalar>(const std::string &var_name, DataLocation location, const PetscScalar sv);
 
 template
-bool SimulationRegion::set_variable_data<Complex>(const std::string &var_name, DataLocation location, const Complex sv);
+bool SimulationRegion::set_variable_data< std::complex<PetscScalar> >(const std::string &var_name, DataLocation location, const std::complex<PetscScalar> sv);
 
 template
-bool SimulationRegion::set_variable_data< VectorValue<Real> >(const std::string &var_name, DataLocation location, const VectorValue<Real> sv);
+bool SimulationRegion::set_variable_data< VectorValue<PetscScalar> >(const std::string &var_name, DataLocation location, const VectorValue<PetscScalar> sv);
 
 template
-bool SimulationRegion::set_variable_data< TensorValue<Real> >(const std::string &var_name, DataLocation location, const TensorValue<Real> sv);
+bool SimulationRegion::set_variable_data< TensorValue<PetscScalar> >(const std::string &var_name, DataLocation location, const TensorValue<PetscScalar> sv);
+
+template
+bool SimulationRegion::set_variable_data<PetscScalar>(const std::string &var_name, DataLocation location, const PetscScalar sv, const double unit);
+
+template
+bool SimulationRegion::set_variable_data< std::complex<PetscScalar> >(const std::string &var_name, DataLocation location, const std::complex<PetscScalar> sv, const double unit);
+
+template
+bool SimulationRegion::set_variable_data< VectorValue<PetscScalar> >(const std::string &var_name, DataLocation location, const VectorValue<PetscScalar> sv, const double unit);
+
+template
+bool SimulationRegion::set_variable_data< TensorValue<PetscScalar> >(const std::string &var_name, DataLocation location, const TensorValue<PetscScalar> sv, const double unit);
+
 
 
 template
-bool SimulationRegion::sync_point_variable<Real>(const std::string &var_name);
+bool SimulationRegion::sync_point_variable<PetscScalar>(const std::string &var_name);
 

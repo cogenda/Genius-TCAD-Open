@@ -28,6 +28,7 @@
 
 void InsulatorSimulationRegion::Poissin_Function_Hanging_Node(PetscScalar *x, Vec f, InsertMode &add_value_flag)
 {
+#if 0
   if( !has_2d_hanging_node() && !has_3d_hanging_node()  ) return;
 
   // process hanging node lies on side center
@@ -210,16 +211,16 @@ void InsulatorSimulationRegion::Poissin_Function_Hanging_Node(PetscScalar *x, Ve
 
   add_value_flag = INSERT_VALUES;
 
-
+#endif
 }
 
 
 
 
 
-void InsulatorSimulationRegion::Poissin_Jacobian_Hanging_Node(PetscScalar *x, Mat *jac, InsertMode &add_value_flag)
+void InsulatorSimulationRegion::Poissin_Jacobian_Hanging_Node(PetscScalar *x, SparseMatrix<PetscScalar> *jac, InsertMode &add_value_flag)
 {
-
+#if 0
   if( !has_2d_hanging_node() && !has_3d_hanging_node()  ) return;
 
   // process hanging node lies on side center
@@ -429,7 +430,7 @@ void InsulatorSimulationRegion::Poissin_Jacobian_Hanging_Node(PetscScalar *x, Ma
 
   add_value_flag = INSERT_VALUES;
 
-
+#endif
 }
 
 

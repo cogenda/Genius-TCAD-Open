@@ -232,6 +232,14 @@ void TreeNode<N>::set_bounding_box (const std::pair<Point, Point>& bbox)
 
 
 template <unsigned int N>
+const std::pair<Point, Point>& TreeNode<N>::get_bounding_box () const
+{
+  return bounding_box;
+}
+
+
+
+template <unsigned int N>
 bool TreeNode<N>::bounds_point (const Point& p) const
 {
   const Point& min = bounding_box.first;
@@ -683,6 +691,50 @@ const Elem * TreeNode<N>::hit_element(const Point & p, const Point & dir) const
     return ret_elem;
   }
 }
+
+template <unsigned int N>
+bool TreeNode<N>::hit_domain(const Point & p, const Point & dir, std::pair<double, double> & t) const
+{
+  if (this->active())
+  {
+    bool hit = false;
+    for (std::vector<const Elem*>::const_iterator pos=elements.begin(); pos != elements.end(); ++pos)
+    {
+      IntersectionResult result;
+      (*pos)->ray_hit(p, dir, result);
+      if(result.state!=Missed)
+      {
+        if(result.hit_points.front().t < t.first )
+        {
+          hit = true;
+          t.first = result.hit_points.front().t;
+        }
+
+        if(result.hit_points.back().t > t.second )
+        {
+          hit = true;
+          t.second = result.hit_points.back().t;
+        }
+      }
+    }
+    return hit;
+  }
+  else
+  {
+    bool hit=false;
+
+    for (unsigned int c=0; c<children.size(); c++)
+    {
+      if( children[c]->hit_domain(p,dir,t))
+      {
+        hit=true;
+      }
+    }
+
+    return hit;
+  }
+}
+
 
 
 template <unsigned int N>

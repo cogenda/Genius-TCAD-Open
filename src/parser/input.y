@@ -87,7 +87,7 @@ command
              Parser::InputParser * p = (Parser::InputParser *) dummy;
              p->_card_list.push_back(*$1);
              p->_card_map.insert(std::pair<const std::string, Parser::Card>($1->key(), *$1));
-             delete $1
+             delete $1;
          }
 
      |   expr ';' LINEINFO
@@ -480,17 +480,19 @@ parameter
         $$->set_bool_array(*$4);
         $$->set_user_defined();
 }
+
      ;
 
 
 %%
 
-static int yyerror(void * dummy, const char *)
+static int yyerror(void * dummy, const char *s)
 {
-   MESSAGE << "\nYACC report: Input file line " << yylineno << " has unrecognized word(s)." << std::endl;
-   MESSAGE << "Please check the syntax and try again." << std::endl;
-   RECORD();
-   return 1;
+  MESSAGE << "\nYACC parser: Input file line " << yylineno << " error." << std::endl;
+  MESSAGE << s << std::endl;
+  MESSAGE << "Please check the syntax and try again." << std::endl;
+  RECORD();
+  return 1;
 }
 
 #if 0

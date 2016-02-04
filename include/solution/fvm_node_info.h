@@ -86,6 +86,12 @@ public:
 
 
   /**
+   * @return the position
+   */
+  Point position() const    { return *_node; }
+
+
+  /**
    * @return the centre node pointer
    */
   const Node * root_node() const    { return _node; }
@@ -172,7 +178,7 @@ public:
 
   /**
    * force positive cv surface area to each neighbor ( including cv of neighbors in other subdomain )
-   * @return false when negative cv to neighbor was fixed 
+   * @return false when negative cv to neighbor was fixed
    */
   bool posotive_cv_surface_area_to_each_neighbor(bool fix);
 

@@ -49,6 +49,7 @@ using PhysicalUnit::h;
  */
 int EMFEM2DSolver::create_solver()
 {
+#if 0
   MESSAGE<< '\n' << "EM FEM 2D Solver init..." << std::endl;
   RECORD();
 
@@ -68,8 +69,9 @@ int EMFEM2DSolver::create_solver()
   // user can do further adjusment from command line
   KSPSetFromOptions (ksp);
 
-  return 0;
+#endif
 
+  return 0;
 }
 
 
@@ -78,13 +80,14 @@ int EMFEM2DSolver::create_solver()
  */
 int EMFEM2DSolver::set_variables()
 {
+#if 0
   for ( unsigned int n=0; n<_system.n_regions(); n++ )
   {
     SimulationRegion * region = _system.region ( n );
     region->add_variable("optical_efield", POINT_CENTER);
     region->add_variable("optical_hfield", POINT_CENTER);
   }
-
+#endif
   return 0;
 }
 
@@ -94,6 +97,7 @@ int EMFEM2DSolver::set_variables()
  */
 int EMFEM2DSolver::solve()
 {
+#if 0
   START_LOG("EM FEM 2D Linear Solver", "solve");
 
   // for each wave length, solve 2d fem probelm
@@ -130,7 +134,7 @@ int EMFEM2DSolver::solve()
   }
 
   STOP_LOG("EM FEM 2D Linear Solver", "solve");
-
+#endif
   return 0;
 }
 
@@ -147,11 +151,16 @@ int EMFEM2DSolver::destroy_solver()
 
 void EMFEM2DSolver::solve_TM_scatter_problem(double lambda, double power, double phase0)
 {
+#if 0
   MESSAGE<<"Solve TM Mode. WaveLength = "<<lambda/um<< " um, Power = " <<power/(J/s/cm/cm)<<" W/(cm^2)." << std::endl; RECORD();
 
   build_TM_matrix_rhs(lambda, power, phase0);
 
-  KSPSetOperators(ksp, A, A, SAME_NONZERO_PATTERN);//must reset pc by is call!
+#if PETSC_VERSION_GE(3,5,0)
+  KSPSetOperators(ksp,A,A);
+#else
+  KSPSetOperators(ksp,A,A,SAME_NONZERO_PATTERN);
+#endif
   KSPSolve(ksp,b,x);
 
   KSPConvergedReason reason;
@@ -165,18 +174,23 @@ void EMFEM2DSolver::solve_TM_scatter_problem(double lambda, double power, double
 
   MESSAGE<<"------> residual norm = "<<rnorm<<" its = "<<its<<" with "<<KSPConvergedReasons[reason]<<"\n\n";
   RECORD();
-
+#endif
 }
 
 
 
 void EMFEM2DSolver::solve_TE_scatter_problem(double lambda, double power, double phase0)
 {
+#if 0
   MESSAGE<<"Solve TE Mode. WaveLength = "<<lambda/um<< " um, Power = " <<power/(J/s/cm/cm)<<" W/(cm^2)." << std::endl; RECORD();
 
   build_TE_matrix_rhs(lambda, power, phase0);
 
-  KSPSetOperators(ksp, A, A, SAME_NONZERO_PATTERN);//must reset pc by is call!
+#if PETSC_VERSION_GE(3,5,0)
+  KSPSetOperators(ksp,A,A);
+#else
+  KSPSetOperators(ksp,A,A,SAME_NONZERO_PATTERN);
+#endif
   KSPSolve(ksp,b,x);
 
   KSPConvergedReason reason;
@@ -190,11 +204,13 @@ void EMFEM2DSolver::solve_TE_scatter_problem(double lambda, double power, double
 
   MESSAGE<<"------> residual norm = "<<rnorm<<" its = "<<its<<" with "<<KSPConvergedReasons[reason]<<"\n\n";
   RECORD();
+#endif
 }
 
 
 void EMFEM2DSolver::build_TE_matrix_rhs(double lambda, double power, double phase0)
 {
+#if 0
   //wave vector
   double k = 2*M_PI/lambda;
 
@@ -391,6 +407,7 @@ void EMFEM2DSolver::build_TE_matrix_rhs(double lambda, double power, double phas
   //MatView(A, PETSC_VIEWER_DRAW_WORLD);
   //getchar();
   // All done!
+#endif
 }
 
 
@@ -398,6 +415,7 @@ void EMFEM2DSolver::build_TE_matrix_rhs(double lambda, double power, double phas
 
 void EMFEM2DSolver::build_TM_matrix_rhs(double lambda, double power, double phase0)
 {
+#if 0
   //wave vector
   double k = 2*M_PI/lambda;
 
@@ -595,6 +613,7 @@ void EMFEM2DSolver::build_TM_matrix_rhs(double lambda, double power, double phas
   //MatView(A, PETSC_VIEWER_DRAW_WORLD);
   //getchar();
   // All done!
+#endif
 }
 
 
@@ -602,6 +621,7 @@ void EMFEM2DSolver::build_TM_matrix_rhs(double lambda, double power, double phas
 
 void EMFEM2DSolver::save_TE_solution(double lambda, double power, double phase0, double eta, bool eta_auto, bool append)
 {
+#if 0
   //wave vector
   double k = 2*M_PI/lambda;
   double c = 1.0/sqrt(eps0*mu0);
@@ -669,7 +689,7 @@ void EMFEM2DSolver::save_TE_solution(double lambda, double power, double phase0,
     // calculate optical gen
     if(eta_auto)
     {
-      double Eg=region->get_optical_Eg(region->T_external());
+      double Eg=region->get_optical_Eg();
       double E_phono = h*c/lambda;
       eta = floor(E_phono/Eg)*Eg/E_phono;
     }
@@ -703,12 +723,15 @@ void EMFEM2DSolver::save_TE_solution(double lambda, double power, double phase0,
   }
 
   VecRestoreArray(lx, &lxx);
+  
+#endif
 }
 
 
 
 void EMFEM2DSolver::save_TM_solution(double lambda, double power, double phase0, double eta, bool eta_auto, bool append)
 {
+#if 0
   //wave vector
   double k = 2*M_PI/lambda;
   double c = 1.0/sqrt(eps0*mu0);
@@ -733,7 +756,7 @@ void EMFEM2DSolver::save_TM_solution(double lambda, double power, double phase0,
     // calculate optical gen
     if(eta_auto)
     {
-      double Eg=region->get_optical_Eg(region->T_external());
+      double Eg=region->get_optical_Eg();
       double E_phono = h*c/lambda;
       eta = floor(E_phono/Eg)*Eg/E_phono;
     }
@@ -767,6 +790,7 @@ void EMFEM2DSolver::save_TM_solution(double lambda, double power, double phase0,
   }
 
   VecRestoreArray(lx, &lxx);
+#endif
 }
 
 
@@ -775,6 +799,7 @@ void EMFEM2DSolver::save_TM_solution(double lambda, double power, double phase0,
 #define ORDER 6
 std::vector<double> EMFEM2DSolver::curvature_at_edge(unsigned int i, const Elem * edge)
 {
+#if 0
   // find the ORDER neighbor points on absorbing boundary
   const Node * p[ORDER];
 
@@ -889,12 +914,14 @@ std::vector<double> EMFEM2DSolver::curvature_at_edge(unsigned int i, const Elem 
   curvatures[1]=curvature2;
 
   return curvatures;
+#endif
 }
 
 
 
 std::vector<double> EMFEM2DSolver::curvature_of_circle(const Point &p0, const Point &p1, const Point &p2)
 {
+#if 0
   // Vector pointing from A to C
   Point AC ( p2 - p0 );
 
@@ -921,6 +948,7 @@ std::vector<double> EMFEM2DSolver::curvature_of_circle(const Point &p0, const Po
   curvatures[1]=1.0/R;
 
   return curvatures;
+#endif
 }
 
 
@@ -990,6 +1018,7 @@ void EMFEM2DSolver::build_absorb_chain()
 
 void EMFEM2DSolver::setup_solver_parameters()
 {
+#if 0
   // optical wave is defined by command line
   if(_card.is_parameter_exist("lambda")||_card.is_parameter_exist("wavelength"))
   {
@@ -1049,12 +1078,14 @@ void EMFEM2DSolver::setup_solver_parameters()
 
   // build the absorbing boundary
   build_absorb_chain();
+#endif
 }
 
 
 
 void EMFEM2DSolver::parse_spectrum_file(const std::string & filename)
 {
+#if 0
   // only processor 0 read the spectrum file
   std::vector<OpticalSource> _opt_srcs;
   if(Genius::processor_id() == 0)
@@ -1172,5 +1203,6 @@ void EMFEM2DSolver::parse_spectrum_file(const std::string & filename)
   <<std::endl;
 
   RECORD();
+#endif
 
 }

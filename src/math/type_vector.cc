@@ -29,7 +29,6 @@
 
 
 
-
 // ------------------------------------------------------------
 // TypeVector<T> class member funcions
 
@@ -98,7 +97,7 @@ void TypeVector<T>::print(std::ostream& os) const
 {
 #if DIM == 1
 
-  os << "x=" << (*this)(0) << '\n';
+  os << "x=" << (*this)(0) ;
 
 #endif
 #if DIM == 2
@@ -106,7 +105,7 @@ void TypeVector<T>::print(std::ostream& os) const
   os << "(x,y)=("
      << std::setw(8) << (*this)(0) << ", "
      << std::setw(8) << (*this)(1) << ")"
-     << '\n';
+     ;
 
 #endif
 #if DIM == 3
@@ -115,7 +114,7 @@ void TypeVector<T>::print(std::ostream& os) const
      << std::setw(8) << (*this)(0) << ", "
      << std::setw(8) << (*this)(1) << ", "
      << std::setw(8) << (*this)(2) << ")"
-     << '\n';
+     ;
 #endif
 }
 
@@ -188,5 +187,8 @@ bool TypeVector<T>::all_less(const TypeVector<T>& rhs) const
 template class TypeVector<float>;
 template class TypeVector<double>;
 template class TypeVector<long double>;
+#if (WITH_PETSCSCALAR_FLOAT128 && __GNUC__ >= 4 && __GNUC_MINOR__ >=6)
+template class TypeVector<__float128>;
+#endif
 template class TypeVector<AutoDScalar>;
 

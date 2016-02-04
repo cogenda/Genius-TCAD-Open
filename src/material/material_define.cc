@@ -27,9 +27,11 @@
 #include <sstream>
 #include <iostream>
 #include <numeric>
+#include <algorithm>
 #include <cstdlib>
 
 #include "genius_common.h"
+#include "genius_env.h"
 #include "material_define.h"
 
 namespace Material
@@ -158,9 +160,16 @@ namespace Material
   {
     for(unsigned int n=0; n<materials.size(); ++n)
     {
-      material_name_conversion[materials[n].name] = materials[n].name;
+      std::string name = materials[n].name;
+      std::transform(name.begin(), name.end(), name.begin(), ::tolower);
+
+      material_name_conversion[name] = materials[n].name;
       for(unsigned int k=0; k<materials[n].alias.size(); ++k)
-        material_name_conversion[materials[n].alias[k]] = materials[n].name;
+      {
+        name = materials[n].alias[k];
+        std::transform(name.begin(), name.end(), name.begin(), ::tolower);
+        material_name_conversion[name] = materials[n].name;
+      }
     }
   }
 
@@ -326,8 +335,11 @@ namespace Material
   {
     genius_assert(material_name_conversion.size());
 
-    if( material_name_conversion.find(mat_name) != material_name_conversion.end() )
-      return material_name_conversion[mat_name];
+    std::string name = mat_name;
+    std::transform(name.begin(), name.end(), name.begin(), ::tolower);
+
+    if( material_name_conversion.find(name) != material_name_conversion.end() )
+      return material_name_conversion[name];
     return mat_name;
   }
 

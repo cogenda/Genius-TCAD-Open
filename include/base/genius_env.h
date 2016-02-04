@@ -260,4 +260,34 @@ inline bool Genius::experiment_code()
   return GeniusPrivateData::_experiment_code;
 }
 
+
+// These are useful macros that behave like functions in the code.
+// If you want to make sure you are accessing a section of code just
+// stick a here(); in it, for example
+#undef genius_here
+#define genius_here()     { std::cout << "[" << Genius::processor_id() << "] " << __FILE__ << ", line " << __LINE__ << ", compiled " << __DATE__ << " at " << __TIME__ << std::endl; }
+
+// the stop() macro will stop the code until a SIGCONT signal is received.  This is useful, for example, when
+// determining the memory used by a given operation.  A stop() could be inserted before and after a questionable
+// operation and the delta memory can be obtained from a ps or top.  This macro only works for serial cases.
+#undef genius_stop
+#ifdef HAVE_CSIGNAL
+#  include <csignal>
+#  define genius_stop()     { if (Genius::n_processors() == 0) { genius_here(); std::cout << "Stopping process " << getpid() << "..." << std::endl; std::raise(SIGSTOP); std::cout << "Continuing process " << getpid() << "..." << std::endl; } }
+#else
+#  define genius_stop()     { if (Genius::n_processors() == 0) { genius_here(); std::cerr << "WARNING:  stop() does not work without the <csignal> header file!" << std::endl; } }
+#endif
+
+
+// Use Petsc error mechanism for assertion tests
+#undef genius_assert
+#ifdef WINDOWS
+#  include <csignal>
+#  define genius_assert(a)  {  if (! (a) ) { std::cerr << "[" << Genius::processor_id() << "] " << "Assertion failure at " << __FILE__ << ":" << __LINE__ << std::endl; std::raise(SIGTERM); } }
+#else
+#  define genius_assert(a)  {  if (! (a) ) { std::cerr << "[" << Genius::processor_id() << "] " << "Assertion failure at " << __FILE__ << ":" << __LINE__ << std::endl; std::abort(); } }
+#endif
+
+
+
 #endif // #define _genius_env_h_

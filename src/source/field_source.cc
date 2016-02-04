@@ -106,9 +106,22 @@ FieldSource::FieldSource(SimulationSystem & system, Parser::InputParser & decks)
     if(c.key() == "LIGHT" )
     {
       // uniform generation
-      if(c.is_parameter_exist("optical.gen"))
+      if(c.is_parameter_exist("optical.gen") || c.is_parameter_exist("optical.power"))
       {
         Light_Source * light_source = new Light_Source_Uniform(system, c);
+        if(c.is_parameter_exist("envelop"))
+        {
+          std::string waveform = c.get_string("envelop", "");
+          if(_waveforms.find(waveform)!=_waveforms.end())
+          {
+            light_source->set_waveform(_waveforms[waveform]);
+          }
+          else
+          {
+            MESSAGE<<"ERROR at " << c.get_fileline() <<" LIGHT: envelop " << waveform << " not be defined."<<std::endl; RECORD();
+            genius_error();
+          }
+        }
         add_light_source(light_source);
         continue;
       }
@@ -116,7 +129,28 @@ FieldSource::FieldSource(SimulationSystem & system, Parser::InputParser & decks)
       // read optical wave from spectrum file
       if(c.is_parameter_exist("spectrumfile"))
       {
-        parse_spectrum_file(c.get_string("spectrumfile", ""), system, c);
+        std::vector<Light_Source_From_File *> sources = parse_spectrum_file(c.get_string("spectrumfile", ""), system, c);
+
+        Waveform * w = 0;
+        if(c.is_parameter_exist("envelop"))
+        {
+          std::string waveform = c.get_string("envelop", "");
+          if(_waveforms.find(waveform)!=_waveforms.end())
+          {
+            w = _waveforms[waveform];
+          }
+          else
+          {
+            MESSAGE<<"ERROR at " << c.get_fileline() <<" LIGHT: envelop " << waveform << " not be defined."<<std::endl; RECORD();
+            genius_error();
+          }
+        }
+
+        for(unsigned int n=0; n<sources.size(); ++n)
+        {
+           sources[n]->set_waveform(w);
+           add_light_source(sources[n]);
+        }
         continue;
       }
 
@@ -128,6 +162,19 @@ FieldSource::FieldSource(SimulationSystem & system, Parser::InputParser & decks)
         bool eta_auto        = !c.is_parameter_exist("quan.eff");
 
         Light_Source * light_source = new Light_Source_From_File(system, c, "", wave_length, power, eta, eta_auto);
+        if(c.is_parameter_exist("envelop"))
+        {
+          std::string waveform = c.get_string("envelop", "");
+          if(_waveforms.find(waveform)!=_waveforms.end())
+          {
+            light_source->set_waveform(_waveforms[waveform]);
+          }
+          else
+          {
+            MESSAGE<<"ERROR at " << c.get_fileline() <<" LIGHT: envelop " << waveform << " not be defined."<<std::endl; RECORD();
+            genius_error();
+          }
+        }
         add_light_source(light_source);
       }
     }
@@ -135,6 +182,19 @@ FieldSource::FieldSource(SimulationSystem & system, Parser::InputParser & decks)
     if(c.key() == "RAYTRACE" )
     {
       Light_Source * light_source = new Light_Source_RayTracing(system, c);
+      if(c.is_parameter_exist("envelop"))
+      {
+        std::string waveform = c.get_string("envelop", "");
+        if(_waveforms.find(waveform)!=_waveforms.end())
+        {
+          light_source->set_waveform(_waveforms[waveform]);
+        }
+        else
+        {
+          MESSAGE<<"ERROR at " << c.get_fileline() <<" LIGHT: envelop " << waveform << " not be defined."<<std::endl; RECORD();
+          genius_error();
+        }
+      }
       add_light_source(light_source);
     }
 
@@ -142,6 +202,37 @@ FieldSource::FieldSource(SimulationSystem & system, Parser::InputParser & decks)
     {
       Light_Source * light_source = new Light_Source_EMFEM2D(system, c);
       add_light_source(light_source);
+    }
+
+
+    if(c.key() == "XRAYPULSE")
+    {
+       double dose_rate   = c.get_real("doserate", 0.0) * PhysicalUnit::rad/PhysicalUnit::s;
+       Light_Source * light_source = new Light_Source_Xray(system, dose_rate);
+
+       if( c.is_enum_value("waveform", "pulse") )
+       {
+         double t0          = c.get_real("t0", 0.0) * PhysicalUnit::s;
+         double tr          = c.get_real("tr", 10e-9) * PhysicalUnit::s; //10ns
+         double tf          = c.get_real("tf", 30e-9) * PhysicalUnit::s; //30ns
+         double pw          = c.get_real("pw", 10e-9) * PhysicalUnit::s; //10ns
+
+         Waveform * w = new WaveformPulse("__x.ray__", t0, 0.0, 1.0, tr, tf, pw, 1e30* PhysicalUnit::s);
+         _waveforms["__x.ray__"]  = w;
+         light_source->set_waveform(w);
+       }
+
+       if( c.is_enum_value("waveform", "gaussian") )
+       {
+         double t0          = c.get_real("t0", 0.0) * PhysicalUnit::s;
+         double fwhm        = c.get_real("fwhm", 50e-9) * PhysicalUnit::s; //50ns
+         double tao         = fwhm/1.665;
+         Waveform * w = new WaveformGauss("__x.ray__", t0, tao, 1.0);
+         _waveforms["__x.ray__"] = w;
+         light_source->set_waveform(w);
+       }
+
+       add_light_source(light_source);
     }
   }
 
@@ -173,27 +264,44 @@ FieldSource::~FieldSource()
 }
 
 
-void FieldSource::update(double time, bool force_update_system)
+void FieldSource::update(double time, bool force_update_source)
 {
   // fast detect if we need to do something
   if(!SolverSpecify::PatG && !SolverSpecify::OptG) return;
 
-  if( force_update_system )    this->update_system();
+  if( force_update_source )    this->update_source();
 
-  if( _applied_to_system == false ) this->update_system();
+  if( _applied_to_system == false ) this->update_source();
 
-  // second order trapezoidal quadrature
-  double particle_gen_waveform = 0.0;
+
+  // clear old particle and optical generation
+  for(unsigned int n=0; n<_system.n_regions(); n++)
+  {
+    SimulationRegion * region = _system.region(n);
+    {
+      SimulationRegion::processor_node_iterator it = region->on_local_nodes_begin();
+      SimulationRegion::processor_node_iterator it_end = region->on_local_nodes_end();
+      for(; it!=it_end; ++it)
+      {
+        FVM_Node * fvm_node = (*it);
+        FVM_NodeData * fvm_node_data = fvm_node->node_data();
+        fvm_node_data->PatG() = 0.0;
+        fvm_node_data->OptG() = 0.0;
+      }
+    }
+  }
+
+  // let particle source update the PatG
   std::vector<Particle_Source *>::iterator pit = _particle_sources.begin();
   for(; pit!=_particle_sources.end(); ++pit)
   {
-    particle_gen_waveform += 0.5*((*pit)->carrier_generation(time) + (*pit)->carrier_generation(time-SolverSpecify::dt));
+    (*pit)->carrier_generation(time);
   }
 
-
-  double optical_gen_waveform = 1.0;
-  if(current_waveform)
-    optical_gen_waveform = 0.5*(current_waveform->waveform(time) + current_waveform->waveform(time-SolverSpecify::dt));
+  // let light source update the OptG
+  std::vector<Light_Source *>::iterator lit = _light_sources.begin();
+  for(; lit!=_light_sources.end(); ++lit)
+    (*lit)->carrier_generation(time);
 
 
   for(unsigned int n=0; n<_system.n_regions(); n++)
@@ -211,12 +319,12 @@ void FieldSource::update(double time, bool force_update_system)
 
         if(SolverSpecify::PatG)
         {
-          G += fvm_node_data->PatG()*particle_gen_waveform;
+          G += fvm_node_data->PatG();
         }
 
         if(SolverSpecify::OptG)
         {
-          G += fvm_node_data->OptG()*optical_gen_waveform;
+          G += fvm_node_data->OptG();
         }
 
         fvm_node_data->Field_G() = G;
@@ -229,9 +337,9 @@ void FieldSource::update(double time, bool force_update_system)
 }
 
 
-void FieldSource::update_system()
+void FieldSource::update_source()
 {
-  // clear old particle and optical generation if exist
+  // clear old particle and optical generation
   for(unsigned int n=0; n<_system.n_regions(); n++)
   {
     SimulationRegion * region = _system.region(n);
@@ -251,12 +359,12 @@ void FieldSource::update_system()
   // calculate particle generation
   std::vector<Particle_Source *>::iterator pit = _particle_sources.begin();
   for(; pit!=_particle_sources.end(); ++pit)
-    (*pit)->update_system();
+    (*pit)->update_source();
 
   // calculate optical generation
   std::vector<Light_Source *>::iterator lit = _light_sources.begin();
   for(; lit!=_light_sources.end(); ++lit)
-    (*lit)->update_system();
+    (*lit)->update_source();
 
 #if defined(HAVE_FENV_H) && defined(DEBUG)
   genius_assert( !fetestexcept(FE_INVALID) );
@@ -267,24 +375,17 @@ void FieldSource::update_system()
 
 
 
-double FieldSource::limit_dt(double time, double dt) const
+double FieldSource::limit_dt(double time, double dt, double dt_min) const
 {
   std::vector<Particle_Source *>::const_iterator pit = _particle_sources.begin();
   for(; pit!=_particle_sources.end(); ++pit)
-    dt = std::min(dt, (*pit)->limit_dt(time, dt));
+    dt = std::min(dt, (*pit)->limit_dt(time, dt, dt_min));
 
-  if(current_waveform)
-  {
-    double dt_orig = dt;
-    do
-    {
-      double a1 = current_waveform->waveform(time);
-      double am = current_waveform->waveform(time+0.5*dt);
-      double a2 = current_waveform->waveform(time+dt);
-      if( 0.5*fabs(a1+a2)<1e-3 || fabs(am-0.5*a1-0.5*a2)<0.05*fabs(a1+a2) ) break;
-      if( dt < 0.1*dt_orig ) break;
-    } while( dt*=0.9 );
-  }
+
+  std::vector<Light_Source *>::const_iterator lit = _light_sources.begin();
+  for(; lit!=_light_sources.end(); ++lit)
+    dt = std::min(dt, (*lit)->limit_dt(time, dt, dt_min));
+
   return dt;
 }
 
@@ -298,7 +399,7 @@ bool FieldSource::request_serial_mesh() const
 }
 
 
-void FieldSource::parse_spectrum_file(const std::string & filename, SimulationSystem & system, const Parser::Card &c)
+std::vector<Light_Source_From_File *> FieldSource::parse_spectrum_file(const std::string & filename, SimulationSystem & system, const Parser::Card &c)
 {
   // only processor 0 read the spectrum file
 
@@ -392,8 +493,6 @@ void FieldSource::parse_spectrum_file(const std::string & filename, SimulationSy
     }
 
     sources.push_back(dynamic_cast<Light_Source_From_File *>(light_source));
-
-    add_light_source(light_source);
   }
 
   unsigned int n_sources = sources.size();
@@ -438,6 +537,8 @@ void FieldSource::parse_spectrum_file(const std::string & filename, SimulationSy
   <<" W/(cm^2)"
   <<std::endl;
   RECORD();
+
+  return sources;
 
 }
 
@@ -493,7 +594,7 @@ void  FieldSource::SetWaveformPulse(const Parser::Card &c)
   double tr = c.get_real("tr",1e-12)*s;
   double tf = c.get_real("tf",1e-12)*s;
   double pw = c.get_real("pw",9e-12)*s;
-  double pr = c.get_real("pr",20e-12)*s;
+  double pr = c.get_real("pr",tr+tf+pw+pw)*s;
   double Alo = c.get_real("amplitude.low",0.0);
   double Ahi = c.get_real("amplitude.high",1.0);
 

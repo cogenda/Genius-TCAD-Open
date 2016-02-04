@@ -46,7 +46,7 @@ using PhysicalUnit::e;
 /*---------------------------------------------------------------------
  * build AC matrix for DDMAC solver
  */
-void OhmicContactBC::DDMAC_Fill_Matrix_Vector( Mat A, Vec b, const Mat J, const double omega, InsertMode & add_value_flag )
+void OhmicContactBC::DDMAC_Fill_Matrix_Vector( Mat A, Vec b, const Mat J, const PetscScalar omega, InsertMode & add_value_flag )
 {
   // the DDM AC matrix of Ohmic boundary condition is processed here
 
@@ -257,6 +257,7 @@ void OhmicContactBC::DDMAC_Fill_Matrix_Vector( Mat A, Vec b, const Mat J, const 
           // the boundary for the corner point may be Ohmic.
           case InsulatorRegion:
           // conductor region which has an interface with OhmicContact boundary to semiconductor region
+          case MetalRegion:
           case ElectrodeRegion:
           {
 
@@ -464,7 +465,7 @@ void OhmicContactBC::DDMAC_Fill_Matrix_Vector( Mat A, Vec b, const Mat J, const 
 }
 
 
-void OhmicContactBC::DDMAC_Update_Solution(const PetscScalar * lxx, const Mat J, const double omega)
+void OhmicContactBC::DDMAC_Update_Solution(const PetscScalar * lxx, const Mat J, const PetscScalar omega)
 {
 
   std::complex<PetscScalar> Iac(0.0, 0.0);

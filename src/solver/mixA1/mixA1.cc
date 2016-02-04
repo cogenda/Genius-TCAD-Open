@@ -31,7 +31,9 @@ using PhysicalUnit::kb;
 using PhysicalUnit::e;
 using PhysicalUnit::cm;
 using PhysicalUnit::A;
+using PhysicalUnit::V;
 
+#define DEBUG
 
 
 /*------------------------------------------------------------------
@@ -117,7 +119,11 @@ int MixA1Solver::solve()
       case SolverSpecify::TRANSIENT :
       solve_transient(); break;
 
-      default: genius_error();
+      default:
+      {
+        MESSAGE<<"ERROR: MixA1Solver does not support this solve type." << std::endl; RECORD();
+        //genius_error();
+      }
   }
 
   STOP_LOG("solve()", "MixA1Solver");
@@ -146,6 +152,31 @@ int MixA1Solver::post_solve_process()
     SimulationRegion * region = _system.region(n);
     region->DDM1_Update_Solution(lxx);
   }
+
+
+  // extra work, calculate the electric field
+  for(unsigned int n=0; n<_system.n_regions(); n++)
+  {
+    SimulationRegion * region = _system.region(n);
+
+    SimulationRegion::processor_node_iterator it = region->on_processor_nodes_begin();
+    SimulationRegion::processor_node_iterator it_end = region->on_processor_nodes_end();
+    for(; it!=it_end; ++it)
+    {
+      FVM_Node * fvm_node = *it;
+      FVM_NodeData * node_data = fvm_node->node_data();
+      node_data->E() = -fvm_node->gradient(POTENTIAL, true);
+    }
+  }
+
+
+  // update bcs
+  for(unsigned int b=0; b<_system.get_bcs()->n_bcs(); b++)
+  {
+    BoundaryCondition * bc = _system.get_bcs()->get_bc(b);
+    bc->MixA_DDM1_Update_Solution(lxx);
+  }
+
 
   VecRestoreArray(lx, &lxx);
 
@@ -211,7 +242,6 @@ int MixA1Solver::diverged_recovery()
  */
 void MixA1Solver::potential_damping(Vec x, Vec y, Vec w, PetscBool *changed_y, PetscBool *changed_w)
 {
-
   PetscScalar    *xx;
   PetscScalar    *yy;
   PetscScalar    *ww;
@@ -220,11 +250,16 @@ void MixA1Solver::potential_damping(Vec x, Vec y, Vec w, PetscBool *changed_y, P
   VecGetArray(y, &yy);  // new search direction and length
   VecGetArray(w, &ww);  // current candidate iterate
 
-  PetscScalar dV_max = 0.0; // the max changes of psi
-  const PetscScalar onePerCMC = 1.0*std::pow(cm,-3);
-  const PetscScalar T_external = this->get_system().T_external();
 
-  // we should find dV_max;
+  const PetscScalar T = this->get_system().T_external();
+  const PetscScalar onePerMC = 1.0e-6*std::pow(cm,-3);
+
+
+  PetscScalar dV_min =  std::numeric_limits<PetscScalar>::max(); // the min changes of psi
+  PetscScalar dV_max = -std::numeric_limits<PetscScalar>::max(); // the max changes of psi
+  PetscScalar dV;
+  PetscScalar dV_comm;
+  // we should find dV_max/dV_min;
   // first, we find in local
   for(unsigned int n=0; n<_system.n_regions(); n++)
   {
@@ -240,32 +275,38 @@ void MixA1Solver::potential_damping(Vec x, Vec y, Vec w, PetscBool *changed_y, P
 
       // we konw the fvm_node->local_offset() is psi in semiconductor region
       unsigned int local_offset = fvm_node->local_offset();
-      dV_max = std::max(dV_max, std::abs(yy[local_offset]));
-
-      //prevent negative carrier density
-      if ( ww[local_offset+1] < onePerCMC )
-        ww[local_offset+1] = onePerCMC;
-      if ( ww[local_offset+2] < onePerCMC )
-        ww[local_offset+2] = onePerCMC;
+      dV_max = std::max(dV_max, yy[local_offset]);
+      dV_min = std::min(dV_min, yy[local_offset]);
     }
   }
 
-
-  // for parallel situation, we should find the dv_max in global.
+  // for parallel situation, we should find the dv_max/dV_min in global.
   Parallel::max( dV_max );
+  Parallel::min( dV_min );
 
-  if( dV_max > 1e-6 )
+  if(dV_max < dV_min) goto potential_damping_end;
+
+
+  // find the max/min in absolutely value
+  if( std::abs(dV_max) < std::abs(dV_min) ) std::swap(dV_max, dV_min);
+
+  // compute the dV and dV in common
+  dV = std::abs(dV_max - dV_min);
+  dV_comm = dV_max*dV_min > 0.0 ? dV_min : 0.0;
+
+
+  if( dV > 1e-6*V )
   {
     // compute logarithmic potential damping factor f;
-    PetscScalar Vut = kb*T_external/e * SolverSpecify::potential_update;
-    PetscScalar f = log(1+dV_max/Vut)/(dV_max/Vut);
+    PetscScalar Vut = kb*T/e * SolverSpecify::potential_update;
+    PetscScalar f = log(1+dV/Vut)/(dV/Vut);
 
     // do newton damping here
     for(unsigned int n=0; n<_system.n_regions(); n++)
     {
       const SimulationRegion * region = _system.region(n);
       // only consider semiconductor region
-      //if( region->type() != SemiconductorRegion ) continue;
+      if( region->type() != SemiconductorRegion ) continue;
 
       SimulationRegion::const_processor_node_iterator it = region->on_processor_nodes_begin();
       SimulationRegion::const_processor_node_iterator it_end = region->on_processor_nodes_end();
@@ -274,38 +315,57 @@ void MixA1Solver::potential_damping(Vec x, Vec y, Vec w, PetscBool *changed_y, P
         const FVM_Node * fvm_node = *it;
 
         unsigned int local_offset = fvm_node->local_offset();
-        ww[local_offset+0] = xx[local_offset+0] - f*yy[local_offset+0];
-        //ww[local_offset+1] = xx[local_offset+1] - f*yy[local_offset+1];
-        //ww[local_offset+2] = xx[local_offset+2] - f*yy[local_offset+2];
+        ww[local_offset+0] = xx[local_offset+0] - (dV_comm + f*(yy[local_offset+0]-dV_comm));
+
+        //prevent negative carrier density
+        if ( ww[local_offset+1] < 0 )
+        { ww[local_offset+1] = 1e-2*fabs(xx[local_offset+1]) + onePerMC;}
+        if ( ww[local_offset+2] < 0 )
+        { ww[local_offset+2] = 1e-2*fabs(xx[local_offset+2]) + onePerMC;}
       }
     }
+
+//     if(Genius::is_last_processor())
+//     {
+//       unsigned int n_electrode = 0;
+//       for(unsigned int b=0; b<_system.get_bcs()->n_bcs(); b++)
+//       {
+//         BoundaryCondition * bc = _system.get_bcs()->get_bc(b);
+//         if(bc->is_spice_electrode())
+//         {
+//           unsigned int spice_node_index = _circuit->get_spice_node_by_bc(bc);
+//           unsigned int offset = _circuit->array_offset_x(spice_node_index);
+//           ww[offset] = xx[offset] - f*yy[offset];
+//         }
+//       }
+//     }
   }
 
+potential_damping_end:
 
-
-  if(Genius::is_last_processor())
+  if(Genius::is_last_processor() && SolverSpecify::damping_spice)
   {
     for(unsigned int n=0; n<_circuit->n_ckt_nodes(); ++n)
     {
-      if(_circuit->is_voltage_node(n))
+      if(_circuit->is_voltage_node(n) && !_circuit->is_link_to_electrode(n))
       {
         unsigned int array_offset_x = _circuit->array_offset_x(n);
         PetscScalar dV_max = std::abs(yy[array_offset_x]);
-        if (dV_max>10)
+        if (dV_max>1)
         {
-          PetscScalar damp_factor = 10/dV_max;
-          ww[array_offset_x] = xx[array_offset_x] - damp_factor*yy[array_offset_x];
+          PetscScalar damp_factor = log(1+dV_max/20)/(dV_max/20);
+          ww[array_offset_x] = xx[array_offset_x] - yy[array_offset_x]*damp_factor;
         }
       }
 
-      if(_circuit->is_current_node(n))
+      if(_circuit->is_current_node(n) && !_circuit->is_link_to_electrode(n))
       {
         unsigned int array_offset_x = _circuit->array_offset_x(n);
         PetscScalar dI_max = std::abs(yy[array_offset_x]);
         if (dI_max>1)
         {
-          PetscScalar damp_factor = 1/dI_max;
-          ww[array_offset_x] = xx[array_offset_x] - damp_factor*yy[array_offset_x];
+          PetscScalar damp_factor = log(1+dI_max/10)/(dI_max/10);
+          ww[array_offset_x] = xx[array_offset_x] - yy[array_offset_x]*damp_factor;
         }
       }
 
@@ -313,12 +373,12 @@ void MixA1Solver::potential_damping(Vec x, Vec y, Vec w, PetscBool *changed_y, P
   }
 
 
+
+  *changed_w = PETSC_TRUE;
+
   VecRestoreArray(x, &xx);
   VecRestoreArray(y, &yy);
   VecRestoreArray(w, &ww);
-
-  *changed_y = PETSC_FALSE;
-  *changed_w = PETSC_TRUE;
 
   return;
 }
@@ -328,11 +388,8 @@ void MixA1Solver::potential_damping(Vec x, Vec y, Vec w, PetscBool *changed_y, P
 /*------------------------------------------------------------------
  * Bank-Rose Newton Damping
  */
-void MixA1Solver::bank_rose_damping(Vec , Vec , Vec , PetscBool *changed_y, PetscBool *changed_w)
+void MixA1Solver::bank_rose_damping(Vec x, Vec y, Vec w, PetscBool *changed_y, PetscBool *changed_w)
 {
-  *changed_y = PETSC_FALSE;
-  *changed_w = PETSC_FALSE;
-
   return;
 }
 
@@ -341,7 +398,7 @@ void MixA1Solver::bank_rose_damping(Vec , Vec , Vec , PetscBool *changed_y, Pets
 /*------------------------------------------------------------------
  * positive density Newton Damping
  */
-void MixA1Solver::positive_density_damping(Vec x, Vec y, Vec w, PetscBool *changed_y, PetscBool *changed_w)
+void MixA1Solver::check_positive_density(Vec x, Vec y, Vec w, PetscBool *changed_y, PetscBool *changed_w)
 {
 
   PetscScalar    *xx;
@@ -370,10 +427,6 @@ void MixA1Solver::positive_density_damping(Vec x, Vec y, Vec w, PetscBool *chang
 
       unsigned int local_offset = fvm_node->local_offset();
 
-      // the maximum potential update is limited to 1V
-      if ( fabs(yy[local_offset]) > 1.0 )
-      { ww[local_offset] = xx[local_offset] - std::sign(yy[local_offset])*1.0; changed_flag = 1; }
-
       //prevent negative carrier density
       if ( ww[local_offset+1] < onePerCMC )
       {
@@ -400,7 +453,6 @@ void MixA1Solver::positive_density_damping(Vec x, Vec y, Vec w, PetscBool *chang
 
   if(changed_flag)
   {
-    *changed_y = PETSC_FALSE;
     *changed_w = PETSC_TRUE;
   }
 
@@ -492,6 +544,8 @@ PetscReal MixA1Solver::LTE_norm()
   PetscReal eps_r = SolverSpecify::TS_rtol;
   // abs error
   PetscReal eps_a = SolverSpecify::TS_atol;
+  PetscReal concentration = 5e22*std::pow(cm, -3);
+
 
   VecZeroEntries(xp);
   VecZeroEntries(LTE);
@@ -552,8 +606,8 @@ PetscReal MixA1Solver::LTE_norm()
             unsigned int local_offset = fvm_node->local_offset();
 
             ll[local_offset+0] = 0;
-            ll[local_offset+1] = ll[local_offset+1]/(eps_r*xx[local_offset+1]+eps_a);
-            ll[local_offset+2] = ll[local_offset+2]/(eps_r*xx[local_offset+2]+eps_a);
+            ll[local_offset+1] = ll[local_offset+1]/(eps_r*xx[local_offset+1]+eps_a*concentration);
+            ll[local_offset+2] = ll[local_offset+2]/(eps_r*xx[local_offset+2]+eps_a*concentration);
           }
           N += 2*region->n_on_processor_node();
           break;
@@ -587,9 +641,16 @@ PetscReal MixA1Solver::LTE_norm()
     {
       unsigned int array_offset_f = _circuit->array_offset_f(n);
       unsigned int array_offset_x = _circuit->array_offset_x(n);
-      ll[array_offset_f] = ll[array_offset_f]/(eps_r*xx[array_offset_x]+eps_a);
+      if(_circuit->is_voltage_node(n))
+      {
+        ll[array_offset_f] = ll[array_offset_f]/(eps_r*xx[array_offset_x]+eps_a*1000*V);
+        N++;
+      }
+      else
+      {
+        ll[array_offset_f] = 0.0;
+      }
     }
-    N += _circuit->n_ckt_nodes();
   }
 
   VecRestoreArray(x, &xx);
@@ -622,7 +683,7 @@ void MixA1Solver::error_norm()
   //VecScatterEnd  (scatter, x, lx, INSERT_VALUES, SCATTER_FORWARD);
 
 
-  // unscale the fcuntion 
+  // unscale the fcuntion
   VecPointwiseDivide(f, f, L);
 
   // scatte global function vector f to local vector lf
@@ -791,17 +852,6 @@ void MixA1Solver::build_petsc_sens_residual(Vec x, Vec r)
   genius_assert( !fetestexcept(FE_INVALID) );
 #endif
 
-  // process hanging node here
-  for(unsigned int n=0; n<_system.n_regions(); n++)
-  {
-    SimulationRegion * region = _system.region(n);
-    region->DDM1_Function_Hanging_Node(lxx, r, add_value_flag);
-  }
-
-#if defined(HAVE_FENV_H) && defined(DEBUG)
-  genius_assert( !fetestexcept(FE_INVALID) );
-#endif
-
   build_spice_function(lxx, r, add_value_flag);
 
 #if defined(HAVE_FENV_H) && defined(DEBUG)
@@ -878,7 +928,7 @@ void MixA1Solver::build_petsc_sens_jacobian(Vec x, Mat *, Mat *)
   // get PetscScalar array contains solution from local solution vector lx
   VecGetArray(lx, &lxx);
 
-  MatZeroEntries(J);
+  Jac->zero();
 
   // flag for indicate ADD_VALUES operator.
   InsertMode add_value_flag = NOT_SET_VALUES;
@@ -887,7 +937,7 @@ void MixA1Solver::build_petsc_sens_jacobian(Vec x, Mat *, Mat *)
   for(unsigned int n=0; n<_system.n_regions(); n++)
   {
     SimulationRegion * region = _system.region(n);
-    region->DDM1_Jacobian(lxx, &J, add_value_flag);
+    region->DDM1_Jacobian(lxx, Jac, add_value_flag);
   }
 
 #if defined(HAVE_FENV_H) && defined(DEBUG)
@@ -899,69 +949,44 @@ void MixA1Solver::build_petsc_sens_jacobian(Vec x, Mat *, Mat *)
     for(unsigned int n=0; n<_system.n_regions(); n++)
     {
       SimulationRegion * region = _system.region(n);
-      region->DDM1_Time_Dependent_Jacobian(lxx, &J, add_value_flag);
+      region->DDM1_Time_Dependent_Jacobian(lxx, Jac, add_value_flag);
     }
 
-  // process hanging node here
-  for(unsigned int n=0; n<_system.n_regions(); n++)
-  {
-    SimulationRegion * region = _system.region(n);
-    region->DDM1_Jacobian_Hanging_Node(lxx, &J, add_value_flag);
-  }
-#if defined(HAVE_FENV_H) && defined(DEBUG)
-  genius_assert( !fetestexcept(FE_INVALID) );
-#endif
 
-  build_spice_jacobian(lxx, &J, add_value_flag);
-
-  // before first assemble, resereve none zero pattern for each boundary
-  if( !jacobian_matrix_first_assemble )
-  {
-    for(unsigned int b=0; b<_system.get_bcs()->n_bcs(); b++)
-    {
-      BoundaryCondition * bc = _system.get_bcs()->get_bc(b);
-      if(bc->is_spice_electrode())
-        bc->MixA_DDM1_Jacobian_Reserve(&J, add_value_flag);
-      else
-        bc->DDM1_Jacobian_Reserve(&J, add_value_flag);
-    }
-  }
+  build_spice_jacobian(lxx, Jac, add_value_flag);
 
 
 #if defined(HAVE_FENV_H) && defined(DEBUG)
   genius_assert( !fetestexcept(FE_INVALID) );
 #endif
 
-  // evaluate Jacobian matrix of governing equations of DDML1 for all the boundaries
-  MatAssemblyBegin(J, MAT_FINAL_ASSEMBLY);
-  MatAssemblyEnd(J, MAT_FINAL_ASSEMBLY);
-
-  // we do not allow zero insert/add to matrix
-  if( !jacobian_matrix_first_assemble )
-    genius_assert(!MatSetOption(J, MAT_IGNORE_ZERO_ENTRIES, PETSC_TRUE));
+  
+  // assembly matrix
+  Jac->close(false);
 
   std::vector<PetscInt> src_row,  dst_row,  clear_row;
   for(unsigned int b=0; b<_system.get_bcs()->n_bcs(); b++)
   {
     BoundaryCondition * bc = _system.get_bcs()->get_bc(b);
     if(bc->is_spice_electrode())
-      bc->MixA_DDM1_Jacobian_Preprocess(lxx, &J, src_row, dst_row, clear_row);
+      bc->MixA_DDM1_Jacobian_Preprocess(lxx, Jac, src_row, dst_row, clear_row);
     else
-      bc->DDM1_Jacobian_Preprocess(lxx, &J, src_row, dst_row, clear_row);
+      bc->DDM1_Jacobian_Preprocess(lxx, Jac, src_row, dst_row, clear_row);
   }
+  
   //add source rows to destination rows
-  PetscUtils::MatAddRowToRow(J, src_row, dst_row);
+  Jac->add_row_to_row(src_row, dst_row);
   // clear row
-  PetscUtils::MatZeroRows(J, clear_row.size(), clear_row.empty() ? NULL : &clear_row[0], 0.0);
+  Jac->clear_row(clear_row);
 
   add_value_flag = NOT_SET_VALUES;
   for(unsigned int b=0; b<_system.get_bcs()->n_bcs(); b++)
   {
     BoundaryCondition * bc = _system.get_bcs()->get_bc(b);
     if(bc->is_spice_electrode())
-      bc->MixA_DDM1_Jacobian(lxx, &J, add_value_flag);
+      bc->MixA_DDM1_Jacobian(lxx, Jac, add_value_flag);
     else
-      bc->DDM1_Jacobian(lxx, &J, add_value_flag);
+      bc->DDM1_Jacobian(lxx, Jac, add_value_flag);
   }
 
 
@@ -973,24 +998,12 @@ void MixA1Solver::build_petsc_sens_jacobian(Vec x, Mat *, Mat *)
   // restore array back to Vec
   VecRestoreArray(lx, &lxx);
 
-  // assembly the matrix
-  MatAssemblyBegin(J, MAT_FINAL_ASSEMBLY);
-  MatAssemblyEnd  (J, MAT_FINAL_ASSEMBLY);
+  Jac->close(true);
 
 
   //scaling the matrix
   MatDiagonalScale(J, L, PETSC_NULL);
 
-  // we use the reciprocal of matrix diagonal as scaling value
-  // this will take place at next call
-  //MatGetDiagonal(J, L);
-  //VecReciprocal(L);
-
-  //MatView(J, PETSC_VIEWER_STDOUT_SELF);
-  //getchar();
-
-  if(!jacobian_matrix_first_assemble)
-    jacobian_matrix_first_assemble = true;
 
   STOP_LOG("MixA1Solver_Jacobian()", "MixA1Solver");
 

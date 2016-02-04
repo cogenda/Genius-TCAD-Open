@@ -102,7 +102,7 @@ public:
 
 
   /**
-   * solve x1!
+   * solve x1! 
    */
   void SchueSolveX1(std::vector<double> & x1);
 

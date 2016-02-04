@@ -26,7 +26,7 @@
 #include "boundary_condition_homo.h"
 #include "petsc_utils.h"
 
-void HomoInterfaceBC::DDMAC_Fill_Matrix_Vector( Mat A, Vec b, const Mat J, const double omega, InsertMode & add_value_flag )
+void HomoInterfaceBC::DDMAC_Fill_Matrix_Vector( Mat A, Vec b, const Mat J, const PetscScalar omega, InsertMode & add_value_flag )
 {
 
   BoundaryCondition::const_node_iterator node_it = nodes_begin();

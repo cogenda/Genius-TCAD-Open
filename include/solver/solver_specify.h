@@ -171,10 +171,19 @@ namespace SolverSpecify
    */
   extern double    PoissonCorrectionParameter;
 
+  /**
+   * dump matrix and rhs vector
+   */
+  extern bool      DumpMatrixVector;
 
   //--------------------------------------------
-  // linear solver convergence criteria
+  // nonlinear/linear solver convergence criteria
   //--------------------------------------------
+
+ /**
+  * snes relative error tolerance
+  */
+  extern double   snes_rtol;
 
   /**
    * relative error tolerance
@@ -202,16 +211,26 @@ namespace SolverSpecify
   // nonlinear solver convergence criteria
   //--------------------------------------------
 
-   /**
+  /**
    * Max nonlinear iteration number
    */
   extern unsigned int      MaxIteration;
 
   /**
-  * potential damping factor, in kT/q
-  */
+   * potential damping factor, in kT/q
+   */
   extern double   potential_update;
 
+
+  /**
+   * potential damping for spice
+   */
+  extern bool   damping_spice;
+
+  /**
+   * voltage damping factor for spice, in V
+   */
+  extern double   spice_voltage_update;
 
   /**
    * When absolute error of equation less
@@ -249,6 +268,11 @@ namespace SolverSpecify
   extern double      hole_continuity_abs_toler;
 
   /**
+   * The absolute converged criteria for the trap continuity equation.
+   */
+  extern double      trap_continuity_abs_toler;
+
+  /**
    * The absolute converged criteria for the lattice heat equation equation.
    */
   extern double      heat_equation_abs_toler;
@@ -282,6 +306,11 @@ namespace SolverSpecify
    * The absolute converged criteria for the spice circuit.
    */
   extern double      spice_abs_toler;
+
+  /**
+   * The function value larger than divergence_factor*xx_abs_toler is considered as divergence
+   */
+  extern double      divergence_factor;
 
   //--------------------------------------------
   // TS (transient solver)
@@ -405,6 +434,11 @@ namespace SolverSpecify
   extern std::vector<std::string>    Electrode_VScan;
 
   /**
+   * The voltage of electrode(s) to do DC sweep
+   */
+  extern double         Electrode_VScan_Voltage;
+
+  /**
    * start voltage of DC sweep
    */
   extern double    VStart;
@@ -428,6 +462,11 @@ namespace SolverSpecify
    * electrode the current DC sweep will be performanced
    */
   extern std::vector<std::string>    Electrode_IScan;
+
+  /**
+   * The current of electrode(s) to do DC sweep
+   */
+  extern double         Electrode_IScan_Current;
 
   /**
    * start current of DC sweep
@@ -621,6 +660,33 @@ namespace SolverSpecify
    */
   extern bool      SourceCoupled;
 
+
+  /**
+   * TID total dose
+   */
+  extern double    TID_TotalDose;
+
+
+  /**
+   * TID dose rate
+   */
+  extern double    TID_DoseRate;
+
+  /**
+   * TID dose step
+   */
+  extern double    TID_DoseStep;
+
+  /**
+   * TID OP step
+   */
+  extern double    TID_OPStep;
+
+  /**
+   * after TID solver, only fixed charge remains, carriers in oxide are set to zero
+   */
+  extern bool      TID_FixedCharge;
+
   //------------------------------------------------------
   // initial parameters
   //------------------------------------------------------
@@ -631,7 +697,7 @@ namespace SolverSpecify
   extern void set_default_parameter();
 
 
-  
+
 }
 
 

@@ -511,6 +511,42 @@ short int BoundaryInfo::boundary_id(const Elem* const elem,  const unsigned shor
   return invalid_id;
 }
 
+bool BoundaryInfo::is_boundary_elem_side(const Elem * elem, unsigned int side) const
+{
+  assert (elem != NULL);
+
+
+  const Elem*  searched_elem = elem;
+
+  // Only level-0 elements store BCs.  If this is not a level-0
+  // element get its level-0 parent and infer the BCs when to_top_parent is true.
+  if ( elem->level() != 0)
+    searched_elem = elem->top_parent ();
+
+  std::pair<std::multimap<const Elem*,
+  std::pair<unsigned short int, short int> >::const_iterator,
+  std::multimap<const Elem*,
+  std::pair<unsigned short int, short int> >::const_iterator >
+      e = _boundary_side_id.equal_range(searched_elem);
+
+  // elem not in the data structure
+  if (e.first == e.second)
+    return false;
+
+
+  // elem is there, maybe multiple occurances
+  while (e.first != e.second)
+  {
+    // if this is true we found the requested side of the element 
+    if (e.first->second.first == side)
+      return true;
+
+    ++e.first;
+  }
+
+  return false;
+}
+
 
 unsigned int BoundaryInfo::side_with_boundary_id(const Elem* const elem, short int boundary_id) const
 {
@@ -836,7 +872,7 @@ void BoundaryInfo::get_subdomains_bd_on( std::map<short int,  std::pair<unsigned
     boundary_sub_ids[boundary_id].insert( elem->subdomain_id() );
 
     // get the side
-    unsigned int side = pos->second.first;
+    unsigned short int side = pos->second.first;
     const Elem * neighbor_elem = elem->neighbor(side);
     if( neighbor_elem == NULL )
       boundary_sub_ids[boundary_id].insert( invalid_uint );
@@ -855,7 +891,6 @@ void BoundaryInfo::get_subdomains_bd_on( std::map<short int,  std::pair<unsigned
     short int boundary_id = boundary_sub_ids_it->first;
     std::set< unsigned int > & sub_ids = boundary_sub_ids_it->second;
     Parallel::allgather(sub_ids);
-
 
     if( sub_ids.size() != 2 )
     {

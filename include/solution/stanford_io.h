@@ -63,20 +63,25 @@ public:
    */
   virtual void read (const std::string& filename);
 
+
+  /**
+   * This method implements reading a mesh from several specified file
+   * in stanford TIF format.
+   */
+  void read (const std::vector<std::string> & files);
+
   /**
    * This method implements writing a mesh to a specified stanford TIF file.
-   * NOT implemented yet!
    */
-  virtual void write (const std::string& )
-  { genius_error(); }
+  virtual void write (const std::string& filename);
 
 private:
 
   const std::string _format;
 
-  void read_2d(StanfordTIF *);
+  void _import_2d(StanfordTIF *);
 
-  void read_3d_silvaco(StanfordTIF *);
+  void _import_3d_silvaco(StanfordTIF *);
 
 };
 

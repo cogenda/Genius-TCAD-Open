@@ -27,6 +27,7 @@
 #include "sparse_matrix.h"
 #include "petsc_matrix.h"
 #include "symbolic_matrix.h"
+#include "csr_matrix.h"
 #include "parallel.h"
 
 //------------------------------------------------------------------
@@ -58,15 +59,13 @@ template <typename T>
 AutoPtr<SparseMatrix<T> >
 SparseMatrix<T>::build(const std::string & solver_package,
                        const unsigned int m,   const unsigned int n,
-                       const unsigned int m_l, const unsigned int n_l,
-                       const std::vector<int> &n_nz,
-                       const std::vector<int> &n_oz)
+                       const unsigned int m_l, const unsigned int n_l)
 {
   // Build the appropriate vector
   if (solver_package == "petsc")
   {
 #ifdef HAVE_PETSC
-    AutoPtr<SparseMatrix<T> > ap(new PetscMatrix<T>(m, n, m_l, n_l, n_nz, n_oz));
+    AutoPtr<SparseMatrix<T> > ap(new PetscMatrix<T>(m, n, m_l, n_l));
     return ap;
 #endif
   }
@@ -74,6 +73,12 @@ SparseMatrix<T>::build(const std::string & solver_package,
   if (solver_package == "symbolic")
   {
     AutoPtr<SparseMatrix<T> > ap(new SymbolicMatrix<T>(m, n, m_l, n_l));
+    return ap;
+  }
+  
+  if (solver_package == "csr")
+  {
+    AutoPtr<SparseMatrix<T> > ap(new CSRMatrix<T>(m, n, m_l, n_l));
     return ap;
   }
 
@@ -123,4 +128,4 @@ void SparseMatrix<Complex>::print(std::ostream& os) const
 
 //------------------------------------------------------------------
 // Explicit instantiations
-template class SparseMatrix<Real>;
+template class SparseMatrix<PetscScalar>;

@@ -8,6 +8,7 @@
 #include <new>
 #include <memory>
 #include <cstdlib>
+#include <cmath>
 
 #include "expr_parser.h"
 #include "expr_node.h"
@@ -30,16 +31,16 @@ Token::Token(TokenType type, string::size_type start, string::size_type end) :
         m_end(end)
     {
     }
-    
+
 // Construct identifier token
-Token::Token(const string &ident, string::size_type start, string::size_type end) : 
+Token::Token(const string &ident, string::size_type start, string::size_type end) :
         m_type(Token::TypeIdentifier),
         m_ident(ident),
         m_start(start),
         m_end(end)
     {
     }
-    
+
 // Construct value token
 Token::Token(double value, string::size_type start, string::size_type end) :
         m_type(Token::TypeValue),
@@ -48,19 +49,19 @@ Token::Token(double value, string::size_type start, string::size_type end) :
         m_end(end)
     {
     }
-    
+
 // Get type
 Token::TokenType Token::GetType() const
     {
     return m_type;
     }
-    
+
 // Get identifier
 const string &Token::GetIdentifier() const
     {
     return m_ident;
     }
-    
+
 // Get value
 double Token::GetValue() const
     {
@@ -72,11 +73,11 @@ string::size_type Token::GetStart() const
     {
     return m_start;
     }
-    
+
 string::size_type Token::GetEnd() const
     {
     return m_end;
-    }    
+    }
 
 // Parser
 //------------------------------------------------------------------------------
@@ -87,21 +88,21 @@ Parser::Parser(Expression *expr) : m_expr(expr)
     if(expr == 0)
         throw(NullPointerException("Parser::Parser"));
     }
-    
+
 // Destructor
 Parser::~Parser()
     {
     }
-    
+
 // Parse an expression string
 Node *Parser::Parse(const string &exstr)
     {
     BuildTokens(exstr);
-    
+
     // Make sure it is not still empty
     if(m_tokens.size() == 0)
         throw(EmptyExpressionException());
-        
+
     // Parse the range
     return ParseRegion(0, m_tokens.size() - 1);
     }
@@ -119,11 +120,11 @@ Node *Parser::ParseRegion(Parser::size_type start, Parser::size_type end)
     size_type expindex = (size_type)-1;
     bool multiexpr = false;
     int plevel = 0;
-    
+
     // Check simple syntax
     if(start > end)
         throw(SyntaxException());
-        
+
     // Scan through tokens
     for(pos = start; pos <= end; pos++)
         {
@@ -132,34 +133,34 @@ Node *Parser::ParseRegion(Parser::size_type start, Parser::size_type end)
             case Token::TypeOpenParenthesis:
                 {
                 plevel++;
-                
+
                 // Opening of first group?
                 if(plevel == 1 && fgopen == (size_type)-1)
                     fgopen = pos;
-                    
+
                 break;
                 };
-                
+
             case Token::TypeCloseParenthesis:
                 {
                 plevel--;
-                
+
                 // First group closed?
                 if(plevel == 0 && fgclose == (size_type)-1)
                     fgclose = pos;
-                    
+
                 if(plevel < 0)
                     {
                     UnmatchedParenthesisException e;
-                    
+
                     e.SetStart(m_tokens[pos].GetStart());
                     e.SetEnd(m_tokens[pos].GetEnd());
                     throw(e);
                     }
-                    
+
                 break;
                 }
-                
+
             case Token::TypeEqual:
                 {
                 if(plevel == 0)
@@ -167,10 +168,10 @@ Node *Parser::ParseRegion(Parser::size_type start, Parser::size_type end)
                     if(assignindex == (size_type)-1)
                         assignindex = pos;
                     }
-                    
+
                 break;
                 }
-                
+
             case Token::TypeAsterisk:
             case Token::TypeForwardSlash:
                 {
@@ -178,20 +179,20 @@ Node *Parser::ParseRegion(Parser::size_type start, Parser::size_type end)
                     {
                     muldivindex = pos;
                     }
-                    
+
                 break;
                 }
-                
+
             case Token::TypeHat:
                 {
                 if(plevel == 0)
                     {
                     expindex = pos;
                     }
-                
+
                 break;
                 }
-                
+
             case Token::TypePlus:
             case Token::TypeHyphen:
                 {
@@ -218,7 +219,7 @@ Node *Parser::ParseRegion(Parser::size_type start, Parser::size_type end)
                                 if(posnegindex == (size_type)-1)
                                     posnegindex = pos;
                                 break;
-                                
+
                             default:
                                 // After any other, we are addition/subtration
                                 addsubindex = pos;
@@ -226,34 +227,34 @@ Node *Parser::ParseRegion(Parser::size_type start, Parser::size_type end)
                             }
                         }
                     }
-                    
+
                 break;
                 }
-                
+
             case Token::TypeSemicolon:
                 {
                 if(plevel == 0)
                     {
                     multiexpr = true;
                     }
-                
+
                 break;
                 }
             }
         }
-        
+
     // plevel should be 0
     if(plevel != 0)
         {
         UnmatchedParenthesisException e;
-        
+
         e.SetStart(end);
         e.SetEnd(end);
         throw(e);
         }
-        
+
     // Parse in certain order to maintain order of operators
-    
+
     // Multi-expression first
     if(multiexpr)
         {
@@ -289,7 +290,7 @@ Node *Parser::ParseRegion(Parser::size_type start, Parser::size_type end)
     else if(muldivindex != (size_type)-1)
         {
         // Multiplication/division next
-        
+
         if(m_tokens[muldivindex].GetType() == Token::TypeAsterisk)
             {
             // Multiplication
@@ -332,7 +333,7 @@ Node *Parser::ParseRegion(Parser::size_type start, Parser::size_type end)
         // Check pos/neg again.  After testing for exponent, a pos/neg
         // at plevel 0 is syntax error
         SyntaxException e;
-        
+
         e.SetStart(m_tokens[posnegindex].GetStart());
         e.SetEnd(m_tokens[posnegindex].GetEnd());
         throw(e);
@@ -347,13 +348,13 @@ Node *Parser::ParseRegion(Parser::size_type start, Parser::size_type end)
         else
             {
             SyntaxException e;
-            
+
             e.SetStart(m_tokens[fgopen].GetStart());
             if(fgclose == (size_type)-1)
                 e.SetEnd(m_tokens[fgopen].GetEnd());
             else
                 e.SetEnd(m_tokens[fgclose].GetEnd());
-                
+
             throw(e);
             }
         }
@@ -364,22 +365,22 @@ Node *Parser::ParseRegion(Parser::size_type start, Parser::size_type end)
             {
             // Find function list
             FunctionList *flist = m_expr->GetFunctionList();
-            
+
             if(flist == 0)
                 {
                 NoFunctionListException e;
-        
+
                 e.SetStart(m_tokens[start].GetStart());
                 e.SetEnd(m_tokens[start].GetEnd());
                 throw(e);
                 }
-                
+
             // Get name
             string ident = m_tokens[start].GetIdentifier();
-            
+
             // Create function node
             auto_ptr<FunctionNode> n(flist->Create(ident, m_expr));
-            
+
             if(n.get())
                 {
                 n->Parse(*this, fgopen, fgclose);
@@ -387,37 +388,37 @@ Node *Parser::ParseRegion(Parser::size_type start, Parser::size_type end)
             else
                 {
                 NotFoundException e(ident);
-        
+
                 e.SetStart(m_tokens[start].GetStart());
                 e.SetEnd(m_tokens[start].GetEnd());
-                throw(e);                
+                throw(e);
                 }
-                
+
             return n.release();
             }
         else
             {
             SyntaxException e;
-        
+
             e.SetStart(m_tokens[fgopen].GetStart());
             if(fgclose == (size_type)-1)
                 e.SetEnd(m_tokens[fgopen].GetEnd());
             else
-                e.SetEnd(m_tokens[fgclose].GetEnd());    
-                
+                e.SetEnd(m_tokens[fgclose].GetEnd());
+
             throw(e);
             }
         }
     else if(start == end)
         {
         // Value, variable, or constant
-        
+
         if(m_tokens[start].GetType() == Token::TypeIdentifier)
             {
             // Variable/constant
             auto_ptr<Node> n(new VariableNode(m_expr));
             n->Parse(*this, start, end);
-            return n.release();    
+            return n.release();
             }
         else
             {
@@ -431,35 +432,35 @@ Node *Parser::ParseRegion(Parser::size_type start, Parser::size_type end)
         {
         // Unknown, syntax
         SyntaxException e;
-        
+
         e.SetStart(m_tokens[pos].GetStart());
         e.SetEnd(m_tokens[pos].GetEnd());
-        
+
         throw(e);
         }
     }
-    
+
 // Get a token
 const Token &Parser::operator[] (Parser::size_type pos) const
     {
     return m_tokens[pos];
     }
-    
+
 // Build tokens
 void Parser::BuildTokens(const string &exstr)
     {
     m_tokens.clear();
-    
+
     // Test zero-length expression
     if(exstr.length() == 0)
         {
         throw(EmptyExpressionException());
         }
-        
+
     // Search through list
     string::size_type pos;
     bool comment = false;
-    
+
     for(pos = 0; pos < exstr.length(); pos++)
         {
         // Take action based on character
@@ -469,19 +470,19 @@ void Parser::BuildTokens(const string &exstr)
             case '#':
                 {
                 comment = true;
-                    
+
                 break;
                 }
-                
+
             // Newline ends comment
             case '\r':
             case '\n':
                 {
                 comment = false;
-                
+
                 break;
                 }
-                
+
             // Open parenthesis
             case '(':
                 {
@@ -491,7 +492,7 @@ void Parser::BuildTokens(const string &exstr)
                     }
                 break;
                 }
-                
+
             // Close parenthesis
             case ')':
                 {
@@ -501,7 +502,7 @@ void Parser::BuildTokens(const string &exstr)
                     }
                 break;
                 }
-                
+
             // Equal
             case '=':
                 {
@@ -511,7 +512,7 @@ void Parser::BuildTokens(const string &exstr)
                     }
                 break;
                 }
-                
+
             // Plus
             case '+':
                 {
@@ -521,7 +522,7 @@ void Parser::BuildTokens(const string &exstr)
                     }
                 break;
                 }
-                
+
             // Hyphen
             case '-':
                 {
@@ -531,7 +532,7 @@ void Parser::BuildTokens(const string &exstr)
                     }
                 break;
                 }
-                
+
             // Asterisk
             case '*':
                 {
@@ -541,7 +542,7 @@ void Parser::BuildTokens(const string &exstr)
                     }
                 break;
                 }
-                
+
             // Forward slash
             case '/':
                 {
@@ -551,7 +552,7 @@ void Parser::BuildTokens(const string &exstr)
                     }
                 break;
                 }
-                
+
             // Hat (exponent)
             case '^':
                 {
@@ -561,7 +562,7 @@ void Parser::BuildTokens(const string &exstr)
                     }
                 break;
                 }
-                
+
             // Ampersand
             case '&':
                 {
@@ -571,17 +572,17 @@ void Parser::BuildTokens(const string &exstr)
                     }
                 break;
                 }
-                
-            // At sign 
+
+            // At sign
             case '@':
                 {
                 if(comment == false)
                     {
                     m_tokens.push_back(Token(Token::TypeAt, pos, pos));
                     }
-                break;    
-                }                
-                
+                break;
+                }
+
             // Comma
             case ',':
                 {
@@ -591,7 +592,7 @@ void Parser::BuildTokens(const string &exstr)
                     }
                 break;
                 }
-                
+
             // Semicolon
             case ';':
                 {
@@ -601,7 +602,7 @@ void Parser::BuildTokens(const string &exstr)
                     }
                 break;
                 }
-                
+
             // None of the above, but it may be an identifier or value
             default:
                 {
@@ -612,23 +613,45 @@ void Parser::BuildTokens(const string &exstr)
                         {
                         // We are a value
                         string::size_type start = pos;
-                        
+
                         // Digits before period
                         while(isdigit(exstr[pos]))
                             pos++;
-                            
+
                         // Period
                         if(exstr[pos] == '.')
                             pos++;
-                            
+
                         // Digits after period
                         while(isdigit(exstr[pos]))
                             pos++;
-                            
-                        // Create token
+
+                        // base
                         string ident = exstr.substr(start, pos - start);
-                        m_tokens.push_back(Token(atof(ident.c_str()), start, pos - 1));
-                        
+                        double base = atof(ident.c_str());
+
+                        //power
+                        if(exstr[pos] == 'E' || exstr[pos] == 'e')
+                        {
+                          pos++;
+
+                          bool neg = false;
+                          if(exstr[pos] == '+') pos++;
+                          if(exstr[pos] == '-') {neg=true; pos++;}
+
+                          string::size_type power_start = pos;
+                          while(isdigit(exstr[pos]))
+                            pos++;
+                          string power_ident = exstr.substr(power_start, pos - power_start);
+                          double power = atof(power_ident.c_str());
+
+                          if(neg) power = -power;
+
+                          m_tokens.push_back(Token(base*pow(10, power), start, pos - 1));
+                        }
+                        else
+                          m_tokens.push_back(Token(base, start, pos - 1));
+
                         // Move pos back so pos++ will set it right
                         pos--;
                         }
@@ -637,7 +660,7 @@ void Parser::BuildTokens(const string &exstr)
                         // We are an identifier
                         string::size_type start = pos;
                         bool foundname = true; // Found name part
-                        
+
                         // Search for name, then period, etc
                         // An identifier can be multiple parts.  Each part
                         // is formed as an identifier and seperated by a period,
@@ -651,12 +674,12 @@ void Parser::BuildTokens(const string &exstr)
                             // Part before period
                             while(exstr[pos] == '_' || isalnum(exstr[pos]))
                                 pos++;
-                                
+
                             // Is there a period
                             if(exstr[pos] == '.')
                                 {
                                 pos++;
-                                
+
                                 // There is a period, look for the name again
                                 if(exstr[pos] == '_' || isalpha(exstr[pos]))
                                     {
@@ -666,7 +689,7 @@ void Parser::BuildTokens(const string &exstr)
                                     {
                                     // No name after period
                                     foundname = false;
-                                    
+
                                     // Remove period from identifier
                                     pos--;
                                     }
@@ -677,10 +700,10 @@ void Parser::BuildTokens(const string &exstr)
                                 foundname = false;
                                 }
                             }
-                            
+
                         // Create token
                         m_tokens.push_back(Token(exstr.substr(start, pos - start), start, pos - 1));
-                        
+
                         // Move pos back so pos++ will set it right
                         pos--;
                         }
@@ -695,7 +718,7 @@ void Parser::BuildTokens(const string &exstr)
                         UnknownTokenException e;
                         e.SetStart(pos);
                         e.SetEnd(pos);
-                        
+
                         throw(e);
                         }
                     }
@@ -703,6 +726,6 @@ void Parser::BuildTokens(const string &exstr)
                 }
             }
         }
-    }    
-    
-    
+    }
+
+

@@ -53,7 +53,7 @@ void Interpolation3D_qshep::add_scatter_data(const Point & point, int group, dou
   {
   case Linear    : break;
   case SignedLog : value = (value>0 ? 1.0 : -1.0)*std::log(1.0+std::abs(value)); break;
-  case Asinh     : value = boost::math::asinh(value); break;
+  case Asinh     : value = asinh(value); break;
   }
 
   field[group].f.push_back(value);

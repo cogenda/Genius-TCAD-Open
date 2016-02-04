@@ -39,7 +39,7 @@ using PhysicalUnit::kb;
 using PhysicalUnit::e;
 
 
-void IF_Metal_OhmicBC::DDMAC_Fill_Matrix_Vector( Mat A, Vec b, const Mat J, const double omega, InsertMode & add_value_flag )
+void IF_Metal_OhmicBC::DDMAC_Fill_Matrix_Vector( Mat A, Vec b, const Mat J, const PetscScalar omega, InsertMode & add_value_flag )
 {
   std::complex <PetscScalar> j(0.0, 1.0);
   const SimulationRegion * _r1 = bc_regions().first;
@@ -374,7 +374,7 @@ void IF_Metal_OhmicBC::DDMAC_Fill_Matrix_Vector( Mat A, Vec b, const Mat J, cons
 
 }
 
-void IF_Metal_OhmicBC::DDMAC_Update_Solution(const PetscScalar * lxx, const Mat, const double omega)
+void IF_Metal_OhmicBC::DDMAC_Update_Solution(const PetscScalar * lxx, const Mat, const PetscScalar omega)
 {}
 
 

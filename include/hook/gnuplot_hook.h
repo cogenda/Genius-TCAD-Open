@@ -27,7 +27,7 @@
 
 
 #include "hook.h"
-#include <ctime>
+
 
 /**
  * write electrode IV into file which can be plotted by gnuplot
@@ -70,7 +70,7 @@ private:
  /**
   * current time
   */
- time_t          _time;
+
 
  /**
   * the input file name
@@ -91,6 +91,11 @@ private:
   * write the head of file
   */
  void  _write_gnuplot_head();
+
+ /**
+  * if we are in ddm solver
+  */
+ bool            _ddm;
 
  /**
   * if we are in mixA mode

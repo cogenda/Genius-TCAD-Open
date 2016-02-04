@@ -27,6 +27,8 @@
 #ifdef HAVE_PETSC
 
 // C++ includes
+#include <vector>
+#include <map>
 #include <algorithm>
 
 
@@ -81,9 +83,7 @@ public:
    * \p init(...).
    */
   PetscMatrix (const unsigned int m,   const unsigned int n,
-               const unsigned int m_l, const unsigned int n_l,
-               const std::vector<int> &n_nz=std::vector<int>(),
-               const std::vector<int> &n_oz=std::vector<int>());
+               const unsigned int m_l, const unsigned int n_l);
 
 
   /**
@@ -93,12 +93,6 @@ public:
    */
   ~PetscMatrix ();
 
-  /**
-   * set the matrix sparsity pattern. When your \p SparseMatrix<T>
-   * implementation does not need this data simply do
-   * not overload this method.
-   */
-  void set_sparsity_pattern (const std::vector<int> &n_nz, const std::vector<int> &n_oz);
 
   /**
    * Initialize a Petsc matrix that is of global
@@ -152,6 +146,28 @@ public:
               const unsigned int j,
               const T value);
 
+                      
+  /**
+   * Add a row to the Sparse matrix.  
+   */
+  void add_row (unsigned int row, 
+                const std::vector<unsigned int> &cols, 
+                const T* dm);
+
+  /**
+   * Add a row to the Sparse matrix.  
+   */
+  void add_row (unsigned int row, 
+                unsigned int n, const unsigned int * cols, 
+                const T* dm);
+                        
+  /**
+   * Add a row to the Sparse matrix.  
+   */
+  void add_row (unsigned int row, 
+                int n, const int * cols, 
+                const T* dm);
+
   /**
    * Add the full matrix to the
    * Petsc matrix.  This is useful
@@ -159,9 +175,9 @@ public:
    * at assembly time
    */
 
-  void add_matrix (const DenseMatrix<T> &dm,
-                   const std::vector<unsigned int> &rows,
-                   const std::vector<unsigned int> &cols);
+  void add_matrix (const std::vector<unsigned int> &rows,
+                   const std::vector<unsigned int> &cols,
+                   const T* dm);
 
   /**
    * Add the full matrix to the
@@ -169,21 +185,32 @@ public:
    * for adding an element matrix
    * at assembly time
    */
-  void add_matrix (const T* dm,
-                   unsigned int m, unsigned int * rows,
-                   unsigned int n, unsigned int * cols);
+  void add_matrix (unsigned int m, unsigned int * rows,
+                   unsigned int n, unsigned int * cols,
+                   const T* dm);
 
   /**
    * Add the source row entries to the destination row
    */
-  void add_row_to_row(const std::vector<unsigned int> &src_rows,
-                      const std::vector<unsigned int> &dst_rows);
+  void add_row_to_row(const std::vector<int> &src_rows,
+                      const std::vector<int> &dst_rows);
 
+                                
   /**
    * clear the given row and fill diag with given value
    */
-  void clear_row(const std::vector<unsigned int> &rows, const T diag=T(0.0) );
+  void clear_row(int row, const T diag=T(0.0) );
+  
+  /**
+   * clear the given row and fill diag with given value
+   */
+  void clear_row(const std::vector<int> &rows, const T diag=T(0.0) );
 
+  /**
+   * get a local row from Sparse matrix.  
+   */                      
+  void get_row (unsigned int row, int n, const int * cols, T* dm);
+  
 
   /**
    * Return the value of the entry
@@ -206,32 +233,6 @@ public:
   T operator () (const unsigned int i,
                  const unsigned int j) const;
 
-  /**
-   * Return the l1-norm of the matrix, that is
-   * \f$|M|_1=max_{all columns j}\sum_{all 
-   * rows i} |M_ij|\f$,
-   * (max. sum of columns).
-   * This is the
-   * natural matrix norm that is compatible
-   * to the l1-norm for vectors, i.e.
-   * \f$|Mv|_1\leq |M|_1 |v|_1\f$.
-   * (cf. Haemmerlin-Hoffmann : Numerische Mathematik)
-   */
-  Real l1_norm () const;
-
-  /**
-   * Return the linfty-norm of the
-   * matrix, that is
-   * \f$|M|_infty=max_{all rows i}\sum_{all 
-   * columns j} |M_ij|\f$,
-   * (max. sum of rows).
-   * This is the
-   * natural matrix norm that is compatible
-   * to the linfty-norm of vectors, i.e.
-   * \f$|Mv|_infty \leq |M|_infty |v|_infty\f$.
-   * (cf. Haemmerlin-Hoffmann : Numerische Mathematik)
-   */
-  Real linfty_norm () const;
 
   /**
    * see if Petsc matrix has been closed
@@ -266,19 +267,41 @@ public:
 
 
 private:
+  
+  bool _mat_buf_mode;
 
+  /**
+   * matrix data type to store local values
+   */
+  std::vector< std::map<unsigned int, T> > _mat_local;
+
+  /**
+   *  matrix nonlocal values
+   */ 
+  std::map< std::pair<unsigned int, unsigned int>, T > _mat_nonlocal;
+  
 
   /**
    * Petsc matrix datatype to store values
    */
   Mat _mat;
 
+  
+  void flush_buf();
+
+private:  
 
   /**
    * Petsc add or insert flag
    */
   InsertMode _add_value_flag;
-
+  
+  /**
+   * matrix is ready
+   */
+  bool _closed;
+  
+  
   /**
    * This boolean value should only be set to false
    * for the constructor which takes a PETSc Mat object. 

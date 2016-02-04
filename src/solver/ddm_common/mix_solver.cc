@@ -37,6 +37,7 @@ using PhysicalUnit::V;
 using PhysicalUnit::A;
 using PhysicalUnit::W;
 using PhysicalUnit::C;
+using PhysicalUnit::s;
 
 int MixSolverBase::create_solver()
 {
@@ -51,9 +52,9 @@ int MixSolverBase::create_solver()
   setup_nonlinear_data();
 
   //abstol = 1e-12*n_global_dofs    - absolute convergence tolerance
-  //rtol   = 1e-14                  - relative convergence tolerance
+  //rtol   = 1e-10                  - relative convergence tolerance
   //stol   = 1e-9                   - convergence tolerance in terms of the norm of the change in the solution between steps
-  SNESSetTolerances(snes, 1e-12*n_global_dofs, 1e-14, 1e-9, SolverSpecify::MaxIteration, 1000);
+  SNESSetTolerances(snes, 1e-12*n_global_dofs, 1e-10, 1e-9, SolverSpecify::MaxIteration, 1000);
 
   // rtol   = SolverSpecify::ksp_rtol  - the relative convergence tolerance (relative decrease in the residual norm)
   // abstol = 1e-20                    - the absolute convergence tolerance (absolute size of the residual norm)
@@ -62,7 +63,7 @@ int MixSolverBase::create_solver()
   // user can do further adjusment from command line
   SNESSetFromOptions (snes);
 
-  return FVM_NonlinearSolver::create_solver();
+  return FVM_FlexNonlinearSolver::create_solver();
 }
 
 int MixSolverBase::destroy_solver()
@@ -75,7 +76,7 @@ int MixSolverBase::destroy_solver()
   feclearexcept(FE_INVALID);
 #endif
 
-  return FVM_NonlinearSolver::destroy_solver();
+  return FVM_FlexNonlinearSolver::destroy_solver();
 }
 
 
@@ -97,18 +98,21 @@ void MixSolverBase::link_electrode_to_spice_node()
     bc->set_spice_electrode(false);
   }
 
-  const std::map<std::string, unsigned int> & electrode_to_spice_node = _circuit->get_electrode_info();
-  std::map<std::string, unsigned int>::const_iterator it = electrode_to_spice_node.begin();
-  for(; it!=electrode_to_spice_node.end(); ++it)
-  {
-    BoundaryCondition * bc = _system.get_bcs()->get_bc_nocase(it->first);
-    if(bc && bc->is_electrode())
-    {
-      bc->set_spice_electrode(true);
-      _circuit->set_ckt_node_electrode_flag(it->second);
-      _circuit->link_electrode(it->second, bc);
 
-      _bc_to_ckt_node_link.push_back(std::make_pair(bc, it->second));
+  for(unsigned int n=0; n<_circuit->n_ckt_nodes(); n++)
+  {
+    std::vector<BoundaryCondition *> bcs =  _system.get_bcs()->get_bcs_by_electrode_label_nocase(_circuit->ckt_node_name(n));
+    for(size_t b=0; b<bcs.size(); b++)
+    {
+      BoundaryCondition * bc = bcs[b];
+      if(bc && bc->is_electrode())
+      {
+        bc->set_spice_electrode(true);
+        _circuit->set_ckt_node_electrode_flag(n);
+        _circuit->link_electrode(n, bc);
+
+        _bc_to_ckt_node_link.push_back(std::make_pair(bc, n));
+      }
     }
   }
 
@@ -136,6 +140,39 @@ void MixSolverBase::link_electrode_to_spice_node()
 
 
 
+
+
+PetscReal MixSolverBase::common_model_voltage() const
+{
+  PetscReal Vcomm=0.0;
+  unsigned int n = 0;
+
+  if(Genius::is_last_processor())
+  {
+    for(unsigned int b=0; b<_system.get_bcs()->n_bcs(); b++)
+    {
+      BoundaryCondition * bc = _system.get_bcs()->get_bc(b);
+      if(bc->is_spice_electrode())
+      {
+        //get voltage from petsc solution vector x
+        PetscInt    ix = bc->global_offset();
+        PetscScalar V;
+        VecGetValues(x, 1, &ix, &V);
+        Vcomm += V;
+        n++;
+      }
+    }
+
+    if(n) Vcomm /= n;
+  }
+
+  Parallel::broadcast(Vcomm, Genius::last_processor_id());
+  return Vcomm;
+
+}
+
+
+
 /*------------------------------------------------------------------
  * set the matrix nonzero pattern for spice circuit
  */
@@ -146,30 +183,64 @@ void MixSolverBase::set_extra_matrix_nonzero_pattern()
   //spice ckt should know offset in petsc matrix and local scatter vec
   _circuit->set_offset(0, 0, 0);
 
-  if(Genius::is_last_processor())
+#if 0
+  // extra dofs for coupled electrode
+  for(unsigned int b=0; b<_system.get_bcs()->n_bcs(); ++b)
   {
-    // extra dofs for coupled electrode
-    for(unsigned int b=0; b<_system.get_bcs()->n_bcs(); ++b)
+    const BoundaryCondition * bc = _system.get_bcs()->get_bc(b);
+
+    //this spice circuit node links to a electrode bc?
+    if(bc->is_spice_electrode())
     {
-      const BoundaryCondition * bc = _system.get_bcs()->get_bc(b);
+      // get the nodes belongs to this boundary condition
+      const std::vector<const Node *> & bc_nodes = bc->nodes();
 
-      //this spice circuit node links to a electrode bc?
-      if(bc->is_spice_electrode())
+      // statistic neighbor information of boundary node
+      std::vector<unsigned int> neighbors;
+      for(unsigned int n=0; n<bc_nodes.size(); ++n  )
       {
-        // statistic the on- and off- processor matrix bandwidth contributed by boundary node
-        unsigned int on_processor_dofs  = _circuit->n_electrode();
+        if(bc_nodes[n]->processor_id() == Genius::processor_id())
+          neighbors.push_back( bc->n_node_neighbors(bc_nodes[n]) );
+      }
 
+      // statistic the on- and off- processor matrix bandwidth contributed by boundary node
+      unsigned int on_processor_dofs  = 0;
+      for(unsigned int n=0; n<bc_nodes.size(); ++n  )
+      {
+        if( bc_nodes[n]->processor_id() == Genius::processor_id() )
+          on_processor_dofs += (neighbors[n]+1)*this->n_bc_node_dofs( bc ) ;
+      }
+
+      // total dofs equals to the sum of all the on_processor_dofs
+      unsigned int total_dofs = on_processor_dofs;
+      Parallel::sum(total_dofs);
+      unsigned int off_processor_dofs = total_dofs - on_processor_dofs;
+
+      // prevent overflow, this may be happened for very small problems.
+      if ( on_processor_dofs  > n_local_dofs )
+      {
+        on_processor_dofs = n_local_dofs ;
+      }
+
+      if ( on_processor_dofs + off_processor_dofs > n_global_dofs )
+      {
+        off_processor_dofs = n_global_dofs - on_processor_dofs;
+      }
+
+      if(Genius::is_last_processor())
+      {
         n_nz[bc->array_offset()] += on_processor_dofs;
+        n_oz[bc->array_offset()] += off_processor_dofs;
       }
     }
   }
-
+#endif
 }
 
 
 int MixSolverBase::pre_solve_process(bool load_solution)
 {
-  // spice voltage source/current source maybe changed, here we load solution vector again 
+  // spice voltage source/current source maybe changed, here we load solution vector again
   if(Genius::is_last_processor())
   {
     std::vector<int> ix;
@@ -228,30 +299,27 @@ void MixSolverBase::build_spice_function(PetscScalar *lxx, Vec f, InsertMode &ad
 }
 
 
-void MixSolverBase::build_spice_jacobian(PetscScalar *lxx, Mat *jac, InsertMode &add_value_flag)
+void MixSolverBase::build_spice_jacobian(PetscScalar *lxx, SparseMatrix<PetscScalar> *jac, InsertMode &add_value_flag)
 {
-
-  if( (add_value_flag != ADD_VALUES) && (add_value_flag != NOT_SET_VALUES) )
-  {
-    MatAssemblyBegin(*jac, MAT_FLUSH_ASSEMBLY);
-    MatAssemblyEnd(*jac, MAT_FLUSH_ASSEMBLY);
-  }
-
   // only the last processor do this
   if(Genius::is_last_processor())
   {
     // ckt load has been done in build_spice_function
-    std::vector<double> mat;
-    _circuit->ckt_schur_matrix(mat);
+    std::vector<double> _mat;
+    _circuit->ckt_schur_matrix(_mat);
 
-    std::vector<PetscInt> mat_index;
+    std::vector<unsigned int> mat_index;
     for(unsigned int n=0; n<_bc_to_ckt_node_link.size(); ++n)
     {
       const BoundaryCondition * bc = _bc_to_ckt_node_link[n].first;
       mat_index.push_back(bc->global_offset());
     }
 
-    MatSetValues(*jac, mat_index.size(), &mat_index[0], mat_index.size(), &mat_index[0], &mat[0], ADD_VALUES);
+    std::vector<PetscScalar> mat;
+    for(unsigned int e=0; e<_mat.size(); ++e)
+      mat.push_back(_mat[e]);
+
+    jac->add_matrix(mat_index.size(), &mat_index[0], mat_index.size(), &mat_index[0], &mat[0]);
   }
 
   // the last operator is ADD_VALUES
@@ -270,6 +338,29 @@ void MixSolverBase::print_spice_node() const
     for(unsigned int n=0; n<_circuit->n_ckt_nodes(); ++n)
     {
       std::cout << "  " << std::left << std::setw(30) << _circuit->ckt_node_name(n)  << std::setw(15) << _circuit->rhs_old(n) << std::endl;
+    }
+
+    std::cout<<std::endl;
+
+    std::cout << std::left << std::setw(15) << "  state0" << std::setw(15) << "  state1" << std::setw(15) << "  state2" << std::endl;
+    std::cout << std::left << std::setw(15) << "  ------" << std::setw(15) << "  ------" << std::setw(15) << "  ------" << std::endl;
+
+    std::vector<double> state0;
+    _circuit->get_state_vector(0, state0);
+
+    std::vector<double> state1;
+    _circuit->get_state_vector(1, state1);
+
+    std::vector<double> state2;
+    _circuit->get_state_vector(2, state2);
+
+    for(unsigned int n=0; n<state0.size(); ++n)
+    {
+      std::cout << "  " << std::left
+                << std::setw(15) << state0[n]
+                << std::setw(15) << state1[n]
+                << std::setw(15) << state2[n]
+                << std::endl;
     }
     std::cout<<std::endl;
   }
@@ -305,8 +396,11 @@ void MixSolverBase::sens_line_search_post_check(Vec x, Vec y, Vec w, PetscBool *
   VecRestoreArray(w, &ww);
 
 
-  FVM_NonlinearSolver::sens_line_search_post_check(x, y, w, changed_y, changed_w);
+  FVM_FlexNonlinearSolver::sens_line_search_post_check(x, y, w, changed_y, changed_w);
 }
+
+
+
 
 
 /* ----------------------------------------------------------------------------
@@ -398,9 +492,12 @@ int MixSolverBase::solve_dcop(bool tran_op)
     rampup_steps = std::max( static_cast<int>(vabsmax/(SolverSpecify::RampUpVStep)),
                              static_cast<int>(iabsmax/(SolverSpecify::RampUpIStep)) );
 
+    rampup_steps = std::max(1, rampup_steps);
   }
 
-  rampup_steps = std::max(rampup_steps, SolverSpecify::RampUpSteps);
+  if(SolverSpecify::RampUpSteps>0)
+    rampup_steps = SolverSpecify::RampUpSteps;
+
   Parallel::broadcast(rampup_steps, Genius::last_processor_id() );
 
   MESSAGE<<"DC rampup process..."<<'\n'; RECORD();
@@ -438,11 +535,17 @@ int MixSolverBase::solve_dcop(bool tran_op)
     else
       this->pre_solve_process(false);
 
-    SNESSolve(snes,PETSC_NULL,x);
+
+    // here call Petsc to solve the nonlinear equations
+    snes_solve();
 
     // get the converged reason
     SNESConvergedReason reason;
     SNESGetConvergedReason(snes,&reason);
+    // linear solver iteration
+    PetscInt lits;
+    SNESGetLinearSolveIterations(snes, &lits);
+
     if( reason>0  ) //ok, converged.
     {
       // call post_solve_process
@@ -461,11 +564,11 @@ int MixSolverBase::solve_dcop(bool tran_op)
 
       // output op
       //print_spice_node();
-
+      retry=0;
       SolverSpecify::DC_Cycles++;
       MESSAGE
       <<"--------------------------------------------------------------------------------\n"
-      <<"      "<<SNESConvergedReasons[reason]<<"\n\n\n";
+      <<"      "<<SNESConvergedReasons[reason]<<", total linear iteration " << lits<<"\n\n\n";
       RECORD();
     }
     else // oh, diverged... reduce step and try again
@@ -539,7 +642,7 @@ int MixSolverBase::solve_dcop(bool tran_op)
     gmin = std::max(gmin*1e-2, gmin_user);
 
     MESSAGE << "DC reduce gmin to "  << gmin << '\n'
-            <<"--------------------------------------------------------------------------------\n";
+    <<"--------------------------------------------------------------------------------\n";
     RECORD();
 
     if(Genius::is_last_processor())
@@ -553,11 +656,17 @@ int MixSolverBase::solve_dcop(bool tran_op)
     else
       this->pre_solve_process(false);
 
-    SNESSolve(snes,PETSC_NULL,x);
+
+    // here call Petsc to solve the nonlinear equations
+    snes_solve();
 
     // get the converged reason
     SNESConvergedReason reason;
     SNESGetConvergedReason(snes,&reason);
+    // linear solver iteration
+    PetscInt lits;
+    SNESGetLinearSolveIterations(snes, &lits);
+
     if( reason < 0  )
     {
       if(reason == SNES_DIVERGED_LINEAR_SOLVE)
@@ -579,7 +688,7 @@ int MixSolverBase::solve_dcop(bool tran_op)
 
     MESSAGE
     <<"--------------------------------------------------------------------------------\n"
-    <<"      "<<SNESConvergedReasons[reason]<<"\n\n\n";
+    <<"      "<<SNESConvergedReasons[reason]<<", total linear iteration " << lits<<"\n\n\n";
     RECORD();
 
     // call post_solve_process
@@ -663,17 +772,25 @@ int MixSolverBase::solve_dcsweep()
       if(Genius::is_last_processor())
         _circuit->set_voltage_to(vsrc, Vscan);
 
+      SolverSpecify::Electrode_VScan_Voltage = Vscan;
+
       // call pre_solve_process
       if( SolverSpecify::DC_Cycles == 0 )
         this->pre_solve_process();
       else
         this->pre_solve_process(false);
 
-      SNESSolve(snes,PETSC_NULL,x);
+
+      // here call Petsc to solve the nonlinear equations
+      snes_solve();
 
       // get the converged reason
       SNESConvergedReason reason;
       SNESGetConvergedReason(snes,&reason);
+      // linear solver iteration
+      PetscInt lits;
+      SNESGetLinearSolveIterations(snes, &lits);
+
       if( reason>0  ) //ok, converged.
       {
         // call post_solve_process
@@ -720,7 +837,7 @@ int MixSolverBase::solve_dcsweep()
 
         MESSAGE
         <<"--------------------------------------------------------------------------------\n"
-        <<"      "<<SNESConvergedReasons[reason]<<"\n\n\n";
+        <<"      "<<SNESConvergedReasons[reason]<<", total linear iteration " << lits <<"\n\n\n";
         RECORD();
       }
       else // oh, diverged... reduce step and try again
@@ -825,17 +942,25 @@ int MixSolverBase::solve_dcsweep()
       if(Genius::is_last_processor())
         _circuit->set_current_to(isrc, Iscan/PhysicalUnit::A);
 
+      SolverSpecify::Electrode_IScan_Current = Iscan;
+
       // call pre_solve_process
       if( SolverSpecify::DC_Cycles == 0 )
         this->pre_solve_process();
       else
         this->pre_solve_process(false);
 
-      SNESSolve(snes,PETSC_NULL,x);
+
+      // here call Petsc to solve the nonlinear equations
+      snes_solve();
 
       // get the converged reason
       SNESConvergedReason reason;
       SNESGetConvergedReason(snes,&reason);
+      // linear solver iteration
+      PetscInt lits;
+      SNESGetLinearSolveIterations(snes, &lits);
+
       if( reason>0  ) //ok, converged.
       {
         // call post_solve_process
@@ -882,7 +1007,7 @@ int MixSolverBase::solve_dcsweep()
 
         MESSAGE
         <<"--------------------------------------------------------------------------------\n"
-        <<"      "<<SNESConvergedReasons[reason]<<"\n\n\n";
+        <<"      "<<SNESConvergedReasons[reason]<<", total linear iteration " << lits<<"\n\n\n";
         RECORD();
       }
       else // oh, diverged... reduce step and try again
@@ -964,6 +1089,9 @@ int MixSolverBase::solve_transient()
   // diverged counter
   int diverged_retry=0;
 
+  // auto time step counter
+  int autostep_retry=0;
+
   // init aux vectors used in transient simulation
   VecDuplicate(x, &x_n);
   VecDuplicate(x, &x_n1);
@@ -971,21 +1099,19 @@ int MixSolverBase::solve_transient()
   VecDuplicate(x, &xp);
   VecDuplicate(x, &LTE);
 
+
   // set spice circuit, does uic required?
   if(Genius::is_last_processor())
   {
     _circuit->init_dctran( SolverSpecify::UIC ? MODEUIC : 0);
   }
 
+
   // if we need do op
   if(SolverSpecify::tran_op)
   {
     solve_dcop(true);
   }
-
-  // output op
-  print_spice_node();
-
 
   // time dependent
   SolverSpecify::TimeDependent = true;
@@ -994,18 +1120,20 @@ int MixSolverBase::solve_transient()
   if(SolverSpecify::TS_type==SolverSpecify::BDF2)
     SolverSpecify::BDF2_LowerOrder = true;
 
-  // for the first step, dt equals TStep/10
-  SolverSpecify::dt = SolverSpecify::TStep/10;
+  // for the first step, dt equals TStep
+  SolverSpecify::dt = SolverSpecify::TStep;
 
   // transient simulation clock
-  SolverSpecify::clock = SolverSpecify::TStart;
+  SolverSpecify::clock = SolverSpecify::TStart + SolverSpecify::TStep;
 
   MESSAGE<<"Transient compute from "<<SolverSpecify::TStart <<" ps"
-  <<" to "  <<SolverSpecify::TStop<<" ps" <<'\n';
+         <<" to "  <<SolverSpecify::TStop<<" ps" <<'\n';
   RECORD();
 
   // time step counter
   SolverSpecify::T_Cycles=0;
+
+  double dt_dynamic_factor = 1.0;
 
   // set spice circuit
   if(Genius::is_last_processor())
@@ -1023,7 +1151,7 @@ int MixSolverBase::solve_transient()
   do
   {
     MESSAGE
-    <<"t = "<<SolverSpecify::clock<<" ps"<<'\n'
+    <<"t = "<<SolverSpecify::clock/s*1e12<<" ps, "<< "dt = " << SolverSpecify::dt/s*1e12 <<" ps"<< '\n'
     <<"--------------------------------------------------------------------------------\n";
     RECORD();
 
@@ -1044,12 +1172,17 @@ int MixSolverBase::solve_transient()
     else
       this->pre_solve_process(false);
 
+
     // here call Petsc to solve the nonlinear equations
-    sens_solve();
+    snes_solve();
 
     // get the converged reason
     SNESConvergedReason reason;
     SNESGetConvergedReason(snes,&reason);
+
+    // linear solver iteration
+    PetscInt lits;
+    SNESGetLinearSolveIterations(snes, &lits);
 
     //nonlinear solution diverged? try to do recovery
     if(reason<0)
@@ -1113,8 +1246,12 @@ int MixSolverBase::solve_transient()
 
 
       // when r<0.9, reject this solution
-      if(r<0.001)
+      if ( SolverSpecify::RejectStep && r<0.9 && SolverSpecify::dt > SolverSpecify::TStepMin )
       {
+        // clear the counter
+        diverged_retry = 0;
+        autostep_retry++;
+
         MESSAGE <<"------> LTE too large, time step rejected...\n\n\n";
         RECORD();
 
@@ -1133,44 +1270,39 @@ int MixSolverBase::solve_transient()
         if(SolverSpecify::T_Cycles==0 && Genius::is_last_processor())
           _circuit->set_ckt_mode( MODETRAN | MODEINITTRAN );
 
-        goto Predict;
+        continue;
       }
       else      // else, accept this solution
       {
-        // save time step information
-        SolverSpecify::dt_last_last = SolverSpecify::dt_last;
-        SolverSpecify::dt_last = SolverSpecify::dt;
         // set next time step
-        if( r > 10.0 )
-          SolverSpecify::dt *= 2.0;
-        else if( r > 3.0 )
-          SolverSpecify::dt *= 1.5;
-        else if ( r > 1.3 )
-          SolverSpecify::dt *= 1.1;
-        else if ( r > 1.0 )
-          SolverSpecify::dt *= 1.0;
+        if( autostep_retry || diverged_retry)
+        {
+          if ( r > 1.0 )
+            dt_dynamic_factor = 1.0;
+          else
+            dt_dynamic_factor = std::min(r, 0.9);
+          autostep_retry = 0;
+          diverged_retry = 0;
+        }
         else
-          SolverSpecify::dt *= 0.9;
-
-        // limit the max time step to TStepMax
-        if(SolverSpecify::dt > SolverSpecify::TStepMax)
-          SolverSpecify::dt = SolverSpecify::TStepMax;
+        {
+          if ( r > 1.0 )
+            dt_dynamic_factor = 1.0 + log10(r);
+          else
+            dt_dynamic_factor = std::min(r, 0.9);
+        }
       }
     }
     else // auto time step control not used
     {
-      // save time step information
-      SolverSpecify::dt_last_last = SolverSpecify::dt_last;
-      SolverSpecify::dt_last = SolverSpecify::dt;
-
       // set next time step
-      if(fabs(SolverSpecify::dt) < fabs(SolverSpecify::TStep))
-        SolverSpecify::dt *= 1.1;
+      if ( fabs ( SolverSpecify::dt ) < fabs ( SolverSpecify::TStep ) )
+        dt_dynamic_factor = 1.1;
     }
 
     MESSAGE
     <<"--------------------------------------------------------------------------------\n"
-    <<"      "<<SNESConvergedReasons[reason]<<"\n\n\n";
+    <<"      "<<SNESConvergedReasons[reason]<<", total linear iteration " << lits <<"\n\n\n";
     RECORD();
 
 
@@ -1183,6 +1315,21 @@ int MixSolverBase::solve_transient()
     // time step counter ++
     SolverSpecify::T_Cycles++;
 
+    // save time step information
+    SolverSpecify::dt_last_last = SolverSpecify::dt_last;
+    SolverSpecify::dt_last = SolverSpecify::dt;
+
+    // prepare for next time step
+    SolverSpecify::dt *= dt_dynamic_factor;
+
+    // limit the max time step by TStepMin/TStepMax
+    if ( SolverSpecify::dt < SolverSpecify::TStepMin )
+      SolverSpecify::dt = SolverSpecify::TStepMin;
+    if ( SolverSpecify::TStepMax>0 && SolverSpecify::dt > SolverSpecify::TStepMax )
+      SolverSpecify::dt = SolverSpecify::TStepMax;
+
+    // limit time step by field source
+    SolverSpecify::dt = _system.get_field_source()->limit_dt(SolverSpecify::clock, SolverSpecify::dt, SolverSpecify::TStepMin);
 
     // set clock to next time step
     SolverSpecify::clock += SolverSpecify::dt;
@@ -1265,11 +1412,17 @@ int MixSolverBase::solve_transient()
 /*------------------------------------------------------------------
  * snes convergence criteria
  */
-#if PETSC_VERSION_LE(3, 2, 0)
-  #include "private/snesimpl.h"
-  #define SNES_CONVERGED_SNORM_RELATIVE  SNES_CONVERGED_PNORM_RELATIVE
-#else
-  #include "petsc-private/snesimpl.h"
+#if PETSC_VERSION_LT(3, 6, 0)
+  #if PETSC_VERSION_LE(3, 2, 0)
+    #include "private/snesimpl.h"
+    #define SNES_CONVERGED_SNORM_RELATIVE  SNES_CONVERGED_PNORM_RELATIVE
+  #else
+    #include "petsc-private/snesimpl.h"
+  #endif
+#endif
+
+#if PETSC_VERSION_GE(3, 6, 0)
+  #include <petsc/private/snesimpl.h>
 #endif
 void MixSolverBase::petsc_snes_convergence_test(PetscInt its, PetscReal , PetscReal pnorm, PetscReal fnorm, SNESConvergedReason *reason)
 {
@@ -1306,6 +1459,13 @@ void MixSolverBase::petsc_snes_convergence_test(PetscInt its, PetscReal , PetscR
   bool  elec_energy_equation_conv = elec_energy_equation_norm < toler_relax*SolverSpecify::elec_energy_abs_toler;
   bool  hole_energy_equation_conv = hole_energy_equation_norm < toler_relax*SolverSpecify::hole_energy_abs_toler;
 
+  bool div = pnorm > 1e5 ||
+             poisson_norm > SolverSpecify::divergence_factor*SolverSpecify::poisson_abs_toler ||
+             elec_continuity_norm > SolverSpecify::divergence_factor*SolverSpecify::elec_continuity_abs_toler ||
+             hole_continuity_norm > SolverSpecify::divergence_factor*SolverSpecify::hole_continuity_abs_toler ||
+             spice_norm       > SolverSpecify::divergence_factor*SolverSpecify::spice_abs_toler;
+
+
 #ifdef WINDOWS
   MESSAGE.precision(1);
 #else
@@ -1323,7 +1483,7 @@ void MixSolverBase::petsc_snes_convergence_test(PetscInt its, PetscReal , PetscR
   MESSAGE<< hole_energy_equation_norm/W << (hole_energy_equation_conv ? "* " : "  ");
   MESSAGE<< spice_norm/A << (spice_conv ? "* " : "  ");
   MESSAGE<< std::fixed << std::setw(4) << (pnorm==0.0 ? -std::numeric_limits<PetscScalar>::infinity():log10(pnorm))
-      << (pnorm < SolverSpecify::relative_toler ? "*" : " ") << "\n" ;
+    << (pnorm < SolverSpecify::relative_toler ? "*" : " ") << "\n" ;
   RECORD();
   MESSAGE.precision ( 6 );
   MESSAGE<< std::scientific;
@@ -1336,6 +1496,10 @@ void MixSolverBase::petsc_snes_convergence_test(PetscInt its, PetscReal , PetscR
   else if (snes->nfuncs >= snes->max_funcs)
   {
     *reason = SNES_DIVERGED_FUNCTION_COUNT;
+  }
+  else if (its > 4 && div)
+  {
+    *reason = SNES_DIVERGED_FUNCTION_DOMAIN;
   }
 
 
@@ -1354,7 +1518,7 @@ void MixSolverBase::petsc_snes_convergence_test(PetscInt its, PetscReal , PetscR
       {
         *reason = SNES_CONVERGED_FNORM_ABS;
       }
-      else if ( std::abs(fnorm-function_norm)/fnorm <= snes->rtol  &&
+      else if ( std::abs(fnorm-function_norm)/fnorm <=  SolverSpecify::snes_rtol  &&
                 poisson_conv         &&
                 elec_continuity_conv &&
                 hole_continuity_conv &&
@@ -1377,7 +1541,19 @@ void MixSolverBase::petsc_snes_convergence_test(PetscInt its, PetscReal , PetscR
       {
         *reason = SNES_CONVERGED_SNORM_RELATIVE;
       }
+      else if ( fnorm <=  SolverSpecify::spice_abs_toler  &&
+                poisson_conv         &&
+                elec_continuity_conv &&
+                hole_continuity_conv &&
+                spice_conv           &&
+                heat_equation_conv   &&
+                elec_energy_equation_conv &&
+                hole_energy_equation_conv   )
+      {
+        *reason = SNES_CONVERGED_FNORM_ABS;
+      }
     }
+
   }
 
 
@@ -1394,11 +1570,18 @@ void MixSolverBase::petsc_snes_convergence_test(PetscInt its, PetscReal , PetscR
   }
   Parallel::broadcast(ckt_mode, Genius::last_processor_id());
 
+
+  // if ckt_mode, continue newton iteration
   if( ckt_mode )
   {
     *reason = SNES_CONVERGED_ITERATING;
   }
 
+  //in OP mode, should do newton iteration at least once
+  if (!its && SolverSpecify::Type==SolverSpecify::OP)
+  {
+    *reason = SNES_CONVERGED_ITERATING;
+  }
 
   // record function norm of this iteration
   function_norm = fnorm;
@@ -1429,8 +1612,11 @@ void MixSolverBase::petsc_ksp_convergence_test ( PetscInt its, PetscReal rnorm, 
     abstol *= 1e4;
 
   KSPSetTolerances(ksp, rtol, abstol, 1e10, kspit );
-  KSPDefaultConverged ( ksp, its, rnorm, reason, this );
-
+#if PETSC_VERSION_GE(3,5,0)
+  KSPConvergedDefault(ksp, its, rnorm, reason, this);
+#else
+  KSPDefaultConverged(ksp, its, rnorm, reason, this);
+#endif
   // stupid code, but KSPSetTolerances does NOT affect KSPDefaultConverged here!
   // seems KSPDefaultConverged cache the value...
   if(*reason == 0)

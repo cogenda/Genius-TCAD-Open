@@ -110,7 +110,12 @@ public:
   bool read(const std::string &  datafilename, int xColumn, int fColumn) ;
 
 
-
+  /**
+   * set initial value
+   */
+  void set(const std::vector<double> & x , const std::vector<double> & f);
+  
+  
   /**
      @param x x value
 

@@ -28,6 +28,8 @@
 class MediciTIF : public StanfordTIF
 {
 public:
+  
+  MediciTIF() {}
 
   MediciTIF(const std::string & file);
 
@@ -36,8 +38,19 @@ public:
   /// read MediciTIF file
   virtual bool read(std::string &err);
 
+  /**
+   * export to MEDICI TIF file
+   */ 
+  void export_tif(const std::string & file) const;
 
 private:
+
+  std::string _version;
+
+  /// map for solution name format
+  std::map<std::string, std::string> _solution_name_map;
+
+  std::string _solution_name_format( const std::string &) const;
 
 };
 

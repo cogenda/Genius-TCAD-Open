@@ -92,7 +92,14 @@ public:
    */
   void get_sparsity_pattern (std::vector<int> &n_nz, std::vector<int> &n_oz);
 
-
+  
+  /**
+   * get the matrix nonzero pattern. When your \p SparseMatrix<T>
+   * implementation does not need this data simply do
+   * not overload this method.
+   */
+  void get_nonzero_pattern (std::vector< std::vector<int> > & nz);
+  
   /**
    * Release all memory and return
    * to a state just like after
@@ -138,15 +145,38 @@ public:
             const T value);
 
   /**
+   * Add a row to the Sparse matrix.  
+   */
+  void add_row (unsigned int row, 
+                const std::vector<unsigned int> &cols, 
+                const T* dm);
+  
+
+  /**
+   * Add a row to the Sparse matrix.  
+   */
+  void add_row (unsigned int row, 
+                unsigned int n, const unsigned int * cols, 
+                const T* dm);
+                        
+  /**
+   * Add a row to the Sparse matrix.  
+   */
+  void add_row (unsigned int row, 
+                int n, const int * cols, 
+                const T* dm);
+
+  
+  /**
    * Add the full matrix to the
-   * matrix.  This is useful
+   * Petsc matrix.  This is useful
    * for adding an element matrix
    * at assembly time
    */
 
-  void add_matrix (const DenseMatrix<T> &dm,
-                   const std::vector<unsigned int> &rows,
-                   const std::vector<unsigned int> &cols);
+  void add_matrix (const std::vector<unsigned int> &rows,
+                   const std::vector<unsigned int> &cols,
+                   const T* dm);
 
   /**
    * Add the full matrix to the
@@ -154,36 +184,38 @@ public:
    * for adding an element matrix
    * at assembly time
    */
-  void add_matrix (const T* dm,
-                   unsigned int m, unsigned int * rows,
-                   unsigned int n, unsigned int * cols);
+  void add_matrix (unsigned int m, unsigned int * rows,
+                   unsigned int n, unsigned int * cols,
+                   const T* dm);
 
 
   /**
    * Add the source row entries to the destination row
    */
-  void add_row_to_row(const std::vector<unsigned int> &src_rows,
-                      const std::vector<unsigned int> &dst_rows);
+  void add_row_to_row(const std::vector<int> &src_rows,
+                      const std::vector<int> &dst_rows);
 
+                                
   /**
    * clear the given row and fill diag with given value
    */
-  void clear_row(const std::vector<unsigned int> &, const T =T(0.0) ) {}
+  void clear_row(int row, const T diag=T(0.0) ) {}
+  
+  /**
+   * clear the given row and fill diag with given value
+   */
+  void clear_row(const std::vector<int> &, const T =T(0.0) ) {}
 
+  /**
+   * get a local row from Sparse matrix.  
+   */                      
+  void get_row (unsigned int row, int n, const int * cols, T* dm);
+  
   /**
    * Return the value of the entry \p (i,j).
    */
   T operator () (const unsigned int i, const unsigned int j) const { return 0.0; }
 
-  /**
-   * Return the l1-norm of the matrix
-   */
-  Real l1_norm () const { return 0.0; }
-
-  /**
-   * Return the linfty-norm of the matrix
-   */
-  Real linfty_norm () const { return 0.0; }
 
   /**
    * see if  matrix has been closed
@@ -219,6 +251,16 @@ private:
      * index of all the local column entries
      */
     std::vector<unsigned int> j;
+    
+    /**
+     * aij struct is full 
+     */ 
+    bool is_full() const 
+    {
+      for(size_t i=0; i<imax.size(); i++)
+        if( iocp[i] < imax[i] ) return false;
+      return true;                                 
+    }
   };
 
 
@@ -242,43 +284,68 @@ private:
 #endif
 
 private:
+  
+  //-------------------------------------------
 
   /**
-   * approx matrix band width, default is 30
+   * approx matrix on process band width, default is 20
    */
   unsigned int _nz;
 
-
+  
   /**
-   * local entries
+   * approx matrix off process band width, default is 5
    */
-  aij_type _local_entries; 
+  unsigned int _noz;
 
-
+  //-------------------------------------------
+  
   /**
-   * extra local entries
+   * local on processor entries
    */
-  set_type _extra_local_entries;
+  aij_type _on_processor_entries; 
 
 
   /**
-   * off processor entries
+   * extra local on processor entries, when aij_type _on_processor_entries is full, set entries here
+   * in close operation, these entries will be transferred to _on_processor_entries
    */
-  set_type _off_processor_entries;
+  set_type _extra_on_processor_entries;
 
+  //-------------------------------------------
+  
+  /**
+   * local off processor entries
+   */
+  aij_type _off_processor_entries; 
+  
 
   /**
-   * nonlocal entries
+   * extra local off processor entries, when aij_type _off_processor_entries is full, set entries here
+   * in close operation, these entries will be transferred to _off_processor_entries
+   */
+  set_type _extra_off_processor_entries;
+
+  //-------------------------------------------
+
+  /**
+   * nonlocal entries, 
+   * in close operation, these entries will be transferred to other processor
    */
   set_type _nonlocal_entries;
 
 
+  //-------------------------------------------
 
   /**
    * set a entry of sparse matrix
    */
   void _set_entry(unsigned int i, unsigned int j);
 
+  /**
+   * set entry of local aij struct / set struct 
+   */
+  void _set_local_entry(aij_type & aij_entries, set_type & set_entries ,unsigned int i, unsigned int j);
 
   /**
    * set entry of aij struct
@@ -312,11 +379,11 @@ private:
 
 
 //-----------------------------------------------------------------------
-// PetscMatrix inline members
+// SymbolicMatrix inline members
 template <typename T>
 inline SymbolicMatrix<T>::SymbolicMatrix(const unsigned int m,   const unsigned int n,
                                          const unsigned int m_l, const unsigned int n_l)
-  : SparseMatrix<T>(m,n,m_l,n_l), _nz(30), _hash_entry(0), _same_pattern(false), _closed(false)
+  : SparseMatrix<T>(m,n,m_l,n_l), _nz(20), _noz(5), _hash_entry(0), _same_pattern(false), _closed(false)
 {}
 
 

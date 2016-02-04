@@ -20,6 +20,7 @@ ConstanteExprEvalute::ConstanteExprEvalute(const std::string & expr)
   vlist.Add("m",    PhysicalUnit::m,  true);
   vlist.Add("nm",   PhysicalUnit::nm, true);
   vlist.Add("um",   PhysicalUnit::um, true);
+  vlist.Add("mm",   PhysicalUnit::mm, true);
   vlist.Add("J",    PhysicalUnit::J,  true);
   vlist.Add("W",    PhysicalUnit::W,  true);
   vlist.Add("kg",   PhysicalUnit::kg, true);
@@ -76,6 +77,7 @@ ExprEvalute::ExprEvalute(const std::string & expr)
   vlist.Add("m",    PhysicalUnit::m,  true);
   vlist.Add("nm",   PhysicalUnit::nm, true);
   vlist.Add("um",   PhysicalUnit::um, true);
+  vlist.Add("mm",   PhysicalUnit::mm, true);
   vlist.Add("J",    PhysicalUnit::J,  true);
   vlist.Add("W",    PhysicalUnit::W,  true);
   vlist.Add("kg",   PhysicalUnit::kg, true);

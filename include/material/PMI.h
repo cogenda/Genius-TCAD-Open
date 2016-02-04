@@ -30,7 +30,12 @@
 
 #include "parser_parameter.h"   // for parameter calibrating from user input file
 #include "adolc.h" // for automatic differentiation
+#include "atom.h"
 #include "variable_define.h"
+#include "std_ext.h"
+#include "vector_value.h"
+#include "tensor_value.h"
+
 
 using namespace adtl;
 
@@ -211,6 +216,49 @@ struct RefractionItem
 };
 
 
+class RefractionSplineInterp
+{
+public:
+
+  RefractionSplineInterp() {}
+
+  void add_nk_sorted(PetscScalar wavelength, PetscScalar n, PetscScalar k)
+  {
+    _w.push_back(wavelength);
+    _n.push_back(n);
+    _k.push_back(k);
+  }
+
+  std::complex<PetscScalar> nk(PetscScalar wavelength) const
+  {
+    PetscScalar n = std::max(0.0, _eval(wavelength, _w, _n, _npp));
+    PetscScalar k = std::max(0.0, _eval(wavelength, _w, _k, _kpp));
+    return std::complex<PetscScalar> (n, k);
+  }
+
+  void build()
+  {
+    _build(_w, _n, _npp);
+    _build(_w, _k, _kpp);
+  }
+
+private:
+
+  void _build(const std::vector<PetscScalar> &t, const std::vector<PetscScalar> &y, std::vector<PetscScalar> &ypp);
+  PetscScalar _eval(PetscScalar tval, const std::vector<PetscScalar> &t,  const std::vector<PetscScalar> &y, const std::vector<PetscScalar> &ypp) const;
+
+  // data for interpolation
+  std::vector<PetscScalar> _w;
+  std::vector<PetscScalar> _n;
+  std::vector<PetscScalar> _k;
+
+  // precomputed value
+  std::vector<PetscScalar> _npp;
+  std::vector<PetscScalar> _kpp;
+
+};
+
+
 /**
  * PMI_Server, the base class of PMI
  */
@@ -222,9 +270,11 @@ protected:
 
   PetscScalar cm, s, V, C, K;                  // basic unit
 
-  PetscScalar m, um, J, W, kg, g, eV, ps, A, mA, Ohm;    // derived unit
+  PetscScalar m, um, nm, J, W, kg, g, eV, ps, A, mA, Ohm;    // derived unit
 
-  PetscScalar kb, e, me, eps0, mu0, h, hbar;     // hpysical constant
+  PetscScalar kb, e, me, eps0, mu0, h, hbar;     // physical constant
+
+  PetscScalar pi;                                // math constant
 
 protected:
 
@@ -266,7 +316,9 @@ protected:
    */
   std::string PMI_Info;
 
-  std::string _param_string;  
+  std::string _param_string;
+
+  std::string _calibrate_error_info;
 
 public:
   /**
@@ -338,6 +390,11 @@ public:
   std::map<std::string, PARA > & get_parameter_info();
 
   /**
+   * @return the string information of calibrate error
+   */
+  std::string & calibrate_error_info() {return _calibrate_error_info;}
+
+  /**
    * an interface for main code to access the library information in the material database
    */
   const std::string & get_PMI_info();
@@ -375,13 +432,15 @@ class PMIS_Server : public PMI_Server
 {
 private:
   // debug
-  PetscScalar _Na, _Nd, _mole_x, _mole_y;
+  PetscScalar _Na, _Nd, _mole_x, _mole_y, _dmin;
+  TensorValue<PetscScalar> _strain;
 public:
 
   /**
    * constructor
    */
-  PMIS_Server(const PMIS_Environment &env) : PMI_Server(env) {}
+  PMIS_Server(const PMIS_Environment &env)
+  : PMI_Server(env), _Na(0.0), _Nd(0.0), _mole_x(0.0), _mole_y(0.0), _dmin(0.0) {}
 
   /**
    * destructor
@@ -397,6 +456,17 @@ public:
    * set the fake mole environment, debug only
    */
   void SetFakeMoleEnvironment(PetscScalar mole_x, PetscScalar mole_y=0.0);
+
+  /**
+   * set the fake dmin environment, debug only
+   */
+  void SetFakeDminEnvironment(PetscScalar dmin);
+
+
+  /**
+   * set the fake strain environment, debug only
+   */
+  void SetFakeStrainEnvironment(const TensorValue<PetscScalar> &T);
 
   /**
    * aux function return first mole function of current node.
@@ -427,6 +497,16 @@ public:
    * aux function return total Donor concentration of current node
    */
   PetscScalar ReadDopingNd () const;
+
+  /**
+   * aux function return minimal distance to surface
+   */
+  PetscScalar ReadDmin () const;
+
+  /**
+   * aux function return strain tensor
+   */
+  TensorValue<PetscScalar> ReadStrain() const;
 };
 
 
@@ -456,12 +536,17 @@ public:
   /**
    * @return the \p relative \p permittivity of material
    */
-  virtual PetscScalar Permittivity  ()                      const=0;
+  virtual PetscScalar Permittivity  ()                      const  { return 1.0; }
 
   /**
    * @return the \p relative \p permeability of material
    */
-  virtual PetscScalar Permeability  ()                      const=0;
+  virtual PetscScalar Permeability  ()                      const  { return 1.0; }
+
+  /**
+   * @return strain tensor by stress tensor
+   */
+  virtual TensorValue<PetscScalar> Strain(const TensorValue<PetscScalar> & stress) const  { return TensorValue<PetscScalar>(); }
 
   /**
    * @return the affinity energy [eV] of material
@@ -471,7 +556,7 @@ public:
   /**
    * get the atom fraction of this material.
    */
-  virtual void atom_fraction(std::vector<std::string> &atoms, std::vector<double> & fraction) const = 0;
+  virtual void G4Material(std::vector<Atom> &atoms, std::vector<double> & fraction) const = 0;
 };
 
 
@@ -536,6 +621,16 @@ public:
   virtual AutoDScalar EgNarrowToEv   (const AutoDScalar &p, const AutoDScalar &n, const AutoDScalar &Tl) =0;
 
   /**
+   * @return conduction band shift due to strain
+   */
+  virtual PetscScalar dEcStrain   () { return 0.0; }
+
+  /**
+   * @return valence band shift due to strain
+   */
+  virtual PetscScalar dEvStrain   () { return 0.0; }
+
+  /**
    * @return effective electron mass
    */
   virtual PetscScalar EffecElecMass  (const PetscScalar &Tl) =0;
@@ -594,6 +689,12 @@ public:
   virtual AutoDScalar nie            (const AutoDScalar &p, const AutoDScalar &n, const AutoDScalar &Tl) =0;
 
   /**
+   * @return particle energy to elec-hole pare generation rate
+   * @ref Meier, Dirk. CVD diamond sensors for particle detection and tracking. Diss. CERN, 1999.
+   */
+  virtual PetscScalar ParticleQuantumEffect(const PetscScalar &Tl) {return 1.76*eV + 1.84*Eg(Tl);}
+
+  /**
    * @return the ion type by given species, the return value is defined as P-type < 0 and N-type >0
    * each semiconductor material can derive this function
    */
@@ -620,6 +721,10 @@ public:
    */
   virtual AutoDScalar Nd_II          (const AutoDScalar &n, const AutoDScalar &Tl, bool fermi) { return ReadDopingNd (); }
 
+  /**
+   * @return direct Recombination rate
+   */
+  virtual PetscScalar CDIR           (const PetscScalar &Tl) =0;
 
   /**
    * @return electron lift time in SHR Recombination
@@ -631,6 +736,18 @@ public:
    */
   virtual PetscScalar TAUP           (const PetscScalar &Tl) =0;
 
+
+  /**
+   * @return electron Auger Recombination rate
+   */
+  virtual PetscScalar AUGERN           (const PetscScalar &p, const PetscScalar &n, const PetscScalar &Tl) =0;
+
+  /**
+   * @return hole Auger Recombination rate
+   */
+  virtual PetscScalar AUGERP           (const PetscScalar &p, const PetscScalar &n, const PetscScalar &Tl) =0;
+
+
   /**
    * @return electron fit parameter of Density Gradient solver
    */
@@ -640,7 +757,6 @@ public:
    * @return hole fit parameter of Density Gradient solver
    */
   virtual PetscScalar Gammap         () {return 1.0;}
-
 
 
   /**
@@ -756,30 +872,6 @@ public:
    */
   virtual PetscScalar SchottyBarrierLowerring (PetscScalar eps, PetscScalar E)=0;
 
-  /**
-   * @return partial derivatives of electron current at Schottky contact to electron density
-   * may be replaced by AD later
-   */
-  virtual PetscScalar pdSchottyJsn_pdn(PetscScalar n,PetscScalar Tl,PetscScalar Vb)=0;
-
-  /**
-   * @return partial derivatives of hole current at Schottky contact to hole density
-   * may be replaced by AD later
-   */
-  virtual PetscScalar pdSchottyJsp_pdp(PetscScalar p,PetscScalar Tl,PetscScalar Vb)=0;
-
-  /**
-   * @return partial derivatives of electron current at Schottky contact to lattice temperature
-   * may be replaced by AD later
-   */
-  virtual PetscScalar pdSchottyJsn_pdTl(PetscScalar n,PetscScalar Tl,PetscScalar Vb)=0;
-
-  /**
-   * @return partial derivatives of hole current at Schottky contact to lattice temperature
-   * may be replaced by AD later
-   */
-  virtual PetscScalar pdSchottyJsp_pdTl(PetscScalar p,PetscScalar Tl,PetscScalar Vb)=0;
-
 
 
   /**
@@ -804,17 +896,6 @@ public:
    */
   virtual AutoDScalar ThermalVp (AutoDScalar Tl)=0;
 
-  /**
-   * @return partial derivatives of electron thermal emit velocity at hetero-junction to lattice temperature
-   * may be replaced by AD later
-   */
-  virtual PetscScalar pdThermalVn_pdTl (PetscScalar Tl)=0;
-
-  /**
-   * @return partial derivatives of hole thermal emit velocity at hetero-junction to lattice temperature
-   * may be replaced by AD later
-   */
-  virtual PetscScalar pdThermalVp_pdTl (PetscScalar Tl)=0;
 
 
 
@@ -1307,19 +1388,34 @@ public:
   virtual AutoDScalar Conductance   (const AutoDScalar &Tl, const AutoDScalar &E)  const=0;
 
   /**
+   * @return the radiative generation rate #/cm^-3/rad, also consider recombination yield under E field
+   */
+  virtual PetscScalar RadGenRate   (const PetscScalar &E) const=0;
+
+  /**
    * @return the radiation induced conductance of material, DRate in the unit of Gy/s
    */
   virtual PetscScalar RadConductance   (const PetscScalar &DRate)  const=0;
 
   /**
-   * @return the mobility of material
+   * @return the electron mobility of material
    */
-  virtual PetscScalar Mobility   (const PetscScalar &Tl) const=0;
+  virtual PetscScalar ElecMobility   (const PetscScalar &Tl) const=0;
+
+  /**
+   * @return the hole mobility of material
+   */
+  virtual PetscScalar HoleMobility   (const PetscScalar &Tl) const=0;
+
+  /**
+   * @return the H+ mobility of material
+   */
+  virtual PetscScalar HIonMobility   (const PetscScalar &Tl) const { return 0.0; }
 
   /**
    * get the atom fraction of this material.
    */
-  virtual void atom_fraction(std::vector<std::string> &atoms, std::vector<double> & fraction) const = 0;
+  virtual void G4Material(std::vector<Atom> &atoms, std::vector<double> & fraction) const = 0;
 };
 
 
@@ -1348,15 +1444,106 @@ class PMII_BandStructure : public PMII_Server
   virtual PetscScalar Eg             (const PetscScalar &Tl) const = 0;
 
   /**
+   * @return particle energy to elec-hole pare generation rate
+   */
+  virtual PetscScalar ParticleQuantumEffect(const PetscScalar &Tl) const {return 3.0*Eg(Tl);}
+
+  /**
+   * @return effective electron mass
+   */
+  virtual PetscScalar EffecElecMass  (const PetscScalar &Tl) const=0;
+
+  /**
+   * @return effective hole mass
+   */
+  virtual PetscScalar EffecHoleMass  (const PetscScalar &Tl) const=0;
+
+
+  /**
+   * @return trapA density
+   */
+  virtual PetscScalar TrapADensity() const { return 0.0; }
+
+  /**
+   * @return electron trapA capture cross section
+   */
+  virtual PetscScalar TrapACaptureElecCS(const PetscScalar &Tl) const { return 0.0; }
+
+  /**
+   * @return hole trapA capture cross section
+   */
+  virtual PetscScalar TrapACaptureHoleCS(const PetscScalar &Tl) const { return 0.0; }
+
+
+  /**
+   * @return trapB density
+   */
+  virtual PetscScalar TrapBDensity() const { return 0.0; }
+
+  /**
+   * @return electron trapB capture cross section
+   */
+  virtual PetscScalar TrapBCaptureElecCS(const PetscScalar &Tl) const { return 0.0; }
+
+  /**
+   * @return hole trapB capture cross section
+   */
+  virtual PetscScalar TrapBCaptureHoleCS(const PetscScalar &Tl) const { return 0.0; }
+
+  /**
+   * @return H+ trapB release rate
+   */
+  virtual PetscScalar TrapBReleaseHIonRate(const PetscScalar &Tl) const { return 0.0; }
+
+
+  /**
+   * @return interface state density
+   */
+  virtual PetscScalar InterfaceStateDensity() const { return 0.0; }
+
+  /**
+   * @return H+ interface reaction cross section
+   */
+  virtual PetscScalar HIonInterfaceTrapCS(const PetscScalar &Tl) const { return 0.0; }
+
+  /**
+   * @return electron fit parameter of Density Gradient solver
+   */
+  virtual PetscScalar Gamman         () const {return 1.0;}
+
+  /**
+   * @return hole fit parameter of Density Gradient solver
+   */
+  virtual PetscScalar Gammap         () const {return 1.0;}
+
+
+  /**
+   * @return electron Richardson constant
+   */
+  virtual PetscScalar ARichardson() const = 0;
+
+
+  /**
+   * @return electron Richardson constant
+   */
+  virtual PetscScalar ElecInject(const PetscScalar &W, const PetscScalar &E, const PetscScalar &Tl) const {return 0.0;}
+
+  /**
+   * @return electron Richardson constant
+   */
+  virtual AutoDScalar ElecInject(const AutoDScalar &W, const AutoDScalar &E, const AutoDScalar &Tl) const {return 0.0;}
+
+
+  /**
    * Hot Carrier Injection: effective semiconductor-insulator interface barrier to electron
    */
-  virtual PetscScalar HCI_Barrier_n(const PetscScalar &affinity_semi, const PetscScalar & Eg_semi,
+  virtual PetscScalar HCI_Barrier_n(const PetscScalar &affinity_semi, const PetscScalar & Eg_semi, const PetscScalar &affinity_ins,
                                     const PetscScalar &t_ins, const PetscScalar &E_ins) const = 0;
 
   /**
    * Hot Carrier Injection: effective semiconductor-insulator interface barrier to hole
    */
-  virtual PetscScalar HCI_Barrier_p(const PetscScalar &affinity_semi, const PetscScalar & Eg_semi,
+  virtual PetscScalar HCI_Barrier_p(const PetscScalar &affinity_semi, const PetscScalar & Eg_semi, const PetscScalar &affinity_ins,
                                     const PetscScalar &t_ins, const PetscScalar &E_ins) const = 0;
 
   /**
@@ -1568,7 +1755,17 @@ public:
    * @return the electrical conductance of material
    */
   virtual PetscScalar Conductance   ()                      const=0;
-
+   
+  /**
+   * @return the current density under given E and Tl
+   */ 
+  virtual PetscScalar CurrentDensity(const PetscScalar &E, const PetscScalar &Tl) const=0; 
+     
+  /**
+   * @return the current density under given E and Tl
+   */ 
+  virtual AutoDScalar CurrentDensity(const AutoDScalar &E, const AutoDScalar &Tl) const=0; 
+  
   /**
    * @return the thermal emit velocity of material
    */
@@ -1577,7 +1774,7 @@ public:
   /**
    * get the atom fraction of this material.
    */
-  virtual void atom_fraction(std::vector<std::string> &atoms, std::vector<double> & fraction) const = 0;
+  virtual void G4Material(std::vector<Atom> &atoms, std::vector<double> & fraction) const = 0;
 
 };
 
@@ -1722,7 +1919,7 @@ public:
   /**
    * get the atom fraction of this material.
    */
-  virtual void atom_fraction(std::vector<std::string> &atoms, std::vector<double> & fraction) const = 0;
+  virtual void G4Material(std::vector<Atom> &atoms, std::vector<double> & fraction) const = 0;
 
 };
 
@@ -1860,7 +2057,7 @@ public:
   /**
    * get the atom fraction of this material.
    */
-  virtual void atom_fraction(std::vector<std::string> &atoms, std::vector<double> & fraction) const = 0;
+  virtual void G4Material(std::vector<Atom> &atoms, std::vector<double> & fraction) const = 0;
 
 };
 

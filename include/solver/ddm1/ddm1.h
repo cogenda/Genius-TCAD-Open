@@ -104,6 +104,7 @@ public:
       case SchottkyContact   :
       case SimpleGateContact :
       case GateContact       :
+      case PolyGateContact   :
       case SolderPad         :
       case ChargeIntegral    :
       case InterConnect      : return 1; // the above bcs has one extra equation
@@ -123,7 +124,8 @@ public:
       case SchottkyContact   :
       case SimpleGateContact :
       case SolderPad         :
-      case GateContact       :  return 2; // the above bc equation has a max bandwidth of 2
+      case GateContact       :
+      case PolyGateContact   :  return 2; // the above bc equation has a max bandwidth of 2
       case ChargedContact    :  return 1; // this bc equation has a bandwidth of 1
       case InterConnect      :  return bc->inter_connect().size()+1;
       case ChargeIntegral    :  return bc->inter_connect().size()+1;
@@ -144,6 +146,7 @@ public:
       case SimpleGateContact : return 1; // displacement current
       case SolderPad         : return 1; // conductance current
       case GateContact       : return 1; // displacement current
+      case PolyGateContact   : return 1; // displacement current
       case ChargedContact    : return 1; // for electrostatic Gauss's law
       default: return 0;
     }
@@ -187,14 +190,7 @@ public:
    */
   virtual void sens_line_search_pre_check(Vec x, Vec y, PetscBool *changed_y)
   {
-    switch( SolverSpecify::Damping )
-    {
-      case SolverSpecify::DampingPotential      : potential_damping(x, y, changed_y); break;
-      case SolverSpecify::DampingBankRose       : bank_rose_damping(x, y, changed_y); break;
-      default: break;
-    }
-
-    FVM_NonlinearSolver::sens_line_search_pre_check(x, y, changed_y);
+    FVM_FlexNonlinearSolver::sens_line_search_pre_check(x, y, changed_y);
   }
 
 
@@ -203,8 +199,13 @@ public:
    */
   virtual void sens_line_search_post_check(Vec x, Vec y, Vec w, PetscBool *changed_y, PetscBool *changed_w)
   {
-    check_positive_density(x, y, w, changed_y, changed_w);
-    FVM_NonlinearSolver::sens_line_search_post_check(x, y, w, changed_y, changed_w);
+    switch( SolverSpecify::Damping )
+    {
+      case SolverSpecify::DampingPotential      : potential_damping(x, y, w, changed_y, changed_w); break;
+      default: check_positive_density(x, y, w, changed_y, changed_w);
+    }
+  
+    FVM_FlexNonlinearSolver::sens_line_search_post_check(x, y, w, changed_y, changed_w);
   }
 
 
@@ -238,12 +239,13 @@ private:
   /**
    * Potential Newton damping scheme
    */
-  void potential_damping(Vec x, Vec y, PetscBool *changed_y);
+  void potential_damping(Vec x, Vec y, Vec w, PetscBool *changed_y, PetscBool *changed_w);
 
   /**
    * Bank-Rose Newton damping scheme
    */
-  void bank_rose_damping(Vec x, Vec y, PetscBool *changed_y);
+  void bank_rose_damping(Vec x, Vec y, Vec w, PetscBool *changed_y, PetscBool *changed_w);
+
 
   /**
    * check for positive carrier density

@@ -36,6 +36,7 @@ VTKHook::VTKHook ( SolverBase & solver, const std::string & name, void * param)
       _ddm ( false ), _mixA ( false ), _ddm_ac ( false )
 {
   this->count  =0;
+
   this->_t_step=0;
   this->_f_step=0;
   this->_v_step=0;
@@ -45,16 +46,30 @@ VTKHook::VTKHook ( SolverBase & solver, const std::string & name, void * param)
   this->_v_last=0;
   this->_i_last=0;
 
+  this->lag_count = 0;
+  this->lag    = 1;
+
+  this->_t_start=0;
+  this->_t_stop =std::numeric_limits<double>::infinity();
+
+
   const std::vector<Parser::Parameter> & parm_list = *((std::vector<Parser::Parameter> *)param);
   for ( std::vector<Parser::Parameter>::const_iterator parm_it = parm_list.begin();
         parm_it != parm_list.end(); parm_it++ )
   {
+    if ( parm_it->name() == "lag" && parm_it->type() == Parser::INTEGER )
+      lag=parm_it->get_int();
     if ( parm_it->name() == "tstep" && parm_it->type() == Parser::REAL )
       _t_step=parm_it->get_real() * PhysicalUnit::s;
     if ( parm_it->name() == "vstep" && parm_it->type() == Parser::REAL )
       _v_step=parm_it->get_real() * PhysicalUnit::V;
     if ( parm_it->name() == "istep" && parm_it->type() == Parser::REAL )
       _i_step=parm_it->get_real() * PhysicalUnit::A;
+
+    if ( parm_it->name() == "tstart" && parm_it->type() == Parser::REAL )
+      _t_start=parm_it->get_real() * PhysicalUnit::s;
+    if ( parm_it->name() == "tstop" && parm_it->type() == Parser::REAL )
+      _t_stop=parm_it->get_real() * PhysicalUnit::s;
   }
 
   const SimulationSystem &system = get_solver().get_system();
@@ -110,27 +125,13 @@ void VTKHook::pre_solve()
  */
 void VTKHook::post_solve()
 {
+  if((lag_count++)%lag!=0) return;
 
   std::ostringstream vtk_filename;
+
   if ( SolverSpecify::Type==SolverSpecify::DCSWEEP && SolverSpecify::Electrode_VScan.size() )
   {
-    double Vscan = 0;
-
-    // DDM solver
-    if ( _ddm )
-    {
-      const BoundaryConditionCollector * bcs = _solver.get_system().get_bcs();
-      const BoundaryCondition * bc = bcs->get_bc ( SolverSpecify::Electrode_VScan[0] );
-      Vscan = bc->ext_circuit()->Vapp();
-    }
-
-    // MIXA solver
-    if ( _mixA )
-    {
-      SPICE_CKT * spice_ckt = _solver.get_system().get_circuit();
-      Vscan = spice_ckt->get_voltage_from_sync ( SolverSpecify::Electrode_VScan[0] );
-    }
-
+    double Vscan = SolverSpecify::Electrode_VScan_Voltage;
 
     if ( std::fabs ( Vscan - this->_v_last ) >= this->_v_step )
     {
@@ -146,22 +147,7 @@ void VTKHook::post_solve()
 
   if ( SolverSpecify::Type==SolverSpecify::DCSWEEP && SolverSpecify::Electrode_IScan.size() )
   {
-    double Iscan = 0;
-
-    // DDM solver
-    if ( _ddm )
-    {
-      const BoundaryConditionCollector * bcs = _solver.get_system().get_bcs();
-      const BoundaryCondition * bc = bcs->get_bc ( SolverSpecify::Electrode_IScan[0] );
-      Iscan = bc->ext_circuit()->Iapp();
-    }
-
-    // MIXA solver
-    if ( _mixA )
-    {
-      SPICE_CKT * spice_ckt = _solver.get_system().get_circuit();
-      Iscan = spice_ckt->get_current_from_sync ( SolverSpecify::Electrode_IScan[0] );
-    }
+    double Iscan = SolverSpecify::Electrode_IScan_Current;
 
     if ( std::fabs ( Iscan - this->_i_last ) >= this->_i_step )
     {
@@ -194,16 +180,21 @@ void VTKHook::post_solve()
 
   if ( SolverSpecify::Type==SolverSpecify::TRANSIENT )
   {
-    if ( SolverSpecify::clock - this->_t_last >= this->_t_step )
+    // restart
+    if(SolverSpecify::clock < this->_t_last) this->_t_last = SolverSpecify::clock;
+
+    if(SolverSpecify::clock >= _t_start && SolverSpecify::clock <= _t_stop )
     {
-      const SimulationSystem &system = get_solver().get_system();
+      if ( SolverSpecify::clock - this->_t_last >= this->_t_step )
+      {
+        const SimulationSystem &system = get_solver().get_system();
 
-      vtk_filename << _vtk_prefix << ( this->count++ ) << ".vtu";
-      system.export_vtk ( vtk_filename.str(), false );
+        vtk_filename << _vtk_prefix << ( this->count++ ) << ".vtu";
+        system.export_vtk ( vtk_filename.str(), false );
 
-      time_sequence.push_back ( std::make_pair ( SolverSpecify::clock/PhysicalUnit::ps, vtk_filename.str() ) );
-      _t_last = SolverSpecify::clock;
-
+        time_sequence.push_back ( std::make_pair ( SolverSpecify::clock/PhysicalUnit::ps, vtk_filename.str() ) );
+        _t_last = SolverSpecify::clock;
+      }
     }
   }
 

@@ -189,4 +189,21 @@ inline AutoDScalar In_uw(PetscScalar , const AutoDScalar &dVc,const AutoDScalar 
     return n1*dVc/h;
 }
 
+inline PetscScalar Ip_uw(PetscScalar ,PetscScalar dVv,PetscScalar p1,PetscScalar p2,PetscScalar h)
+{
+  if(dVv >0)
+    return p1*dVv/h;
+  else
+    return p2*dVv/h;
+}
+
+inline AutoDScalar Ip_uw(PetscScalar , const AutoDScalar &dVv,const AutoDScalar &p1,const AutoDScalar &p2, PetscScalar h)
+{
+  if(dVv >0)
+    return p1*dVv/h;
+  else
+    return p2*dVv/h;
+}
+
+
 #endif // #define __flux1_h__

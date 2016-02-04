@@ -98,8 +98,14 @@ public:
   /**
    * add spice matrix to petsc matrix
    */
-  void build_spice_jacobian(PetscScalar *lxx, Mat *jac, InsertMode &add_value_flag);
+  void build_spice_jacobian(PetscScalar *lxx, SparseMatrix<PetscScalar> *jac, InsertMode &add_value_flag);
 
+  /**
+   * compute the common mode voltage of all the electrode,
+   * should subtract this value before simulation
+   * and add it back after simulation
+   */
+  virtual PetscReal common_model_voltage() const;
 
   /**
    * output information about spice node

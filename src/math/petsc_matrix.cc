@@ -21,13 +21,12 @@
 // C++ includes
 #include "config.h"
 
-#include <map>
 
 #ifdef HAVE_PETSC
 
 // Local includes
 #include "petsc_matrix.h"
-#include "dense_matrix.h"
+#include "parallel.h"
 
 
 
@@ -38,47 +37,32 @@
 // PetscMatrix inline members
 template <typename T>
 PetscMatrix<T>::PetscMatrix(const unsigned int m,   const unsigned int n,
-                            const unsigned int m_l, const unsigned int n_l,
-                            const std::vector<int> &n_nz, const std::vector<int> &n_oz)
-  : SparseMatrix<T>(m,n,m_l,n_l), _add_value_flag(NOT_SET_VALUES), _destroy_mat_on_exit(true)
+                            const unsigned int m_l, const unsigned int n_l)
+  : SparseMatrix<T>(m,n,m_l,n_l), 
+    _mat_buf_mode(true), 
+    _add_value_flag(NOT_SET_VALUES), 
+    _closed(false), 
+    _destroy_mat_on_exit(false)
 {
   if ((m==0) || (n==0))
     return;
-
-  int ierr     = 0;
-  int m_global = static_cast<int>(m);
-  int n_global = static_cast<int>(n);
-  int m_local  = static_cast<int>(m_l);
-  int n_local  = static_cast<int>(n_l);
-
+  
+   _mat_local.resize(m_l);
+  
+  int ierr = 0;
   ierr = MatCreate(PETSC_COMM_WORLD,&_mat); genius_assert(!ierr);
-  ierr = MatSetSizes(_mat, m_local, n_local, m_global, n_global); genius_assert(!ierr);
+  ierr = MatSetSizes(_mat, m_l, n_l, m, n); genius_assert(!ierr);
 
   // create a sequential matrix on one processor
-  if ((m_l == m) && (n_l == n))
+  if (Genius::n_processors()==1)
   {
     ierr = MatSetType(_mat, MATSEQAIJ); genius_assert(!ierr);
-    // alloc memory for sequence matrix here
-    ierr = MatSeqAIJSetPreallocation(_mat, 0, &n_nz[0]); genius_assert(!ierr);
   }
   else
   {
     ierr = MatSetType(_mat, MATMPIAIJ); genius_assert(!ierr);
-    // alloc memory for parallel matrix here
-    ierr = MatMPIAIJSetPreallocation(_mat, 0, &n_nz[0], 0, &n_oz[0]); genius_assert(!ierr);
   }
-
-  // indicates when PetscUtils::MatZeroRows() is called the zeroed entries are kept in the nonzero structure
-#if PETSC_VERSION_GE(3,1,0)
-  ierr = MatSetOption(_mat, MAT_KEEP_NONZERO_PATTERN, PETSC_TRUE); genius_assert(!ierr);
-#endif
-
-#if PETSC_VERSION_EQ(3,0,0)
-  ierr = MatSetOption(_mat, MAT_KEEP_ZEROED_ROWS, PETSC_TRUE); genius_assert(!ierr);
-#endif
-
-  ierr = MatSetFromOptions(_mat); genius_assert(!ierr);
-
+  
   SparseMatrix<T>::_is_initialized = true;
 }
 
@@ -90,15 +74,32 @@ PetscMatrix<T>::~PetscMatrix()
 }
 
 
+
+  
+  
+  
 template <typename T>
 void PetscMatrix<T>::set (const unsigned int i, const unsigned int j, const T value)
 {
   genius_assert (this->initialized());
   genius_assert (_add_value_flag==INSERT_VALUES || _add_value_flag==NOT_SET_VALUES);
-
-  int ierr=0, i_val=i, j_val=j;
-  PetscScalar petsc_value = static_cast<PetscScalar>(value);
-  ierr = MatSetValues(_mat, 1, &i_val, 1, &j_val, &petsc_value, INSERT_VALUES); genius_assert(!ierr);
+  
+  if(_mat_buf_mode)
+  {
+    if( SparseMatrix<T>::row_on_processor(i) )
+      _mat_local[i-SparseMatrix<T>::_global_offset][j] = value;
+    else 
+      _mat_nonlocal[std::make_pair(i,j)] = value;
+  }
+  else
+  {
+    int ierr=0, i_val=i, j_val=j;
+    PetscScalar petsc_value = static_cast<PetscScalar>(value);
+    ierr = MatSetValues(_mat, 1, &i_val, 1, &j_val, &petsc_value, INSERT_VALUES); genius_assert(!ierr);
+  }
+  
+  _closed = false;
+  _add_value_flag=INSERT_VALUES;
 }
 
 
@@ -109,54 +110,192 @@ void PetscMatrix<T>::add (const unsigned int i, const unsigned int j, const T va
   genius_assert (this->initialized());
   genius_assert (_add_value_flag==ADD_VALUES || _add_value_flag==NOT_SET_VALUES);
 
-  int ierr=0, i_val=i, j_val=j;
-  PetscScalar petsc_value = static_cast<PetscScalar>(value);
-  ierr = MatSetValues(_mat, 1, &i_val, 1, &j_val, &petsc_value, ADD_VALUES); genius_assert(!ierr);
-}
-
-
-template <typename T>
-void PetscMatrix<T>::add_matrix(const DenseMatrix<T>& dm,
-                                const std::vector<unsigned int>& rows,
-                                const std::vector<unsigned int>& cols)
-{
-  genius_assert (this->initialized());
-  genius_assert (_add_value_flag==ADD_VALUES || _add_value_flag==NOT_SET_VALUES);
-
-  const unsigned int m = dm.m();
-  const unsigned int n = dm.n();
-
-  genius_assert (rows.size() == m);
-  genius_assert (cols.size() == n);
-
-  int ierr=0;
-
-  ierr = MatSetValues(_mat,
-                      m, (int*) &rows[0],
-                      n, (int*) &cols[0],
-                      (PetscScalar*) &dm.get_values()[0],
-                      ADD_VALUES);
-  genius_assert(!ierr);
+  if(_mat_buf_mode)
+  {
+    if( SparseMatrix<T>::row_on_processor(i) )
+      _mat_local[i-SparseMatrix<T>::_global_offset][j] += value;
+    else 
+      _mat_nonlocal[std::make_pair(i,j)] += value;
+  }
+  else
+  {
+    int ierr=0, i_val=i, j_val=j;
+    PetscScalar petsc_value = static_cast<PetscScalar>(value);
+    ierr = MatSetValues(_mat, 1, &i_val, 1, &j_val, &petsc_value, ADD_VALUES); genius_assert(!ierr);
+  }
+  _closed = false;
+  _add_value_flag=ADD_VALUES;
 }
 
 
 
 template <typename T>
-void PetscMatrix<T>::add_matrix (const T* dm,
-                   unsigned int m, unsigned int * rows,
-                   unsigned int n, unsigned int * cols)
+void PetscMatrix<T>::add_row (unsigned int row, const std::vector<unsigned int> &cols, const T* dm)
 {
   genius_assert (this->initialized());
   genius_assert (_add_value_flag==ADD_VALUES || _add_value_flag==NOT_SET_VALUES);
 
-  int ierr=0;
+  if(_mat_buf_mode)
+  {
+    if( SparseMatrix<T>::row_on_processor(row) )
+    {
+      for(unsigned int j=0; j<cols.size(); j++)
+         _mat_local[row-SparseMatrix<T>::_global_offset][cols[j]] += dm[j];
+    }
+    else
+    {
+      for(unsigned int j=0; j<cols.size(); j++)
+        _mat_nonlocal[std::make_pair(row,cols[j])] += dm[j];
+    }
+  }
+  else
+  {
+    int ierr=0;
 
-  ierr = MatSetValues(_mat,
-                      m, (int*) rows,
-                      n, (int*) cols,
-                      (PetscScalar*) dm,
-                      ADD_VALUES);
-  genius_assert(!ierr);
+    ierr = MatSetValues(_mat, 1, (int*) &row, cols.size(), (int*) &cols[0], (PetscScalar*) dm, ADD_VALUES);
+    genius_assert(!ierr);
+  }
+  
+  _closed = false;
+  _add_value_flag=ADD_VALUES;
+}
+
+template <typename T>
+void PetscMatrix<T>::add_row (unsigned int row, unsigned int n, const unsigned int * cols, const T* dm)
+{
+  genius_assert (this->initialized());
+  genius_assert (_add_value_flag==ADD_VALUES || _add_value_flag==NOT_SET_VALUES);
+
+  if(_mat_buf_mode)
+  {
+    if( SparseMatrix<T>::row_on_processor(row) )
+    {
+      for(unsigned int j=0; j<n; j++)
+         _mat_local[row-SparseMatrix<T>::_global_offset][cols[j]] += dm[j];
+    }
+    else
+    {
+      for(unsigned int j=0; j<n; j++)
+        _mat_nonlocal[std::make_pair(row,cols[j])] += dm[j];
+    }
+  }
+  else
+  {
+    int ierr=0;
+
+    ierr = MatSetValues(_mat, 1, (int*) &row, n, (int*) &cols[0], (PetscScalar*) dm, ADD_VALUES);
+    genius_assert(!ierr);
+  }
+  
+  _closed = false;
+  _add_value_flag=ADD_VALUES;
+}
+
+
+template <typename T>
+void PetscMatrix<T>::add_row (unsigned int row, int n, const int * cols, const T* dm)
+{
+  genius_assert (this->initialized());
+  genius_assert (_add_value_flag==ADD_VALUES || _add_value_flag==NOT_SET_VALUES);
+
+  if(_mat_buf_mode)
+  {
+    if( SparseMatrix<T>::row_on_processor(row) )
+    {
+      for(int j=0; j<n; j++)
+         _mat_local[row-SparseMatrix<T>::_global_offset][cols[j]] += dm[j];
+    }
+    else
+    {
+      for(int j=0; j<n; j++)
+        _mat_nonlocal[std::make_pair(row,cols[j])] += dm[j];
+    }
+  }
+  else
+  {
+    int ierr=0;
+
+    ierr = MatSetValues(_mat, 1, (int*) &row, n, (int*) &cols[0], (PetscScalar*) dm, ADD_VALUES);
+    genius_assert(!ierr);
+  }
+  
+  _closed = false;
+  _add_value_flag=ADD_VALUES;
+}
+
+
+template <typename T>
+void PetscMatrix<T>::add_matrix(const std::vector<unsigned int>& rows,
+                                const std::vector<unsigned int>& cols,
+                                const T* dm)
+{
+  genius_assert (this->initialized());
+  genius_assert (_add_value_flag==ADD_VALUES || _add_value_flag==NOT_SET_VALUES);
+
+  const unsigned int m = rows.size();
+  const unsigned int n = cols.size();
+
+  if(_mat_buf_mode)
+  {
+    for(unsigned int i=0; i<m; i++)
+    {
+      if( SparseMatrix<T>::row_on_processor(rows[i]) )
+      {
+        for(unsigned int j=0; j<n; j++)
+          _mat_local[rows[i]-SparseMatrix<T>::_global_offset][cols[j]] += dm[i*n+j];
+      }
+      else
+        for(unsigned int j=0; j<n; j++)
+          _mat_nonlocal[std::make_pair(rows[i],cols[j])] += dm[i*n+j];
+    }
+  }
+  else
+  {
+    int ierr=0;
+
+    ierr = MatSetValues(_mat, m, (int*) &rows[0], n, (int*) &cols[0], (PetscScalar*) dm, ADD_VALUES);
+    genius_assert(!ierr);
+  }
+  
+  _closed = false;
+  _add_value_flag=ADD_VALUES;
+}
+
+
+
+
+template <typename T>
+void PetscMatrix<T>::add_matrix (unsigned int m, unsigned int * rows,
+                                 unsigned int n, unsigned int * cols,
+                                 const T* dm)
+{
+  genius_assert (this->initialized());
+  genius_assert (_add_value_flag==ADD_VALUES || _add_value_flag==NOT_SET_VALUES);
+
+  if(_mat_buf_mode)
+  {
+    for(unsigned int i=0; i<m; i++)
+    {
+      if( SparseMatrix<T>::row_on_processor(rows[i]) )
+      {
+        for(unsigned int j=0; j<n; j++)
+          _mat_local[rows[i]-SparseMatrix<T>::_global_offset][cols[j]] += dm[i*n+j];
+      }
+      else
+        for(unsigned int j=0; j<n; j++)
+          _mat_nonlocal[std::make_pair(rows[i],cols[j])] += dm[i*n+j];
+    }
+  }
+  else
+  {
+    int ierr=0;
+
+    ierr = MatSetValues(_mat, m, (int*) &rows[0], n, (int*) &cols[0], (PetscScalar*) dm, ADD_VALUES);
+    genius_assert(!ierr);
+  }
+  
+  _closed = false;
+  _add_value_flag=ADD_VALUES;
 }
 
 
@@ -167,12 +306,21 @@ bool PetscMatrix<T>::closed() const
 {
   genius_assert (this->initialized());
 
-  int ierr=0;
-  PetscBool assembled;
+  if(_mat_buf_mode)
+  {
+    return _closed;
+  }
+  else 
+  {
+    int ierr=0;
+    PetscBool assembled;
 
-  ierr = MatAssembled(_mat, &assembled);
+    ierr = MatAssembled(_mat, &assembled);
 
-  return (assembled == PETSC_TRUE);
+    return (assembled == PETSC_TRUE);
+  }
+  
+  return _closed;
 }
 
 
@@ -186,19 +334,54 @@ void PetscMatrix<T>::init ()
 
 
 template <typename T>
-void PetscMatrix<T>::close (bool )
+void PetscMatrix<T>::close (bool final)
 {
-  // BSK - 1/19/2004
-  // strictly this check should be OK, but it seems to
-  // fail on matrix-free matrices.  Do they falsely
-  // state they are assembled?  Check with the developers...
-  //   if (this->closed())
-  //     return;
+  if(_mat_buf_mode)
+  {
+    unsigned int nonlocal_entries = _mat_nonlocal.size();
+    Parallel::sum(nonlocal_entries);
+    if(nonlocal_entries)
+    {
+      std::vector<unsigned int> rows;
+      std::vector<unsigned int> cols;
+      std::vector<T> values;
+      for(typename std::map< std::pair<unsigned int, unsigned int>, T >::const_iterator it =_mat_nonlocal.begin(); 
+        it !=_mat_nonlocal.end(); ++it)
+      {
+        rows.push_back(it->first.first);
+        cols.push_back(it->first.second);
+        values.push_back(it->second);
+      }
+    
+      _mat_nonlocal.clear();
+    
+      Parallel::allgather(rows);
+      Parallel::allgather(cols);
+      Parallel::allgather(values);
+    
+      for(unsigned int n=0; n<rows.size(); ++n)
+      {
+        unsigned int row = rows[n];
+        if( !SparseMatrix<T>::row_on_processor(row) ) continue;
 
-  int ierr=0;
-
-  ierr = MatAssemblyBegin (_mat, MAT_FINAL_ASSEMBLY);
-  ierr = MatAssemblyEnd   (_mat, MAT_FINAL_ASSEMBLY);
+        unsigned int col = cols[n];
+        T value = values[n];
+        _mat_local[row-SparseMatrix<T>::_global_offset][col] += value;
+      }
+    }
+    
+    _closed = true;
+    
+    if(final) flush_buf();
+  }
+  else
+  {
+    int ierr=0;
+    ierr = MatAssemblyBegin (_mat, MAT_FINAL_ASSEMBLY);
+    ierr = MatAssemblyEnd   (_mat, MAT_FINAL_ASSEMBLY);
+  }
+  
+  
 }
 
 
@@ -206,11 +389,26 @@ void PetscMatrix<T>::close (bool )
 template <typename T>
 void PetscMatrix<T>::zero ()
 {
-  genius_assert (this->initialized());
+  if(_mat_buf_mode)
+  {
+    for(size_t n=0; n<_mat_local.size(); ++n)
+    {
+      std::map<unsigned int, T> & cols = _mat_local[n];
+      for(typename std::map<unsigned int, T>::iterator it=cols.begin(); it!=cols.end(); it++)
+        it->second = 0.0;
+    }
+    
+    for(typename std::map< std::pair<unsigned int, unsigned int>, T >::iterator it= _mat_nonlocal.begin();it!=_mat_nonlocal.end(); it++)
+      it->second = 0.0;  
+  }
+  else
+  {
+    genius_assert (this->initialized());
 
-  int ierr=0;
+    int ierr=0;
 
-  ierr = MatZeroEntries(_mat);
+    ierr = MatZeroEntries(_mat);
+  }
 }
 
 
@@ -218,6 +416,9 @@ void PetscMatrix<T>::zero ()
 template <typename T>
 void PetscMatrix<T>::clear ()
 {
+  _mat_local.clear();
+  _mat_nonlocal.clear();
+  
   int ierr=0;
 
   if ((this->initialized()) && (this->_destroy_mat_on_exit))
@@ -226,46 +427,25 @@ void PetscMatrix<T>::clear ()
 
     this->_is_initialized = false;
   }
+
 }
 
 
-
 template <typename T>
-Real PetscMatrix<T>::l1_norm () const
+void PetscMatrix<T>::get_row (unsigned int row, int n, const int * cols, T* dm)
 {
-  genius_assert (this->initialized());
-
-  int ierr=0;
-  PetscReal petsc_value;
-  Real value;
-
-  genius_assert (this->closed());
-
-  ierr = MatNorm(_mat, NORM_1, &petsc_value);
-
-  value = static_cast<Real>(petsc_value);
-
-  return value;
-}
-
-
-
-template <typename T>
-Real PetscMatrix<T>::linfty_norm () const
-{
-  genius_assert (this->initialized());
-
-  int ierr=0;
-  PetscReal petsc_value;
-  Real value;
-
-  genius_assert (this->closed());
-
-  ierr = MatNorm(_mat, NORM_INFINITY, &petsc_value);
-
-  value = static_cast<Real>(petsc_value);
-
-  return value;
+  if(_mat_buf_mode)
+  {
+    const std::map<unsigned int, T> & buf = _mat_local[row-SparseMatrix<T>::_global_offset];
+    for(int i=0; i<n; i++)
+    {
+      dm[i] = buf.find(cols[i])->second;
+    }
+  }
+  else
+  {
+    MatGetValues(_mat, 1, (int*)&row, n, (int*)cols, (PetscScalar*)dm);
+  }
 }
 
 
@@ -273,6 +453,21 @@ template <typename T>
 T PetscMatrix<T>::operator () (const unsigned int i, const unsigned int j) const
 {
   genius_assert (this->initialized());
+  
+  if(_mat_buf_mode)
+  {
+    const std::map<unsigned int, T> & buf = _mat_local[i-SparseMatrix<T>::_global_offset];
+  
+    typename std::map<unsigned int, T>::const_iterator ent =  buf.find(j);
+  
+    if(ent != buf.end() ) return ent->second;
+
+    // Otherwise the entry is not in the sparse matrix,
+    // i.e. it is 0.
+    return 0.0;
+  }
+  
+  // else 
 
   const PetscScalar *petsc_row;
   const PetscInt    *petsc_cols;
@@ -290,16 +485,14 @@ T PetscMatrix<T>::operator () (const unsigned int i, const unsigned int j) const
 
   // Perform a binary search to find the contiguous index in
   // petsc_cols (resp. petsc_row) corresponding to global index j_val
-  std::pair<const int*, const int*> p =
-    std::equal_range (&petsc_cols[0], &petsc_cols[0] + ncols, j_val);
+  std::pair<const int*, const int*> p = std::equal_range (&petsc_cols[0], &petsc_cols[0] + ncols, j_val);
 
   // Found an entry for j_val
   if (p.first != p.second)
-  {
+  {  
     // The entry in the contiguous row corresponding
     // to the j_val column of interest
-    const int j = std::distance (const_cast<int*>(&petsc_cols[0]),
-                                 const_cast<int*>(p.first));
+    const int j = std::distance (const_cast<int*>(&petsc_cols[0]), const_cast<int*>(p.first));
 
     genius_assert (j < ncols);
     genius_assert (petsc_cols[j] == j_val);
@@ -313,7 +506,8 @@ T PetscMatrix<T>::operator () (const unsigned int i, const unsigned int j) const
 
   // Otherwise the entry is not in the sparse matrix,
   // i.e. it is 0.
-  return 0.;
+  return 0.0;
+  
 }
 
 
@@ -323,10 +517,36 @@ T PetscMatrix<T>::operator () (const unsigned int i, const unsigned int j) const
 
 
 template <typename T>
-void PetscMatrix<T>::add_row_to_row(const std::vector<unsigned int> &src_rows,
-                                    const std::vector<unsigned int> &dst_rows)
+void PetscMatrix<T>::add_row_to_row(const std::vector<int> &src_rows,
+                                    const std::vector<int> &dst_rows)
 {
+  if(_mat_buf_mode)
+  {
+    genius_assert(_closed);
 
+    for(unsigned int n=0; n<src_rows.size(); n++)
+    {
+      unsigned int src_row = static_cast<unsigned int>(src_rows[n]);
+      unsigned int dst_row = static_cast<unsigned int>(dst_rows[n]);
+
+      genius_assert(SparseMatrix<T>::row_on_processor(src_row));
+    
+      unsigned int local_src_row = src_row - SparseMatrix<T>::_global_offset;
+      const std::map<unsigned int, T> & cols = _mat_local[local_src_row];
+      for(typename std::map<unsigned int, T>::const_iterator it=cols.begin(); it!=cols.end(); it++)
+      {
+        unsigned int col = it->first;
+        T value = it->second;
+        add(dst_row, col, value);
+      }
+    }
+  
+    // sync _mat_nonlocal entries
+    close(false);
+    
+    return;
+  }
+  
   // test if the matrix is assembled
   // note: the test is not work properly! if it is a bug...
 
@@ -386,10 +606,51 @@ void PetscMatrix<T>::add_row_to_row(const std::vector<unsigned int> &src_rows,
   MatAssemblyEnd(_mat, MAT_FINAL_ASSEMBLY);
 }
 
+                              
+template <typename T>
+void PetscMatrix<T>::clear_row(int row, const T diag )
+{
+  if(_mat_buf_mode)
+  {
+    unsigned int local_row = row-SparseMatrix<T>::_global_offset;
+    std::map<unsigned int, T> & cols = _mat_local[local_row];
+    
+    for(typename std::map<unsigned int, T>::iterator it=cols.begin(); it!=cols.end(); it++)
+      it->second = 0.0;
+    
+    cols[row] = diag;
+    return;
+  }
+    
+  
+#if PETSC_VERSION_GE(3,2,0)
+  MatZeroRows(_mat, 1, &row, diag, PETSC_NULL, PETSC_NULL);
+#else
+  MatZeroRows(_mat, 1, &row, diag);
+#endif  
+  
+}
+
 
 template <typename T>
-void PetscMatrix<T>::clear_row(const std::vector<unsigned int> &rows, const T diag)
+void PetscMatrix<T>::clear_row(const std::vector<int> &rows, const T diag)
 {
+  if(_mat_buf_mode)
+  {
+    for(unsigned int n=0; n<rows.size(); n++)
+    {
+      unsigned int local_row = rows[n]-SparseMatrix<T>::_global_offset;
+      std::map<unsigned int, T> & cols = _mat_local[local_row];
+    
+      for(typename std::map<unsigned int, T>::iterator it=cols.begin(); it!=cols.end(); it++)
+        it->second = 0.0;
+    
+      cols[rows[n]] = diag;
+    }
+    return;
+  }
+    
+  
 #if PETSC_VERSION_GE(3,2,0)
   MatZeroRows(_mat, rows.size(), (int*)&rows[0], diag, PETSC_NULL, PETSC_NULL);
 #else
@@ -460,10 +721,89 @@ void PetscMatrix<T>::print_matlab (const std::string name) const
 
 
 
+template <typename T>
+void PetscMatrix<T>::flush_buf()
+{
+  genius_assert(_closed);
+  genius_assert(_mat_buf_mode);
+    
+  std::vector<int> n_nz(SparseMatrix<T>::_m_local, 0);
+  std::vector<int> n_oz(SparseMatrix<T>::_m_local, 0);
+  
+  for(size_t n=0; n<_mat_local.size(); ++n)
+  {
+    const std::map<unsigned int, T> & cols = _mat_local[n];
+    int nz = 0;
+    int noz = 0;
+    for(typename std::map<unsigned int, T>::const_iterator it=cols.begin(); it!=cols.end(); it++)
+    {
+      unsigned int col = it->first;
+      if( SparseMatrix<T>::col_on_processor(col) ) nz++;
+      else noz++;
+    }
+    n_nz[n] = nz;
+    n_oz[n] = noz;
+  }
+  
+  int ierr     = 0;
+
+  // create a sequential matrix on one processor
+  if (Genius::n_processors()==1)
+  {
+    // alloc memory for sequence matrix here
+    ierr = MatSeqAIJSetPreallocation(_mat, 0, &n_nz[0]); genius_assert(!ierr);
+  }
+  else
+  {
+    // alloc memory for parallel matrix here
+    ierr = MatMPIAIJSetPreallocation(_mat, 0, &n_nz[0], 0, &n_oz[0]); genius_assert(!ierr);
+  }
+
+  // indicates when PetscUtils::MatZeroRows() is called the zeroed entries are kept in the nonzero structure
+#if PETSC_VERSION_GE(3,1,0)
+  ierr = MatSetOption(_mat, MAT_KEEP_NONZERO_PATTERN, PETSC_TRUE); genius_assert(!ierr);
+#endif
+
+#if PETSC_VERSION_EQ(3,0,0)
+  ierr = MatSetOption(_mat, MAT_KEEP_ZEROED_ROWS, PETSC_TRUE); genius_assert(!ierr);
+#endif
+  
+  // we have to set this flag since preallocation may not be exact
+  ierr = MatSetOption(_mat, MAT_NEW_NONZERO_LOCATIONS, PETSC_TRUE); genius_assert(!ierr);
+  
+  // extra flag
+  ierr = MatSetFromOptions(_mat); genius_assert(!ierr);
+  
+  // set value
+  for(size_t n=0; n<_mat_local.size(); ++n)
+  {
+    unsigned int row = n+SparseMatrix<T>::_global_offset; 
+    
+    const std::map<unsigned int, T> & col_map = _mat_local[n];
+    std::vector<unsigned int> cols;
+    std::vector<T> col_values; 
+    for(typename std::map<unsigned int, T>::const_iterator it=col_map.begin(); it!=col_map.end(); it++)
+    {
+      cols.push_back(it->first);
+      col_values.push_back(it->second);
+    }
+    
+    ierr = MatSetValues(_mat, 1, (int*) &row, cols.size(), (int*) &cols[0], &col_values[0], ADD_VALUES);
+    genius_assert(!ierr);
+  }
+  
+  ierr = MatAssemblyBegin (_mat, MAT_FINAL_ASSEMBLY);
+  ierr = MatAssemblyEnd   (_mat, MAT_FINAL_ASSEMBLY);
+  genius_assert(!ierr);
+  
+  
+  _mat_local.clear();
+  _mat_buf_mode = false;
+}
 
 //------------------------------------------------------------------
 // Explicit instantiations
-template class PetscMatrix<Real>;
+template class PetscMatrix<PetscScalar>;
 
 
 #endif // #ifdef HAVE_PETSC

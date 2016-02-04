@@ -67,7 +67,7 @@ private:
   /**
    * flag when we do 2D simulation
    */
-  bool _is_2d;
+  unsigned int _dim;
 
   /**
    * count

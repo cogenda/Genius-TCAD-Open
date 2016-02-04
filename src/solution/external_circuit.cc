@@ -45,7 +45,7 @@ ExternalCircuit * ExternalCircuit::build(const Parser::Card &c)
 
   if( type == "rcl" )
   {
-    Real res = std::max(1e-6, c.get_real ( "res", 0.0 )) *V/A;
+    Real res = std::max(0.0, c.get_real ( "res", 0.0 )) *V/A;
     Real cap = c.get_real ( "cap", 0.0 ) *C/V;
     Real ind = c.get_real ( "ind", 0.0 ) *V*s/A;
     return new ExternalCircuitRCL(res, cap, ind);

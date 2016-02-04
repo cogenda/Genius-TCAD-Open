@@ -49,12 +49,18 @@ using PhysicalUnit::mu0;
 
 
 
-SemiconductorSimulationRegion::SemiconductorSimulationRegion(const std::string &name, const std::string &material, const double T, const double z)
-    :SimulationRegion(name, material, T, z)
+SemiconductorSimulationRegion::SemiconductorSimulationRegion(const std::string &name, const std::string &material,
+    const double T, const unsigned int dim, const double z,
+    const TensorValue<double> & crystal_coord_matrix)
+  :SimulationRegion(name, material, T, dim, z)
 {
   // material should be initializted after region variables
   this->set_region_variables();
   mt = new Material::MaterialSemiconductor(this);
+  
+  _crystal_coord_matrix = TensorValue<PetscScalar>(crystal_coord_matrix[0],crystal_coord_matrix[1],crystal_coord_matrix[2],
+                                                   crystal_coord_matrix[3],crystal_coord_matrix[4],crystal_coord_matrix[5],
+                                                   crystal_coord_matrix[6],crystal_coord_matrix[7],crystal_coord_matrix[8]);
 }
 
 
@@ -105,6 +111,7 @@ void SemiconductorSimulationRegion::set_region_variables()
   _cell_data_storage.allocate_tensor_variable( std::vector<bool>(FVM_Semiconductor_CellData::n_tensor(),false));
 
   // define _region_point_variables
+  _region_point_variables["dmin"               ] = SimulationVariable("dmin", SCALAR, POINT_CENTER, "1", FVM_Semiconductor_NodeData::_dmin_, true);
   _region_point_variables["electron"           ] = SimulationVariable("electron", SCALAR, POINT_CENTER, "cm^-3", FVM_Semiconductor_NodeData::_n_, true);
   _region_point_variables["hole"               ] = SimulationVariable("hole", SCALAR, POINT_CENTER, "cm^-3", FVM_Semiconductor_NodeData::_p_, true);
   _region_point_variables["potential"          ] = SimulationVariable("potential", SCALAR, POINT_CENTER, "V", FVM_Semiconductor_NodeData::_psi_, true);
@@ -112,23 +119,23 @@ void SemiconductorSimulationRegion::set_region_variables()
   _region_point_variables["temperature"        ] = SimulationVariable("temperature", SCALAR, POINT_CENTER, "K", FVM_Semiconductor_NodeData::_T_, true);
   _region_point_variables["elec_temperature"   ] = SimulationVariable("elec_temperature", SCALAR, POINT_CENTER, "K", FVM_Semiconductor_NodeData::_Tn_, true);
   _region_point_variables["hole_temperature"   ] = SimulationVariable("hole_temperature", SCALAR, POINT_CENTER, "K", FVM_Semiconductor_NodeData::_Tp_, true);
-  _region_point_variables["eqc"                ] = SimulationVariable("eqc", SCALAR, POINT_CENTER, "eV", FVM_Semiconductor_NodeData::_Eqc_, true);
-  _region_point_variables["eqv"                ] = SimulationVariable("eqv", SCALAR, POINT_CENTER, "eV", FVM_Semiconductor_NodeData::_Eqv_, true);
+  _region_point_variables["Eqc"                ] = SimulationVariable("Eqc", SCALAR, POINT_CENTER, "eV", FVM_Semiconductor_NodeData::_Eqc_, true);
+  _region_point_variables["Eqv"                ] = SimulationVariable("Eqv", SCALAR, POINT_CENTER, "eV", FVM_Semiconductor_NodeData::_Eqv_, true);
 
 
   _region_point_variables["density"            ] = SimulationVariable("density", SCALAR, POINT_CENTER, "g/cm^3", FVM_Semiconductor_NodeData::_density_, true);
   _region_point_variables["affinity"           ] = SimulationVariable("affinity", SCALAR, POINT_CENTER, "eV", FVM_Semiconductor_NodeData::_affinity_, true);
-  _region_point_variables["ec"                 ] = SimulationVariable("ec", SCALAR, POINT_CENTER, "eV", FVM_Semiconductor_NodeData::_Ec_, true);
-  _region_point_variables["ev"                 ] = SimulationVariable("ev", SCALAR, POINT_CENTER, "eV", FVM_Semiconductor_NodeData::_Ev_, true);
-  _region_point_variables["eg"                 ] = SimulationVariable("eg", SCALAR, POINT_CENTER, "eV", FVM_Semiconductor_NodeData::_Eg_, true);
+  _region_point_variables["Ec"                 ] = SimulationVariable("Ec", SCALAR, POINT_CENTER, "eV", FVM_Semiconductor_NodeData::_Ec_, true);
+  _region_point_variables["Ev"                 ] = SimulationVariable("Ev", SCALAR, POINT_CENTER, "eV", FVM_Semiconductor_NodeData::_Ev_, true);
+  _region_point_variables["Eg"                 ] = SimulationVariable("Eg", SCALAR, POINT_CENTER, "eV", FVM_Semiconductor_NodeData::_Eg_, true);
   _region_point_variables["qfn"                ] = SimulationVariable("qfn", SCALAR, POINT_CENTER, "eV", FVM_Semiconductor_NodeData::_qFn_, true);
   _region_point_variables["qfp"                ] = SimulationVariable("qfp", SCALAR, POINT_CENTER, "eV", FVM_Semiconductor_NodeData::_qFp_, true);
 
-  _region_point_variables["nc"                 ] = SimulationVariable("nc", SCALAR, POINT_CENTER, "cm^-3", FVM_Semiconductor_NodeData::_Nc_, true);
-  _region_point_variables["nv"                 ] = SimulationVariable("nv", SCALAR, POINT_CENTER, "cm^-3", FVM_Semiconductor_NodeData::_Nv_, true);
+  _region_point_variables["Nc"                 ] = SimulationVariable("Nc", SCALAR, POINT_CENTER, "cm^-3", FVM_Semiconductor_NodeData::_Nc_, true);
+  _region_point_variables["Nv"                 ] = SimulationVariable("Nv", SCALAR, POINT_CENTER, "cm^-3", FVM_Semiconductor_NodeData::_Nv_, true);
 
-  _region_point_variables["na"                 ] = SimulationVariable("na", SCALAR, POINT_CENTER, "cm^-3", FVM_Semiconductor_NodeData::_Na_, true);
-  _region_point_variables["nd"                 ] = SimulationVariable("nd", SCALAR, POINT_CENTER, "cm^-3", FVM_Semiconductor_NodeData::_Nd_, true);
+  _region_point_variables["Na"                 ] = SimulationVariable("Na", SCALAR, POINT_CENTER, "cm^-3", FVM_Semiconductor_NodeData::_Na_, true);
+  _region_point_variables["Nd"                 ] = SimulationVariable("Nd", SCALAR, POINT_CENTER, "cm^-3", FVM_Semiconductor_NodeData::_Nd_, true);
 
 
   _region_point_variables["mole_x"             ] = SimulationVariable("mole_x", SCALAR, POINT_CENTER, "1", FVM_Semiconductor_NodeData::_mole_x_, true);
@@ -163,11 +170,13 @@ void SemiconductorSimulationRegion::set_region_variables()
   _region_point_variables["temperature.last"   ] = SimulationVariable("temperature.last", SCALAR, POINT_CENTER, "K", FVM_Semiconductor_NodeData::_T_last_, true);
   _region_point_variables["elec_temperature.last"] = SimulationVariable("elec_temperature.last", SCALAR, POINT_CENTER, "K", FVM_Semiconductor_NodeData::_Tn_last_, true);
   _region_point_variables["hole_temperature.last"] = SimulationVariable("hole_temperature.last", SCALAR, POINT_CENTER, "K", FVM_Semiconductor_NodeData::_Tp_last_, true);
-  _region_point_variables["electron.old"      ] = SimulationVariable("electron.old", SCALAR, POINT_CENTER, "cm^-3", FVM_Semiconductor_NodeData::_n_old_, true);
-  _region_point_variables["hole.old"          ] = SimulationVariable("hole.old", SCALAR, POINT_CENTER, "cm^-3", FVM_Semiconductor_NodeData::_p_old_, true);
-  _region_point_variables["potential.old"     ] = SimulationVariable("potential.old", SCALAR, POINT_CENTER, "V", FVM_Semiconductor_NodeData::_psi_old_, true);
+  _region_point_variables["electron.old"       ] = SimulationVariable("electron.old", SCALAR, POINT_CENTER, "cm^-3", FVM_Semiconductor_NodeData::_n_old_, true);
+  _region_point_variables["hole.old"           ] = SimulationVariable("hole.old", SCALAR, POINT_CENTER, "cm^-3", FVM_Semiconductor_NodeData::_p_old_, true);
+  _region_point_variables["potential.old"      ] = SimulationVariable("potential.old", SCALAR, POINT_CENTER, "V", FVM_Semiconductor_NodeData::_psi_old_, true);
 
   _region_point_variables["charge_density"     ] = SimulationVariable("charge_density", SCALAR, POINT_CENTER, "cm^-3", FVM_Semiconductor_NodeData::_rho_, true);
+  _region_point_variables["interface_charge"   ] = SimulationVariable("interface_charge", SCALAR, POINT_CENTER, "cm^-2", FVM_Semiconductor_NodeData::_Nit_, true);
+
 
   _region_point_variables["efield"             ] = SimulationVariable("efield", VECTOR, POINT_CENTER, "V/cm", FVM_Semiconductor_NodeData::_E_, true);
   _region_point_variables["elec_current"       ] = SimulationVariable("elec_current", VECTOR, POINT_CENTER, "A/cm", FVM_Semiconductor_NodeData::_Jn_, true);
@@ -182,6 +191,11 @@ void SemiconductorSimulationRegion::set_region_variables()
 
   _region_point_variables["optical_efield"     ] = SimulationVariable("optical_efield", COMPLEX, POINT_CENTER, "V/cm", FVM_Semiconductor_NodeData::_OpE_complex_, false);
   _region_point_variables["optical_hfield"     ] = SimulationVariable("optical_hfield", COMPLEX, POINT_CENTER, "A/cm", FVM_Semiconductor_NodeData::_OpH_complex_, false);
+
+  _region_point_variables["stress"             ] = SimulationVariable("stress", TENSOR, POINT_CENTER, "kg/s^2/m", FVM_Semiconductor_NodeData::_stress_, true);
+  _region_point_variables["strain"             ] = SimulationVariable("strain", TENSOR, POINT_CENTER, "1", FVM_Semiconductor_NodeData::_strain_, true);
+  _region_point_variables["dEc_strain"         ] = SimulationVariable("dEc_strain", SCALAR, POINT_CENTER, "eV", FVM_Semiconductor_NodeData::_dEcStrain_, true);
+  _region_point_variables["dEv_strain"         ] = SimulationVariable("dEv_strain", SCALAR, POINT_CENTER, "eV", FVM_Semiconductor_NodeData::_dEvStrain_, true);
 
   // define _region_cell_variables
   _region_cell_variables["efield"        ] = SimulationVariable("efield", VECTOR, CELL_CENTER, "V/cm", FVM_Semiconductor_CellData::_E_, true);
@@ -230,12 +244,12 @@ void SemiconductorSimulationRegion::init(PetscScalar T_external)
     // compute electron and hole concentration for thermal equilibrium state
     if( Net_Doping > 0 )       //n-type
     {
-      node_data->n_last() = node_data->n() = (Net_Doping + std::sqrt(std::pow(Net_Doping,2) + 4*ni*ni))/2;
+      node_data->n_last() = node_data->n() = (Net_Doping + sqrt(std::pow(Net_Doping,2) + 4*ni*ni))/2;
       node_data->p_last() = node_data->p() = ni*ni/node_data->n();
     }
     else                       //p-type
     {
-      node_data->p_last() = node_data->p() = (-Net_Doping + std::sqrt(std::pow(Net_Doping,2) + 4*ni*ni))/2;
+      node_data->p_last() = node_data->p() = (-Net_Doping + sqrt(std::pow(Net_Doping,2) + 4*ni*ni))/2;
       node_data->n_last() = node_data->n() = ni*ni/node_data->p();
     }
 
@@ -251,7 +265,7 @@ void SemiconductorSimulationRegion::init(PetscScalar T_external)
     node_data->mup()      = mt->mob->HoleMob(node_data->p(), node_data->n(), T_external, 0, 0, T_external);
 
     // the electrostatic potential is initializted as vacuum level
-    node_data->psi() = kb*T_external/e*boost::math::asinh(Net_Doping/(2*ni))
+    node_data->psi() = kb*T_external/e*asinh(Net_Doping/(2*ni))
                        - node_data->Eg()/(2*e)
                        - kb*T_external/(2*e)*log(Nc/Nv)
                        - node_data->affinity()
@@ -269,6 +283,10 @@ void SemiconductorSimulationRegion::init(PetscScalar T_external)
     // the quantum valence band is initializted as valence band
     node_data->Eqv() = node_data->Ev();
 
+
+    node_data->strain() = mt->basic->Strain(node_data->stress());
+    node_data->dEcStrain() = mt->band->dEcStrain();
+    node_data->dEvStrain() = mt->band->dEvStrain();
   }
 
   // build data structure for insulator interface
@@ -305,8 +323,14 @@ void SemiconductorSimulationRegion::reinit_after_import()
     node_data->Eg()       = mt->band->Eg(T);
     node_data->Nc()       = mt->band->Nc(T);
     node_data->Nv()       = mt->band->Nv(T);
+    node_data->Ec()       = -(e*node_data->psi() + node_data->affinity());
+    node_data->Ev()       = -(e*node_data->psi() + node_data->affinity()
+                            - mt->band->EgNarrowToEv(node_data->p(), node_data->n(), T)
+                            + node_data->Eg());
     node_data->mun()      = mt->mob->ElecMob(node_data->p(), node_data->n(), T, 0, 0, T);
     node_data->mup()      = mt->mob->HoleMob(node_data->p(), node_data->n(), T, 0, 0, T);
+
+    node_data->strain()   = mt->basic->Strain(node_data->stress());
   }
 
   // build data structure for insulator interface
@@ -330,6 +354,7 @@ void SemiconductorSimulationRegion::set_pmi(const std::string &type, const std::
     get_material_base()->init_node(type, (*it)->root_node(), node_data);
   }
 
+
   // update buffered value as if changed by PMI
   local_node_iterator node_it = on_local_nodes_begin();
   local_node_iterator node_it_end = on_local_nodes_end();
@@ -344,30 +369,78 @@ void SemiconductorSimulationRegion::set_pmi(const std::string &type, const std::
     // map current node to material buffer
     mt->mapping(fvm_node->root_node(), node_data, 0.0);
 
-    PetscScalar  d_affinity =  mt->basic->Affinity(T) - node_data->affinity();
+    if(type == "basic")
+    {
+      node_data->affinity() = mt->basic->Affinity(T);
+      node_data->density()  = mt->basic->Density(T);
+      node_data->eps()      = eps0*mt->basic->Permittivity();
+      node_data->mu()       = mu0*mt->basic->Permeability();
+      node_data->strain()   = mt->basic->Strain(node_data->stress());
+    }
 
-    node_data->affinity() = mt->basic->Affinity(T);
-    node_data->density()  = mt->basic->Density(T);
-    node_data->eps()      = eps0*mt->basic->Permittivity();
-    node_data->mu()       = mu0*mt->basic->Permeability();
-    node_data->Eg()       = mt->band->Eg(T);
-    node_data->Nc()       = mt->band->Nc(T);
-    node_data->Nv()       = mt->band->Nv(T);
-    node_data->mun()      = mt->mob->ElecMob(node_data->p(), node_data->n(), T, 0, 0, T);
-    node_data->mup()      = mt->mob->HoleMob(node_data->p(), node_data->n(), T, 0, 0, T);
+    if(type == "band")
+    {
 
-    node_data->psi() = node_data->psi() - d_affinity;
+      // get net doping concentration
+      PetscScalar Net_Doping = node_data->Net_doping();
 
-    node_data->Ec() = -(e*node_data->psi() + node_data->affinity());
-    node_data->Ev() = -(e*node_data->psi() + node_data->affinity()
-                      - mt->band->EgNarrowToEv(node_data->p(), node_data->n(), T)
-                      + node_data->Eg() );
+      // we can get some parameter only related with temperature
+      PetscScalar ni  = mt->band->ni(T);
+
+      node_data->Eg()       = mt->band->Eg(T);
+      node_data->Nc()       = mt->band->Nc(T);
+      node_data->Nv()       = mt->band->Nv(T);
+
+      /*
+      node_data->psi() = kb*T/e*asinh(Net_Doping/(2*ni))
+                       - node_data->Eg()/(2*e)
+                       - kb*T/(2*e)*log(node_data->Nc()/node_data->Nv())
+                       - node_data->affinity()
+                       - mt->band->EgNarrowToEc(node_data->p(), node_data->n(), T);
+
+      node_data->Ec() = -(e*node_data->psi() + node_data->affinity());
+      node_data->Ev() = -(e*node_data->psi() + node_data->affinity()
+                        - mt->band->EgNarrowToEv(node_data->p(), node_data->n(), T)
+                        + node_data->Eg() );
+      
+      // compute electron and hole concentration for thermal equilibrium state
+      if( Net_Doping > 0 )       //n-type
+      {
+        node_data->n_last() = node_data->n() = (Net_Doping + sqrt(std::pow(Net_Doping,2) + 4*ni*ni))/2;
+        node_data->p_last() = node_data->p() = ni*ni/node_data->n();
+      }
+      else                       //p-type
+      {
+        node_data->p_last() = node_data->p() = (-Net_Doping + sqrt(std::pow(Net_Doping,2) + 4*ni*ni))/2;
+        node_data->n_last() = node_data->n() = ni*ni/node_data->p();
+      }
+
+      // the quantum conduction band is initializted as conduction band
+      node_data->Eqc() = node_data->Ec();
+
+      // the quantum valence band is initializted as valence band
+      node_data->Eqv() = node_data->Ev();
+      */
+      
+    }
+
+    if(type == "mobility")
+    {
+      node_data->mun()      = mt->mob->ElecMob(node_data->p(), node_data->n(), T, 0, 0, T);
+      node_data->mup()      = mt->mob->HoleMob(node_data->p(), node_data->n(), T, 0, 0, T);
+    }
   }
+
+#if defined(HAVE_FENV_H) && defined(DEBUG)
+  genius_assert( !fetestexcept(FE_INVALID) );
+#endif
 }
 
 
 void SemiconductorSimulationRegion::find_elem_on_insulator_interface()
 {
+  _elem_on_insulator_interface.clear();
+  
   const_element_iterator it = elements_begin();
   const_element_iterator it_end = elements_end();
   for(; it!=it_end; ++it)
@@ -409,6 +482,7 @@ void SemiconductorSimulationRegion::find_elem_touch_boundary()
     }
   }
 
+  _elem_touch_boundary.clear();
   for(it = elements_begin(); it!=it_end; ++it)
   {
     const Elem * elem = (*it);
@@ -597,6 +671,19 @@ Real SemiconductorSimulationRegion::fvm_cell_quality() const
   }
 
   return fvm_cell_quality;
+}
+
+Complex SemiconductorSimulationRegion::get_optical_refraction(const FVM_Node *fvm_node, double lambda) const
+{
+  mt->mapping(fvm_node->root_node(), fvm_node->node_data(), 0.0);
+  std::complex<PetscScalar> r = mt->optical->RefractionIndex(lambda, fvm_node->node_data()->T());
+  return Complex(r.real(), r.imag());
+}
+
+double SemiconductorSimulationRegion::get_optical_Eg(const FVM_Node * fvm_node) const
+{
+  mt->mapping(fvm_node->root_node(), fvm_node->node_data(), 0.0);
+  return mt->band->Eg(fvm_node->node_data()->T());
 }
 
 

@@ -264,4 +264,8 @@ void FVM_PDESolver::set_serial_dof_map()
 
   // set n_nz and n_oz for extra dofs
   this->set_extra_matrix_nonzero_pattern();
+
+  // finally, limit the nz/oz size
+  for(unsigned int n=0; n<n_nz.size(); ++n)
+    n_nz[n] = std::min(n_global_dofs, n_nz[n]);
 }

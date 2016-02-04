@@ -153,16 +153,8 @@ void ElectrodeSimulationRegion::DDM1_Function(PetscScalar * x, Vec f, InsertMode
 /*---------------------------------------------------------------------
  * build function and its jacobian for DDML1 solver
  */
-void ElectrodeSimulationRegion::DDM1_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_value_flag)
+void ElectrodeSimulationRegion::DDM1_Jacobian(PetscScalar * x, SparseMatrix<PetscScalar> *jac, InsertMode &add_value_flag)
 {
-
-  // note, we will use ADD_VALUES to set values of matrix J
-  // if the previous operator is not ADD_VALUES, we should flush the matrix
-  if( add_value_flag != ADD_VALUES && add_value_flag != NOT_SET_VALUES)
-  {
-    MatAssemblyBegin(*jac, MAT_FLUSH_ASSEMBLY);
-    MatAssemblyEnd(*jac, MAT_FLUSH_ASSEMBLY);
-  }
 
   //the indepedent variable number, since we only process edges, 2 is enough
   adtl::AutoDScalar::numdir=2;
@@ -211,12 +203,12 @@ void ElectrodeSimulationRegion::DDM1_Jacobian(PetscScalar * x, Mat *jac, InsertM
       // ignore thoese ghost nodes
       if( fvm_n1->on_processor() )
       {
-        MatSetValues(*jac, 1, &row[0], 2, &col[0], f.getADValue(), ADD_VALUES);
+        jac->add_row(  row[0],  2,  &col[0],  f.getADValue() );
       }
 
       if( fvm_n2->on_processor() )
       {
-        MatSetValues(*jac, 1, &row[1], 2, &col[0], (-f).getADValue(), ADD_VALUES);
+        jac->add_row(  row[1],  2,  &col[0],  (-f).getADValue() );
       }
     }
   }
@@ -252,6 +244,7 @@ void ElectrodeSimulationRegion::DDM1_Update_Solution(PetscScalar *lxx)
   // however, the electrical field is always zero. We needn't do anything here.
 
 }
+
 
 
 

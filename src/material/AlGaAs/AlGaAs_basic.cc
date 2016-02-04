@@ -96,11 +96,11 @@ public:
                 return AFFINITY + AF_X3 + AF_X4*mole_x + AF_X5*mole_x*mole_x;
   }
 
-  void atom_fraction(std::vector<std::string> &atoms, std::vector<double> & fraction) const
+  void G4Material(std::vector<Atom> &atoms, std::vector<double> & fraction) const
   {
-    atoms.push_back("Al"); //Aluminum
-    atoms.push_back("Ga"); //Gallium
-    atoms.push_back("As"); //Arsenic
+    atoms.push_back(Atom("Aluminum",   "Al", 13, 26.98)); //Aluminum
+    atoms.push_back(Atom("Gallium",   "Ga", 31, 69.72)); //Gallium
+    atoms.push_back(Atom("Arsenic",   "As", 33, 74.922)); //Arsenic
 
     PetscScalar mole_x = ReadxMoleFraction();
     fraction.push_back(mole_x);

@@ -205,7 +205,7 @@ void DoseRate::clear_particle_endpoint()
 
 
 
-void DoseRate::build_mesh_constrain(const MeshBase & mesh) 
+void DoseRate::build_mesh_constrain(const MeshBase & mesh)
 {
   constrain.clear();
   constrain.resize(mesh.n_subdomains(), 1e30);
@@ -231,7 +231,7 @@ void DoseRate::build_region_density(const SimulationSystem & system)
   for(unsigned int r=0; r<system.n_regions(); r++)
   {
     const SimulationRegion * region = system.region(r);
-    density.push_back(region->get_density(system.T_external()));
+    density.push_back(region->get_density());
   }
 }
 
@@ -325,7 +325,7 @@ bool DoseRate::OcTreeDataDoseRate::refine(const OcTreeNode & node, const std::ve
   if(elems.size() > 30) return true;
 
 
-  if(elems.size() && node.volume() > std::pow(DoseRate::min_leaf, 3.0)) return true;
+  if(elems.size()>1 && node.volume() > std::pow(DoseRate::min_leaf, 3.0)) return true;
 
 
   // size constrain
@@ -344,7 +344,7 @@ bool DoseRate::OcTreeDataDoseRate::refine(const OcTreeNode & node, const std::ve
 
 
   // stop electron
-  
+
 
   // no refine needed
   return false;

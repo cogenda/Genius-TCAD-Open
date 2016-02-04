@@ -29,7 +29,7 @@
 
 
 
-void ResistanceResistanceBC::DDMAC_Fill_Matrix_Vector( Mat A, Vec b, const Mat J, const double omega, InsertMode & add_value_flag )
+void ResistanceResistanceBC::DDMAC_Fill_Matrix_Vector( Mat A, Vec b, const Mat J, const PetscScalar omega, InsertMode & add_value_flag )
 {
   const SimulationRegion * _r1 = bc_regions().first;
   const SimulationRegion * _r2 = bc_regions().second;
@@ -79,6 +79,12 @@ void ResistanceResistanceBC::DDMAC_Fill_Matrix_Vector( Mat A, Vec b, const Mat J
           MatSetValues(A, 1, &real_row, 2, real_col, diag, ADD_VALUES);
           MatSetValues(A, 1, &imag_row, 2, imag_col, diag, ADD_VALUES);
         }
+      }
+
+      if ( region->type() == MetalRegion || region->type() == ElectrodeRegion )
+      {
+        const FVM_Node * metal_fvm_node = (*rnode_it).second.second;
+        region->DDMAC_Fill_Nodal_Matrix_Vector(metal_fvm_node, A, b, J, omega, add_value_flag);
       }
     }
   }

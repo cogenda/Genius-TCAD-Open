@@ -44,6 +44,14 @@ GaAs
         color    = 0xeaeaeaff
 }
 
+GaAsSb
+{
+# mole dependence: GaAs(1-x)Sbx
+        property = SingleCompoundSemiconductor
+        color    = 0xf0a6a6ff
+}
+
+
 AlGaAs
 {
 # mole dependence: Ga(1-x)Al(x)As
@@ -106,6 +114,20 @@ SiC4H
         property = Semiconductor
         alias    = 4H-SiC
         color    = 0xffa580ff
+}
+
+SiC6H
+{
+        property = Semiconductor
+        alias    = 6H-SiC
+        color    = 0xffa580ff
+}
+
+Diamond
+{
+        property = Semiconductor
+        alias    = C
+        color    = 0xcdc0c1ff
 }
 
 Ge
@@ -248,6 +270,12 @@ ZnO
         color    = 0xdededeff
 }
 
+GenericSemiconductor
+{
+        property = Semiconductor
+        color    = 0xae20deff
+}
+
 #-----------------------------------------------------
 # Conductor
 #-----------------------------------------------------
@@ -315,6 +343,13 @@ PPolySi
         alias    = PPoly
         alias    = PPolySilicon
         alias    = GatePPolySilicon
+        color    = 0xc71585ff
+}
+
+
+ORPS
+{
+        property = Resistance
         color    = 0xc71585ff
 }
 
@@ -391,10 +426,24 @@ SRO
         color    = 0xcb5610ff
 }
 
+GenericMetal
+{
+        property = Resistance
+        color    = 0x4d7f94ff
+}
+
+
 
 #-----------------------------------------------------
 # Insulator
 #-----------------------------------------------------
+ETFE
+{
+        property = Insulator
+        color    = 0xe0e2e5ff
+}
+
+
 SiO2
 {
         property = Insulator
@@ -420,6 +469,19 @@ HfO2
 {
         property = Insulator
         color    = 0xd0a0a5ff
+}
+
+B4C
+{
+        property = Insulator
+        alias    = BoronCarbide
+        color    = 0x101050ff
+}
+
+LiF
+{
+        property = Insulator
+        color    = 0xf0f0f0ff
 }
 
 
@@ -461,6 +523,12 @@ Epoxy
         color    = 0xf0ffabff
 }
 
+Mylar
+{
+        property = Insulator
+        color    = 0xf0f0f0ff
+}
+
 
 Teflon
 {
@@ -479,6 +547,22 @@ Air
         color    = 0xb0e2ffff
 }
 
+
+GenericInsulator
+{
+        property = Insulator
+        alias    = GenericInsulator0
+        alias    = GenericInsulator1
+        alias    = GenericInsulator2
+        alias    = GenericInsulator3
+        alias    = GenericInsulator4
+        alias    = GenericInsulator5
+        alias    = GenericInsulator6
+        alias    = GenericInsulator7
+        alias    = GenericInsulator8
+        alias    = GenericInsulator9
+        color    = 0x202030ff
+}
 
 #-----------------------------------------------------
 # Vacuum

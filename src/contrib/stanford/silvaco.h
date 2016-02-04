@@ -33,6 +33,8 @@
 class SilvacoTIF : public StanfordTIF
 {
 public:
+  
+  SilvacoTIF();
 
   /**
    * constructor
@@ -53,8 +55,7 @@ public:
    * silvaco has 3D extersion
    */
   virtual unsigned int dim() { return _dim; }
-
-
+  
   void export_scatter_doping_na() const;
 
   void export_scatter_doping_nd() const;
@@ -69,7 +70,12 @@ private:
   std::vector<int>       _electrode_info;
 
   std::string  _version;
-
+  
+  unsigned int  _As_index; //"Arsenic"
+  unsigned int  _P_index;  //"Phosphorus"
+  unsigned int  _Sb_index; //"Antimony"
+  unsigned int  _B_index;  //"Boron"
+  
   /**
    * implant map
    */
@@ -80,6 +86,7 @@ private:
    */
   std::map<int, std::string> SilMat;
 
+  void _init_index_string_map();
 
 };
 

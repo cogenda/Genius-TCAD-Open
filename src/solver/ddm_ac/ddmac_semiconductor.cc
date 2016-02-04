@@ -148,7 +148,7 @@ void SemiconductorSimulationRegion::DDMAC_Fill_Value ( Vec x, Vec L ) const
 
 
 
-void SemiconductorSimulationRegion::DDMAC_Fill_Matrix_Vector ( Mat A, Vec b, const Mat J, const double omega, InsertMode &add_value_flag ) const
+void SemiconductorSimulationRegion::DDMAC_Fill_Matrix_Vector ( Mat A, Vec b, const Mat J, const PetscScalar omega, InsertMode &add_value_flag ) const
 {
 
   // note, we will use ADD_VALUES to set values of matrix A
@@ -175,7 +175,7 @@ void SemiconductorSimulationRegion::DDMAC_Fill_Matrix_Vector ( Mat A, Vec b, con
 }
 
 
-void SemiconductorSimulationRegion::DDMAC_Fill_Transformation_Matrix ( Mat T, const Mat J, const double omega,  InsertMode &add_value_flag ) const
+void SemiconductorSimulationRegion::DDMAC_Fill_Transformation_Matrix ( Mat T, const Mat J, const PetscScalar omega,  InsertMode &add_value_flag ) const
 {
 
   // note, we will use ADD_VALUES to set values of matrix A
@@ -235,7 +235,7 @@ void SemiconductorSimulationRegion::DDMAC_Fill_Transformation_Matrix ( Mat T, co
 
 
 void SemiconductorSimulationRegion::DDMAC_Fill_Nodal_Matrix_Vector (
-  const FVM_Node *fvm_node, Mat A, Vec, const Mat J, const double omega,
+  const FVM_Node *fvm_node, Mat A, Vec, const Mat J, const PetscScalar omega,
   InsertMode & add_value_flag,
   const SimulationRegion * adjacent_region,
   const FVM_Node * adjacent_fvm_node ) const
@@ -397,7 +397,7 @@ void SemiconductorSimulationRegion::DDMAC_Fill_Nodal_Matrix_Vector (
 
 void SemiconductorSimulationRegion::DDMAC_Fill_Nodal_Matrix_Vector (
   const FVM_Node *fvm_node, const SolutionVariable var,
-  Mat A, Vec , const Mat J, const double omega, InsertMode & add_value_flag,
+  Mat A, Vec , const Mat J, const PetscScalar omega, InsertMode & add_value_flag,
   const SimulationRegion * adjacent_region,
   const FVM_Node * adjacent_fvm_node ) const
 {

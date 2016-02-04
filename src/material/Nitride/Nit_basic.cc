@@ -53,6 +53,7 @@ public:
   PetscScalar Permeability  ()                      const { return PERMEABI; }
   PetscScalar Affinity      (const PetscScalar &Tl) const { return AFFINITY; }
 
+
   PetscScalar Conductance   (const PetscScalar &Tl, const PetscScalar &E) const
   { return 1.0/(1e+15*V/A*m); }
   AutoDScalar Conductance   (const AutoDScalar &Tl, const AutoDScalar &E) const
@@ -63,13 +64,19 @@ public:
     return 0.0;
   }
 
-  PetscScalar Mobility      (const PetscScalar &Tl) const
+  PetscScalar RadGenRate   (const PetscScalar &E) const
+  { return 0.0; }
+
+  PetscScalar ElecMobility      (const PetscScalar &Tl) const
   { return 5e-11*cm*cm/V/s; }
 
-  void atom_fraction(std::vector<std::string> &atoms, std::vector<double> & fraction) const
+  PetscScalar HoleMobility      (const PetscScalar &Tl) const
+  { return 5e-11*cm*cm/V/s; }
+
+  void G4Material(std::vector<Atom> &atoms, std::vector<double> & fraction) const
   {
-    atoms.push_back("Si");//Silicon
-    atoms.push_back("N");//Nitrogen
+    atoms.push_back(Atom("Silicon",    "Si", 14, 28.086));//Silicon
+    atoms.push_back(Atom("Nitrogen", "N", 7, 14.01));//Nitrogen
 
     fraction.push_back(3.0);
     fraction.push_back(4.0);

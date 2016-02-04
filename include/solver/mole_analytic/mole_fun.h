@@ -114,8 +114,8 @@ public:
   /**
    * constructor
    */
-  LinearMoleFunction(const std::string & region, double base_plane, Direction dir, double mole_begin, double mole_slope, bool mole_x)
-      : MoleFunction(region),  _mole_begin(mole_begin), _mole_slope(mole_slope), _base_plane(base_plane), _dir(dir)
+  LinearMoleFunction(const std::string & region, double base_plane, double end_plane, Direction dir, double mole_begin, double mole_slope, bool mole_x)
+      : MoleFunction(region),  _mole_begin(mole_begin), _mole_slope(mole_slope), _base_plane(base_plane), _end_plane(end_plane), _dir(dir)
   {
     _mole_x = mole_x;
     _mole_y = !mole_x;
@@ -131,15 +131,20 @@ public:
    */
   double profile(double x,double y,double z)
   {
-
     switch(_dir)
     {
       case X_Direction:
-         return  _mole_begin + (x-_base_plane)*_mole_slope;
+         if(x >= _base_plane && x <= _end_plane)
+           return  _mole_begin + (x-_base_plane)*_mole_slope;
+         return 0.0;
       case Y_Direction:
-         return  _mole_begin + (y-_base_plane)*_mole_slope;
+         if(y >= _base_plane && y <= _end_plane)
+           return  _mole_begin + (y-_base_plane)*_mole_slope;
+         return 0.0;
       case Z_Direction:
-         return  _mole_begin + (z-_base_plane)*_mole_slope;
+         if(z >= _base_plane && z <= _end_plane)
+           return  _mole_begin + (z-_base_plane)*_mole_slope;
+         return 0.0;
       default: genius_error();
     }
     return 0;
@@ -184,6 +189,11 @@ private:
    * the reference base plane, at which the mole fraction is _mole_begin
    */
   double _base_plane;
+
+  /**
+   * the end plane, between which the mole fraction is _mole_begin + x*_mole_slope
+   */
+  double _end_plane;
 
   /**
    * the mole fraction grading direction

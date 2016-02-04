@@ -95,6 +95,11 @@ public:
    */
   const std::string & ckt_node_name(unsigned int n) const
     { return _node_info_array[n].name; }
+  
+  /**
+   * @return the node's index by its name 
+   */
+  unsigned int ckt_node_index(const std::string &name);
 
   /**
    * @return the electrode to spice node map
@@ -152,6 +157,12 @@ public:
    */
   bool is_current_node(unsigned int n) const
   { return _node_info_array[n].type == 4; }
+
+  /**
+   * @return true if this spice node link to tcad electrode
+   */
+  bool is_link_to_electrode(unsigned int n) const
+  {  return _node_info_array[n].is_electrode; }
 
   /**
    * ckt node links to device electrode
@@ -236,6 +247,16 @@ public:
    * give a spice row number (begin with 0), get the local cols (begin with 0) and their values
    */
   void ckt_matrix_row(unsigned int row, std::vector<int> & col, std::vector<double> & values) const;
+  
+  /**
+   * export node voltage/ branch current to file
+   */
+  void export_solution(const std::string &file) const;
+  
+  /**
+   * import node voltage/ branch current from file
+   */
+  void import_solution(const std::string &file);
 
   /**
    * output ckt matrix
@@ -293,7 +314,7 @@ public:
   /**
    * give a spice row number (begin with 0), get the residual
    */
-  void ckt_residual(unsigned int n, double & value) const;
+  double ckt_residual(unsigned int n) const;
 
   /**
    * get ckt res
@@ -499,17 +520,30 @@ public:
    */
   void rotate_state_vectors()
   { _rotate_state_vectors(); }
+  
+  /**
+   * @return the size of state vector 
+   */
+  unsigned int n_state() const;
 
   /**
    * get the ith state vector
    */
   void get_state_vector(int i, std::vector<double> &) const;
+  
+  
+  /**
+   * set the ith state vector
+   */
+  void set_state_vector(int i, const std::vector<double> &);
+  
+  
+  //---------------------------------------------------------------  
 
   /**
    * load circuit, and reorder the matrix
    */
-  int circuit_load()
-  { return _circuit_load(); }
+  int circuit_load();
 
 
   /**
@@ -597,11 +631,17 @@ private:
    * save node information
    */
   std::vector<SPICE_NODE> _node_info_array;
-
+  
   /**
    * spice node pointer
    */
   std::vector<CKTnode *> _node_ptrs;
+  
+  /**
+   * spice node name to node index map
+   */
+  std::map<std::string, unsigned int> _spice_node_name_to_spice_node_map;
+  
 
   /**
    * genius electrode name -> spice node
@@ -642,6 +682,8 @@ private:
    * spice schur solver
    */
   SchurSolver _schur_solver;
+  
+  std::vector<unsigned int> _schur_index;
 
   /**
    * pointer to spice rhs

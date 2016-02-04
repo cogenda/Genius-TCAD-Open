@@ -37,9 +37,11 @@ using PhysicalUnit::e;
 /*---------------------------------------------------------------------
  * do pre-process to function for Density Gradient solver
  */
-void HomoInterfaceBC::DG_Function_Preprocess(PetscScalar *, Vec f, std::vector<PetscInt> &src_row,
+void HomoInterfaceBC::DG_Function_Preprocess(PetscScalar *x, Vec f, std::vector<PetscInt> &src_row,
                                                std::vector<PetscInt> &dst_row, std::vector<PetscInt> &clear_row)
 {
+  _ddm_current_interface(x, f);
+
   // search for all the node with this boundary type
   BoundaryCondition::const_node_iterator node_it = nodes_begin();
   BoundaryCondition::const_node_iterator end_it = nodes_end();
@@ -250,140 +252,11 @@ void HomoInterfaceBC::DG_Function(PetscScalar * x, Vec f, InsertMode &add_value_
 
 
 
-/*---------------------------------------------------------------------
- * reserve non zero pattern in jacobian matrix for Density Gradient solver
- */
-void HomoInterfaceBC::DG_Jacobian_Reserve(Mat *jac, InsertMode &add_value_flag)
-{
-
-  // ADD 0 to some position of Jacobian matrix to prevent MatAssembly expurgation these position.
-
-  // since we will use ADD_VALUES operat, check the matrix state.
-  if( (add_value_flag != ADD_VALUES) && (add_value_flag != NOT_SET_VALUES) )
-  {
-    MatAssemblyBegin(*jac, MAT_FLUSH_ASSEMBLY);
-    MatAssemblyEnd(*jac, MAT_FLUSH_ASSEMBLY);
-  }
-
-  // search for all the node with this boundary type
-  BoundaryCondition::const_node_iterator node_it = nodes_begin();
-  BoundaryCondition::const_node_iterator end_it = nodes_end();
-
-  for(; node_it!=end_it; ++node_it )
-  {
-    // skip node not belongs to this processor
-    if( (*node_it)->processor_id()!=Genius::processor_id() ) continue;
-
-    // buffer for saving regions and fvm_nodes this *node_it involves
-    std::vector<const SimulationRegion *> regions;
-    std::vector<const FVM_Node *> fvm_nodes;
-
-    // search all the fvm_node which has *node_it as root node, these fvm_nodes have the same location in geometry,
-    // but belong to different regions in logic.
-    BoundaryCondition::region_node_iterator  rnode_it     = region_node_begin(*node_it);
-    BoundaryCondition::region_node_iterator  end_rnode_it = region_node_end(*node_it);
-    for(unsigned int i=0 ; rnode_it!=end_rnode_it; ++i, ++rnode_it  )
-    {
-      const SimulationRegion * region = (*rnode_it).second.first;
-      const FVM_Node * fvm_node = (*rnode_it).second.second;
-
-      fvm_nodes.push_back(fvm_node);
-      regions.push_back(region);
-
-      // the first semiconductor region
-      if(i==0)
-      {
-        genius_assert( region->type() == SemiconductorRegion );
-        // do nothing.
-      }
-
-      // other semiconductor region
-      else
-      {
-        switch( region->type() )
-        {
-            case SemiconductorRegion :
-            {
-              // reserve items for all the ghost nodes
-              std::vector<int> rows, cols;
-              unsigned int n0_variables = regions[0]->dg_n_variables();
-              unsigned int n_variables  = regions[i]->dg_n_variables();
-
-              for(unsigned int n=0; n<n0_variables; n++)
-                rows.push_back(fvm_nodes[0]->global_offset()+n);
-
-              for(unsigned int n=0; n<n_variables; n++)
-              {
-                cols.push_back(fvm_nodes[i]->global_offset()+n);
-
-                FVM_Node::fvm_neighbor_node_iterator  nb_it = fvm_nodes[i]->neighbor_node_begin();
-                for(; nb_it != fvm_nodes[i]->neighbor_node_end(); ++nb_it)
-                {
-                  cols.push_back((*nb_it).first->global_offset()+n);
-                }
-              }
-
-              std::vector<PetscScalar> value(rows.size()*cols.size(),0);
-
-              MatSetValues(*jac, rows.size(), &rows[0], cols.size(), &cols[0], &value[0], ADD_VALUES);
-
-              // reserve for later operator
-              MatSetValue(*jac, fvm_nodes[i]->global_offset()+0, fvm_nodes[0]->global_offset()+0, 0, ADD_VALUES);
-              MatSetValue(*jac, fvm_nodes[i]->global_offset()+1, fvm_nodes[0]->global_offset()+1, 0, ADD_VALUES);
-              MatSetValue(*jac, fvm_nodes[i]->global_offset()+2, fvm_nodes[0]->global_offset()+2, 0, ADD_VALUES);
-
-              if(regions[0]->get_advanced_model()->QNEnabled && regions[i]->get_advanced_model()->QNEnabled)
-              {
-                unsigned int node_eqc0_offset = regions[0]->dg_variable_offset(EQC);
-                unsigned int node_eqc_offset = regions[i]->dg_variable_offset(EQC);
-                MatSetValue(*jac, fvm_nodes[i]->local_offset()+node_eqc_offset, fvm_nodes[0]->local_offset()+node_eqc0_offset, 0, ADD_VALUES);
-              }
-              if(regions[0]->get_advanced_model()->QPEnabled && regions[i]->get_advanced_model()->QPEnabled)
-              {
-                unsigned int node_eqv0_offset = regions[0]->dg_variable_offset(EQV);
-                unsigned int node_eqv_offset = regions[i]->dg_variable_offset(EQV);
-                MatSetValue(*jac, fvm_nodes[i]->local_offset()+node_eqv_offset, fvm_nodes[0]->local_offset()+node_eqv0_offset, 0, ADD_VALUES);
-              }
-              break;
-            }
-            case InsulatorRegion:
-            {
-              // reserve items for all the ghost nodes
-              std::vector<int> rows, cols;
-              rows.push_back(fvm_nodes[0]->global_offset()+0);
-              cols.push_back(fvm_nodes[i]->global_offset()+0);
-
-              FVM_Node::fvm_neighbor_node_iterator  nb_it = fvm_nodes[i]->neighbor_node_begin();
-              for(; nb_it != fvm_nodes[i]->neighbor_node_end(); ++nb_it)
-              {
-                cols.push_back((*nb_it).first->global_offset()+0);
-              }
-
-              std::vector<PetscScalar> value(rows.size()*cols.size(),0);
-
-              MatSetValues(*jac, rows.size(), &rows[0], cols.size(), &cols[0], &value[0], ADD_VALUES);
-
-              MatSetValue(*jac, fvm_nodes[i]->global_offset()+0, fvm_nodes[0]->global_offset()+0, 0, ADD_VALUES);
-              break;
-            }
-            default: genius_error();
-        }
-      }
-    }
-
-  }
-
-  // the last operator is ADD_VALUES
-  add_value_flag = ADD_VALUES;
-
-}
-
-
 
 /*---------------------------------------------------------------------
  * do pre-process to jacobian matrix for Density Gradient solver
  */
-void HomoInterfaceBC::DG_Jacobian_Preprocess(PetscScalar *, Mat *jac, std::vector<PetscInt> &src_row,
+void HomoInterfaceBC::DG_Jacobian_Preprocess(PetscScalar *, SparseMatrix<PetscScalar> *jac, std::vector<PetscInt> &src_row,
     std::vector<PetscInt> &dst_row, std::vector<PetscInt> &clear_row)
 {
   // search for all the node with this boundary type
@@ -469,16 +342,9 @@ void HomoInterfaceBC::DG_Jacobian_Preprocess(PetscScalar *, Mat *jac, std::vecto
 /*---------------------------------------------------------------------
  * build function and its jacobian for Density Gradient solver
  */
-void HomoInterfaceBC::DG_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_value_flag)
+void HomoInterfaceBC::DG_Jacobian(PetscScalar * x, SparseMatrix<PetscScalar> *jac, InsertMode &add_value_flag)
 {
   // the Jacobian of HomoInterface boundary condition is processed here
-
-  // since we will use ADD_VALUES operat, check the matrix state.
-  if( (add_value_flag != ADD_VALUES) && (add_value_flag != NOT_SET_VALUES) )
-  {
-    MatAssemblyBegin(*jac, MAT_FLUSH_ASSEMBLY);
-    MatAssemblyEnd(*jac, MAT_FLUSH_ASSEMBLY);
-  }
 
   BoundaryCondition::const_node_iterator node_it = nodes_begin();
   BoundaryCondition::const_node_iterator end_it = nodes_end();
@@ -527,16 +393,16 @@ void HomoInterfaceBC::DG_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_val
 
               // the solution value of this node is equal to corresponding node value in the first semiconductor region
               AutoDScalar ff1 = V - V_semi;
-              MatSetValue(*jac, fvm_nodes[i]->global_offset()+0, fvm_nodes[i]->global_offset()+0, ff1.getADValue(0), ADD_VALUES);
-              MatSetValue(*jac, fvm_nodes[i]->global_offset()+0, fvm_nodes[0]->global_offset()+0, ff1.getADValue(1), ADD_VALUES);
+              jac->add( fvm_nodes[i]->global_offset()+0,  fvm_nodes[i]->global_offset()+0,  ff1.getADValue(0) );
+              jac->add( fvm_nodes[i]->global_offset()+0,  fvm_nodes[0]->global_offset()+0,  ff1.getADValue(1) );
 
               AutoDScalar ff2 = n - n_semi;
-              MatSetValue(*jac, fvm_nodes[i]->global_offset()+1, fvm_nodes[i]->global_offset()+1, ff2.getADValue(0), ADD_VALUES);
-              MatSetValue(*jac, fvm_nodes[i]->global_offset()+1, fvm_nodes[0]->global_offset()+1, ff2.getADValue(1), ADD_VALUES);
+              jac->add( fvm_nodes[i]->global_offset()+1,  fvm_nodes[i]->global_offset()+1,  ff2.getADValue(0) );
+              jac->add( fvm_nodes[i]->global_offset()+1,  fvm_nodes[0]->global_offset()+1,  ff2.getADValue(1) );
 
               AutoDScalar ff3 = p - p_semi;
-              MatSetValue(*jac, fvm_nodes[i]->global_offset()+2, fvm_nodes[i]->global_offset()+2, ff3.getADValue(0), ADD_VALUES);
-              MatSetValue(*jac, fvm_nodes[i]->global_offset()+2, fvm_nodes[0]->global_offset()+2, ff3.getADValue(1), ADD_VALUES);
+              jac->add( fvm_nodes[i]->global_offset()+2,  fvm_nodes[i]->global_offset()+2,  ff3.getADValue(0) );
+              jac->add( fvm_nodes[i]->global_offset()+2,  fvm_nodes[0]->global_offset()+2,  ff3.getADValue(1) );
 
               if(regions[0]->get_advanced_model()->QNEnabled && regions[i]->get_advanced_model()->QNEnabled)
               {
@@ -545,8 +411,8 @@ void HomoInterfaceBC::DG_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_val
                 AutoDScalar Eqc = x[fvm_nodes[i]->local_offset() + node_eqc_offset];      Eqc.setADValue(0,1.0);
                 AutoDScalar Eqc_semi = x[fvm_nodes[0]->local_offset() + node_eqc0_offset]; Eqc_semi.setADValue(1,1.0);
                 AutoDScalar ff = (Eqc - Eqc_semi);
-                MatSetValue(*jac, fvm_nodes[i]->global_offset()+node_eqc_offset, fvm_nodes[i]->global_offset()+node_eqc_offset, ff.getADValue(0), ADD_VALUES);
-                MatSetValue(*jac, fvm_nodes[i]->global_offset()+node_eqc_offset, fvm_nodes[0]->global_offset()+node_eqc0_offset, ff.getADValue(1), ADD_VALUES);
+                jac->add( fvm_nodes[i]->global_offset()+node_eqc_offset,  fvm_nodes[i]->global_offset()+node_eqc_offset,  ff.getADValue(0) );
+                jac->add( fvm_nodes[i]->global_offset()+node_eqc_offset,  fvm_nodes[0]->global_offset()+node_eqc0_offset,  ff.getADValue(1) );
               }
 
               if(regions[0]->get_advanced_model()->QPEnabled && regions[i]->get_advanced_model()->QPEnabled)
@@ -556,8 +422,8 @@ void HomoInterfaceBC::DG_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_val
                 AutoDScalar Eqv = x[fvm_nodes[i]->local_offset() + node_eqv_offset];      Eqv.setADValue(0,1.0);
                 AutoDScalar Eqv_semi = x[fvm_nodes[0]->local_offset() + node_eqv0_offset]; Eqv_semi.setADValue(1,1.0);
                 AutoDScalar ff = (Eqv - Eqv_semi);
-                MatSetValue(*jac, fvm_nodes[i]->global_offset()+node_eqv_offset, fvm_nodes[i]->global_offset()+node_eqv_offset, ff.getADValue(0), ADD_VALUES);
-                MatSetValue(*jac, fvm_nodes[i]->global_offset()+node_eqv_offset, fvm_nodes[0]->global_offset()+node_eqv0_offset, ff.getADValue(1), ADD_VALUES);
+                jac->add( fvm_nodes[i]->global_offset()+node_eqv_offset,  fvm_nodes[i]->global_offset()+node_eqv_offset,  ff.getADValue(0) );
+                jac->add( fvm_nodes[i]->global_offset()+node_eqv_offset,  fvm_nodes[0]->global_offset()+node_eqv0_offset,  ff.getADValue(1) );
               }
 
               break;
@@ -577,7 +443,7 @@ void HomoInterfaceBC::DG_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_val
 
               PetscInt row = fvm_nodes[i]->global_offset()+0;
               PetscInt cols[2] = { fvm_nodes[i]->global_offset()+0,  fvm_nodes[0]->global_offset()+0};
-              MatSetValues(*jac, 1, &row, 2, cols, ff1.getADValue(), ADD_VALUES);
+              jac->add_row(  row,  2,  cols,  ff1.getADValue() );
 
               break;
             }
@@ -593,3 +459,4 @@ void HomoInterfaceBC::DG_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_val
   // the last operator is ADD_VALUES
   add_value_flag = ADD_VALUES;
 }
+

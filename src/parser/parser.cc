@@ -63,6 +63,7 @@ extern int isatty (int );
 }
 #endif
 
+#define YYERROR_VERBOSE
 namespace InputYY
 {
 #include "input.yy.c"

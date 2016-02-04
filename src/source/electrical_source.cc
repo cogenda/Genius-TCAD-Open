@@ -65,6 +65,8 @@ ElectricalSource::ElectricalSource(Parser::InputParser & decks):_bcs(0), _counte
 
         else if(c.is_enum_value("type","vshell"))    SetVSHELL(c);
 
+        else if(c.is_enum_value("type","vmix"))      SetVMIX(c);
+
       }
       else
       {
@@ -128,86 +130,99 @@ void ElectricalSource::link_to_bcs(BoundaryConditionCollector * bcs)
 
 
 
+
 void ElectricalSource::attach_source_to_electrode(const std::string & electrode_label, const std::string & source )
 {
-  BoundaryCondition *bc = _bcs->get_bc(electrode_label);
+  std::vector<BoundaryCondition *> bcs = _bcs->get_bcs_by_electrode_label(electrode_label);
 
-  // bc should not be null
-  genius_assert(bc);
-
-  // should be an electrode
-  genius_assert( bc->is_electrode() );
-
-  // can we find this electrode already in the table?
-  BIt bc_source_it = _bc_source_map.find(electrode_label);
-
-  // if not find, insert a new empty item
-  if( bc_source_it == _bc_source_map.end() )
+  for(unsigned int b=0; b<bcs.size(); b++)
   {
-    std::vector<VSource *> vsource_list;
-    std::vector<ISource *> isource_list;
-    _bc_source_map[electrode_label] = std::pair<std::vector<VSource *>, std::vector<ISource *> >(vsource_list, isource_list);
-    bc_source_it = _bc_source_map.find(electrode_label);
-    genius_assert( bc_source_it != _bc_source_map.end() );
+    // get the bc
+    BoundaryCondition *bc = bcs[b];
+
+    // bc should not be null
+    genius_assert(bc);
+
+    // should be an electrode
+    genius_assert( bc->is_electrode() );
+
+    // can we find this electrode already in the table?
+    BIt bc_source_it = _bc_source_map.find(bc->label());
+
+    // if not find, insert a new empty item
+    if( bc_source_it == _bc_source_map.end() )
+    {
+      std::vector<VSource *> vsource_list;
+      std::vector<ISource *> isource_list;
+      _bc_source_map[bc->label()] = std::pair<std::vector<VSource *>, std::vector<ISource *> >(vsource_list, isource_list);
+      bc_source_it = _bc_source_map.find(bc->label());
+      genius_assert( bc_source_it != _bc_source_map.end() );
+    }
+
+    // clear old value if exist
+    bc_source_it->second.first.clear();
+    bc_source_it->second.second.clear();
+
+    // insert the source into map if we find
+    if( _vsource_list.find(source) != _vsource_list.end() )
+      bc_source_it->second.first.push_back( (*_vsource_list.find(source)).second );
+
+    if( _isource_list.find(source) != _isource_list.end() )
+      bc_source_it->second.second.push_back( (*_isource_list.find(source)).second );
+
+    // the electrode should only have one kind sources at a time, either vsource or isource
+    // so we should check it
+    genius_assert( bc_source_it->second.first.empty() || bc_source_it->second.second.empty() );
   }
-
-  // clear old value if exist
-  bc_source_it->second.first.clear();
-  bc_source_it->second.second.clear();
-
-  // insert the source into map if we find
-  if( _vsource_list.find(source) != _vsource_list.end() )
-    bc_source_it->second.first.push_back( (*_vsource_list.find(source)).second );
-
-  if( _isource_list.find(source) != _isource_list.end() )
-    bc_source_it->second.second.push_back( (*_isource_list.find(source)).second );
-
-  // the electrode should only have one kind sources at a time, either vsource or isource
-  // so we should check it
-  genius_assert( bc_source_it->second.first.empty() || bc_source_it->second.second.empty() );
 }
 
 
 void ElectricalSource::attach_sources_to_electrode(const std::string & electrode_label, const std::vector<std::string> & source_list )
 {
-  BoundaryCondition *bc = _bcs->get_bc(electrode_label);
+  std::vector<BoundaryCondition *> bcs = _bcs->get_bcs_by_electrode_label(electrode_label);
 
-  // bc should not be null
-  genius_assert(bc);
-
-  // should be an electrode
-  genius_assert( bc->is_electrode() );
-
-  // can we find this electrode already in the table?
-  BIt bc_source_it = _bc_source_map.find(electrode_label);
-
-  // if not find, insert a new empty item
-  if( bc_source_it == _bc_source_map.end() )
+  for(unsigned int b=0; b<bcs.size(); b++)
   {
-    std::vector<VSource *> vsource_list;
-    std::vector<ISource *> isource_list;
-    _bc_source_map[electrode_label] = std::pair<std::vector<VSource *>, std::vector<ISource *> >(vsource_list, isource_list);
-    bc_source_it = _bc_source_map.find(electrode_label);
-    genius_assert( bc_source_it != _bc_source_map.end() );
+    // get the bc
+    BoundaryCondition *bc = bcs[b];
+
+    // bc should not be null
+    genius_assert(bc);
+
+    // should be an electrode
+    genius_assert( bc->is_electrode() );
+
+    // can we find this electrode already in the table?
+    BIt bc_source_it = _bc_source_map.find(bc->label());
+
+    // if not find, insert a new empty item
+    if( bc_source_it == _bc_source_map.end() )
+    {
+      std::vector<VSource *> vsource_list;
+      std::vector<ISource *> isource_list;
+      _bc_source_map[bc->label()] = std::pair<std::vector<VSource *>, std::vector<ISource *> >(vsource_list, isource_list);
+      bc_source_it = _bc_source_map.find(bc->label());
+      genius_assert( bc_source_it != _bc_source_map.end() );
+    }
+
+    // clear old value if exist
+    bc_source_it->second.first.clear();
+    bc_source_it->second.second.clear();
+
+    // insert the source into map if we find
+    for(unsigned int i=0; i<source_list.size(); ++i)
+    {
+      if( _vsource_list.find(source_list[i]) != _vsource_list.end() )
+        bc_source_it->second.first.push_back( (*_vsource_list.find(source_list[i])).second );
+
+      if( _isource_list.find(source_list[i]) != _isource_list.end() )
+        bc_source_it->second.second.push_back( (*_isource_list.find(source_list[i])).second );
+    }
+
+    // the electrode should only have one kind sources at a time, either vsource or isource
+    // so we should check it
+    genius_assert( bc_source_it->second.first.empty() || bc_source_it->second.second.empty() );
   }
-
-  // clear old value if exist
-  bc_source_it->second.first.clear();
-  bc_source_it->second.second.clear();
-
-  // insert the source into map if we find
-  for(unsigned int i=0; i<source_list.size(); ++i)
-  {
-    if( _vsource_list.find(source_list[i]) != _vsource_list.end() )
-      bc_source_it->second.first.push_back( (*_vsource_list.find(source_list[i])).second );
-
-    if( _isource_list.find(source_list[i]) != _isource_list.end() )
-      bc_source_it->second.second.push_back( (*_isource_list.find(source_list[i])).second );
-  }
-
-  // the electrode should only have one kind sources at a time, either vsource or isource
-  // so we should check it
-  genius_assert( bc_source_it->second.first.empty() || bc_source_it->second.second.empty() );
 }
 
 
@@ -318,6 +333,9 @@ void ElectricalSource::update(double time)
 
     // should be an electrode
     genius_assert( bc->is_electrode() );
+    
+    // skip float electrode
+    if( bc->ext_circuit()->is_float() ) continue;
 
     // we find voltage source
     if( !(*it).second.first.empty() )
@@ -486,18 +504,23 @@ double ElectricalSource::iapp(const std::string &bc, double time) const
 
 void  ElectricalSource::assign_voltage_to(const std::string & electrode_label, double vapp)
 {
-  // get the bc
-  BoundaryCondition *bc = _bcs->get_bc( electrode_label );
+  std::vector<BoundaryCondition *> bcs = _bcs->get_bcs_by_electrode_label(electrode_label);
+  for(unsigned int b=0; b<bcs.size(); b++)
+  {
+ 
+    // get the bc
+    BoundaryCondition *bc = bcs[b];
+    
+    // bc should not be null
+    genius_assert( bc );
 
-  // bc should not be null
-  genius_assert( bc );
+    // should be an electrode
+    genius_assert( bc->is_electrode() );
 
-  // should be an electrode
-  genius_assert( bc->is_electrode() );
+    bc->ext_circuit()->Vapp() = vapp;
 
-  bc->ext_circuit()->Vapp() = vapp;
-
-  bc->ext_circuit()->set_voltage_driven();
+    bc->ext_circuit()->set_voltage_driven();
+  }
 }
 
 
@@ -513,18 +536,22 @@ void ElectricalSource::assign_voltage_to(const std::vector<std::string> & electr
 
 void ElectricalSource::assign_current_to(const std::string & electrode_label, double iapp)
 {
-  // get the bc
-  BoundaryCondition *bc = _bcs->get_bc( electrode_label );
+  std::vector<BoundaryCondition *> bcs = _bcs->get_bcs_by_electrode_label(electrode_label);
+  for(unsigned int b=0; b<bcs.size(); b++)
+  {
+    // get the bc
+    BoundaryCondition *bc = bcs[b];
 
-  // bc should not be null
-  genius_assert( bc );
+    // bc should not be null
+    genius_assert( bc );
 
-  // should be an electrode
-  genius_assert( bc->is_electrode() );
+    // should be an electrode
+    genius_assert( bc->is_electrode() );
 
-  bc->ext_circuit()->Iapp() = iapp;
+    bc->ext_circuit()->Iapp() = iapp;
 
-  bc->ext_circuit()->set_current_driven();
+    bc->ext_circuit()->set_current_driven();
+  }
 }
 
 
@@ -631,7 +658,7 @@ void  ElectricalSource::SetVPULSE(const Parser::Card &c)
   double tr = c.get_real("tr",1e-9)*s;
   double tf = c.get_real("tf",1e-9)*s;
   double pw = c.get_real("pw",5e-7)*s;
-  double pr = c.get_real("pr",1e-6)*s;
+  double pr = c.get_real("pr",tr+tf+pw+pw)*s;
 
   double v1, v2;
   if ( c.is_parameter_exist("v1") && c.is_parameter_exist("v2"))
@@ -714,11 +741,37 @@ void  ElectricalSource::SetVSHELL(const Parser::Card &c)
   RECORD();
 */
 
-
-
 }
 
 
+void  ElectricalSource::SetVMIX(const Parser::Card &c)
+{
+
+  std::string label = c.get_string("id","");
+  genius_assert( label!="" );
+
+  std::string v1_label = c.get_string("vin1","");
+  std::string v2_label = c.get_string("vin2","");
+
+  if(_vsource_list.find(v1_label) == _vsource_list.end())
+  {
+    MESSAGE<<"\nVMIX: Vsource "<<v1_label<<" not found " <<"\n";
+    RECORD();
+    genius_error();
+  }
+
+  if(_vsource_list.find(v2_label) == _vsource_list.end())
+  {
+    MESSAGE<<"\nVMIX: Vsource "<<v2_label<<" not found " <<"\n";
+    RECORD();
+    genius_error();
+  }
+
+  VSource * v1 = _vsource_list.find(v1_label)->second;
+  VSource * v2 = _vsource_list.find(v2_label)->second;
+
+  _vsource_list[label] = new VMIX(label, v1, v2);
+}
 
 
 
@@ -814,10 +867,10 @@ void  ElectricalSource::SetIPULSE(const Parser::Card &c)
   double tr = c.get_real("tr",1e-9)*s;
   double tf = c.get_real("tf",1e-9)*s;
   double pw = c.get_real("pw",5e-7)*s;
-  double pr = c.get_real("pr",1e-6)*s;
+  double pr = c.get_real("pr",tr+tf+pw+pw)*s;
 
   double i1, i2;
-  if ( c.is_parameter_exist("v1") && c.is_parameter_exist("v2"))
+  if ( c.is_parameter_exist("i1") && c.is_parameter_exist("i2"))
   {
     i1 = c.get_real("i1",0.0)*A;
     i2 = c.get_real("i2",1.0)*A;

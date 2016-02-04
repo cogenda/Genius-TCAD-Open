@@ -73,7 +73,19 @@ public:
    * @return true iff this boundary has a current flow
    */
   virtual bool has_current_flow() const
-  { return true; }
+  { return false; }
+
+  /**
+   * @return the current flow of this boundary.
+   */
+  virtual PetscScalar current() const
+  {return _current_flow;}
+
+  /**
+   * @return writable reference to current flow of this boundary
+   */
+  virtual PetscScalar & current()
+  { return _current_flow;}
 
   /**
    * @return true if this bc is the hub of inter-connect layer
@@ -88,6 +100,16 @@ public:
 
 private:
 
+
+  /**
+   * current flow in/out
+   */
+  PetscScalar   _current_flow;
+
+private:
+
+#ifdef TCAD_SOLVERS
+
   /**
    * fill initial value to inter-connect node
    */
@@ -99,14 +121,9 @@ private:
   void inter_connect_function(PetscScalar *x , Vec f, InsertMode &add_value_flag);
 
   /**
-   * reserve matrix entries
-   */
-  void inter_connect_reserve(Mat *jac, InsertMode &add_value_flag);
-
-  /**
    * set jacobian matrix entries
    */
-  void inter_connect_jacobian(PetscScalar *x , Mat *jac, InsertMode &add_value_flag);
+  void inter_connect_jacobian(PetscScalar *x , SparseMatrix<PetscScalar> *jac, InsertMode &add_value_flag);
 
   /**
    * update solution data
@@ -126,15 +143,11 @@ private:
   void mix_inter_connect_function(PetscScalar *x , Vec f, InsertMode &add_value_flag);
 
   /**
-   * reserve matrix entries in mix mode
-   */
-  void mix_inter_connect_reserve(Mat *jac, InsertMode &add_value_flag);
-
-  /**
    * set jacobian matrix entries in mix mode
    */
-  void mix_inter_connect_jacobian(PetscScalar *x , Mat *jac, InsertMode &add_value_flag);
+  void mix_inter_connect_jacobian(PetscScalar *x , SparseMatrix<PetscScalar> *jac, InsertMode &add_value_flag);
 
+  
 
   void half_implicit_inter_connect_fill_value(Vec x);
 
@@ -146,7 +159,11 @@ private:
 
   void half_implicit_inter_connect_dummy(PetscScalar * x, Mat A, Vec f, InsertMode &add_value_flag);
 
+#endif
+
 public:
+
+#ifdef TCAD_SOLVERS
   //////////////////////////////////////////////////////////////////////////////////////////////
   //----------------Function and Jacobian evaluate for Poisson's Equation---------------------//
   //////////////////////////////////////////////////////////////////////////////////////////////
@@ -160,7 +177,7 @@ public:
   /**
    * build function and its jacobian for poisson solver, nothing to do
    */
-  virtual void Poissin_Jacobian(PetscScalar * , Mat *, InsertMode &)
+  virtual void Poissin_Jacobian(PetscScalar * , SparseMatrix<PetscScalar> *, InsertMode &)
   { /* no thing to do for poisson solver */ }
 
 
@@ -181,15 +198,9 @@ public:
   { inter_connect_function(x, f, add_value_flag); }
 
   /**
-   * reserve none zero pattern in petsc matrix.
-   */
-  virtual void DDM1_Jacobian_Reserve(Mat *jac, InsertMode &add_value_flag)
-  { inter_connect_reserve(jac, add_value_flag); }
-
-  /**
    * build function and its jacobian for level 1 DDM solver, nothing to do
    */
-  virtual void DDM1_Jacobian(PetscScalar *x , Mat *jac, InsertMode &add_value_flag)
+  virtual void DDM1_Jacobian(PetscScalar *x , SparseMatrix<PetscScalar> *jac, InsertMode &add_value_flag)
   { inter_connect_jacobian(x, jac, add_value_flag); }
 
   /**
@@ -216,15 +227,9 @@ public:
   { mix_inter_connect_function(x, f, add_value_flag); }
 
   /**
-   * reserve none zero pattern in petsc matrix.
-   */
-  virtual void MixA_DDM1_Jacobian_Reserve(Mat *jac, InsertMode &add_value_flag)
-  { mix_inter_connect_reserve(jac, add_value_flag); }
-
-  /**
    * build function and its jacobian for Advanced Mixed DDML1 solver
    */
-  virtual void MixA_DDM1_Jacobian(PetscScalar *x , Mat *jac, InsertMode &add_value_flag)
+  virtual void MixA_DDM1_Jacobian(PetscScalar *x , SparseMatrix<PetscScalar> *jac, InsertMode &add_value_flag)
   { mix_inter_connect_jacobian(x, jac, add_value_flag); }
 
   //////////////////////////////////////////////////////////////////////////////////
@@ -244,15 +249,9 @@ public:
   { inter_connect_function(x, f, add_value_flag); }
 
   /**
-   * reserve none zero pattern in petsc matrix.
-   */
-  virtual void DDM2_Jacobian_Reserve(Mat *jac, InsertMode &add_value_flag)
-  { inter_connect_reserve(jac, add_value_flag); }
-
-  /**
    * build function and its jacobian for level 2 DDM solver
    */
-  virtual void DDM2_Jacobian(PetscScalar *x , Mat *jac, InsertMode &add_value_flag)
+  virtual void DDM2_Jacobian(PetscScalar *x , SparseMatrix<PetscScalar> *jac, InsertMode &add_value_flag)
   { inter_connect_jacobian(x, jac, add_value_flag); }
 
   /**
@@ -279,15 +278,9 @@ public:
   { mix_inter_connect_function(x, f, add_value_flag); }
 
   /**
-   * reserve none zero pattern in petsc matrix.
-   */
-  virtual void MixA_DDM2_Jacobian_Reserve(Mat *jac, InsertMode &add_value_flag)
-  { mix_inter_connect_reserve(jac, add_value_flag); }
-
-  /**
    * build function and its jacobian for Advanced Mixed DDML2 solver
    */
-  virtual void MixA_DDM2_Jacobian(PetscScalar *x , Mat *jac, InsertMode &add_value_flag)
+  virtual void MixA_DDM2_Jacobian(PetscScalar *x , SparseMatrix<PetscScalar> *jac, InsertMode &add_value_flag)
   { mix_inter_connect_jacobian(x, jac, add_value_flag); }
 
   //////////////////////////////////////////////////////////////////////////////////
@@ -307,15 +300,9 @@ public:
   { inter_connect_function(x, f, add_value_flag); }
 
   /**
-   * reserve none zero pattern in petsc matrix.
-   */
-  virtual void EBM3_Jacobian_Reserve(Mat *jac, InsertMode &add_value_flag)
-  { inter_connect_reserve(jac, add_value_flag); }
-
-  /**
    * build function and its jacobian for level 3 EBM solver
    */
-  virtual void EBM3_Jacobian(PetscScalar *x , Mat *jac, InsertMode &add_value_flag)
+  virtual void EBM3_Jacobian(PetscScalar *x , SparseMatrix<PetscScalar> *jac, InsertMode &add_value_flag)
   { inter_connect_jacobian(x, jac, add_value_flag); }
 
   /**
@@ -341,15 +328,9 @@ public:
   { mix_inter_connect_function(x, f, add_value_flag); }
 
   /**
-   * reserve none zero pattern in petsc matrix.
-   */
-  virtual void MixA_EBM3_Jacobian_Reserve(Mat *jac, InsertMode &add_value_flag)
-  { mix_inter_connect_reserve(jac, add_value_flag); }
-
-  /**
    * build function and its jacobian for Advanced Mixed level 3 EBM solver
    */
-  virtual void MixA_EBM3_Jacobian(PetscScalar *x , Mat *jac, InsertMode &add_value_flag)
+  virtual void MixA_EBM3_Jacobian(PetscScalar *x , SparseMatrix<PetscScalar> *jac, InsertMode &add_value_flag)
   { mix_inter_connect_jacobian(x, jac, add_value_flag); }
 
 
@@ -390,6 +371,7 @@ public:
   virtual void DDM1_Half_Implicit_Poisson_Correction(PetscScalar * x, Mat A, Vec r, InsertMode &add_value_flag)
   { half_implicit_inter_connect_dummy(x, A, r, add_value_flag); }
 
+#endif
 #endif
 
 };

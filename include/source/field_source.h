@@ -52,14 +52,14 @@ public:
 
   /**
    * update the source stimulate to each mesh node
-   * when force is true, will update system
+   * when force is true, will update source
    */
-  void update(double time, bool force_update_system=false);
+  void update(double time, bool force_update_source=false);
 
   /**
-   * update system after mesh refine
+   * update source
    */
-  void update_system();
+  void update_source();
 
   /**
    * @return applied_to_system flag
@@ -69,7 +69,7 @@ public:
   /**
    * @return the limited time step
    */
-  double limit_dt(double time, double dt) const;
+  double limit_dt(double time, double dt, double dt_min) const;
 
   /**
    * @return true when we have particle incident
@@ -103,15 +103,24 @@ public:
     if(_waveforms.find(str)!=_waveforms.end())
     {
       current_waveform = _waveforms[str];
+      for(unsigned int n=0; n<_light_sources.size(); ++n)
+        _light_sources[n]->set_global_waveform(current_waveform);
       return true;
     }
     else
     {
       current_waveform = 0;
+      for(unsigned int n=0; n<_light_sources.size(); ++n)
+        _light_sources[n]->set_global_waveform(current_waveform);
       return false;
     }
     return false;
   }
+
+  /**
+   * clear effect waveform
+   */
+  void clear_effect_waveform()  { current_waveform = 0; }
 
 private:
 
@@ -138,9 +147,9 @@ private:
   { _light_sources.push_back(ls); }
 
 
-  void parse_transform(const Parser::Card &c);
+  //void parse_transform(const Parser::Card &c);
 
-  void parse_spectrum_file(const std::string & filename, SimulationSystem & system, const Parser::Card &c);
+  std::vector<Light_Source_From_File *> parse_spectrum_file(const std::string & filename, SimulationSystem & system, const Parser::Card &c);
 
   /**
    * flag to indicate that the field source has been applied

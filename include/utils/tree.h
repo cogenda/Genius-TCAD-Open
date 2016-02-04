@@ -100,6 +100,11 @@ public:
    */
   bool hit_boundbox(const Point & p, const Point & dir) const;
 
+  /**
+   * @return true when ray(p,d) hit mesh domain, also get parameter for hit point
+   */
+  bool hit_domain(const Point & p, const Point & d, std::pair<double, double> &t) const;
+
 private:
 
 

@@ -41,14 +41,17 @@ void LinearPartitioner::_do_partition (MeshBase& mesh, const unsigned int n_piec
       return;
     }
 
+  START_LOG ("partition()", "LinearPartitioner");
+
   // Create a simple linear partitioning
+  for(unsigned int c=0; c<_clusters.size(); ++c)
   {
-    START_LOG ("partition()", "LinearPartitioner");
+    Cluster * cluster = _clusters[c];
 
-    const unsigned int n_cluster     = _clusters.size();
-    const unsigned int blksize       = n_cluster/n_pieces;
+    const unsigned int n_elem     = cluster->elems.size();
+    const unsigned int blksize    = n_elem/n_pieces;
 
-    for (unsigned int n=0; n<n_cluster; ++n)
+    for (unsigned int n=0; n<n_elem; ++n)
     {
       short int processor_id;
       if ((n/blksize) < n_pieces)
@@ -56,15 +59,11 @@ void LinearPartitioner::_do_partition (MeshBase& mesh, const unsigned int n_piec
       else
         processor_id = 0;
 
-      Cluster * cluster = _clusters[n];
-
-      for (unsigned int mn=0; mn<cluster->elems.size(); mn++)
-      {
-        Elem * elem = const_cast<Elem *>(cluster->elems[mn]);
-        elem->processor_id() = processor_id;
-      }
+      Elem * elem = const_cast<Elem *>(cluster->elems[n]);
+      elem->processor_id() = processor_id;
     }
-
-    STOP_LOG ("partition()", "LinearPartitioner");
   }
+
+  STOP_LOG ("partition()", "LinearPartitioner");
+
 }

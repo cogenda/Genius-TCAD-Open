@@ -134,6 +134,25 @@ void InsulatorSimulationRegion::DDM1_Function(PetscScalar * x, Vec f, InsertMode
     }
   }
 
+
+  // process node related terms
+  // including \rho of poisson's equation
+  const_processor_node_iterator node_it = on_processor_nodes_begin();
+  const_processor_node_iterator node_it_end = on_processor_nodes_end();
+  for(; node_it!=node_it_end; ++node_it)
+  {
+    const FVM_Node * fvm_node = *node_it;
+    const FVM_NodeData * node_data = fvm_node->node_data();
+
+    const unsigned int global_offset = fvm_node->global_offset();
+
+    PetscScalar rho = e*( node_data->trap_a() + node_data->trap_b() + node_data->p() - node_data->n())*fvm_node->volume(); // the charge density
+
+    iy.push_back(global_offset);                                // save index in the buffer
+    y.push_back( rho );                                                       // save value in the buffer
+
+  }
+
   if(iy.size()) VecSetValues(f, iy.size(), &iy[0], &y[0], ADD_VALUES);
 
   // after the first scan, every nodes are updated.
@@ -149,16 +168,8 @@ void InsulatorSimulationRegion::DDM1_Function(PetscScalar * x, Vec f, InsertMode
 /*---------------------------------------------------------------------
  * build function and its jacobian for DDML1 solver
  */
-void InsulatorSimulationRegion::DDM1_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_value_flag)
+void InsulatorSimulationRegion::DDM1_Jacobian(PetscScalar * x, SparseMatrix<PetscScalar> *jac, InsertMode &add_value_flag)
 {
-
-  // note, we will use ADD_VALUES to set values of matrix J
-  // if the previous operator is not ADD_VALUES, we should flush the matrix
-  if( add_value_flag != ADD_VALUES && add_value_flag != NOT_SET_VALUES)
-  {
-    MatAssemblyBegin(*jac, MAT_FLUSH_ASSEMBLY);
-    MatAssemblyEnd(*jac, MAT_FLUSH_ASSEMBLY);
-  }
 
   //the indepedent variable number, since we only process edges, 2 is enough
   adtl::AutoDScalar::numdir=2;
@@ -207,12 +218,12 @@ void InsulatorSimulationRegion::DDM1_Jacobian(PetscScalar * x, Mat *jac, InsertM
       // ignore thoese ghost nodes
       if( fvm_n1->on_processor() )
       {
-        MatSetValues(*jac, 1, &row[0], 2, &col[0], f.getADValue(), ADD_VALUES);
+        jac->add_row(  row[0],  2,  &col[0],  f.getADValue() );
       }
 
       if( fvm_n2->on_processor() )
       {
-        MatSetValues(*jac, 1, &row[1], 2, &col[0], (-f).getADValue(), ADD_VALUES);
+        jac->add_row(  row[1],  2,  &col[0],  (-f).getADValue() );
       }
     }
   }
@@ -239,6 +250,7 @@ void InsulatorSimulationRegion::DDM1_Update_Solution(PetscScalar *lxx)
     FVM_NodeData * node_data = fvm_node->node_data();  genius_assert(node_data!=NULL);
 
     //update psi
+    node_data->psi_old() =  node_data->psi_last();
     node_data->psi_last() =  node_data->psi();
     node_data->psi() = lxx[fvm_node->local_offset()];
   }
@@ -263,5 +275,6 @@ void InsulatorSimulationRegion::DDM1_Update_Solution(PetscScalar *lxx)
   }
 
 }
+
 
 

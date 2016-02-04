@@ -104,9 +104,21 @@ public:
   void set_bounding_box (const std::pair<Point, Point>& bbox);
 
   /**
+   * @return the bounding_box
+   */
+  const std::pair<Point, Point>& get_bounding_box() const;
+
+  /**
    * @return the first element the ray(p,dir) hit
    */
   const Elem * hit_element(const Point & p, const Point & dir) const;
+
+
+  /**
+   * @return the ray(p,dir) hit domain
+   */
+  bool hit_domain(const Point & p, const Point & dir, std::pair<double, double> & t) const;
+
 
   /**
    * after mesh elem insert, rebuild the elem_bounding_box

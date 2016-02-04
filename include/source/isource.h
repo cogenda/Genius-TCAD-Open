@@ -490,9 +490,11 @@ public:
 
   void dt_critial_limit(const double t, double & dt, const double dt_min) const
   {
-    double ta1 = tfd;
+    double ta1 = td;
+    double ta2 = tfd;
 
     if( t<ta1 && t+dt>ta1 && ta1-t>=dt_min ) { dt = ta1-t; return; }
+    if( t<ta2 && t+dt>ta2 && ta2-t>=dt_min ) { dt = ta2-t; return; }
   }
 
 };
@@ -519,6 +521,15 @@ public:
   double iapp(const double t) const
   {
     return expr_evaluator(0,0,0,t);
+  }
+
+
+  /**
+   * @return the max value of iapp(t+delta_t)-iapp(t), delta_t in [0, dt]
+   */
+  double di_max(const double t, const double dt, const double dt_min) const
+  {
+    return 0.0;
   }
 
 };
@@ -578,6 +589,15 @@ public:
   double iapp(const double t) const
   {
      return scale_A*Iapp_Shell(t/scale_t);
+  }
+
+
+  /**
+   * @return the max value of iapp(t+delta_t)-iapp(t), delta_t in [0, dt]
+   */
+  double di_max(const double t, const double dt, const double dt_min) const
+  {
+    return 0.0;
   }
 
 };

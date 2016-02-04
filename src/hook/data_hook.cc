@@ -39,7 +39,7 @@ DataHook::DataHook ( SolverBase & solver, const std::string & name, void * param
 {
 
   const SimulationSystem &system = get_solver().get_system();
-  _is_2d = system.mesh().mesh_dimension() == 2;
+  _dim = system.mesh().mesh_dimension();
 
 
   const std::vector<Parser::Parameter> & parm_list = * ( ( std::vector<Parser::Parameter> * ) param );
@@ -145,13 +145,15 @@ void DataHook::post_solve()
 
     // write variables
     _out << "# Variables: " << std::endl;
+    _out << '#' <<'\t' << "node_id"<< std::endl;
     _out << '#' <<'\t' << "x" << " [um]"<< std::endl;
     _out << '#' <<'\t' << "y" << " [um]"<< std::endl;
     _out << '#' <<'\t' << "z" << " [um]"<< std::endl;
-    if(_is_2d)
+    if(_dim == 2)
       _out << '#' <<'\t' << "cell_area" << " [um^2]"<< std::endl;
     else
       _out << '#' <<'\t' << "cell_volumn" << " [um^3]"<< std::endl;
+
     for ( unsigned int n=0; n<_variable_name.size(); ++n )
     {
       SolutionVariable variable = solution_string_to_enum ( FormatVariableString(_variable_name[n]) );
@@ -205,10 +207,12 @@ void DataHook::post_solve()
       }
     }
 
-    // allgather region node, parallel code
+    // allgather region node info, parallel code
     std::vector<unsigned int> nodes;
     region->region_node(nodes);
 
+    std::vector<double> node_vols;
+    region->region_node_vol(node_vols);
 
     // save data
     if ( !Genius::processor_id() )
@@ -216,9 +220,11 @@ void DataHook::post_solve()
       for (unsigned int n=0 ; n<nodes.size(); ++n )
       {
         unsigned int node_id = nodes[n];
+        _out << std::setw ( 10 ) << node_id;
         _out << std::setw ( 15 ) << pts[3*node_id+0]/um;
         _out << std::setw ( 15 ) << pts[3*node_id+1]/um;
         _out << std::setw ( 15 ) << pts[3*node_id+2]/um;
+        _out << std::setw ( 15 ) << node_vols[n]/std::pow(um, int(_dim));
         for (unsigned int v=0; v<values.size(); ++v)
         {
           const std::vector<Real> & value = values[v];

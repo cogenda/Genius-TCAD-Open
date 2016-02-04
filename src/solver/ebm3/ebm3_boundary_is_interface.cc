@@ -181,7 +181,7 @@ void InsulatorSemiconductorInterfaceBC::EBM3_Function(PetscScalar * x, Vec f, In
 
           // process interface fixed charge density
           PetscScalar boundary_area = fvm_nodes[i]->outside_boundary_surface_area();
-          VecSetValue(f, fvm_nodes[i]->global_offset()+node_psi_offset, qf*boundary_area, ADD_VALUES);
+          VecSetValue(f, fvm_nodes[i]->global_offset()+node_psi_offset, (qf+node_data->interface_charge())*boundary_area, ADD_VALUES);
 
           {
             // surface recombination
@@ -315,116 +315,6 @@ void InsulatorSemiconductorInterfaceBC::EBM3_Function(PetscScalar * x, Vec f, In
 
 
 
-/*---------------------------------------------------------------------
- * reserve non zero pattern in jacobian matrix for EBM3 solver
- */
-void InsulatorSemiconductorInterfaceBC::EBM3_Jacobian_Reserve(Mat *jac, InsertMode &add_value_flag)
-{
-
-  // ADD 0 to some position of Jacobian matrix to prevent MatAssembly expurgation these position.
-
-  // since we will use ADD_VALUES operat, check the matrix state.
-  if( (add_value_flag != ADD_VALUES) && (add_value_flag != NOT_SET_VALUES) )
-  {
-    MatAssemblyBegin(*jac, MAT_FLUSH_ASSEMBLY);
-    MatAssemblyEnd(*jac, MAT_FLUSH_ASSEMBLY);
-  }
-
-  // search for all the node with this boundary type
-  BoundaryCondition::const_node_iterator node_it = nodes_begin();
-  BoundaryCondition::const_node_iterator end_it = nodes_end();
-  for(; node_it!=end_it; ++node_it )
-  {
-    // skip node not belongs to this processor
-    if( (*node_it)->processor_id()!=Genius::processor_id() ) continue;
-
-    // search all the fvm_node which has *node_it as root node, these nodes are the same in geometry,
-    // but in different region.
-    BoundaryCondition::region_node_iterator  rnode_it     = region_node_begin(*node_it);
-    BoundaryCondition::region_node_iterator  end_rnode_it = region_node_end(*node_it);
-
-    std::vector<SimulationRegion *> regions;
-    std::vector<FVM_Node *> fvm_nodes;
-
-    for(unsigned int i=0 ; rnode_it!=end_rnode_it; ++i, ++rnode_it  )
-    {
-      regions.push_back( (*rnode_it).second.first );
-      fvm_nodes.push_back( (*rnode_it).second.second );
-
-      switch ( regions[i]->type() )
-      {
-        // Insulator-Semiconductor interface at Semiconductor side, we should reserve entrance for later add operator
-      case SemiconductorRegion:
-        {
-          // semiconductor region should be the first region
-          genius_assert(i==0);
-
-          unsigned int global_offset   = fvm_nodes[i]->global_offset();
-          unsigned int node_psi_offset = regions[i]->ebm_variable_offset(POTENTIAL);
-          unsigned int node_Tl_offset  = regions[i]->ebm_variable_offset(TEMPERATURE);
-
-          FVM_Node::fvm_ghost_node_iterator gn_it = fvm_nodes[i]->ghost_node_begin();
-          for( ; gn_it!=fvm_nodes[i]->ghost_node_end(); ++gn_it )
-          {
-            // ghost node is semiconductor region node
-            const FVM_Node * ghost_fvm_node = (*gn_it).first;
-
-            const SimulationRegion * ghost_region = this->system().region((*gn_it).second.first);
-            unsigned int ghostregion_node_psi_offset = ghost_region->ebm_variable_offset(POTENTIAL);
-            unsigned int ghostregion_node_Tl_offset  = ghost_region->ebm_variable_offset(TEMPERATURE);
-
-            MatSetValue(*jac, global_offset+node_psi_offset, ghost_fvm_node->global_offset()+ghostregion_node_psi_offset, 0, ADD_VALUES);
-            if(regions[i]->get_advanced_model()->enable_Tl())
-              MatSetValue(*jac, global_offset+node_Tl_offset, ghost_fvm_node->global_offset()+ghostregion_node_Tl_offset, 0, ADD_VALUES);
-
-            FVM_Node::fvm_neighbor_node_iterator  gnb_it = ghost_fvm_node->neighbor_node_begin();
-            for(; gnb_it != ghost_fvm_node->neighbor_node_end(); ++gnb_it)
-            {
-              MatSetValue(*jac, global_offset+node_psi_offset, (*gnb_it).first->global_offset()+ghostregion_node_psi_offset, 0, ADD_VALUES);
-
-              if(regions[i]->get_advanced_model()->enable_Tl())
-                MatSetValue(*jac, global_offset+node_Tl_offset, (*gnb_it).first->global_offset()+ghostregion_node_Tl_offset, 0, ADD_VALUES);
-            }
-
-          }
-
-          break;
-        }
-
-        // Insulator-Semiconductor interface at Insulator side, we should add the rows to semiconductor region
-      case InsulatorRegion:
-        {
-
-          unsigned int global_offset   = fvm_nodes[i]->global_offset();
-          unsigned int node_psi_offset = regions[i]->ebm_variable_offset(POTENTIAL);
-          unsigned int node_Tl_offset  = regions[i]->ebm_variable_offset(TEMPERATURE);
-
-          unsigned int semiconductor_node_psi_offset = regions[0]->ebm_variable_offset(POTENTIAL);
-          unsigned int semiconductor_node_Tl_offset  = regions[0]->ebm_variable_offset(TEMPERATURE);
-
-          // reserve for later operator
-          MatSetValue(*jac, global_offset+node_psi_offset, fvm_nodes[0]->global_offset()+semiconductor_node_psi_offset, 0, ADD_VALUES);
-
-          if(regions[i]->get_advanced_model()->enable_Tl())
-            MatSetValue(*jac, global_offset+node_Tl_offset, fvm_nodes[0]->global_offset()+semiconductor_node_Tl_offset, 0, ADD_VALUES);
-
-          break;
-        }
-      case VacuumRegion:
-        break;
-      default: genius_error(); //we should never reach here
-      }
-    }
-
-  }
-
-  // the last operator is ADD_VALUES
-  add_value_flag = ADD_VALUES;
-
-  // gate current
-  _gate_current_jacobian_reserve(jac, add_value_flag);
-
-}
 
 
 
@@ -432,7 +322,7 @@ void InsulatorSemiconductorInterfaceBC::EBM3_Jacobian_Reserve(Mat *jac, InsertMo
 /*---------------------------------------------------------------------
  * do pre-process to jacobian matrix for EBM3 solver
  */
-void InsulatorSemiconductorInterfaceBC::EBM3_Jacobian_Preprocess(PetscScalar * ,Mat *jac, std::vector<PetscInt> &src_row,
+void InsulatorSemiconductorInterfaceBC::EBM3_Jacobian_Preprocess(PetscScalar * ,SparseMatrix<PetscScalar> *jac, std::vector<PetscInt> &src_row,
     std::vector<PetscInt> &dst_row, std::vector<PetscInt> &clear_row)
 {
   // search for all the node with this boundary type
@@ -492,17 +382,8 @@ void InsulatorSemiconductorInterfaceBC::EBM3_Jacobian_Preprocess(PetscScalar * ,
 /*---------------------------------------------------------------------
  * build function and its jacobian for EBM3 solver
  */
-void InsulatorSemiconductorInterfaceBC::EBM3_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_value_flag)
+void InsulatorSemiconductorInterfaceBC::EBM3_Jacobian(PetscScalar * x, SparseMatrix<PetscScalar> *jac, InsertMode &add_value_flag)
 {
-
-  // since we will use ADD_VALUES operat, check the matrix state.
-  if( (add_value_flag != ADD_VALUES) && (add_value_flag != NOT_SET_VALUES) )
-  {
-    MatAssemblyBegin(*jac, MAT_FLUSH_ASSEMBLY);
-    MatAssemblyEnd(*jac, MAT_FLUSH_ASSEMBLY);
-  }
-
-
   // after that, set values to source rows
   BoundaryCondition::const_node_iterator node_it = nodes_begin();
   BoundaryCondition::const_node_iterator end_it = nodes_end();
@@ -598,46 +479,46 @@ void InsulatorSemiconductorInterfaceBC::EBM3_Jacobian(PetscScalar * x, Mat *jac,
             // surface recombination
             AutoDScalar GSurf = - mt->band->R_Surf(p, n, T) * boundary_area; //generation due to SRH
 
-            MatSetValues(*jac, 1, &index[node_n_offset], n_node_var, &index[0], GSurf.getADValue(), ADD_VALUES);
-            MatSetValues(*jac, 1, &index[node_p_offset], n_node_var, &index[0], GSurf.getADValue(), ADD_VALUES);
+            jac->add_row(  index[node_n_offset],  n_node_var,  &index[0],  GSurf.getADValue() );
+            jac->add_row(  index[node_p_offset],  n_node_var,  &index[0],  GSurf.getADValue() );
 
             if (sregion->get_advanced_model()->enable_Tn())
             {
               AutoDScalar Hn = 1.5*kb*Tn*GSurf;
-              MatSetValues(*jac, 1, &index[node_Tn_offset], n_node_var, &index[0], Hn.getADValue(), ADD_VALUES);
+              jac->add_row(  index[node_Tn_offset],  n_node_var,  &index[0],  Hn.getADValue() );
             }
             if (sregion->get_advanced_model()->enable_Tp())
             {
               AutoDScalar Hp = 1.5*kb*Tn*GSurf;
-              MatSetValues(*jac, 1, &index[node_Tp_offset], n_node_var, &index[0], Hp.getADValue(), ADD_VALUES);
+              jac->add_row(  index[node_Tp_offset],  n_node_var,  &index[0],  Hp.getADValue() );
             }
             if (sregion->get_advanced_model()->enable_Tl())
             {
               AutoDScalar H  = - GSurf*(Eg+1.5*kb*Tn+1.5*kb*Tp);
-              MatSetValues(*jac, 1, &index[node_Tl_offset], n_node_var, &index[0], H.getADValue(), ADD_VALUES);
+              jac->add_row(  index[node_Tl_offset],  n_node_var,  &index[0],  H.getADValue() );
             }
 
             if (sregion->get_advanced_model()->Trap)
             {
               mt->trap->Calculate(false,p,n,ni,T);
               AutoDScalar TrappedC = mt->trap->ChargeAD(false) * boundary_area;
-              MatSetValues(*jac, 1, &index[node_psi_offset], n_node_var, &index[0], TrappedC.getADValue(), ADD_VALUES);
+              jac->add_row(  index[node_psi_offset],  n_node_var,  &index[0],  TrappedC.getADValue() );
 
               AutoDScalar TrapElec = mt->trap->ElectronTrapRate(false,n,ni,T);
               AutoDScalar TrapHole = mt->trap->HoleTrapRate    (false,p,ni,T);
-              MatSetValues(*jac, 1, &index[node_n_offset], n_node_var, &index[0], (-TrapElec*boundary_area).getADValue(), ADD_VALUES);
-              MatSetValues(*jac, 1, &index[node_p_offset], n_node_var, &index[0], (-TrapElec*boundary_area).getADValue(), ADD_VALUES);
+              jac->add_row(  index[node_n_offset],  n_node_var,  &index[0],  (-TrapElec*boundary_area).getADValue() );
+              jac->add_row(  index[node_p_offset],  n_node_var,  &index[0],  (-TrapElec*boundary_area).getADValue() );
 
               if(sregion->get_advanced_model()->enable_Tn())
               {
                 AutoDScalar Hn = - 1.5 * kb*Tn * TrapElec;
-                MatSetValues(*jac, 1, &index[node_Tn_offset], n_node_var, &index[0], (Hn*boundary_area).getADValue(),   ADD_VALUES);
+                jac->add_row(  index[node_Tn_offset],  n_node_var,  &index[0],  (Hn*boundary_area).getADValue() );
               }
 
               if(sregion->get_advanced_model()->enable_Tp())
               {
                 AutoDScalar Hp = - 1.5 * kb*Tp * TrapHole;
-                MatSetValues(*jac, 1, &index[node_Tp_offset], n_node_var, &index[0], (Hp*boundary_area).getADValue(),   ADD_VALUES);
+                jac->add_row(  index[node_Tp_offset],  n_node_var,  &index[0],  (Hp*boundary_area).getADValue() );
               }
 
               if(sregion->get_advanced_model()->enable_Tl())
@@ -645,7 +526,7 @@ void InsulatorSemiconductorInterfaceBC::EBM3_Jacobian(PetscScalar * x, Mat *jac,
                 AutoDScalar EcEi = 0.5*Eg - kb*T*log(node_data->Nc()/node_data->Nv());
                 AutoDScalar EiEv = 0.5*Eg + kb*T*log(node_data->Nc()/node_data->Nv());
                 AutoDScalar H = mt->trap->TrapHeat(false,p,n,ni,Tp,Tn,T,EcEi,EiEv);
-                MatSetValues(*jac, 1, &index[node_Tl_offset], n_node_var, &index[0], (H*boundary_area).getADValue(),   ADD_VALUES);
+                jac->add_row(  index[node_Tl_offset],  n_node_var,  &index[0],  (H*boundary_area).getADValue() );
               }
             }
           }
@@ -676,8 +557,8 @@ void InsulatorSemiconductorInterfaceBC::EBM3_Jacobian(PetscScalar * x, Mat *jac,
           AutoDScalar  ff1 = V - V_semi;
 
           // set Jacobian of governing equation ff
-          MatSetValue(*jac, global_offset+node_psi_offset, fvm_nodes[i]->global_offset()+node_psi_offset, ff1.getADValue(0), ADD_VALUES);
-          MatSetValue(*jac, global_offset+node_psi_offset, fvm_nodes[0]->global_offset()+semiconductor_node_psi_offset, ff1.getADValue(1), ADD_VALUES);
+          jac->add( global_offset+node_psi_offset,  fvm_nodes[i]->global_offset()+node_psi_offset,  ff1.getADValue(0) );
+          jac->add( global_offset+node_psi_offset,  fvm_nodes[0]->global_offset()+semiconductor_node_psi_offset,  ff1.getADValue(1) );
 
           if(regions[i]->get_advanced_model()->enable_Tl())
           {
@@ -692,8 +573,8 @@ void InsulatorSemiconductorInterfaceBC::EBM3_Jacobian(PetscScalar * x, Mat *jac,
             AutoDScalar ff2 = T - T_semi;
 
             // set Jacobian of governing equation ff2
-            MatSetValue(*jac, global_offset+node_Tl_offset, fvm_nodes[i]->global_offset()+node_Tl_offset, ff2.getADValue(0), ADD_VALUES);
-            MatSetValue(*jac, global_offset+node_Tl_offset, fvm_nodes[0]->global_offset()+semiconductor_node_Tl_offset, ff2.getADValue(1), ADD_VALUES);
+            jac->add( global_offset+node_Tl_offset,  fvm_nodes[i]->global_offset()+node_Tl_offset,  ff2.getADValue(0) );
+            jac->add( global_offset+node_Tl_offset,  fvm_nodes[0]->global_offset()+semiconductor_node_Tl_offset,  ff2.getADValue(1) );
           }
 
           break;
@@ -713,3 +594,4 @@ void InsulatorSemiconductorInterfaceBC::EBM3_Jacobian(PetscScalar * x, Mat *jac,
   // gate current
   _gate_current_jacobian(x, jac, add_value_flag);
 }
+

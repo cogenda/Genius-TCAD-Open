@@ -22,6 +22,7 @@
 // C++ includes
 
 // Local includes
+#include "sphere.h"
 #include "tree.h"
 #include "mesh_base.h"
 #include "mesh_tools.h"
@@ -92,6 +93,20 @@ Tree<N>::Tree (const MeshBase& m,
     }
   }
 
+  else if (build_type == Trees::ELEMENTS_ON_SURFACE)
+  {
+    // Add all active elements on SURFACE to the root node.  It will
+    // automatically build the tree for us.
+    MeshBase::const_element_iterator       it  = mesh.active_elements_begin();
+    const MeshBase::const_element_iterator end = mesh.active_elements_end();
+
+    for (; it != end; ++it)
+    {
+      if((*it)->on_boundary() || (*it)->on_interface())
+        root.insert (*it);
+    }
+  }
+
   else if (build_type == Trees::SURFACE_ELEMENTS)
   {
     std::vector<unsigned int>       elems;
@@ -153,6 +168,32 @@ bool Tree<N>::hit_boundbox(const Point & p, const Point & dir) const
 #endif
 
   return result;
+}
+
+template <unsigned int N>
+bool Tree<N>::hit_domain(const Point & p, const Point & dir, std::pair<double, double> &t) const
+{
+  Point start = p;
+  const std::pair<Point, Point> & bbox = root.get_bounding_box();
+
+  Sphere bounding_sphere((bbox.first + bbox.second)*0.5, (bbox.first - bbox.second).size()*0.5);
+  if( bounding_sphere.below_surface(start) )
+  {
+    start  = p - 2*bounding_sphere.radius()*dir;
+  }
+
+  if( !hit_boundbox(start, dir) ) return false;
+
+  t.first  =  1e30;
+  t.second = -1e30;
+
+  if(!root.hit_domain(start, dir, t)) return false;
+
+  double d = (start-p)*dir;
+  t.first  += d;
+  t.second += d;
+
+  return true;
 }
 
 

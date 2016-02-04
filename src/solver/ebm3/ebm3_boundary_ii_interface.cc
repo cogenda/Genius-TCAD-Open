@@ -184,99 +184,13 @@ void InsulatorInsulatorInterfaceBC::EBM3_Function(PetscScalar * x, Vec f, Insert
 
 
 
-/*---------------------------------------------------------------------
- * reserve non zero pattern in jacobian matrix for EBM3 solver
- */
-void InsulatorInsulatorInterfaceBC::EBM3_Jacobian_Reserve(Mat *jac, InsertMode &add_value_flag)
-{
-
-  // ADD 0 to some position of Jacobian matrix to prevent MatAssembly expurgation these position.
-
-  // since we will use ADD_VALUES operat, check the matrix state.
-  if( (add_value_flag != ADD_VALUES) && (add_value_flag != NOT_SET_VALUES) )
-  {
-    MatAssemblyBegin(*jac, MAT_FLUSH_ASSEMBLY);
-    MatAssemblyEnd(*jac, MAT_FLUSH_ASSEMBLY);
-  }
-
-  // search for all the node with this boundary type
-  BoundaryCondition::const_node_iterator node_it = nodes_begin();
-  BoundaryCondition::const_node_iterator end_it = nodes_end();
-  for(; node_it!=end_it; ++node_it )
-  {
-    // skip node not belongs to this processor
-    if( (*node_it)->processor_id()!=Genius::processor_id() ) continue;
-
-    std::vector<const SimulationRegion *> regions;
-    std::vector<const FVM_Node *> fvm_nodes;
-
-    // search all the fvm_node which has *node_it as root node, these nodes are the same in geometry,
-    // but in different region.
-    BoundaryCondition::region_node_iterator  rnode_it     = region_node_begin(*node_it);
-    BoundaryCondition::region_node_iterator  end_rnode_it = region_node_end(*node_it);
-    for(unsigned int i=0 ; rnode_it!=end_rnode_it; ++i, ++rnode_it  )
-    {
-      const SimulationRegion * region = (*rnode_it).second.first;
-      const FVM_Node * fvm_node = (*rnode_it).second.second;
-      if(!fvm_node->is_valid()) continue;
-
-      regions.push_back( region );
-      fvm_nodes.push_back( fvm_node );
-
-      // the first insulator region
-      if(i==0)
-      {
-        unsigned int node_psi_offset = regions[i]->ebm_variable_offset(POTENTIAL);
-        unsigned int node_Tl_offset  = regions[i]->ebm_variable_offset(TEMPERATURE);
-
-        // reserve items for all the ghost nodes
-        FVM_Node::fvm_ghost_node_iterator gn_it = fvm_nodes[i]->ghost_node_begin();
-        for(; gn_it != fvm_nodes[i]->ghost_node_end(); ++gn_it)
-        {
-          const FVM_Node * ghost_fvm_node = (*gn_it).first;
-          MatSetValue(*jac, fvm_nodes[i]->global_offset()+node_psi_offset, ghost_fvm_node->global_offset()+node_psi_offset, 0, ADD_VALUES);
-
-          if(regions[i]->get_advanced_model()->enable_Tl())
-            MatSetValue(*jac, fvm_nodes[i]->global_offset()+node_Tl_offset, ghost_fvm_node->global_offset()+node_Tl_offset, 0, ADD_VALUES);
-
-          FVM_Node::fvm_neighbor_node_iterator  gnb_it = ghost_fvm_node->neighbor_node_begin();
-          for(; gnb_it != ghost_fvm_node->neighbor_node_end(); ++gnb_it)
-          {
-            MatSetValue(*jac, fvm_nodes[i]->global_offset()+node_psi_offset, (*gnb_it).first->global_offset()+node_psi_offset, 0, ADD_VALUES);
-
-            if(regions[i]->get_advanced_model()->enable_Tl())
-              MatSetValue(*jac, fvm_nodes[i]->global_offset()+node_Tl_offset, (*gnb_it).first->global_offset()+node_Tl_offset, 0, ADD_VALUES);
-          }
-        }
-      }
-
-      // other insulator region
-      else
-      {
-        unsigned int node_psi_offset = regions[i]->ebm_variable_offset(POTENTIAL);
-        unsigned int node_Tl_offset  = regions[i]->ebm_variable_offset(TEMPERATURE);
-
-        // reserve for later operator
-        MatSetValue(*jac, fvm_nodes[i]->global_offset()+node_psi_offset, fvm_nodes[0]->global_offset()+node_psi_offset, 0, ADD_VALUES);
-
-        if(regions[i]->get_advanced_model()->enable_Tl())
-          MatSetValue(*jac, fvm_nodes[i]->global_offset()+node_Tl_offset, fvm_nodes[0]->global_offset()+node_Tl_offset, 0, ADD_VALUES);
-      }
-    }
-
-  }
-
-  // the last operator is ADD_VALUES
-  add_value_flag = ADD_VALUES;
-
-}
 
 
 
 /*---------------------------------------------------------------------
  * do pre-process to jacobian matrix for EBM3 solver
  */
-void InsulatorInsulatorInterfaceBC::EBM3_Jacobian_Preprocess(PetscScalar * ,Mat *jac, std::vector<PetscInt> &src_row,
+void InsulatorInsulatorInterfaceBC::EBM3_Jacobian_Preprocess(PetscScalar * ,SparseMatrix<PetscScalar> *jac, std::vector<PetscInt> &src_row,
     std::vector<PetscInt> &dst_row, std::vector<PetscInt> &clear_row)
 {
   // search for all the node with this boundary type
@@ -328,16 +242,8 @@ void InsulatorInsulatorInterfaceBC::EBM3_Jacobian_Preprocess(PetscScalar * ,Mat 
 /*---------------------------------------------------------------------
  * build function and its jacobian for EBM3 solver
  */
-void InsulatorInsulatorInterfaceBC::EBM3_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_value_flag)
+void InsulatorInsulatorInterfaceBC::EBM3_Jacobian(PetscScalar * x, SparseMatrix<PetscScalar> *jac, InsertMode &add_value_flag)
 {
-
-  // since we will use ADD_VALUES operat, check the matrix state.
-  if( (add_value_flag != ADD_VALUES) && (add_value_flag != NOT_SET_VALUES) )
-  {
-    MatAssemblyBegin(*jac, MAT_FLUSH_ASSEMBLY);
-    MatAssemblyEnd(*jac, MAT_FLUSH_ASSEMBLY);
-  }
-
 
   // after that, set values to source rows
   BoundaryCondition::const_node_iterator node_it = nodes_begin();
@@ -387,8 +293,8 @@ void InsulatorInsulatorInterfaceBC::EBM3_Jacobian(PetscScalar * x, Mat *jac, Ins
         AutoDScalar  ff1 = V - V_in;
 
         // set Jacobian of governing equation ff
-        MatSetValue(*jac, fvm_nodes[i]->global_offset()+node_psi_offset, fvm_nodes[i]->global_offset()+node_psi_offset, ff1.getADValue(0), ADD_VALUES);
-        MatSetValue(*jac, fvm_nodes[i]->global_offset()+node_psi_offset, fvm_nodes[0]->global_offset()+node_psi_offset, ff1.getADValue(1), ADD_VALUES);
+        jac->add( fvm_nodes[i]->global_offset()+node_psi_offset,  fvm_nodes[i]->global_offset()+node_psi_offset,  ff1.getADValue(0) );
+        jac->add( fvm_nodes[i]->global_offset()+node_psi_offset,  fvm_nodes[0]->global_offset()+node_psi_offset,  ff1.getADValue(1) );
 
         if(regions[i]->get_advanced_model()->enable_Tl())
         {
@@ -402,8 +308,8 @@ void InsulatorInsulatorInterfaceBC::EBM3_Jacobian(PetscScalar * x, Mat *jac, Ins
           AutoDScalar ff2 = T - T_in;
 
           // set Jacobian of governing equation ff2
-          MatSetValue(*jac, fvm_nodes[i]->global_offset()+node_Tl_offset, fvm_nodes[i]->global_offset()+node_Tl_offset, ff2.getADValue(0), ADD_VALUES);
-          MatSetValue(*jac, fvm_nodes[i]->global_offset()+node_Tl_offset, fvm_nodes[0]->global_offset()+node_Tl_offset, ff2.getADValue(1), ADD_VALUES);
+          jac->add( fvm_nodes[i]->global_offset()+node_Tl_offset,  fvm_nodes[i]->global_offset()+node_Tl_offset,  ff2.getADValue(0) );
+          jac->add( fvm_nodes[i]->global_offset()+node_Tl_offset,  fvm_nodes[0]->global_offset()+node_Tl_offset,  ff2.getADValue(1) );
         }
 
       }
@@ -413,3 +319,4 @@ void InsulatorInsulatorInterfaceBC::EBM3_Jacobian(PetscScalar * x, Mat *jac, Ins
   // the last operator is ADD_VALUES
   add_value_flag = ADD_VALUES;
 }
+

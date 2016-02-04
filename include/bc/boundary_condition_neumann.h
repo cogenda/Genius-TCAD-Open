@@ -82,6 +82,8 @@ public:
 
 public:
 
+#ifdef TCAD_SOLVERS
+
   //////////////////////////////////////////////////////////////////////////////////////////////
   //----------------Function and Jacobian evaluate for Poisson's Equation---------------------//
   //////////////////////////////////////////////////////////////////////////////////////////////
@@ -95,7 +97,7 @@ public:
   /**
    * build function and its jacobian for poisson solver, nothing to do
    */
-  virtual void Poissin_Jacobian(PetscScalar * , Mat *, InsertMode &)
+  virtual void Poissin_Jacobian(PetscScalar * , SparseMatrix<PetscScalar> *, InsertMode &)
   { /* no thing to do for Neumann boundary */ }
 
 
@@ -104,16 +106,14 @@ public:
   //////////////////////////////////////////////////////////////////////////////////
 
   /**
-   * build function and its jacobian for level 1 DDM solver, nothing to do
+   * build function and its jacobian for level 1 DDM solver
    */
-  virtual void DDM1_Function(PetscScalar * , Vec , InsertMode &)
-  { /* no thing to do for Neumann boundary */ }
+  virtual void DDM1_Function(PetscScalar * , Vec , InsertMode &);
 
   /**
-   * build function and its jacobian for level 1 DDM solver, nothing to do
+   * build function and its jacobian for level 1 DDM solver
    */
-  virtual void DDM1_Jacobian(PetscScalar * , Mat *, InsertMode &)
-  { /* no thing to do for Neumann boundary */ }
+  virtual void DDM1_Jacobian(PetscScalar * , SparseMatrix<PetscScalar> *, InsertMode &);
 
 
 
@@ -130,7 +130,7 @@ public:
   /**
    * build function and its jacobian for level 2 DDM solver
    */
-  virtual void DDM2_Jacobian(PetscScalar * , Mat *, InsertMode &);
+  virtual void DDM2_Jacobian(PetscScalar * , SparseMatrix<PetscScalar> *, InsertMode &);
 
 
 
@@ -147,7 +147,7 @@ public:
   /**
    * build function and its jacobian for level 3 EBM solver
    */
-  virtual void EBM3_Jacobian(PetscScalar * , Mat *, InsertMode &);
+  virtual void EBM3_Jacobian(PetscScalar * , SparseMatrix<PetscScalar> *, InsertMode &);
 
 
   //////////////////////////////////////////////////////////////////////////////////
@@ -157,24 +157,12 @@ public:
   /**
    *  evaluating matrix and rhs vector for ddm ac solver
    */
-  virtual void DDMAC_Fill_Matrix_Vector( Mat A, Vec b, const Mat J, const double omega, InsertMode & add_value_flag );
+  virtual void DDMAC_Fill_Matrix_Vector( Mat A, Vec b, const Mat J, const PetscScalar omega, InsertMode & add_value_flag );
 
 
 
 
-  //////////////////////////////////////////////////////////////////////////////////
-  //----------------- functions for Fast Hydrodynamic solver  --------------------//
-  //////////////////////////////////////////////////////////////////////////////////
-
-  /**
-   * function for calculate ghost cell volume for HDM method
-   */
-  virtual void HDM_Ghostcell_Volume( Vec vol );
-
-  /**
-   * function for evaluating boundary for HDM method
-   */
-  virtual void HDM_Boundary( const PetscScalar * , Vec /*x*/, InsertMode &  );
+#endif
 
 };
 

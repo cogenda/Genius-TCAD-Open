@@ -41,7 +41,7 @@ void Interpolation2D_NN::add_scatter_data(const Point & point, int group, double
   {
   case Linear    : break;
   case SignedLog : value = (value>0 ? 1.0 : -1.0)*std::log(1.0+std::abs(value)); break;
-  case Asinh     : value = boost::math::asinh(value); break;
+  case Asinh     : value = asinh(value); break;
   }
 
   field[group].f.push_back(value);
@@ -88,6 +88,16 @@ double Interpolation2D_NN::get_interpolated_value(const Point & point, int group
   const DATA & data = field.find(group)->second;
   NN::point  p = { point.x(), point.y(), 0 };
   NN::lpi_interpolate_point(data.li, &p);
+  
+  InterpolationType type = _interpolation_type.find(group)->second;
+
+  switch(type)
+  {
+  case Linear    : break;
+  case SignedLog : p.z = p.z>0 ? exp(p.z)-1 : 1-exp(-p.z) ; break;
+  case Asinh     : p.z = sinh(p.z); break;
+  }
+  
   return p.z;
 }
 

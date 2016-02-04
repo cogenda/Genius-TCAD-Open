@@ -110,6 +110,17 @@ public:
    */
   virtual SolverSpecify::SolverType solver_type()const=0;
 
+
+  /**
+   * set the index used by global_offset
+   */
+  static void set_solver_index(unsigned int index)
+  {
+    FVM_Node::set_solver_index(index);
+    BoundaryCondition::set_solver_index(index);
+  }
+
+
   /**
    * @return the label of the solver
    */

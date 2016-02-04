@@ -142,15 +142,9 @@ void SimpleGateContactBC::Poissin_Function(PetscScalar * x, Vec f, InsertMode &a
 /*---------------------------------------------------------------------
  * build function and its jacobian for poisson solver
  */
-void SimpleGateContactBC::Poissin_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_value_flag)
+void SimpleGateContactBC::Poissin_Jacobian(PetscScalar * x, SparseMatrix<PetscScalar> *jac, InsertMode &add_value_flag)
 {
   // the Jacobian of simple gate boundary condition is processed here
-
-  if( (add_value_flag != ADD_VALUES) && (add_value_flag != NOT_SET_VALUES) )
-  {
-    MatAssemblyBegin(*jac, MAT_FLUSH_ASSEMBLY);
-    MatAssemblyEnd(*jac, MAT_FLUSH_ASSEMBLY);
-  }
 
   const PetscScalar q = e*this->scalar("qf");            // surface change density
   const PetscScalar Thick = this->scalar("thickness");   // the thickness of gate oxide
@@ -190,7 +184,7 @@ void SimpleGateContactBC::Poissin_Jacobian(PetscScalar * x, Mat *jac, InsertMode
           PetscScalar S = fvm_node->outside_boundary_surface_area();
           AutoDScalar dP = S*(eps_ox*(Vapp - Work_Function-V)/Thick + q);
           //governing equation
-          MatSetValue(*jac, fvm_node->global_offset(), fvm_node->global_offset(), dP.getADValue(0), ADD_VALUES);
+          jac->add(fvm_node->global_offset(), fvm_node->global_offset(), dP.getADValue(0));
 
           break;
         }

@@ -197,7 +197,7 @@ namespace PetscUtils
    * @param  dof_indices location for add
    *
    */
-  extern PetscErrorCode  VecAdd(Vec vec, const DenseVector<Complex> &complex_vec, const std::vector<PetscInt> & dof_indices);
+  //extern PetscErrorCode  VecAdd(Vec vec, const DenseVector<Complex> &complex_vec, const std::vector<PetscInt> & dof_indices);
 
   /**
    * @brief add real DenseMatrix to PetscMat by dof_indices
@@ -217,7 +217,7 @@ namespace PetscUtils
    * @param  dof_indices location for add
    *
    */
-  extern PetscErrorCode  MatAdd(Mat mat, const DenseMatrix<Complex> &complex_mat, const std::vector<PetscInt> & dof_indices);
+  //extern PetscErrorCode  MatAdd(Mat mat, const DenseMatrix<Complex> &complex_mat, const std::vector<PetscInt> & dof_indices);
 
 }
 

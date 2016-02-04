@@ -288,124 +288,13 @@ void HeteroInterfaceBC::DDM1_Function(PetscScalar * x, Vec f, InsertMode &add_va
 
 
 
-/*---------------------------------------------------------------------
- * reserve non zero pattern in jacobian matrix for DDML1 solver
- */
-void HeteroInterfaceBC::DDM1_Jacobian_Reserve(Mat *jac, InsertMode &add_value_flag)
-{
-
-  // ADD 0 to some position of Jacobian matrix to prevent MatAssembly expurgation these position.
-
-  // since we will use ADD_VALUES operat, check the matrix state.
-  if( (add_value_flag != ADD_VALUES) && (add_value_flag != NOT_SET_VALUES) )
-  {
-    MatAssemblyBegin(*jac, MAT_FLUSH_ASSEMBLY);
-    MatAssemblyEnd(*jac, MAT_FLUSH_ASSEMBLY);
-  }
-
-  // search for all the node with this boundary type
-  BoundaryCondition::const_node_iterator node_it = nodes_begin();
-  BoundaryCondition::const_node_iterator end_it = nodes_end();
-
-  for(; node_it!=end_it; ++node_it )
-  {
-    // skip node not belongs to this processor
-    if( (*node_it)->processor_id()!=Genius::processor_id() ) continue;
-
-    // buffer for saving regions and fvm_nodes this *node_it involves
-    std::vector<const FVM_Node *> fvm_nodes;
-
-    // search all the fvm_node which has *node_it as root node, these fvm_nodes have the same location in geometry,
-    // but belong to different regions in logic.
-    BoundaryCondition::region_node_iterator  rnode_it     = region_node_begin(*node_it);
-    BoundaryCondition::region_node_iterator  end_rnode_it = region_node_end(*node_it);
-    for(unsigned int i=0 ; rnode_it!=end_rnode_it; ++i, ++rnode_it  )
-    {
-      const SimulationRegion * region = (*rnode_it).second.first;
-      const FVM_Node * fvm_node = (*rnode_it).second.second;
-
-      fvm_nodes.push_back( fvm_node );
-
-      // the first semiconductor region
-      if(i==0)
-      {
-        genius_assert( region->type() == SemiconductorRegion );
-        // do nothing.
-      }
-
-      // other semiconductor region
-      else
-      {
-        switch( region->type() )
-        {
-            case SemiconductorRegion :
-            {
-              // reserve items for all the ghost nodes
-              std::vector<int> rows, cols;
-              rows.push_back(fvm_nodes[0]->global_offset()+0);
-              rows.push_back(fvm_nodes[0]->global_offset()+1);
-              rows.push_back(fvm_nodes[0]->global_offset()+2);
-
-              cols.push_back(fvm_nodes[i]->global_offset()+0);
-              cols.push_back(fvm_nodes[i]->global_offset()+1);
-              cols.push_back(fvm_nodes[i]->global_offset()+2);
-
-              FVM_Node::fvm_neighbor_node_iterator  nb_it = fvm_nodes[i]->neighbor_node_begin();
-              for(; nb_it != fvm_nodes[i]->neighbor_node_end(); ++nb_it)
-              {
-                cols.push_back((*nb_it).first->global_offset()+0);
-                cols.push_back((*nb_it).first->global_offset()+1);
-                cols.push_back((*nb_it).first->global_offset()+2);
-              }
-
-              std::vector<PetscScalar> value(rows.size()*cols.size(),0);
-
-              MatSetValues(*jac, rows.size(), &rows[0], cols.size(), &cols[0], &value[0], ADD_VALUES);
-
-              // reserve for later operator
-              MatSetValue(*jac, fvm_nodes[i]->global_offset()+0, fvm_nodes[0]->global_offset()+0, 0, ADD_VALUES);
-              MatSetValue(*jac, fvm_nodes[i]->global_offset()+1, fvm_nodes[0]->global_offset()+1, 0, ADD_VALUES);
-              MatSetValue(*jac, fvm_nodes[i]->global_offset()+2, fvm_nodes[0]->global_offset()+2, 0, ADD_VALUES);
-              break;
-            }
-            case InsulatorRegion:
-            {
-              // reserve items for all the ghost nodes
-              std::vector<int> rows, cols;
-              rows.push_back(fvm_nodes[0]->global_offset()+0);
-              cols.push_back(fvm_nodes[i]->global_offset()+0);
-
-              FVM_Node::fvm_neighbor_node_iterator  nb_it = fvm_nodes[i]->neighbor_node_begin();
-              for(; nb_it != fvm_nodes[i]->neighbor_node_end(); ++nb_it)
-              {
-                cols.push_back((*nb_it).first->global_offset()+0);
-              }
-
-              std::vector<PetscScalar> value(rows.size()*cols.size(),0);
-
-              MatSetValues(*jac, rows.size(), &rows[0], cols.size(), &cols[0], &value[0], ADD_VALUES);
-
-              MatSetValue(*jac, fvm_nodes[i]->global_offset()+0, fvm_nodes[0]->global_offset()+0, 0, ADD_VALUES);
-              break;
-            }
-            default: genius_error();
-        }
-      }
-    }
-
-  }
-
-  // the last operator is ADD_VALUES
-  add_value_flag = ADD_VALUES;
-
-}
 
 
 
 /*---------------------------------------------------------------------
  * do pre-process to jacobian matrix for DDML1 solver
  */
-void HeteroInterfaceBC::DDM1_Jacobian_Preprocess(PetscScalar *, Mat *jac, std::vector<PetscInt> &src_row,
+void HeteroInterfaceBC::DDM1_Jacobian_Preprocess(PetscScalar *, SparseMatrix<PetscScalar> *jac, std::vector<PetscInt> &src_row,
     std::vector<PetscInt> &dst_row, std::vector<PetscInt> &clear_row)
 {
   // search for all the node with this boundary type
@@ -467,15 +356,8 @@ void HeteroInterfaceBC::DDM1_Jacobian_Preprocess(PetscScalar *, Mat *jac, std::v
 /*---------------------------------------------------------------------
  * build function and its jacobian for DDML1 solver
  */
-void HeteroInterfaceBC::DDM1_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_value_flag)
+void HeteroInterfaceBC::DDM1_Jacobian(PetscScalar * x, SparseMatrix<PetscScalar> *jac, InsertMode &add_value_flag)
 {
-  // since we will use ADD_VALUES operat, check the matrix state.
-  if( (add_value_flag != ADD_VALUES) && (add_value_flag != NOT_SET_VALUES) )
-  {
-    MatAssemblyBegin(*jac, MAT_FLUSH_ASSEMBLY);
-    MatAssemblyEnd(*jac, MAT_FLUSH_ASSEMBLY);
-  }
-
 
   const PetscScalar T = T_external();
   const PetscScalar Vt  = kb*T/e;
@@ -571,7 +453,7 @@ void HeteroInterfaceBC::DDM1_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add
 
               // the solution value of this node is equal to corresponding node value in the first semiconductor region
               AutoDScalar ff1 = V - V0;
-              MatSetValues(*jac, 1, &rows[3], cols.size(), &cols[0], ff1.getADValue(), ADD_VALUES);
+              jac->add_row(  rows[3],  cols.size(),  &cols[0],  ff1.getADValue() );
 
               // area of out surface of control volume related with neighbor node
               PetscScalar cv_boundary = fvm_node->outside_boundary_surface_area();
@@ -582,16 +464,16 @@ void HeteroInterfaceBC::DDM1_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add
                 // electrons are leaving region 0
                 PetscScalar pm = mt0->band->EffecElecMass(T)/mt->band->EffecElecMass(T);
                 AutoDScalar Jn = 2.*(mt0->band->ThermalVn(T)*n0 - pm*mt->band->ThermalVn(T)*(n*exp(-(Ec0-Ec)/(kb*T))))*cv_boundary;
-                MatSetValues(*jac, 1, &rows[4], cols.size(), &cols[0], Jn.getADValue(), ADD_VALUES);
-                MatSetValues(*jac, 1, &rows[1], cols.size(), &cols[0], (-Jn).getADValue(), ADD_VALUES);
+                jac->add_row(  rows[4],  cols.size(),  &cols[0],  Jn.getADValue() );
+                jac->add_row(  rows[1],  cols.size(),  &cols[0],  (-Jn).getADValue() );
               }
               else
               {
                 // electrons are leaving this region
                 PetscScalar pm = mt->band->EffecElecMass(T)/mt0->band->EffecElecMass(T);
                 AutoDScalar Jn = 2.*(mt->band->ThermalVn(T)*n - pm*mt0->band->ThermalVn(T)*(n0*exp(-(Ec-Ec0)/(kb*T))))*cv_boundary;
-                MatSetValues(*jac, 1, &rows[4], cols.size(), &cols[0], (-Jn).getADValue(), ADD_VALUES);
-                MatSetValues(*jac, 1, &rows[1], cols.size(), &cols[0], Jn.getADValue(), ADD_VALUES);
+                jac->add_row(  rows[4],  cols.size(),  &cols[0],  (-Jn).getADValue() );
+                jac->add_row(  rows[1],  cols.size(),  &cols[0],  Jn.getADValue() );
               }
 
               if(Ev0 < Ev)
@@ -599,16 +481,16 @@ void HeteroInterfaceBC::DDM1_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add
                 // holes are leaving region 0
                 PetscScalar pm = mt0->band->EffecHoleMass(T)/mt->band->EffecHoleMass(T);
                 AutoDScalar Jp = 2.*(mt0->band->ThermalVp(T)*p0 - pm*mt->band->ThermalVp(T)*(p*exp((Ev0-Ev)/(kb*T))))*cv_boundary;
-                MatSetValues(*jac, 1, &rows[5], cols.size(), &cols[0], Jp.getADValue(), ADD_VALUES);
-                MatSetValues(*jac, 1, &rows[2], cols.size(), &cols[0], (-Jp).getADValue(), ADD_VALUES);
+                jac->add_row(  rows[5],  cols.size(),  &cols[0],  Jp.getADValue() );
+                jac->add_row(  rows[2],  cols.size(),  &cols[0],  (-Jp).getADValue() );
               }
               else
               {
                 // holes are leaving this region
                 PetscScalar pm = mt->band->EffecHoleMass(T)/mt0->band->EffecHoleMass(T);
                 AutoDScalar Jp = 2.*(mt->band->ThermalVp(T)*p - pm*mt0->band->ThermalVp(T)*(p0*exp((Ev-Ev0)/(kb*T))))*cv_boundary;
-                MatSetValues(*jac, 1, &rows[5], cols.size(), &cols[0], (-Jp).getADValue(), ADD_VALUES);
-                MatSetValues(*jac, 1, &rows[2], cols.size(), &cols[0], Jp.getADValue(), ADD_VALUES);
+                jac->add_row(  rows[5],  cols.size(),  &cols[0],  (-Jp).getADValue() );
+                jac->add_row(  rows[2],  cols.size(),  &cols[0],  Jp.getADValue() );
               }
               break;
             }
@@ -619,8 +501,8 @@ void HeteroInterfaceBC::DDM1_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add
 
               // the solution value of this node is equal to corresponding node value in the first semiconductor region
               AutoDScalar ff1 = V - V0;
-              MatSetValue(*jac, fvm_node->global_offset(), fvm_node0->global_offset(), ff1.getADValue(0), ADD_VALUES);
-              MatSetValue(*jac, fvm_node->global_offset(), fvm_node->global_offset(), ff1.getADValue(3), ADD_VALUES);
+              jac->add( fvm_node->global_offset(),  fvm_node0->global_offset(),  ff1.getADValue(0) );
+              jac->add( fvm_node->global_offset(),  fvm_node->global_offset(),  ff1.getADValue(3) );
               break;
             }
 
@@ -636,6 +518,7 @@ void HeteroInterfaceBC::DDM1_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add
 
 
 }
+
 
 
 

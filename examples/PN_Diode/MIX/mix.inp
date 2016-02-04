@@ -7,7 +7,7 @@ GLOBAL    T=300 DopingScale=1e18  Z.Width=1
 
 #------------------------------------------------------------------------------
 # load spice circuit netlist
-CIRCUIT NETLIST=diode_ckt1.cir
+CIRCUIT NETLIST=diode_ckt.cir
 
 #------------------------------------------------------------------------------
 # Import CGNS file generated at first step

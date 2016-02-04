@@ -31,7 +31,6 @@
 
 
 
-
 // ------------------------------------------------------------
 // MeshTools functions
 unsigned int MeshTools::total_weight(const MeshBase& mesh)
@@ -349,12 +348,60 @@ Real MeshTools::minimal_distance(const std::pair<Point, Point> &b1, const std::p
 
   Real distance = 1e30;
   // has project intersection
-  for(unsigned int n=0; n<8; ++n)
-    for(unsigned int d=0; d<3; ++d)
-    {
-      if( in_bounding_box(b1, vertex2[n], d) || in_bounding_box(b2, vertex1[n], d) )
-        distance = std::min(fabs(b1.first(d) - b2.second(d)) , fabs(b1.second(d) - b2.first(d)));
-    }
+  // z
+  {
+    Real Xa1 = b1.first[0];
+    Real Xa2 = b1.second[0];
+
+    Real Ya1 = b1.first[1];
+    Real Ya2 = b1.second[1];
+
+    Real Xb1 = b2.first[0];
+    Real Xb2 = b2.second[0];
+
+    Real Yb1 = b2.first[1];
+    Real Yb2 = b2.second[1];
+
+    if( std::abs(Xb2+Xb1-Xa2-Xa1) <= Xa2-Xa1 + Xb2-Xb1 && std::abs(Yb2+Yb1-Ya2-Ya1) <= Ya2-Ya1 + Yb2-Yb1)
+       distance = std::min(std::abs(b1.first(2) - b2.second(2)) , std::abs(b1.second(2) - b2.first(2)));
+  }
+
+  // x
+  {
+    Real Za1 = b1.first[2];
+    Real Za2 = b1.second[2];
+
+    Real Ya1 = b1.first[1];
+    Real Ya2 = b1.second[1];
+
+    Real Zb1 = b2.first[2];
+    Real Zb2 = b2.second[2];
+
+    Real Yb1 = b2.first[1];
+    Real Yb2 = b2.second[1];
+
+    if( std::abs(Zb2+Zb1-Za2-Za1) <= Za2-Za1 + Zb2-Zb1 && std::abs(Yb2+Yb1-Ya2-Ya1) <= Ya2-Ya1 + Yb2-Yb1)
+       distance = std::min(std::abs(b1.first(0) - b2.second(0)) , std::abs(b1.second(0) - b2.first(0)));
+  }
+
+   // y
+  {
+    Real Za1 = b1.first[2];
+    Real Za2 = b1.second[2];
+
+    Real Xa1 = b1.first[0];
+    Real Xa2 = b1.second[0];
+
+    Real Zb1 = b2.first[2];
+    Real Zb2 = b2.second[2];
+
+    Real Xb1 = b2.first[0];
+    Real Xb2 = b2.second[0];
+
+    if( std::abs(Zb2+Zb1-Za2-Za1) <= Za2-Za1 + Zb2-Zb1 && std::abs(Xb2+Xb1-Xa2-Xa1) <= Xa2-Xa1 + Xb2-Xb1)
+       distance = std::min(std::abs(b1.first(1) - b2.second(1)) , std::abs(b1.second(1) - b2.first(1)));
+  }
+
 
   // no project intersection
   for(unsigned int n=0; n<8; ++n)
@@ -362,6 +409,7 @@ Real MeshTools::minimal_distance(const std::pair<Point, Point> &b1, const std::p
     distance = std::min(distance, minimal_distance(b1, vertex2[n]));
     distance = std::min(distance, minimal_distance(b2, vertex1[n]));
   }
+
 
   return distance;
 }

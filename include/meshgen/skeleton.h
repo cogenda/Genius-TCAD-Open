@@ -153,6 +153,32 @@ struct SkeletonSegment
 };
 
 
+/**
+ * SkeletonSector:
+ */
+struct SkeletonSector
+{
+  
+  /**
+   * bound box of this face
+   */
+  double rmin,rmax;
+  double thetamin,thetamax;
+  double zmin,zmax;
+
+  /**
+   *  the mark of this sector
+   */
+  int    sector_mark;
+
+ 
+  /**
+   * we should give the sector a label
+   */
+  std::string    sector_label;
+};
+
+
 
 /**
  * SkeletonRegion2D:  SkeletonRegion2D contains the 2D region information
@@ -195,6 +221,10 @@ struct SkeletonRegion2D
   double major_radii,minor_radii;  //major and minor radii
   double theta;                    //the rotary angle
   int    division;                 //the division number of its boundary
+  
+  //for sector
+  double rmin, rmax;
+  double thetamin, thetamax;
 
   double    mole_x1;              // for compound materials
   double    mole_x1_slope;
@@ -308,6 +338,8 @@ struct SkeletonFace
 
 
 
+
+
 /**
  * SkeletonRegion3D:  SkeletonRegion3D contains the 3D region information
  * It is useful to work with tetgen
@@ -319,6 +351,10 @@ struct SkeletonRegion3D
 
   //bound box by coordinate
   double xmin,xmax,ymin,ymax,zmin,zmax;
+
+  //for sector
+  double rmin, rmax;
+  double thetamin, thetamax;
 
   std::vector<double> px;             //half point x location within the region
   std::vector<double> py;             //half point y location within the region

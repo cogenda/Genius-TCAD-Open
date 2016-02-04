@@ -120,7 +120,30 @@ public:
 
 
   /**
-   * @return the const bc pointer by its label
+   * @return true when bc with bc_label exist
+   */
+  bool has_bc(const std::string & bc_label) const
+  {
+    for(unsigned int n=0; n<_bcs.size(); ++n)
+      if( _bcs[n]->label() == bc_label ) return true;
+    return false;
+  }
+
+  /**
+   * @return true when given bc is an electrode
+   */
+  bool is_electrode(const std::string & bc_label) const
+  {
+    for(unsigned int n=0; n<_bcs.size(); ++n)
+    {
+      const BoundaryCondition * bc = _bcs[n];
+      if( (bc->label() == bc_label || bc->electrode_label() == bc_label) && bc->is_electrode() ) return true;
+    }
+    return false;
+  }
+
+  /**
+   * @return the const bc pointer by its label, the label can be bc label or electrode label
    */
   const BoundaryCondition * get_bc(const std::string & label) const
   {
@@ -130,7 +153,7 @@ public:
   }
 
   /**
-   * @return the writable bc pointer by its label
+   * @return the writable bc pointer by its label, the label can be bc label or electrode label
    */
   BoundaryCondition * get_bc(const std::string & label)
   {
@@ -139,7 +162,18 @@ public:
     return NULL;
   }
 
+  /**
+   * get all bcs by electrode label
+   */
+  std::vector<BoundaryCondition *> get_bcs_by_electrode_label(const std::string & label) const;
+  
+  
+  /**
+   * get all bcs by electrode label
+   */
+  std::vector<BoundaryCondition *> get_bcs_by_electrode_label_nocase(const std::string & label) const;
 
+  
   /**
    * a electrode region may have several electrode bc, get all of them
    */
@@ -316,6 +350,8 @@ private:
 
   int Set_BC_ChargedContact(const Parser::Card &c);
 
+  int Set_BC_ChargeEmit(const Parser::Card &c);
+
 
   int Set_Electrode_OhmicContact(const Parser::Card &c);
 
@@ -335,6 +371,9 @@ private:
   int Set_Electrode_FixedPotential(const Parser::Card &c);
 
   int Set_Electrode_Emit(const Parser::Card &c);
+  
+  
+  bool string_equ_nocase(const std::string s1, const std::string s2) const;
 };
 
 #endif //#ifndef __bc_collector_h__

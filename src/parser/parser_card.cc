@@ -523,7 +523,11 @@ namespace Parser
 
     // still no find, return default value
     if ( it == _parameter_map.end() )
+    {
       str = default_value;
+      _to_lower(str);
+      return str;
+    }
 
     // return the idx'th parameter vaule
     it  = _parameter_map.equal_range(parameter_name).first;
@@ -536,15 +540,9 @@ namespace Parser
     str = it->second.get_string();
 
     //convert to lower case
-    std::string lower_str;
-    for(unsigned int n=0; n<str.size(); ++n)
-    {
-      char c =  str.at(n);
-      if( isalpha(c) )  c = tolower(c);
-      lower_str += c;
-    }
+    _to_lower(str);
 
-    return lower_str;
+    return str;
 
   }
 

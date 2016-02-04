@@ -88,10 +88,16 @@ public:
   virtual void dump_matrix_triplet(const Mat mat, const std::string &file) const;
 
   /**
-   * dump function to external file
+   * dump vector to external file
    * for more detailed analysis of the properties
    */
   virtual void dump_vector_petsc(const Vec vec, const std::string &file) const;
+
+  /**
+   * load vector from external file
+   * for more detailed analysis of the properties
+   */
+  virtual void load_vector_petsc(Vec vec, const std::string &file) const;
 
   /**
    * @return the condition number of jacobian matrix
@@ -137,7 +143,7 @@ public:
   /**
    * do snes solve!
    */
-  virtual void sens_solve();
+  virtual void snes_solve();
 
   /**
    * clear all the nonlinear solver contex
@@ -277,7 +283,12 @@ protected:
    * the local function vector
    */
   Vec            lf;
-
+    
+  /**
+   * the local scaling vector
+   */
+  Vec            ll;
+  
   /**
    * the global index set of solution vector this processor needs
    */

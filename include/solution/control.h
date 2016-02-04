@@ -27,7 +27,7 @@
 
 #include "auto_ptr.h"
 #include "mesh.h"
-#include "mesh_generation.h"
+#include "mesh_generation_base.h"
 #include "simulation_system.h"
 #include "solver_base.h"
 #include "mxml.h"
@@ -156,6 +156,11 @@ public:
   int do_region_set ( const Parser::Card & c);
 
   /**
+   * process "BOUNDARYSET" card
+   */
+  int do_boundary_set ( const Parser::Card & c);
+
+  /**
    * process and do "NODESET" card
    */
   int  set_initial_node_voltage  ( const Parser::Card & c );
@@ -189,12 +194,22 @@ public:
    * process and do "REFINE.UNIFORM" card
    */
   int  do_refine_uniform  ( const Parser::Card & c );
+  
+  /**
+   * do total dose effect simulation
+   */
+  int  do_tid ( const Parser::Card & c );
 
   /**
    * extend 2d mesh to 3d mesh
    */
   int  extend_to_3d ( const Parser::Card & c );
-
+  
+  /**
+   * rotate 2d mesh to 3d mesh
+   */
+  int  rotate_to_3d ( const Parser::Card & c );
+  
   /**
    * plot 2d mesh?
    */

@@ -31,7 +31,7 @@
 
 void printusage()
 {
-  std::cout<<"Usage: dump_dfise [-i input] [-l] [-o output] [-v variable]\n";
+  std::cout<<"Usage: dfise_dump [-i input] [-l] [-o output] [-v variable]\n";
   std::cout<<"Options\n";
   std::cout<<"  -h\t\tDisplay this help\n";
   std::cout<<"  -i\t\tInput DFISE file without extersion (xxx for xxx.grd and xxx.dat)\n";
@@ -53,11 +53,11 @@ int main(int argc, char **argv)
   int variable_index = -1;
   bool list_variables=false;
 
-  std::cout<<"*********************************************************************\n";
-  std::cout<<"*  dump_dfise is a tool for extracting data in Synopsys DFISE file. *\n";
-  std::cout<<"*  Copyright (C) 2009-2010 by Cogenda EDA.                          *\n";
-  std::cout<<"*              http://www.cogenda.com/                              *\n";
-  std::cout<<"*********************************************************************\n";
+  std::cout<<"***************************************************************************\n";
+  std::cout<<"*  dfise_dump is a tool for extracting field data in Synopsys DFISE file. *\n";
+  std::cout<<"*  Copyright (C) 2009-2010 by Cogenda EDA.                                *\n";
+  std::cout<<"*              http://www.cogenda.com/                                    *\n";
+  std::cout<<"***************************************************************************\n";
 
   if(argc == 1)
   {

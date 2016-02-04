@@ -30,7 +30,7 @@
  */
 void ChargeIntegralBC::charge_integral_fill_value(Vec x, Vec L)
 {
-  if(Genius::processor_id() == Genius::n_processors() -1)
+  if(Genius::is_last_processor())
   {
     VecSetValue(x, this->global_offset(), 0.0, INSERT_VALUES);
     VecSetValue(L, this->global_offset(), 1.0, INSERT_VALUES);
@@ -52,7 +52,7 @@ void ChargeIntegralBC::charge_integral_function(PetscScalar *x , Vec f, InsertMo
     VecAssemblyEnd(f);
   }
 
-  if(Genius::processor_id() == Genius::n_processors() -1)
+  if(Genius::is_last_processor())
   {
     // add to ChargeIntegralBC
     VecSetValue(f, this->global_offset(), this->scalar("qf"), ADD_VALUES);
@@ -61,26 +61,14 @@ void ChargeIntegralBC::charge_integral_function(PetscScalar *x , Vec f, InsertMo
 
 
 
-
-/*---------------------------------------------------------------------
- * reserve matrix entries
- */
-void ChargeIntegralBC::charge_integral_reserve(Mat *jac, InsertMode &add_value_flag)
-{
-  if(Genius::processor_id() == Genius::n_processors() -1)
-    MatSetValue(*jac, this->global_offset(), this->global_offset(), 0, ADD_VALUES);
-}
-
-
-
 /*---------------------------------------------------------------------
  * set jacobian matrix entries
  */
-void ChargeIntegralBC::charge_integral_jacobian(PetscScalar * , Mat *jac, InsertMode &)
+void ChargeIntegralBC::charge_integral_jacobian(PetscScalar * , SparseMatrix<PetscScalar> *jac, InsertMode &)
 {
-  MatSetValue(*jac, this->global_offset(), this->global_offset(), 1.0, ADD_VALUES);
+  //if(Genius::is_last_processor())
+  //  MatSetValue(*jac, this->global_offset(), this->global_offset(), 0.0, ADD_VALUES);
 }
-
 
 
 /*---------------------------------------------------------------------

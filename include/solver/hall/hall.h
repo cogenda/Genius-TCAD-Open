@@ -182,7 +182,7 @@ public:
       case SolverSpecify::DampingNo        : positive_density_damping(x, y, w, changed_y, changed_w); break;
       default: positive_density_damping(x, y, w, changed_y, changed_w);
     }
-    FVM_NonlinearSolver::sens_line_search_post_check(x, y, w, changed_y, changed_w);
+    FVM_FlexNonlinearSolver::sens_line_search_post_check(x, y, w, changed_y, changed_w);
   }
 
   /**

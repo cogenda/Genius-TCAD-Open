@@ -39,16 +39,20 @@
 #include "parallel.h"
 #include "boundary_info.h"
 #include "boundary_condition_collector.h"
+#include "surface_locator_hub.h"
 #include "electrical_source.h"
 #include "field_source.h"
 
 #include "vtk_io.h"
+#include "vtk2_io.h"
 #include "cgns_io.h"
 #include "stanford_io.h"
-#include "tif_io.h"
 #include "tif3d_io.h"
 #include "gdml_io.h"
 #include "dfise_io.h"
+#include "gmsh_io.h"
+#include "unv_io.h"
+
 #include "spice_ckt.h"
 #include "location_io.h"
 
@@ -69,7 +73,7 @@
 
 
 SimulationSystem::SimulationSystem(MeshBase & mesh)
-  : _mesh(mesh), _cylindrical_mesh(false), _distributed_mesh(true), _resistive_metal_mode(false), _block_partition(false),
+  : _mesh(mesh), _cylindrical_mesh(false), _distributed_mesh(true), _resistive_metal_mode(false), _block_partition(true),
     _bcs(0), _electrical_source(0),
     _field_source(0), _spice_ckt(0), _global_z_width(false)
 {
@@ -83,7 +87,7 @@ SimulationSystem::SimulationSystem(MeshBase & mesh)
 
 
 SimulationSystem::SimulationSystem(MeshBase & mesh, Parser::InputParser & _decks)
-  :  _T_external(300.0), _mesh(mesh), _cylindrical_mesh(false), _distributed_mesh(true), _resistive_metal_mode(false), _block_partition(false),
+  :  _T_external(300.0), _mesh(mesh), _cylindrical_mesh(false), _distributed_mesh(true), _resistive_metal_mode(false), _block_partition(true),
     _bcs(0), _electrical_source(0),
     _field_source(0), _spice_ckt(0), _global_z_width(false), _z_width(1.0)
 {
@@ -127,6 +131,8 @@ SimulationSystem::SimulationSystem(MeshBase & mesh, Parser::InputParser & _decks
   _T_external *= PhysicalUnit::K;
   _z_width *= PhysicalUnit::um;
 
+  _coord_to_crystal_coord = TensorValue<double>(1.0,0.0,0.0, 0.0,1.0,0.0, 0.0,0.0,1.0);
+
   // parse GLOBAL card again
   for( _decks.begin(); !_decks.end(); _decks.next() )
   {
@@ -142,13 +148,22 @@ SimulationSystem::SimulationSystem(MeshBase & mesh, Parser::InputParser & _decks
         _z_width = c.get_real("z.width", 1.0)*PhysicalUnit::um;
       }
 
+      if( c.is_parameter_exist("axis.x") && c.is_parameter_exist("axis.y") && c.is_parameter_exist("axis.z"))
+      {
+        _axis_x = c.get_array<int>("axis.x");
+        _axis_y = c.get_array<int>("axis.y");
+        _axis_z = c.get_array<int>("axis.z");
+        _build_coord_to_crystal_coord();
+      }
+
+
       _cylindrical_mesh = c.get_bool("cylindricalmesh", false);
       _distributed_mesh = c.get_bool("distributedmesh", true);
       _resistive_metal_mode = c.get_bool("resistivemetal", false);
-      _block_partition = c.get_bool("blockpartition", false);
+      _block_partition = c.get_bool("blockpartition", true);
 
-      double res = c.get_real("leakage.res", 1e12)*PhysicalUnit::V/PhysicalUnit::A;
-      double cap = c.get_real("leakage.cap", 1e-18)*PhysicalUnit::C/PhysicalUnit::V;
+      double res = c.get_real("leakage.res", 1e100)*PhysicalUnit::V/PhysicalUnit::A;
+      double cap = c.get_real("leakage.cap", 0.0)*PhysicalUnit::C/PhysicalUnit::V;
       MetalSimulationRegion::set_aux_parasitic_parameter(std::max(res, 1e-3*PhysicalUnit::V/PhysicalUnit::A), cap);
     }
   }
@@ -197,6 +212,16 @@ SimulationSystem::SimulationSystem(MeshBase & mesh, Parser::InputParser & _decks
       // sync information between processors
       _spice_ckt->sync();
 
+      if(c.is_parameter_exist("spice.nodeset"))
+      {
+        std::string spice_nodeset_file = c.get_string("spice.nodeset", "");
+        std::string local_spice_nodeset_file = sync_file(spice_nodeset_file.c_str());
+
+        if(Genius::processor_id()==Genius::n_processors()-1)
+          _spice_ckt->import_solution(local_spice_nodeset_file);
+        remove(local_spice_nodeset_file.c_str());
+      }
+
       break;
     }
   }
@@ -217,6 +242,51 @@ SimulationSystem::~SimulationSystem()
   delete _field_source;
   delete _spice_ckt;
 }
+
+
+
+void SimulationSystem::_build_coord_to_crystal_coord()
+{
+  Point crystal_x(1.0, 0.0, 0.0);
+  Point crystal_y(0.0, 1.0, 0.0);
+  Point crystal_z(0.0, 0.0, 1.0);
+
+
+  Point x = Point(_axis_x[0], _axis_x[1], _axis_x[2]).unit();
+  Point y = Point(_axis_y[0], _axis_y[1], _axis_y[2]).unit();
+  Point z = Point(_axis_z[0], _axis_z[1], _axis_z[2]).unit();
+
+  double alpha, beta, gramma;
+
+  if (z==crystal_z)
+  {
+    alpha=acos(x[0]);
+    beta=0;
+    gramma=0;
+  }
+  else if (z == -crystal_z)
+  {
+    alpha=acos(x[0]);
+    beta=3.14159265358979323846;
+    gramma=0;
+  }
+  else
+  {
+    alpha=acos(-z[1]/sqrt(1-z[2]*z[2]));
+    beta=acos(z[2]);
+    gramma=acos(Point(cos(alpha), sin(alpha), 0)*x);
+  }
+
+ TensorValue<double> D(cos(alpha), sin(alpha), 0,-sin(alpha), cos(alpha), 0,0, 0, 1);
+ TensorValue<double> C(1, 0, 0, 0, cos(beta), sin(beta), 0, -sin(beta), cos(beta));
+ TensorValue<double> B(cos(gramma), sin(gramma), 0, -sin(gramma), cos(gramma), 0, 0, 0, 1);
+
+ _coord_to_crystal_coord = B*C*D;
+
+ //std::cout<<_coord_to_crystal_coord;
+}
+
+
 
 
 
@@ -305,6 +375,24 @@ const SimulationRegion * SimulationSystem::region(unsigned int n) const
 }
 
 
+bool SimulationSystem::has_region(const std::string & region_label) const
+{
+  for(unsigned int r=0; r<n_regions(); r++)
+    if( _simulation_regions[r]->name() == region_label )
+      return true;
+  return false;
+}
+
+
+
+bool SimulationSystem::has_region_with_material(const std::string & material) const
+{
+  for(unsigned int r=0; r<n_regions(); r++)
+    if( _simulation_regions[r]->material() == material )
+      return true;
+  return false;
+}
+
 
 SimulationRegion * SimulationSystem::region(const std::string & region_label)
 {
@@ -362,7 +450,8 @@ void SimulationSystem::build_simulation_system()
   // electrical source should konw where is the (electrode) bc
   _electrical_source->link_to_bcs( _bcs );
 
-  // clear surface locator to save memory
+  // clear point/surface locator to save memory
+  _mesh.clear_point_locator();
   _mesh.clear_surface_locator();
 
   // delete remote elems
@@ -398,6 +487,7 @@ void SimulationSystem::build_region_fvm_mesh()
     MESSAGE<<"  Create mesh topological information...";  RECORD();
     // 2d or 3d mesh?
     mesh.count_mesh_dimension();
+
     mesh.build_mesh_bounding_box();
 
     // this function will renumber the the node/elem
@@ -406,12 +496,20 @@ void SimulationSystem::build_region_fvm_mesh()
     // let all the elements find their neighbors
     mesh.find_neighbors();
 
+#if 0
     // reorder the elem/node index by Reverse Cuthill-McKee Algorithm
-    mesh.reorder_elems();
+    std::string err;
+    if(!mesh.reorder_elems(err))
+    {
+      MESSAGE<<err;RECORD();
+      genius_error();
+    }
+#endif
     MESSAGE<<std::endl;  RECORD();
 
 
     MESSAGE<<"  Partition mesh...";  RECORD();
+
     // prepare for partition
     if(_block_partition)
       mesh.subdomain_cluster(this->build_subdomain_cluster());
@@ -468,49 +566,52 @@ void SimulationSystem::build_region_fvm_mesh()
   _simulation_regions.resize( _mesh.n_subdomains() );
   std::map<unsigned int,  SimulationRegion *> subdomain_id_to_region_map;
 
+  unsigned int dim = _mesh.mesh_dimension();
   // create simulation region from subdomain information
   for(unsigned int r=0; r<_mesh.n_subdomains(); r++)
   {
-    switch( Material::material_type( _mesh.subdomain_material(r) ) )
+    std::string label = _mesh.subdomain_label_by_id(r);
+    std::string material = _mesh.subdomain_material(r);
+    switch( Material::material_type( material ) )
     {
       case Material::Semiconductor                :
       case Material::SingleCompoundSemiconductor  :
       case Material::ComplexCompoundSemiconductor :
       {
-        _simulation_regions[r] = new SemiconductorSimulationRegion(_mesh.subdomain_label_by_id(r), _mesh.subdomain_material(r), _T_external, _z_width);
+        _simulation_regions[r] = new SemiconductorSimulationRegion(label, material, _T_external, dim, _z_width, _coord_to_crystal_coord);
         break;
       }
       case Material::Insulator     :
       {
-        _simulation_regions[r] = new InsulatorSimulationRegion(_mesh.subdomain_label_by_id(r), _mesh.subdomain_material(r), _T_external, _z_width);
+        _simulation_regions[r] = new InsulatorSimulationRegion(label, material, _T_external, dim, _z_width);
         break;
       }
       case Material::Conductor     :
       {
-        _simulation_regions[r] = new ElectrodeSimulationRegion(_mesh.subdomain_label_by_id(r), _mesh.subdomain_material(r), _T_external, _z_width);
+        _simulation_regions[r] = new ElectrodeSimulationRegion(label, material, _T_external, dim, _z_width);
         break;
       }
       case Material::Resistance     :
       {
         if(_resistive_metal_mode)
-          _simulation_regions[r] = new MetalSimulationRegion(_mesh.subdomain_label_by_id(r), _mesh.subdomain_material(r), _T_external, _z_width);
+          _simulation_regions[r] = new MetalSimulationRegion(label, material, _T_external, dim, _z_width);
         else
-          _simulation_regions[r] = new ElectrodeSimulationRegion(_mesh.subdomain_label_by_id(r), _mesh.subdomain_material(r), _T_external, _z_width);
+          _simulation_regions[r] = new ElectrodeSimulationRegion(label, material, _T_external, dim, _z_width);
         break;
       }
       case Material::Vacuum       :
       {
-        _simulation_regions[r] = new VacuumSimulationRegion(_mesh.subdomain_label_by_id(r), _mesh.subdomain_material(r), _T_external, _z_width);
+        _simulation_regions[r] = new VacuumSimulationRegion(label, material, _T_external, dim, _z_width);
         break;
       }
       case Material::PML       :
       {
-        _simulation_regions[r] = new PMLSimulationRegion(_mesh.subdomain_label_by_id(r), _mesh.subdomain_material(r), _T_external, _z_width);
+        _simulation_regions[r] = new PMLSimulationRegion(label, material, _T_external, dim, _z_width);
         break;
       }
       default:
       {
-        MESSAGE<< "ERROR: Region "<< _mesh.subdomain_label_by_id(r) << " with unsupported material type " << _mesh.subdomain_material(r) << std::endl; RECORD();
+        MESSAGE<< "ERROR: Region "<< label << " with unsupported material type " << material << std::endl; RECORD();
         genius_error();
       }
     }
@@ -831,7 +932,7 @@ void SimulationSystem::build_region_fvm_mesh()
         norm += norms[n];
       }
       norm /= norms.size();
-      it->first->set_norm(norm.unit());
+      it->first->set_norm(norm.unit(true));
     }
   }
 
@@ -930,6 +1031,64 @@ void SimulationSystem::build_region_fvm_mesh()
   }
   MESSAGE<<std::endl;  RECORD();
   STOP_LOG("build_region_fvm_mesh(7)", "SimulationSystem");
+
+
+  START_LOG("build_region_fvm_mesh(8)", "SimulationSystem");
+  MESSAGE<<"  Setup node distance to nearest surface...";  RECORD();
+  SurfaceLocatorHub & surface_locator = _mesh.surface_locator();
+  for(unsigned int n = 0; n < this->n_regions(); n++)
+  {
+    SimulationRegion * region = _simulation_regions[n];
+    if(region->type() != SemiconductorRegion) continue;
+
+    SimulationRegion::processor_node_iterator it = region->on_local_nodes_begin();
+    SimulationRegion::processor_node_iterator it_end = region->on_local_nodes_end();
+    for(; it!=it_end; ++it)
+    {
+      FVM_Node * fvm_node = *it;
+      FVM_NodeData * node_data = fvm_node->node_data();
+
+      const Point p = *(fvm_node->root_node());
+
+      Point project_point;
+      std::pair<const Elem*, unsigned int> surface_elem_pair = surface_locator(p, n, project_point);
+      if( surface_elem_pair.first )
+        node_data->dmin() = (p-project_point).size();
+    }
+  }
+  MESSAGE<<std::endl;  RECORD();
+  STOP_LOG("build_region_fvm_mesh(8)", "SimulationSystem");
+
+
+#ifdef __SELF_CHECK__
+
+  double fvm_volume = 0.0;
+  for(unsigned int n = 0; n < this->n_regions(); n++)
+  {
+    const SimulationRegion * region = _simulation_regions[n];
+    std::vector<double> vols;
+    region->region_node_vol(vols);
+
+    fvm_volume += std::accumulate(vols.begin(), vols.end(), 0.0);
+  }
+
+
+  double mesh_volume = 0.0;
+  {
+    MeshBase::const_element_iterator       el  = _mesh.this_pid_elements_begin();
+    const MeshBase::const_element_iterator end = _mesh.this_pid_elements_end();
+    for (; el != end; ++el)
+    {
+      const Elem * elem = *el;
+      mesh_volume += elem->volume();
+    }
+    Parallel::sum(mesh_volume);
+  }
+
+  //std::cout<< fvm_volume << " " << mesh_volume << std::endl;
+  //genius_assert( std::abs(fvm_volume - mesh_volume)/mesh_volume < 1e-3 );
+
+#endif
 
 
   MESSAGE<<"Simulation data structure build ok.\n"<<std::endl;  RECORD();
@@ -1195,46 +1354,50 @@ std::vector< std::vector<unsigned int > > SimulationSystem::build_subdomain_clus
   std::vector<std::vector<unsigned int> > subdomain_adjncy;
   _mesh.subdomain_graph(subdomain_adjncy);
 
-  std::set<unsigned int> metal_subdomains;
+  std::map<Material::MaterialType, std::set<unsigned int> > material_subdomains;
   for(unsigned int s=0; s<_mesh.n_subdomains(); s++)
   {
-    if( Material::material_type(_mesh.subdomain_material(s)) == Material::Resistance )
-      metal_subdomains.insert(s);
+    Material::MaterialType type = Material::material_type(_mesh.subdomain_material(s));
+    material_subdomains[type].insert(s);
   }
 
-  std::map<unsigned int, std::vector<unsigned int> > metal_subdomain_cluster;
+  std::map<unsigned int, std::vector<unsigned int> > material_subdomain_cluster;
 
-  std::set<unsigned int>::const_iterator metal_subdomain_it = metal_subdomains.begin();
-  for(; metal_subdomain_it != metal_subdomains.end(); ++metal_subdomain_it)
+  std::map<Material::MaterialType, std::set<unsigned int> >::const_iterator material_subdomains_it = material_subdomains.begin();
+  for(; material_subdomains_it != material_subdomains.end(); ++material_subdomains_it)
   {
-    unsigned int metal_region = *metal_subdomain_it;
-    // find metal regions connected to me
-    std::queue<unsigned int> Q;
-    std::set<unsigned int> visit_flag;
-
-    Q.push( metal_region );
-    while(!Q.empty())
+    const std::set<unsigned int> & subdomains = material_subdomains_it->second;
+    for(std::set<unsigned int>::const_iterator it=subdomains.begin(); it!=subdomains.end(); ++it)
     {
-      unsigned int region = Q.front();
-      Q.pop();
+      unsigned int region_me = *it;
+      // find regions with the same material type and connected to me
+      std::queue<unsigned int> Q;
+      std::set<unsigned int> visit_flag;
 
-      visit_flag.insert(region);
-      metal_subdomain_cluster[metal_region].push_back(region);
-
-      const std::vector<unsigned int> & region_neighbors = subdomain_adjncy[region];
-      for(unsigned int n=0; n<region_neighbors.size(); ++n)
+      Q.push( region_me );
+      while(!Q.empty())
       {
-        unsigned int region_neighbor = region_neighbors[n];
-        if( visit_flag.find(region_neighbor) == visit_flag.end() && metal_subdomains.find(region_neighbor) != metal_subdomains.end())
-          Q.push(region_neighbor);
+        unsigned int region = Q.front();
+        Q.pop();
+
+        visit_flag.insert(region);
+        material_subdomain_cluster[region_me].push_back(region);
+
+        const std::vector<unsigned int> & region_neighbors = subdomain_adjncy[region];
+        for(unsigned int n=0; n<region_neighbors.size(); ++n)
+        {
+          unsigned int region_neighbor = region_neighbors[n];
+          if( visit_flag.find(region_neighbor) == visit_flag.end() && subdomains.find(region_neighbor) != subdomains.end())
+            Q.push(region_neighbor);
+        }
       }
     }
   }
 
   std::set<unsigned int> subdomain_flag;
   std::vector< std::vector<unsigned int > > subdomain_cluster;
-  std::map<unsigned int, std::vector<unsigned int> >::const_iterator it = metal_subdomain_cluster.begin();
-  for( ; it != metal_subdomain_cluster.end(); ++it)
+  std::map<unsigned int, std::vector<unsigned int> >::const_iterator it = material_subdomain_cluster.begin();
+  for( ; it != material_subdomain_cluster.end(); ++it)
   {
     unsigned int region = it->first;
     if(subdomain_flag.find(region) != subdomain_flag.end()) continue;
@@ -1244,13 +1407,15 @@ std::vector< std::vector<unsigned int > > SimulationSystem::build_subdomain_clus
     subdomain_flag.insert(cluster.begin(), cluster.end());
   }
 
-  //for(unsigned int n=0; n < subdomain_cluster.size(); ++n)
-  // {
-  //  for(unsigned int m=0; m < subdomain_cluster[n].size(); ++m)
-  //    std::cout<< _mesh.subdomain_label_by_id(subdomain_cluster[n][m] )<<std::endl;
-  //
-  //  std::cout<<std::endl;
-  //}
+  /*
+  for(unsigned int n=0; n < subdomain_cluster.size(); ++n)
+   {
+    for(unsigned int m=0; m < subdomain_cluster[n].size(); ++m)
+      std::cout<< _mesh.subdomain_label_by_id(subdomain_cluster[n][m] )<<std::endl;
+
+    std::cout<<std::endl;
+  }
+  */
 
   return subdomain_cluster;
 }
@@ -1400,6 +1565,34 @@ void SimulationSystem::export_vtk(const std::string& filename, bool ascii) const
 }
 
 
+
+void SimulationSystem::export_vtk2(const std::string& filename, const std::vector<std::string> & variables) const
+{
+#ifdef HAVE_VTK
+    std::string file_name = filename;
+    // preprocess vtk file extension to make sure it has a ".vtu" format
+    if (file_name.rfind(".vtu") > file_name.size())
+    {
+      // file name has a vtk extension, change it to vtu
+      if (file_name.rfind(".vtk") < file_name.size())
+      {
+        file_name.replace(file_name.rfind("k"), 1, "u");
+        MESSAGE<<"Change VTK file extension from .vtk to .vtu to meet XML VTK format." << std::endl; RECORD();
+      }
+      // if no file extension, add .vtu
+      else
+      {
+        file_name += ".vtu";
+        MESSAGE<<"Add VTK file extension .vtu to meet XML VTK format." << std::endl; RECORD();
+      }
+    }
+
+    MESSAGE<<"Write System to XML VTK file "<< file_name << "...\n" << std::endl; RECORD();
+    VTK2IO(*this, variables).write (file_name);
+#endif
+}
+
+
 void SimulationSystem::export_node_location(const std::string& filename, const PetscScalar unit, const bool number) const
 {
   MESSAGE<<"Write mesh node coordinates to file "<< filename << "...\n" << std::endl; RECORD();
@@ -1427,6 +1620,14 @@ void SimulationSystem::export_ise(const std::string& filename) const
 }
 
 
+void SimulationSystem::export_tif(const std::string& filename) const
+{
+  MESSAGE<<"Write System to TIF file "<< filename << "...\n"; RECORD();
+
+  STIFIO(*this, "medici").write (filename);
+}
+
+
 void SimulationSystem::export_gdml_surface(const std::string& filename) const
 {
   if(_mesh.mesh_dimension()==2)
@@ -1437,22 +1638,9 @@ void SimulationSystem::export_gdml_surface(const std::string& filename) const
 
   MESSAGE<<"Write geometry information (region) to GDML file "<< filename << "...\n" << std::endl; RECORD();
 
-  GDMLIO(*this, true).write (filename);
+  GDMLIO(*this).write (filename);
 }
 
-
-void SimulationSystem::export_gdml_body(const std::string& filename) const
-{
-  if(_mesh.mesh_dimension()==2)
-  {
-    MESSAGE<<"Write geometry information to GDML file requires 3D Mesh." << std::endl;
-    return;
-  }
-
-  MESSAGE<<"Write geometry information (cell) to GDML file "<< filename << "...\n" << std::endl; RECORD();
-
-  GDMLIO(*this, false).write (filename);
-}
 
 void SimulationSystem::import_cgns(const std::string& filename)
 {
@@ -1481,12 +1669,29 @@ void SimulationSystem::import_silvaco(const std::string& filename)
 }
 
 
+
+void SimulationSystem::import_silvaco_list(const std::vector<std::string> & filenames)
+{
+  MESSAGE<<"Import System from Silvaco files...\n" << std::endl; RECORD();
+
+  STIFIO(*this, "silvaco").read (filenames);
+}
+
+
 void SimulationSystem::import_tif(const std::string& filename)
 {
   MESSAGE<<"Import System from TIF file "<< filename << "...\n" << std::endl; RECORD();
 
-  //TIFIO(*this).read (filename);
   STIFIO(*this, "medici").read (filename);
+}
+
+
+
+void SimulationSystem::import_tif_list(const std::vector<std::string> & filenames)
+{
+  MESSAGE<<"Import System from TIF files...\n" << std::endl; RECORD();
+
+  STIFIO(*this, "medici").read (filenames);
 }
 
 
@@ -1496,6 +1701,15 @@ void SimulationSystem::import_tif3d(const std::string& filename)
 
   TIF3DIO(*this).read (filename);
 }
+
+
+void SimulationSystem::import_suprem(const std::string& filename)
+{
+  MESSAGE<<"Import System from suprem file "<< filename << "...\n" << std::endl; RECORD();
+
+  STIFIO(*this, "suprem").read (filename);
+}
+
 
 void SimulationSystem::import_ise(const std::string& filename)
 {
@@ -1507,3 +1721,18 @@ void SimulationSystem::import_ise(const std::string& filename)
   MESSAGE<< std::endl; RECORD();
 }
 
+
+void SimulationSystem::import_gmsh(const std::string& filename)
+{
+  MESSAGE<<"Import System from GMSH file "<< filename << "...\n" << std::endl; RECORD();
+
+  GmshIO(*this).read (filename);
+}
+
+
+void SimulationSystem::import_unv(const std::string& filename)
+{
+  MESSAGE<<"Import System from UNV file "<< filename << "...\n" << std::endl; RECORD();
+
+  UNVIO(*this).read (filename);
+}

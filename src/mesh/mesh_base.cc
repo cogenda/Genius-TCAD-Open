@@ -80,6 +80,8 @@ MeshBase::~MeshBase()
 
 void MeshBase::prepare_for_use (const bool skip_renumber_nodes_and_elements)
 {
+  std::string err;
+
   this->count_mesh_dimension();
   this->build_mesh_bounding_box();
 
@@ -99,8 +101,8 @@ void MeshBase::prepare_for_use (const bool skip_renumber_nodes_and_elements)
   this->find_neighbors();
 
   // Reorder the node index by Reverse Cuthill-McKee Algorithm
-  if(!skip_renumber_nodes_and_elements)
-    this->reorder_nodes();
+  //if(!skip_renumber_nodes_and_elements)
+  //  this->reorder_nodes(err);
 
   // Partition the mesh.
   this->partition();
@@ -327,11 +329,14 @@ void MeshBase::partition (const unsigned int n_parts)
 //  partitioner.partition (*this, n_parts);
 //#endif
 
-  std::vector<std::vector<unsigned int> > cluster;
-  this->partition_cluster(cluster);
-
   MetisPartitioner partitioner;
-  partitioner.partition (*this, &cluster, n_parts);
+  
+  std::vector<std::vector<unsigned int> > cluster;
+  bool material_based = this->partition_cluster(cluster);
+  if(material_based)
+    partitioner.partition (*this, &cluster, n_parts);
+  else 
+    partitioner.partition (*this, 0, n_parts);
 
   STOP_LOG("partition()", "Mesh");
 }

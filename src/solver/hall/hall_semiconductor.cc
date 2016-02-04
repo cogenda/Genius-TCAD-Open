@@ -50,7 +50,7 @@ void SemiconductorSimulationRegion::HALL_Fill_Value(Vec x, Vec L)
 
 
 
-static void build_magnetic_field_matrix(PetscScalar mu, const VectorValue<double> & B, TensorValue<PetscScalar> & M)
+static void build_magnetic_field_matrix(PetscScalar mu, const VectorValue<PetscScalar> & B, TensorValue<PetscScalar> & M)
 {
   // note: mu*B is dimension less!
   PetscScalar a = mu*B(0), b = mu*B(1), c = mu*B(2);
@@ -60,7 +60,7 @@ static void build_magnetic_field_matrix(PetscScalar mu, const VectorValue<double
   M(2,0) = (c*a-b)/scale;  M(2,1)=(a+b*c)/scale;   M(2,2)=(1+c*c)/scale;
 }
 
-static void build_magnetic_field_matrix(const AutoDScalar &mu, const VectorValue<double> & B, TensorValue<AutoDScalar> & M)
+static void build_magnetic_field_matrix(const AutoDScalar &mu, const VectorValue<PetscScalar> & B, TensorValue<AutoDScalar> & M)
 {
   // note: mu*B is dimension less!
   AutoDScalar a = mu*B(0), b = mu*B(1), c = mu*B(2);
@@ -70,7 +70,7 @@ static void build_magnetic_field_matrix(const AutoDScalar &mu, const VectorValue
   M(2,0) = (c*a-b)/scale;  M(2,1)=(a+b*c)/scale;   M(2,2)=(1+c*c)/scale;
 }
 
-static VectorValue<AutoDScalar> matmult(const TensorValue<double> & M, const VectorValue<AutoDScalar> & v)
+static VectorValue<AutoDScalar> matmult(const TensorValue<PetscScalar> & M, const VectorValue<AutoDScalar> & v)
 {
   VectorValue<AutoDScalar> rst;
   for(unsigned int m=0; m<3; m++)
@@ -80,10 +80,7 @@ static VectorValue<AutoDScalar> matmult(const TensorValue<double> & M, const Vec
 }
 
 
-static AutoDScalar dot(const VectorValue<PetscScalar> &a, const VectorValue<AutoDScalar> & b)
-{
-  return a[0]*b[0] + a[1]*b[1] + a[2]*b[2];
-}
+
 
 
 static AutoDScalar dot(const VectorValue<AutoDScalar> &a, const VectorValue<PetscScalar> & b)
@@ -96,7 +93,14 @@ static AutoDScalar dot(const VectorValue<AutoDScalar> &a, const VectorValue<Auto
   return a[0]*b[0] + a[1]*b[1] + a[2]*b[2];
 }
 
-static VectorValue<AutoDScalar> cross(const VectorValue<PetscScalar> &a, const VectorValue<AutoDScalar> & b)
+
+static AutoDScalar dot(const VectorValue<PetscScalar> &a, const VectorValue<AutoDScalar> & b)
+{
+  return a[0]*b[0] + a[1]*b[1] + a[2]*b[2];
+}
+
+
+static VectorValue<AutoDScalar> cross(const VectorValue<Real> &a, const VectorValue<AutoDScalar> & b)
 {
   return VectorValue<AutoDScalar>(  a[1]*b[2] - a[2]*b[1],
                                     -a[0]*b[2] + a[2]*b[0],
@@ -112,7 +116,7 @@ static VectorValue<AutoDScalar> cross(const VectorValue<PetscScalar> &a, const V
 /*---------------------------------------------------------------------
  * build function and its jacobian for DDML1 solver
  */
-void SemiconductorSimulationRegion::HALL_Function(const VectorValue<double> & B, PetscScalar * x, Vec f, InsertMode &add_value_flag)
+void SemiconductorSimulationRegion::HALL_Function(const VectorValue<PetscScalar> & B, PetscScalar * x, Vec f, InsertMode &add_value_flag)
 {
 
   // note, we will use ADD_VALUES to set values of vec f
@@ -247,7 +251,9 @@ void SemiconductorSimulationRegion::HALL_Function(const VectorValue<double> & B,
           }
         }
         // interface normal, point to semiconductor side
-        Point norm = - elem->outside_unit_normal(side_insul);
+        Point _norm = - elem->outside_unit_normal(side_insul);
+        // stupid code... we can not dot point with VectorValue<PetscScalar> yet.
+        VectorValue<PetscScalar> norm(_norm(0), _norm(1), _norm(2));
         // effective electric fields in vertical
         PetscScalar ZETAN = mt->mob->ZETAN();
         PetscScalar ETAN  = mt->mob->ETAN();
@@ -389,11 +395,14 @@ void SemiconductorSimulationRegion::HALL_Function(const VectorValue<double> & B,
           // high field mobility
           if (get_advanced_model()->Mob_Force == ModelSpecify::ESimple && !insulator_interface_elem)
           {
-            Point dir = (*fvm_n1->root_node() - *fvm_n2->root_node()).unit();
             PetscScalar Ep = fabs((V2-V1)/length);
             PetscScalar Et = 0;
             if(mos_channel_elem)
+            {
+              Point _dir = (*fvm_n1->root_node() - *fvm_n2->root_node()).unit();
+              VectorValue<PetscScalar> dir(_dir(0), _dir(1), _dir(2));
               Et = (E - dir*(E*dir)).size();
+            }
 
             mt->mapping(fvm_n1->root_node(), n1_data, SolverSpecify::clock);
             mun1 = mt->mob->ElecMob(p1, n1, T, Ep, Et, T);
@@ -517,7 +526,7 @@ void SemiconductorSimulationRegion::HALL_Function(const VectorValue<double> & B,
           Jnv.add_scaled(VectorValue<PetscScalar>(0, 1e-20, 0), 1.0);
           Jpv.add_scaled(VectorValue<PetscScalar>(0, 1e-20, 0), 1.0);
 
-          VectorValue<PetscScalar> ev = (elem->point(edge_nodes[1]) - elem->point(edge_nodes[0]));
+          VectorValue<Real> ev = (elem->point(edge_nodes[1]) - elem->point(edge_nodes[0]));
           PetscScalar riin1 = 0.5 + 0.5* (ev.unit()).dot(Jnv.unit());
           PetscScalar riin2 = 1.0 - riin1;
           PetscScalar riip2 = 0.5 + 0.5* (ev.unit()).dot(Jpv.unit());
@@ -588,7 +597,7 @@ void SemiconductorSimulationRegion::HALL_Function(const VectorValue<double> & B,
     PetscScalar mup_cell = std::accumulate(mup_edge.begin(), mup_edge.end(), 0.0 ) / elem->n_edges();
 
     // magnetic field deflection matrix
-    TensorValue<double> Mn,Mp;
+    TensorValue<PetscScalar> Mn,Mp;
     build_magnetic_field_matrix(mun_cell*mt->mob->RH_ELEC(), B, Mn);
     build_magnetic_field_matrix(mup_cell*mt->mob->RH_HOLE(), B, Mp);
 
@@ -601,7 +610,8 @@ void SemiconductorSimulationRegion::HALL_Function(const VectorValue<double> & B,
     for(unsigned int ne=0; ne<elem->n_edges(); ++ne )
     {
       AutoPtr<Elem> edge = elem->build_edge (ne);
-      VectorValue<double> dir = (edge->point(1) - edge->point(0)).unit(); // unit direction of the edge
+      VectorValue<double> _dir = (edge->point(1) - edge->point(0)).unit(); // unit direction of the edge
+      VectorValue<PetscScalar> dir(_dir[0], _dir[1], _dir[2]);
 
       double length = edge->volume();
       double partial_area = elem->partial_area_with_edge(ne);  // partial area associated with this edge
@@ -737,17 +747,8 @@ void SemiconductorSimulationRegion::HALL_Function(const VectorValue<double> & B,
  * build function and its jacobian for DDML1 solver
  * AD is fully used here
  */
-void SemiconductorSimulationRegion::HALL_Jacobian(const VectorValue<double> & B, PetscScalar * x, Mat *jac, InsertMode &add_value_flag)
+void SemiconductorSimulationRegion::HALL_Jacobian(const VectorValue<PetscScalar> & B, PetscScalar * x, SparseMatrix<PetscScalar> *jac, InsertMode &add_value_flag)
 {
-
-  // note, we will use ADD_VALUES to set values of matrix J
-  // if the previous operator is not ADD_VALUES, we should flush the matrix
-  if( (add_value_flag != ADD_VALUES) && (add_value_flag != NOT_SET_VALUES) )
-  {
-    MatAssemblyBegin(*jac, MAT_FLUSH_ASSEMBLY);
-    MatAssemblyEnd(*jac, MAT_FLUSH_ASSEMBLY);
-  }
-
   //common used variable
   const PetscScalar T   = T_external();
   const PetscScalar Vt  = kb*T/e;
@@ -1101,9 +1102,9 @@ void SemiconductorSimulationRegion::HALL_Jacobian(const VectorValue<double> & B,
           AutoDScalar ff3 = ( - Jp*truncated_partial_area );
 
           // general coding always has some overkill... bypass it.
-          MatSetValues(*jac, 1, &row[0], cell_col.size(), &cell_col[0], ff1.getADValue(), ADD_VALUES);
-          MatSetValues(*jac, 1, &row[1], cell_col.size(), &cell_col[0], ff2.getADValue(), ADD_VALUES);
-          MatSetValues(*jac, 1, &row[2], cell_col.size(), &cell_col[0], ff3.getADValue(), ADD_VALUES);
+          jac->add_row(  row[0],  cell_col.size(),  &cell_col[0],  ff1.getADValue() );
+          jac->add_row(  row[1],  cell_col.size(),  &cell_col[0],  ff2.getADValue() );
+          jac->add_row(  row[2],  cell_col.size(),  &cell_col[0],  ff3.getADValue() );
         }
 
         if( fvm_n2->on_processor() )
@@ -1113,9 +1114,9 @@ void SemiconductorSimulationRegion::HALL_Jacobian(const VectorValue<double> & B,
           AutoDScalar ff2 = ( - Jn*truncated_partial_area );
           AutoDScalar ff3 = (   Jp*truncated_partial_area );
 
-          MatSetValues(*jac, 1, &row[3], cell_col.size(), &cell_col[0], ff1.getADValue(), ADD_VALUES);
-          MatSetValues(*jac, 1, &row[4], cell_col.size(), &cell_col[0], ff2.getADValue(), ADD_VALUES);
-          MatSetValues(*jac, 1, &row[5], cell_col.size(), &cell_col[0], ff3.getADValue(), ADD_VALUES);
+          jac->add_row(  row[3],  cell_col.size(),  &cell_col[0],  ff1.getADValue() );
+          jac->add_row(  row[4],  cell_col.size(),  &cell_col[0],  ff2.getADValue() );
+          jac->add_row(  row[5],  cell_col.size(),  &cell_col[0],  ff3.getADValue() );
         }
 
         if (get_advanced_model()->BandBandTunneling && SolverSpecify::Type!=SolverSpecify::EQUILIBRIUM)
@@ -1128,16 +1129,16 @@ void SemiconductorSimulationRegion::HALL_Jacobian(const VectorValue<double> & B,
           {
             // continuity equation
             AutoDScalar continuity = 0.5*GBTBT1*truncated_partial_volume;
-            MatSetValues(*jac, 1, &row[1], cell_col.size(), &cell_col[0], continuity.getADValue(), ADD_VALUES);
-            MatSetValues(*jac, 1, &row[2], cell_col.size(), &cell_col[0], continuity.getADValue(), ADD_VALUES);
+            jac->add_row(  row[1],  cell_col.size(),  &cell_col[0],  continuity.getADValue() );
+            jac->add_row(  row[2],  cell_col.size(),  &cell_col[0],  continuity.getADValue() );
           }
 
           if( fvm_n2->on_processor() )
           {
             // continuity equation
             AutoDScalar continuity = 0.5*GBTBT2*truncated_partial_volume;
-            MatSetValues(*jac, 1, &row[4], cell_col.size(), &cell_col[0], continuity.getADValue(), ADD_VALUES);
-            MatSetValues(*jac, 1, &row[5], cell_col.size(), &cell_col[0], continuity.getADValue(), ADD_VALUES);
+            jac->add_row(  row[4],  cell_col.size(),  &cell_col[0],  continuity.getADValue() );
+            jac->add_row(  row[5],  cell_col.size(),  &cell_col[0],  continuity.getADValue() );
           }
         }
 
@@ -1157,7 +1158,7 @@ void SemiconductorSimulationRegion::HALL_Jacobian(const VectorValue<double> & B,
           Jnv.add_scaled(VectorValue<AutoDScalar>(0, 1e-20, 0), 1.0);
           Jpv.add_scaled(VectorValue<AutoDScalar>(0, 1e-20, 0), 1.0);
 
-          VectorValue<PetscScalar> ev0 = (elem->point(edge_nodes[1]) - elem->point(edge_nodes[0]));
+          VectorValue<Real> ev0 = (elem->point(edge_nodes[1]) - elem->point(edge_nodes[0]));
           VectorValue<AutoDScalar> ev;
           ev(0)=ev0(0); ev(1)=ev0(1); ev(2)=ev0(2);
           AutoDScalar riin1 = 0.5 + 0.5* (ev.unit()).dot(Jnv.unit());
@@ -1199,8 +1200,8 @@ void SemiconductorSimulationRegion::HALL_Jacobian(const VectorValue<double> & B,
             // continuity equation
             AutoDScalar electron_continuity = (riin1*GIIn+riip1*GIIp)*truncated_partial_volume ;
             AutoDScalar hole_continuity     = (riin1*GIIn+riip1*GIIp)*truncated_partial_volume ;
-            MatSetValues(*jac, 1, &row[1], cell_col.size(), &cell_col[0], electron_continuity.getADValue(), ADD_VALUES);
-            MatSetValues(*jac, 1, &row[2], cell_col.size(), &cell_col[0], hole_continuity.getADValue(), ADD_VALUES);
+            jac->add_row(  row[1],  cell_col.size(),  &cell_col[0],  electron_continuity.getADValue() );
+            jac->add_row(  row[2],  cell_col.size(),  &cell_col[0],  hole_continuity.getADValue() );
           }
 
           if( fvm_n2->on_processor() )
@@ -1208,8 +1209,8 @@ void SemiconductorSimulationRegion::HALL_Jacobian(const VectorValue<double> & B,
             // continuity equation
             AutoDScalar electron_continuity = (riin2*GIIn+riip2*GIIp)*truncated_partial_volume ;
             AutoDScalar hole_continuity     = (riin2*GIIn+riip2*GIIp)*truncated_partial_volume ;
-            MatSetValues(*jac, 1, &row[4], cell_col.size(), &cell_col[0], electron_continuity.getADValue(), ADD_VALUES);
-            MatSetValues(*jac, 1, &row[5], cell_col.size(), &cell_col[0], hole_continuity.getADValue(), ADD_VALUES);
+            jac->add_row(  row[4],  cell_col.size(),  &cell_col[0],  electron_continuity.getADValue() );
+            jac->add_row(  row[5],  cell_col.size(),  &cell_col[0],  hole_continuity.getADValue() );
           }
         }
 
@@ -1308,8 +1309,8 @@ void SemiconductorSimulationRegion::HALL_Jacobian(const VectorValue<double> & B,
       {
         AutoDScalar ff2 = - mun_cell*mt->mob->RH_ELEC()*dot(B, cross(dir, nmid*Mvn))*truncated_partial_area;
         AutoDScalar ff3 = - mup_cell*mt->mob->RH_HOLE()*dot(B, cross(dir, pmid*Mvp))*truncated_partial_area;
-        MatSetValues(*jac, 1, &row[1], cell_col.size(), &cell_col[0], ff2.getADValue(), ADD_VALUES);
-        MatSetValues(*jac, 1, &row[2], cell_col.size(), &cell_col[0], ff3.getADValue(), ADD_VALUES);
+        jac->add_row(  row[1],  cell_col.size(),  &cell_col[0],  ff2.getADValue() );
+        jac->add_row(  row[2],  cell_col.size(),  &cell_col[0],  ff3.getADValue() );
       }
 
       // for node 2.
@@ -1317,8 +1318,8 @@ void SemiconductorSimulationRegion::HALL_Jacobian(const VectorValue<double> & B,
       {
         AutoDScalar ff2 = mun_cell*mt->mob->RH_ELEC()*dot(B, cross(dir, nmid*Mvn))*truncated_partial_area;
         AutoDScalar ff3 = mup_cell*mt->mob->RH_HOLE()*dot(B, cross(dir, pmid*Mvp))*truncated_partial_area;
-        MatSetValues(*jac, 1, &row[4], cell_col.size(), &cell_col[0], ff2.getADValue(), ADD_VALUES);
-        MatSetValues(*jac, 1, &row[5], cell_col.size(), &cell_col[0], ff3.getADValue(), ADD_VALUES);
+        jac->add_row(  row[4],  cell_col.size(),  &cell_col[0],  ff2.getADValue() );
+        jac->add_row(  row[5],  cell_col.size(),  &cell_col[0],  ff3.getADValue() );
       }
     }
 
@@ -1359,9 +1360,9 @@ void SemiconductorSimulationRegion::HALL_Jacobian(const VectorValue<double> & B,
     AutoDScalar rho = e*(node_data->Net_doping() + p - n)*fvm_node->volume();              // the charge density
 
     // ADD to Jacobian matrix,
-    MatSetValues(*jac, 1, &index[0], 3, &index[0], rho.getADValue(), ADD_VALUES);
-    MatSetValues(*jac, 1, &index[1], 3, &index[0], R.getADValue(), ADD_VALUES);
-    MatSetValues(*jac, 1, &index[2], 3, &index[0], R.getADValue(), ADD_VALUES);
+    jac->add_row(  index[0],  3,  &index[0],  rho.getADValue() );
+    jac->add_row(  index[1],  3,  &index[0],  R.getADValue() );
+    jac->add_row(  index[2],  3,  &index[0],  R.getADValue() );
   }
 
 
@@ -1386,25 +1387,15 @@ void SemiconductorSimulationRegion::HALL_Time_Dependent_Function(PetscScalar * x
 }
 
 
-void SemiconductorSimulationRegion::HALL_Time_Dependent_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_value_flag)
+void SemiconductorSimulationRegion::HALL_Time_Dependent_Jacobian(PetscScalar * x, SparseMatrix<PetscScalar> *jac, InsertMode &add_value_flag)
 {
   this->DDM1_Time_Dependent_Jacobian(x, jac, add_value_flag);
 }
 
-
-void SemiconductorSimulationRegion::HALL_Function_Hanging_Node(PetscScalar *x, Vec f, InsertMode &add_value_flag)
-{
-  this->DDM1_Function_Hanging_Node(x, f, add_value_flag);
-}
-
-
-void SemiconductorSimulationRegion::HALL_Jacobian_Hanging_Node(PetscScalar *x, Mat *jac, InsertMode &add_value_flag)
-{
-  this->DDM1_Jacobian_Hanging_Node(x, jac, add_value_flag);
-}
 
 
 void SemiconductorSimulationRegion::HALL_Update_Solution(PetscScalar *lxx)
 {
   this->DDM1_Update_Solution(lxx);
 }
+

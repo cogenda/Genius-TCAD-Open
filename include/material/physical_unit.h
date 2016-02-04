@@ -108,6 +108,16 @@ namespace PhysicalUnit
   extern double   W;
 
   /**
+   * energy density, define as J/kg
+   */
+  extern double   Gy;
+
+  /**
+   * energy density, define as 0.01*J/kg
+   */
+  extern double   rad;
+
+  /**
    *  define as 1e-6*s
    */
   extern double   us;
@@ -136,6 +146,21 @@ namespace PhysicalUnit
    *  define as V/A
    */
   extern double   Ohm;
+
+  /**
+   *  Newton, define as kg.m.s^-2
+   */
+  extern double   N;
+
+  /**
+   *  define as 1e-5*N
+   */
+  extern double   dyne;
+
+  /**
+   * the stress unit, F/S
+   */
+  extern double   Pa;
 
   // Fundamental Physical Constants
 

@@ -33,7 +33,7 @@
 
 
 
-void GateContactBC::DDMAC_Fill_Matrix_Vector( Mat A, Vec b, const Mat J, const double omega, InsertMode & add_value_flag )
+void GateContactBC::DDMAC_Fill_Matrix_Vector( Mat A, Vec b, const Mat J, const PetscScalar omega, InsertMode & add_value_flag )
 {
 
   if( (add_value_flag != ADD_VALUES) && (add_value_flag != NOT_SET_VALUES) )
@@ -174,6 +174,7 @@ void GateContactBC::DDMAC_Fill_Matrix_Vector( Mat A, Vec b, const Mat J, const d
           break;
         }
         // conductor region (gate) which has an interface with insulator region
+      case MetalRegion:
       case ElectrodeRegion:
         {
 
@@ -237,7 +238,7 @@ void GateContactBC::DDMAC_Fill_Matrix_Vector( Mat A, Vec b, const Mat J, const d
 /*---------------------------------------------------------------------
  * update electrode IV
  */
-void GateContactBC::DDMAC_Update_Solution(const PetscScalar * lxx, const Mat, const double omega)
+void GateContactBC::DDMAC_Update_Solution(const PetscScalar * lxx, const Mat, const PetscScalar omega)
 {
 
   std::complex<PetscScalar> Vac(lxx[this->local_offset()], lxx[this->local_offset()+1]);
@@ -299,6 +300,7 @@ void GateContactBC::DDMAC_Update_Solution(const PetscScalar * lxx, const Mat, co
 
           break;
         }
+      case MetalRegion:
       case ElectrodeRegion:
         break;
 

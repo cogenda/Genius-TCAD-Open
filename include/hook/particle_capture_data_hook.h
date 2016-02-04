@@ -31,7 +31,7 @@ class DoseRate;
 
 /**
  * load G4 particle simulation data to get position of trapped particle
- * and RIC enhancement 
+ * and RIC enhancement
  */
 class ParticleCaptureDataHook : public Hook
 {
@@ -74,13 +74,13 @@ private:
    */
   std::string _particle;
 
-  /** 
+  /**
    * file name
    */
   std::string _track_data_file;
 
-  
-  /** 
+
+  /**
    * file name
    */
   std::string _particle_data_file;
@@ -106,18 +106,26 @@ private:
 
   /// particle gen and dose rate
 
+  void build_particles();
+  bool build_particles_block(std::istream * in, unsigned int block_size);
+
   void process_particle_gen();
+
+
+
+  void build_tracks();
+  bool build_tracks_block(std::istream * in, unsigned int block_size);
 
   void process_particle_dose_octree();
 
-  void build_particles();
 
-  void build_tracks();
-  
+
+
+
   DoseRate * dose_rate;
-  
+
   std::vector<double> elem_deposite;
-      
+
 };
 
 

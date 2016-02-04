@@ -91,10 +91,20 @@ private:
   bool            _ddm_solver;
 
   /**
-   * monitor poisson solver
+   * monitor ric solver
    */
   bool            _ric_solver;
 
+  /**
+   * monitor dictat solver
+   */
+  bool            _dictat_solver;
+
+  
+  /**
+   * monitor TID drift solver
+   */
+  bool            _tid_drift_solver;
 
   /**
    * iteration count
@@ -114,6 +124,10 @@ private:
   std::vector<unsigned int>       el;
   std::vector<unsigned short int> sl;
   std::vector<short int>          il;
+  
+  
+    // < <region, id>, id >
+  std::map< std::pair<unsigned int, unsigned int>, unsigned int > region_node_id_map;
 
   double _t_start;
   double _t_end;
@@ -144,11 +158,21 @@ private:
    * write mesh relative solution data to vtk file
    */
   void solution_to_vtk_poisson(void * _f, void * _x, void * _dx, void * _w);
-
+  
+  /**
+   * write mesh relative solution data to vtk file
+   */
+  void solution_to_vtk_tid_drift(void * _f, void * _x, void * _dx, void * _w);
+  
   /**
    * write mesh relative solution data to vtk file
    */
   void solution_to_vtk_ric(void * _f, void * _x, void * _dx, void * _w);
+
+  /**
+   * write mesh relative solution data to vtk file
+   */
+  void solution_to_vtk_dictat(void * _f, void * _x, void * _dx, void * _w);
 
   /**
    * write extra region name/material information and boundary information into xml vtk file
@@ -158,12 +182,16 @@ private:
   /**
    * aux function to write a scaler solution to vtkUnstructuredGrid
    */
-  void write_node_scaler_solution(const std::vector<unsigned int> & order, std::vector<float> &sol, const std::string & sol_name);
+  void write_node_scaler_solution(const std::vector< std::vector<unsigned int> >& region_order,
+                                  const std::vector< std::vector<float> > &region_sol,
+                                  const std::string & sol_name);
 
   /**
    * aux function to write a cell based scaler solution to vtkUnstructuredGrid
    */
-  void write_cell_scaler_solution(const std::vector<unsigned int> & order, std::vector<float> &sol, const std::string & sol_name);
+  void write_cell_scaler_solution(const std::vector<unsigned int> & order, 
+                                  std::vector<float> &sol, 
+                                  const std::string & sol_name);
 
   /**
    * pointer to the VTK grid

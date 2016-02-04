@@ -22,17 +22,21 @@
 #ifndef _genius_common_h_
 #define _genius_common_h_
 
+#define TCAD_SOLVERS
+#define IDC_SOLVERS
 
 #undef COGENDA_COMMERCIAL_PRODUCT
 
 
 // C/C++ includes everyone should know about
 #include <iostream> // needed for std::cout, std::cerr
+#include <iomanip>  // needed for std::setw
 #include <cassert>
 #include <cstdlib>  // std::abort();
 #include <complex>
 
 #include "config.h"
+
 
 
 // enable AMR
@@ -94,56 +98,6 @@ inline T genius_norm(std::complex<T> a) { return std::norm(a); }
 const int invalid_id = -1;
 const unsigned int invalid_uint = static_cast<unsigned int>(-1); // very large value: 4294967295
 
-// For some reason the real std::max, std::min
-// don't handle mixed compatible types
-namespace std {
-  inline long double max(long double a, double b)
-  { return (a>b?a:b); }
-  inline long double min(long double a, double b)
-  { return (a<b?a:b); }
-
-  inline long double max(double a, long double b)
-  { return (a>b?a:b); }
-  inline long double min(double a, long double b)
-  { return (a<b?a:b); }
-
-  inline double max(double a, float b)
-  { return (a>b?a:b); }
-  inline double min(double a, float b)
-  { return (a<b?a:b); }
-
-  inline double max(float a, double b)
-  { return (a>b?a:b); }
-  inline double min(float a, double b)
-  { return (a<b?a:b); }
-
-  inline long double max(long double a, float b)
-  { return (a>b?a:b); }
-  inline long double min(long double a, float b)
-  { return (a<b?a:b); }
-
-  inline long double max(float a, long double b)
-  { return (a>b?a:b); }
-  inline long double min(float a, long double b)
-  { return (a<b?a:b); }
-
-  inline unsigned int max(unsigned int a, unsigned int b)
-  { return (a>b?a:b); }
-  inline unsigned int min(unsigned int a, unsigned int b)
-  { return (a<b?a:b); }
-
-
-  inline double sign(float a)
-  { return (a>0 ? 1.0 : -1.0); }
-
-  inline double sign(double a)
-  { return (a>0 ? 1.0 : -1.0); }
-
-  inline long double sign(long double a)
-  { return (a>0 ? 1.0 : -1.0); }
-
-}
-
 
 // Define the value type for unknowns in simulations.
 // This may be double or long double, dependent on PETSC
@@ -154,8 +108,6 @@ typedef Real Number;
 // Since AMR/C decisions don't have to be precise,
 // we default to float for memory efficiency.
 typedef float ErrorVectorReal;
-#define MPI_ERRORVECTORREAL MPI_FLOAT
-
 
 
 // 3D spatial dimension unless otherwise specified
@@ -163,35 +115,6 @@ typedef float ErrorVectorReal;
 #  define DIM 3
 #endif
 
-
-
-// These are useful macros that behave like functions in the code.
-// If you want to make sure you are accessing a section of code just
-// stick a here(); in it, for example
-#undef genius_here
-#define genius_here()     { std::cout << "[" << Genius::processor_id() << "] " << __FILE__ << ", line " << __LINE__ << ", compiled " << __DATE__ << " at " << __TIME__ << std::endl; }
-
-// the stop() macro will stop the code until a SIGCONT signal is received.  This is useful, for example, when
-// determining the memory used by a given operation.  A stop() could be inserted before and after a questionable
-// operation and the delta memory can be obtained from a ps or top.  This macro only works for serial cases.
-#undef genius_stop
-#ifdef HAVE_CSIGNAL
-#  include <csignal>
-#  define genius_stop()     { if (Genius::n_processors() == 0) { genius_here(); std::cout << "Stopping process " << getpid() << "..." << std::endl; std::raise(SIGSTOP); std::cout << "Continuing process " << getpid() << "..." << std::endl; } }
-#else
-#  define genius_stop()     { if (Genius::n_processors() == 0) { genius_here(); std::cerr << "WARNING:  stop() does not work without the <csignal> header file!" << std::endl; } }
-#endif
-
-
-// Use Petsc error mechanism for assertion tests
-#undef genius_assert
-#ifdef WINDOWS
-#  include <csignal>
-#  define genius_assert(a)  {  if (! (a) ) { std::cerr << "Assertion failure at " << __FILE__ << ":" << __LINE__ << std::endl; std::raise(SIGTERM); } }
-#else
-/*#  define genius_assert(a)  {  if (! (a) ) { std::cerr << "Assertion failure at " << __FILE__ << ":" << __LINE__ << std::endl; std::abort(); } }*/
-#  define genius_assert(a)  {  if (! (a) ) { std::cout << "Assertion failure at " << __FILE__ << ":" << __LINE__ << std::endl; std::abort(); } }
-#endif
 
 // The genius_error() macro prints a message and aborts the code
 #undef genius_error
@@ -201,10 +124,10 @@ typedef float ErrorVectorReal;
 #undef genius_untested
 #  define genius_untested() { std::cout << "*** Warning, This code is untested, experimental, or likely to see future API changes: " << __FILE__ << ", line " << __LINE__ << ", compiled " << __DATE__ << " at " << __TIME__ << " ***" << std::endl; }
 
-
 // The deprecated macro warns that you are using deprecated code
 #undef genius_deprecated
 #  define genius_deprecated() { std::cout << "*** Warning, This Code is Deprecated! " << __FILE__ << ", line " << __LINE__ << ", compiled " << __DATE__ << " at " << __TIME__ << " ***" << std::endl; }
+
 
 
 #endif // #define _genius_common_h_

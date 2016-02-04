@@ -41,8 +41,8 @@ using PhysicalUnit::mu0;
 
 
 
-ElectrodeSimulationRegion::ElectrodeSimulationRegion(const std::string &name, const std::string &material, const double T, const double z)
-:SimulationRegion(name, material, T, z)
+ElectrodeSimulationRegion::ElectrodeSimulationRegion(const std::string &name, const std::string &material, const double T, const unsigned int dim, const double z)
+  :SimulationRegion(name, material, T, dim, z)
 {
   // material should be initializted after region variables
   this->set_region_variables();
@@ -86,12 +86,13 @@ void ElectrodeSimulationRegion::set_region_variables()
   _cell_data_storage.allocate_tensor_variable( std::vector<bool>(FVM_Conductor_CellData::n_tensor(),false));
 
   // define _region_point_variables
+  _region_point_variables["dmin"            ] = SimulationVariable("dmin", SCALAR, POINT_CENTER, "1", FVM_Conductor_NodeData::_dmin_, true);
   _region_point_variables["potential"       ] = SimulationVariable("potential", SCALAR, POINT_CENTER, "V", FVM_Conductor_NodeData::_psi_, true);
   _region_point_variables["temperature"     ] = SimulationVariable("temperature", SCALAR, POINT_CENTER, "K", FVM_Conductor_NodeData::_T_, true);
   _region_point_variables["density"         ] = SimulationVariable("density", SCALAR, POINT_CENTER, "g/cm^3", FVM_Conductor_NodeData::_density_, true);
   _region_point_variables["affinity"        ] = SimulationVariable("affinity", SCALAR, POINT_CENTER, "eV", FVM_Conductor_NodeData::_affinity_, true);
-  _region_point_variables["ec"              ] = SimulationVariable("ec", SCALAR, POINT_CENTER, "eV", FVM_Conductor_NodeData::_Ec_, true);
-  _region_point_variables["ev"              ] = SimulationVariable("ev", SCALAR, POINT_CENTER, "eV", FVM_Conductor_NodeData::_Ev_, true);
+  _region_point_variables["Ec"              ] = SimulationVariable("Ec", SCALAR, POINT_CENTER, "eV", FVM_Conductor_NodeData::_Ec_, true);
+  _region_point_variables["Ev"              ] = SimulationVariable("Ev", SCALAR, POINT_CENTER, "eV", FVM_Conductor_NodeData::_Ev_, true);
   _region_point_variables["eps"             ] = SimulationVariable("eps", SCALAR, POINT_CENTER, "C/V/m", FVM_Conductor_NodeData::_eps_, true);
   _region_point_variables["mu"              ] = SimulationVariable("mu", SCALAR, POINT_CENTER, "s^2*V/C/m", FVM_Conductor_NodeData::_mu_, true);
 

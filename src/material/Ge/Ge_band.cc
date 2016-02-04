@@ -58,7 +58,7 @@ private:
     NC_F      = 1.500000e+00;
     NV_F      = 1.500000e+00;
     N0_BGN    = 1.000000e+17*std::pow(cm,-3);
-    V0_BGN    = 9.000000e-03*V;
+    V0_BGN    = 9.000000e-03*eV;
     CON_BGN   = 5.000000e-01;
 
 #ifdef __CALIBRATE__
@@ -153,25 +153,19 @@ public:
   PetscScalar ni (const PetscScalar &Tl)
   {
     PetscScalar bandgap = Eg(Tl);
-    PetscScalar Nc = NC300*std::pow(Tl/T300,NC_F);
-    PetscScalar Nv = NV300*std::pow(Tl/T300,NV_F);
-    return sqrt(Nc*Nv)*exp(-bandgap/(2*kb*Tl));
+    return sqrt(Nc(Tl)*Nv(Tl))*exp(-bandgap/(2*kb*Tl));
   }
 
   // nie, Eg narrow should be considered
   PetscScalar nie (const PetscScalar &p, const PetscScalar &n, const PetscScalar &Tl)
   {
     PetscScalar bandgap = Eg(Tl);
-    PetscScalar Nc = NC300*std::pow(Tl/T300,NC_F);
-    PetscScalar Nv = NV300*std::pow(Tl/T300,NV_F);
-    return sqrt(Nc*Nv)*exp(-bandgap/(2*kb*Tl))*exp(EgNarrow(p, n, Tl));
+    return sqrt(Nc(Tl)*Nv(Tl))*exp(-bandgap/(2*kb*Tl))*exp(EgNarrow(p, n, Tl)/(2*kb*Tl));
   }
   AutoDScalar nie (const AutoDScalar &p, const AutoDScalar &n, const AutoDScalar &Tl)
   {
     AutoDScalar bandgap = Eg(Tl);
-    AutoDScalar Nc = NC300*adtl::pow(Tl/T300,NC_F);
-    AutoDScalar Nv = NV300*adtl::pow(Tl/T300,NV_F);
-    return sqrt(Nc*Nv)*exp(-bandgap/(2*kb*Tl))*exp(EgNarrow(p, n, Tl));
+    return sqrt(Nc(Tl)*Nv(Tl))*exp(-bandgap/(2*kb*Tl))*exp(EgNarrow(p, n, Tl)/(2*kb*Tl));
   }
 
   //end of Bandgap
@@ -310,6 +304,21 @@ private:
   }
 
 public:
+
+  /**
+   * @return direct Recombination rate
+   */
+  PetscScalar CDIR           (const PetscScalar &Tl)  { return C_DIRECT; }
+
+  /**
+   * @return electron Auger Recombination rate
+   */
+  PetscScalar AUGERN           (const PetscScalar &p, const PetscScalar &n, const PetscScalar &Tl) { return AUGN; }
+
+  /**
+   * @return hole Auger Recombination rate
+   */
+  PetscScalar AUGERP           (const PetscScalar &p, const PetscScalar &n, const PetscScalar &Tl)  { return AUGP; }
 
   //---------------------------------------------------------------------------
   // Direct Recombination

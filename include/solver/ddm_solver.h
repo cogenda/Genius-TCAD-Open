@@ -24,12 +24,12 @@
 #ifndef __ddm_solver_h__
 #define __ddm_solver_h__
 
-#include "fvm_nonlinear_solver.h"
+#include "fvm_flex_nonlinear_solver.h"
 
 /**
  * the common method for device drift-diffusion method solver
  */
-class DDMSolverBase : public FVM_NonlinearSolver
+class DDMSolverBase : public FVM_FlexNonlinearSolver
 {
 public:
   /**
@@ -92,11 +92,28 @@ public:
    * virtual function, destroy the solver
    */
   virtual int destroy_solver();
+  
+  /**
+   * do snes solve!
+   */
+  virtual void snes_solve();
 
   /**
    * load previous state into solution vector, empty here
    */
   virtual int diverged_recovery()=0;
+
+  /**
+   * @return true iff heat sink exist
+   */
+  virtual bool heat_sink() const;
+
+  /**
+   * compute the common mode voltage of all the electrode,
+   * should subtract this value before simulation
+   * and add it back after simulation
+   */
+  virtual PetscReal common_model_voltage() const;
 
   /**
    * test if BDF2 can be used for next time step
@@ -135,6 +152,7 @@ public:
    * each derived DDM solver should override it.
    */
   virtual void error_norm()=0;
+
 
   /**
    * virtual function for convergence test of pseudo time step method

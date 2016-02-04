@@ -59,20 +59,21 @@ int HallSolver::pre_solve_process(bool load_solution)
       SimulationRegion * region = _system.region(n);
       region->HALL_Fill_Value(x, L);
     }
+
+
+    // for all the bcs
+    for(unsigned int b=0; b<_system.get_bcs()->n_bcs(); b++)
+    {
+      BoundaryCondition * bc = _system.get_bcs()->get_bc(b);
+      bc->DDM1_Fill_Value(x, L);
+    }
+
+    VecAssemblyBegin(x);
+    VecAssemblyBegin(L);
+
+    VecAssemblyEnd(x);
+    VecAssemblyEnd(L);
   }
-
-  // for all the bcs
-  for(unsigned int b=0; b<_system.get_bcs()->n_bcs(); b++)
-  {
-    BoundaryCondition * bc = _system.get_bcs()->get_bc(b);
-    bc->DDM1_Fill_Value(x, L);
-  }
-
-  VecAssemblyBegin(x);
-  VecAssemblyBegin(L);
-
-  VecAssemblyEnd(x);
-  VecAssemblyEnd(L);
 
   return DDMSolverBase::pre_solve_process(load_solution);
 }
@@ -450,6 +451,8 @@ PetscReal HallSolver::LTE_norm()
   PetscReal eps_r = SolverSpecify::TS_rtol;
   // abs error
   PetscReal eps_a = SolverSpecify::TS_atol;
+  PetscReal concentration = 5e22*std::pow(cm, -3);
+
 
   VecZeroEntries(xp);
   VecZeroEntries(LTE);
@@ -511,8 +514,8 @@ PetscReal HallSolver::LTE_norm()
             unsigned int local_offset = fvm_node->local_offset();
 
             ll[local_offset+0] = 0;
-            ll[local_offset+1] = ll[local_offset+1]/(eps_r*xx[local_offset+1]+eps_a);
-            ll[local_offset+2] = ll[local_offset+2]/(eps_r*xx[local_offset+2]+eps_a);
+            ll[local_offset+1] = ll[local_offset+1]/(eps_r*xx[local_offset+1]+eps_a*concentration);
+            ll[local_offset+2] = ll[local_offset+2]/(eps_r*xx[local_offset+2]+eps_a*concentration);
           }
           N += 2*region->n_on_processor_node();
           break;
@@ -743,7 +746,8 @@ void HallSolver::build_petsc_sens_residual(Vec x, Vec r)
   // flag for indicate ADD_VALUES operator.
   InsertMode add_value_flag = NOT_SET_VALUES;
 
-  const VectorValue<double> & B = _system.get_magnetic_field();
+  const VectorValue<double> & _B = _system.get_magnetic_field();
+  VectorValue<PetscScalar> B(_B[0], _B[1], _B[2]);
   // evaluate governing equations of DDML1 in all the regions
   for(unsigned int n=0; n<_system.n_regions(); n++)
   {
@@ -762,17 +766,6 @@ void HallSolver::build_petsc_sens_residual(Vec x, Vec r)
       SimulationRegion * region = _system.region(n);
       region->HALL_Time_Dependent_Function(lxx, r, add_value_flag);
     }
-
-#if defined(HAVE_FENV_H) && defined(DEBUG)
-  genius_assert( !fetestexcept(FE_INVALID) );
-#endif
-
-  // process hanging node here
-  for(unsigned int n=0; n<_system.n_regions(); n++)
-  {
-    SimulationRegion * region = _system.region(n);
-    region->HALL_Function_Hanging_Node(lxx, r, add_value_flag);
-  }
 
 #if defined(HAVE_FENV_H) && defined(DEBUG)
   genius_assert( !fetestexcept(FE_INVALID) );
@@ -833,17 +826,18 @@ void HallSolver::build_petsc_sens_jacobian(Vec x, Mat *, Mat *)
   // get PetscScalar array contains solution from local solution vector lx
   VecGetArray(lx, &lxx);
 
-  MatZeroEntries(J);
+  Jac->zero();
 
   // flag for indicate ADD_VALUES operator.
   InsertMode add_value_flag = NOT_SET_VALUES;
 
-  const VectorValue<double> & B = _system.get_magnetic_field();
+  const VectorValue<double> & _B = _system.get_magnetic_field();
+  VectorValue<PetscScalar> B(_B[0], _B[1], _B[2]);
   // evaluate Jacobian matrix of governing equations of DDML1 in all the regions
   for(unsigned int n=0; n<_system.n_regions(); n++)
   {
     SimulationRegion * region = _system.region(n);
-    region->HALL_Jacobian(B, lxx, &J, add_value_flag);
+    region->HALL_Jacobian(B, lxx, Jac, add_value_flag);
   }
 
 #if defined(HAVE_FENV_H) && defined(DEBUG)
@@ -855,30 +849,8 @@ void HallSolver::build_petsc_sens_jacobian(Vec x, Mat *, Mat *)
     for(unsigned int n=0; n<_system.n_regions(); n++)
     {
       SimulationRegion * region = _system.region(n);
-      region->HALL_Time_Dependent_Jacobian(lxx, &J, add_value_flag);
+      region->HALL_Time_Dependent_Jacobian(lxx, Jac, add_value_flag);
     }
-
-  // process hanging node here
-  for(unsigned int n=0; n<_system.n_regions(); n++)
-  {
-    SimulationRegion * region = _system.region(n);
-    region->HALL_Jacobian_Hanging_Node(lxx, &J, add_value_flag);
-  }
-#if defined(HAVE_FENV_H) && defined(DEBUG)
-  genius_assert( !fetestexcept(FE_INVALID) );
-#endif
-
-  // before first assemble, resereve none zero pattern for each boundary
-
-  if( !jacobian_matrix_first_assemble )
-  {
-    for(unsigned int b=0; b<_system.get_bcs()->n_bcs(); b++)
-    {
-      BoundaryCondition * bc = _system.get_bcs()->get_bc(b);
-      bc->DDM1_Jacobian_Reserve(&J, add_value_flag);
-    }
-  }
-
 
 
 #if defined(HAVE_FENV_H) && defined(DEBUG)
@@ -886,30 +858,28 @@ void HallSolver::build_petsc_sens_jacobian(Vec x, Mat *, Mat *)
 #endif
 
 
-  // evaluate Jacobian matrix of governing equations of DDML1 for all the boundaries
-  MatAssemblyBegin(J, MAT_FINAL_ASSEMBLY);
-  MatAssemblyEnd(J, MAT_FINAL_ASSEMBLY);
+  // assembly matrix
+  Jac->close(false);
 
-  // we do not allow zero insert/add to matrix
-  if( !jacobian_matrix_first_assemble )
-    genius_assert(!MatSetOption(J, MAT_IGNORE_ZERO_ENTRIES, PETSC_TRUE));
 
   std::vector<PetscInt> src_row,  dst_row,  clear_row;
   for(unsigned int b=0; b<_system.get_bcs()->n_bcs(); b++)
   {
     BoundaryCondition * bc = _system.get_bcs()->get_bc(b);
-    bc->DDM1_Jacobian_Preprocess(lxx, &J, src_row, dst_row, clear_row);
+    bc->DDM1_Jacobian_Preprocess(lxx, Jac, src_row, dst_row, clear_row);
   }
-  //add source rows to destination rows
-  PetscUtils::MatAddRowToRow(J, src_row, dst_row);
-  // clear row
-  PetscUtils::MatZeroRows(J, clear_row.size(), clear_row.empty() ? NULL : &clear_row[0], 0.0);
 
+  //add source rows to destination rows
+  Jac->add_row_to_row(src_row, dst_row);
+  // clear row
+  Jac->clear_row(clear_row);
+  
+  
   add_value_flag = NOT_SET_VALUES;
   for(unsigned int b=0; b<_system.get_bcs()->n_bcs(); b++)
   {
     BoundaryCondition * bc = _system.get_bcs()->get_bc(b);
-    bc->DDM1_Jacobian(lxx, &J, add_value_flag);
+    bc->DDM1_Jacobian(lxx, Jac, add_value_flag);
   }
 
 #if defined(HAVE_FENV_H) && defined(DEBUG)
@@ -920,23 +890,12 @@ void HallSolver::build_petsc_sens_jacobian(Vec x, Mat *, Mat *)
   // restore array back to Vec
   VecRestoreArray(lx, &lxx);
 
-  // assembly the matrix
-  MatAssemblyBegin(J, MAT_FINAL_ASSEMBLY);
-  MatAssemblyEnd  (J, MAT_FINAL_ASSEMBLY);
+  
+  Jac->close(true);
 
   //scaling the matrix
   MatDiagonalScale(J, L, PETSC_NULL);
 
-  // we use the reciprocal of matrix diagonal as scaling value
-  // this will take place at next call
-  //MatGetDiagonal(J, L);
-  //VecReciprocal(L);
-
-  //MatView(J, PETSC_VIEWER_DRAW_WORLD);
-  //getchar();
-
-  if(!jacobian_matrix_first_assemble)
-    jacobian_matrix_first_assemble = true;
 
   STOP_LOG("DDM1Solver_Jacobian()", "HallSolver");
 

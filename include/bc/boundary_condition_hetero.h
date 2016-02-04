@@ -81,6 +81,8 @@ public:
 
 public:
 
+#ifdef TCAD_SOLVERS
+
   //////////////////////////////////////////////////////////////////////////////////////////////
   //----------------Function and Jacobian evaluate for Poisson's Equation---------------------//
   //////////////////////////////////////////////////////////////////////////////////////////////
@@ -101,19 +103,14 @@ public:
   virtual void Poissin_Function(PetscScalar * , Vec , InsertMode &);
 
   /**
-   * reserve none zero pattern in petsc matrix.
-   */
-  virtual void Poissin_Jacobian_Reserve(Mat * , InsertMode &);
-
-  /**
    * preprocess Jacobian Matrix for poisson solver
    */
-  virtual void Poissin_Jacobian_Preprocess(PetscScalar *, Mat *, std::vector<PetscInt>&, std::vector<PetscInt>&, std::vector<PetscInt>&);
+  virtual void Poissin_Jacobian_Preprocess(PetscScalar *, SparseMatrix<PetscScalar> *, std::vector<PetscInt>&, std::vector<PetscInt>&, std::vector<PetscInt>&);
 
   /**
    * build function and its jacobian for poisson solver, nothing to do
    */
-  virtual void Poissin_Jacobian(PetscScalar * , Mat *, InsertMode &);
+  virtual void Poissin_Jacobian(PetscScalar * , SparseMatrix<PetscScalar> *, InsertMode &);
 
 
   //////////////////////////////////////////////////////////////////////////////////
@@ -131,19 +128,14 @@ public:
   virtual void DDM1_Function(PetscScalar * , Vec , InsertMode &);
 
   /**
-   * reserve none zero pattern in petsc matrix.
-   */
-  virtual void DDM1_Jacobian_Reserve(Mat *, InsertMode &);
-
-  /**
    * preprocess Jacobian Matrix of level 1 DDM equation.
    */
-  virtual void DDM1_Jacobian_Preprocess(PetscScalar *, Mat *, std::vector<PetscInt>&, std::vector<PetscInt>&, std::vector<PetscInt>&);
+  virtual void DDM1_Jacobian_Preprocess(PetscScalar *, SparseMatrix<PetscScalar> *, std::vector<PetscInt>&, std::vector<PetscInt>&, std::vector<PetscInt>&);
 
   /**
    * build function and its jacobian for DDML1 solver
    */
-  virtual void DDM1_Jacobian(PetscScalar * , Mat *, InsertMode &);
+  virtual void DDM1_Jacobian(PetscScalar * , SparseMatrix<PetscScalar> *, InsertMode &);
 
 
   //////////////////////////////////////////////////////////////////////////////////
@@ -161,19 +153,14 @@ public:
   virtual void DDM2_Function(PetscScalar * , Vec , InsertMode &);
 
   /**
-   * reserve none zero pattern in petsc matrix.
-   */
-  virtual void DDM2_Jacobian_Reserve(Mat *, InsertMode &);
-
-  /**
    * preprocess Jacobian Matrix of level 2 DDM equation.
    */
-  virtual void DDM2_Jacobian_Preprocess(PetscScalar *,Mat *, std::vector<PetscInt>&, std::vector<PetscInt>&, std::vector<PetscInt>&);
+  virtual void DDM2_Jacobian_Preprocess(PetscScalar *,SparseMatrix<PetscScalar> *, std::vector<PetscInt>&, std::vector<PetscInt>&, std::vector<PetscInt>&);
 
   /**
    * build function and its jacobian for DDML2 solver
    */
-  virtual void DDM2_Jacobian(PetscScalar * , Mat *, InsertMode &);
+  virtual void DDM2_Jacobian(PetscScalar * , SparseMatrix<PetscScalar> *, InsertMode &);
 
 
   //////////////////////////////////////////////////////////////////////////////////
@@ -191,19 +178,14 @@ public:
   virtual void EBM3_Function(PetscScalar * , Vec , InsertMode &);
 
   /**
-   * reserve none zero pattern in petsc matrix.
-   */
-  virtual void EBM3_Jacobian_Reserve(Mat *, InsertMode &);
-
-  /**
    * preprocess Jacobian Matrix of EBM3 solver
    */
-  virtual void EBM3_Jacobian_Preprocess(PetscScalar * ,Mat *, std::vector<PetscInt>&, std::vector<PetscInt>&, std::vector<PetscInt>&);
+  virtual void EBM3_Jacobian_Preprocess(PetscScalar * ,SparseMatrix<PetscScalar> *, std::vector<PetscInt>&, std::vector<PetscInt>&, std::vector<PetscInt>&);
 
   /**
    * build function and its jacobian for EBM3 solver
    */
-  virtual void EBM3_Jacobian(PetscScalar * , Mat *, InsertMode &);
+  virtual void EBM3_Jacobian(PetscScalar * , SparseMatrix<PetscScalar> *, InsertMode &);
 
 
   //////////////////////////////////////////////////////////////////////////////////
@@ -213,8 +195,9 @@ public:
   /**
    *  evaluating matrix and rhs vector for ddm ac solver
    */
-  virtual void DDMAC_Fill_Matrix_Vector( Mat A, Vec b, const Mat J, const double omega, InsertMode & add_value_flag );
+  virtual void DDMAC_Fill_Matrix_Vector( Mat A, Vec b, const Mat J, const PetscScalar omega, InsertMode & add_value_flag );
 
+#endif
 
 };
 

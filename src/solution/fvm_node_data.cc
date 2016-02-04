@@ -38,7 +38,9 @@ PetscScalar FVM_NodeData::_scalar_dummy_ = 0.0;
 
 std::complex<PetscScalar> FVM_NodeData::_complex_dummy_ = std::complex<PetscScalar>(0.0, 0.0);
 
-VectorValue<PetscScalar> FVM_NodeData::_vector_dummy_(0,0,0);
+VectorValue<PetscScalar> FVM_NodeData::_vector_dummy_ = VectorValue<PetscScalar>();
+
+TensorValue<PetscScalar> FVM_NodeData::_tensor_dummy_ = TensorValue<PetscScalar>();
 
 /*----------------------------------------------------------------
  * @return the intrinsic carrier concentration.

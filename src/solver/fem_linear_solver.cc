@@ -117,7 +117,11 @@ void FEM_LinearSolver::setup_linear_data()
   ierr = KSPCreate(PETSC_COMM_WORLD, &ksp); genius_assert(!ierr);
 
   // set corresponding matrix
-  ierr = KSPSetOperators(ksp, A, A, SAME_NONZERO_PATTERN); genius_assert(!ierr);
+#if PETSC_VERSION_GE(3,5,0)
+  ierr = KSPSetOperators(ksp,A,A); genius_assert(!ierr);
+#else
+  ierr = KSPSetOperators(ksp,A,A,SAME_NONZERO_PATTERN); genius_assert(!ierr);
+#endif
 
   // get petsc preconditional context
   ierr = KSPGetPC(ksp, &pc); genius_assert(!ierr);
@@ -271,8 +275,9 @@ void FEM_LinearSolver::set_petsc_linear_solver_type(SolverSpecify::LinearSolverT
             ierr = KSPSetType (ksp, (char*) KSPPREONLY); genius_assert(!ierr);
             ierr = PCSetType  (pc, (char*) PCLU); genius_assert(!ierr);
             ierr = PCFactorSetMatSolverPackage (pc, "mumps"); genius_assert(!ierr);
-            //ierr = set_petsc_option("-mat_mumps_icntl_14", "80", false);  genius_assert(!ierr);
-            //ierr = set_petsc_option("-mat_mumps_icntl_23","4000", false);
+            // required for eliminate INFO -9 error
+            ierr = set_petsc_option("-mat_mumps_icntl_14", MUMPS_ICNTL_14, false);  genius_assert(!ierr);
+            ierr = set_petsc_option("-mat_mumps_icntl_23", MUMPS_ICNTL_23, false);
 #else
             MESSAGE<< "Warning:  no MUMPS solver configured, use BCGS instead!" << std::endl;
             RECORD();
@@ -331,6 +336,8 @@ void FEM_LinearSolver::set_petsc_linear_solver_type(SolverSpecify::LinearSolverT
             MESSAGE<< "Using MUMPS linear solver..."<<std::endl;
             RECORD();
             ierr = PCFactorSetMatSolverPackage (pc, "mumps"); genius_assert(!ierr);
+            ierr = set_petsc_option("-mat_mumps_icntl_14",MUMPS_ICNTL_14,false);  genius_assert(!ierr);
+            ierr = set_petsc_option("-mat_mumps_icntl_23",MUMPS_ICNTL_23,false);  genius_assert(!ierr);
 #else
             MESSAGE << "Warning:  no MUMPS solver configured, use default LU solver instead!" << std::endl;
             RECORD();
@@ -470,7 +477,11 @@ void FEM_LinearSolver::set_petsc_preconditioner_type(SolverSpecify::Precondition
       //ierr = PCFactorSetMatOrderingType(pc, MATORDERING_ND); genius_assert(!ierr);
       //ierr = PCFactorSetMatOrderingType(pc, MATORDERING_RCM);
       //ierr = set_petsc_option("-pc_factor_nonzeros_along_diagonal", 0); genius_assert(!ierr);
+#if PETSC_VERSION_GE(3, 6, 0)        
+      ierr = PCFactorSetAllowDiagonalFill(pc, PETSC_TRUE);genius_assert(!ierr);
+#else
       ierr = PCFactorSetAllowDiagonalFill(pc);genius_assert(!ierr);
+#endif      
       //ierr = set_petsc_option("-pc_factor_diagonal_fill", 0);
       return;
 #endif
@@ -536,6 +547,8 @@ void FEM_LinearSolver::set_petsc_preconditioner_type(SolverSpecify::Precondition
 #ifdef PETSC_HAVE_MUMPS
         MESSAGE<< "Using MUMPS as LU preconditioner..."<<std::endl;    RECORD();
         ierr = PCFactorSetMatSolverPackage (pc, "mumps"); genius_assert(!ierr);
+        ierr = set_petsc_option("-mat_mumps_icntl_14",MUMPS_ICNTL_14,false);  genius_assert(!ierr);
+        ierr = set_petsc_option("-mat_mumps_icntl_23",MUMPS_ICNTL_23,false);  genius_assert(!ierr);
 #endif
         ierr = PCFactorSetReuseFill(pc, PETSC_TRUE);genius_assert(!ierr);
         ierr = PCFactorSetReuseOrdering(pc, PETSC_TRUE); genius_assert(!ierr);
@@ -549,6 +562,8 @@ void FEM_LinearSolver::set_petsc_preconditioner_type(SolverSpecify::Precondition
         ierr = PCSetType (pc, (char*) PCLU);       genius_assert(!ierr);
         MESSAGE<< "Using MUMPS as parallel LU preconditioner..."<<std::endl;    RECORD();
         ierr = PCFactorSetMatSolverPackage (pc, "mumps"); genius_assert(!ierr);
+        ierr = set_petsc_option("-mat_mumps_icntl_14", MUMPS_ICNTL_14,false);  genius_assert(!ierr);
+        ierr = set_petsc_option("-mat_mumps_icntl_23", MUMPS_ICNTL_23,false);  genius_assert(!ierr);
         ierr = PCFactorSetReuseFill(pc, PETSC_TRUE);genius_assert(!ierr);
         ierr = PCFactorSetReuseOrdering(pc, PETSC_TRUE); genius_assert(!ierr);
         ierr = PCFactorSetColumnPivot(pc, 1.0); genius_assert(!ierr);
@@ -592,7 +607,11 @@ void FEM_LinearSolver::set_petsc_preconditioner_type(SolverSpecify::Precondition
         ierr = PCFactorSetReuseOrdering(pc, PETSC_TRUE); genius_assert(!ierr);
         ierr = PCFactorSetColumnPivot(pc, 1.0); genius_assert(!ierr);
         ierr = PCFactorSetShiftType(pc,MAT_SHIFT_NONZERO);genius_assert(!ierr);
+#if PETSC_VERSION_GE(3, 6, 0)        
+        ierr = PCFactorSetAllowDiagonalFill(pc, PETSC_TRUE);genius_assert(!ierr);
+#else
         ierr = PCFactorSetAllowDiagonalFill(pc);genius_assert(!ierr);
+#endif          
         switch ( _preconditioner_type )
         {
           case SolverSpecify::ASMILU0_PRECOND: set_petsc_option("-pc_factor_levels","0"); break;
@@ -695,6 +714,13 @@ int FEM_LinearSolver::set_petsc_option(const std::string &key, const std::string
     ukey = std::string("-") + this->ksp_prefix() + key.substr(1) ;
   else
     ukey = key;
+
+  // if the option has been set in command line
+  PetscBool  set;
+  PetscOptionsHasName(NULL, ukey.c_str(), &set);
+  if(set) return 0;
+
+  // set the option
   petsc_options[ukey] = value;
   return PetscOptionsSetValue(ukey.c_str(), value.c_str());
 }

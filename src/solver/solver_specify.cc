@@ -36,6 +36,7 @@ using PhysicalUnit::W;
 using PhysicalUnit::C;
 using PhysicalUnit::s;
 using PhysicalUnit::um;
+using PhysicalUnit::rad;
 
 /**
  * this namespace stores information for controlling the solver.
@@ -172,9 +173,21 @@ namespace SolverSpecify
   double    PoissonCorrectionParameter;
 
 
+  /**
+   * dump matrix and rhs vector
+   */
+  bool      DumpMatrixVector;
+
+
   //--------------------------------------------
-  // linear solver convergence criteria
+  // nonlinear/linear solver convergence criteria
   //--------------------------------------------
+
+  /**
+   * snes relative error tolerance
+   */
+  double   snes_rtol;
+
 
   /**
    * relative error tolerance
@@ -207,9 +220,19 @@ namespace SolverSpecify
   unsigned int      MaxIteration;
 
   /**
-  * potential damping factor, in kT/q
-  */
+   * potential damping factor, in kT/q
+   */
   double   potential_update;
+
+  /**
+   * potential damping for spice
+   */
+  bool   damping_spice;
+
+  /**
+   * voltage damping factor for spice, in V
+   */
+  double   spice_voltage_update;
 
   /**
    * When absolute error of equation less
@@ -262,6 +285,11 @@ namespace SolverSpecify
   double      hole_energy_abs_toler;
 
   /**
+   * The absolute converged criteria for the trap continuity equation.
+   */
+  double      trap_continuity_abs_toler;
+
+  /**
    * The absolute converged criteria for the electron quantum potential equation.
    */
   double      elec_quantum_abs_toler;
@@ -280,6 +308,11 @@ namespace SolverSpecify
    * The absolute converged criteria for the spice circuit.
    */
   double      spice_abs_toler;
+
+  /**
+   * The function value larger than divergence_factor*xx_abs_toler is considered as divergence
+   */
+  double      divergence_factor;
 
   //--------------------------------------------
   // TS (transient solver)
@@ -403,6 +436,11 @@ namespace SolverSpecify
   std::vector<std::string>    Electrode_VScan;
 
   /**
+   * The voltage of electrode(s) to do DC sweep
+   */
+  double         Electrode_VScan_Voltage;
+
+  /**
    * start voltage of DC sweep
    */
   double    VStart;
@@ -426,6 +464,12 @@ namespace SolverSpecify
    * electrode the current DC sweep will be performanced
    */
   std::vector<std::string>    Electrode_IScan;
+
+  /**
+   * The current of electrode(s) to do DC sweep
+   */
+  double         Electrode_IScan_Current;
+
 
   /**
    * start current of DC sweep
@@ -620,6 +664,33 @@ namespace SolverSpecify
    */
   bool      SourceCoupled;
 
+
+  /**
+   * TID total dose
+   */
+  double    TID_TotalDose;
+
+
+  /**
+   * TID dose rate
+   */
+  double    TID_DoseRate;
+
+  /**
+   * TID dose step
+   */
+  double    TID_DoseStep;
+
+  /**
+   * TID OP step
+   */
+  double    TID_OPStep;
+
+  /**
+   * after TID solver, only fixed charge remains, carriers in oxide are set to zero
+   */
+  bool      TID_FixedCharge;
+
   //------------------------------------------------------
   // initial parameters
   //------------------------------------------------------
@@ -635,7 +706,7 @@ namespace SolverSpecify
 #ifdef PETSC_HAVE_MUMPS
     LS                = GMRES;
     PC                = LU_PRECOND;
-    NSLagPCLU         = 10;
+    NSLagPCLU         = 5;
     NSLagJacobian     = 1;
 #else
     LS                = BCGSL;
@@ -656,9 +727,15 @@ namespace SolverSpecify
     ReSolveCarrier    = false;
     ArtificialCarrier = true;
     PoissonCorrectionParameter= 0.0;
+    DumpMatrixVector  = false;
 
     MaxIteration              = 30;
     potential_update          = 1.0;
+
+    damping_spice             = false;
+    spice_voltage_update      = 10;
+
+    snes_rtol                 = 1e-5;
 
     ksp_rtol                  = 1e-8;
     ksp_atol                  = 1e-15;
@@ -671,13 +748,15 @@ namespace SolverSpecify
     poisson_abs_toler         = 1e-26*C;
     elec_continuity_abs_toler = 5e-18*A;
     hole_continuity_abs_toler = 5e-18*A;
+    trap_continuity_abs_toler = 5e-18*A;
     heat_equation_abs_toler   = 1e-11*W;
     elec_energy_abs_toler     = 1e-18*W;
     hole_energy_abs_toler     = 1e-18*W;
     electrode_abs_toler       = 1e-14*A;
-    spice_abs_toler           = 1e-14*A;
+    spice_abs_toler           = 1e-12*A;
     elec_quantum_abs_toler    = 1e-26*C;
     hole_quantum_abs_toler    = 1e-26*C;
+    divergence_factor         = 1e20;
 
     TimeDependent             = false;
     TStepMin                  = 1e-14*s;
@@ -689,6 +768,8 @@ namespace SolverSpecify
     AutoStep                  = true;
     RejectStep                = true;
     Predict                   = true;
+    TS_rtol                   = 1e-3;
+    TS_atol                   = 1e-7;
     clock                     = 0.0;
     dt                        = 1e100;
 
@@ -696,8 +777,11 @@ namespace SolverSpecify
     VStepMax          = 1.0;
     IStepMax          = 1.0;
 
+    Electrode_VScan_Voltage = 0.0;
+    Electrode_IScan_Current = 0.0;
+
     NodeSet           = true;
-    RampUpSteps       = 1;
+    RampUpSteps       = 0;
     RampUpVStep       = std::numeric_limits<double>::infinity();
     RampUpIStep       = std::numeric_limits<double>::infinity();
 
@@ -711,6 +795,13 @@ namespace SolverSpecify
     OptG              = false;
     PatG              = false;
     SourceCoupled     = false;
+
+
+    TID_TotalDose     = 0;
+    TID_DoseRate      = 0;
+    TID_DoseStep      = 1000*rad;
+    TID_OPStep        = 1000*rad;
+    TID_FixedCharge   = false;
 
     PseudoTimeMethod            = false;
     PseudoTimeCMOS              = true;
@@ -745,20 +836,20 @@ namespace SolverSpecify
   {
     if (s == "poisson")            return POISSON;
     if (s == "ddml1")              return DDML1;
-    if (s == "ddml1r")             return DDML1R;
     if (s == "ddml1m")             return DDML1MIXA;
-    if (s == "ddml1h")             return DDML1MIX;
+    if (s == "ddml1ms")            return DDML1MIX;
     if (s == "hall")               return HALLDDML1;
     if (s == "ddml2")              return DDML2;
     if (s == "ddml2m")             return DDML2MIXA;
-    if (s == "ddml2h")             return DDML2MIX;
+    if (s == "ddml2ms")            return DDML2MIX;
     if (s == "ebml3")              return EBML3;
     if (s == "ebml3m")             return EBML3MIXA;
-    if (s == "ebml3h")             return EBML3MIX;
+    if (s == "ebml3ms")            return EBML3MIX;
     if (s == "ddmac")              return DDMAC;
     if (s == "qddm")               return DENSITY_GRADIENT;
     if (s == "halfimplicit")       return HALF_IMPLICIT;
     if (s == "ric")                return RIC;
+    if (s == "dictat")             return DICTAT;
 
     return INVALID_SOLVER;
   }

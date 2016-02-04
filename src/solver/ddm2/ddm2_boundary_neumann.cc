@@ -45,10 +45,8 @@ using PhysicalUnit::e;
 void NeumannBC::DDM2_Function(PetscScalar * x, Vec f, InsertMode &add_value_flag)
 {
   // Neumann boundary condition is processed here
+  bool surface_recomb = this->flag("surface.recombination");
   const PetscScalar Heat_Transfer = this->scalar("heat.transfer");
-
-  // only consider heat exchange with external environment, if heat transfer rate is zero, do nothing
-  if( Heat_Transfer == 0.0 ) return;
 
 
   // note, we will use ADD_VALUES to set values of vec f
@@ -74,13 +72,28 @@ void NeumannBC::DDM2_Function(PetscScalar * x, Vec f, InsertMode &add_value_flag
     {
     case SemiconductorRegion:
       {
-        // process governing equation of T, which should consider heat exchange to entironment
+        SemiconductorSimulationRegion * sregion = (SemiconductorSimulationRegion *) region;
+
+        PetscScalar n   =  x[fvm_node->local_offset()+1];                         // electron density
+        PetscScalar p   =  x[fvm_node->local_offset()+2];                         // hole density
+        // process governing equation of T, which should consider heat exchange to environment
         PetscScalar T = x[fvm_node->local_offset()+3];  // lattice temperature
 
-        // add heat flux out of Neumann boundary to lattice temperature equatiuon
-        PetscScalar S  = fvm_node->outside_boundary_surface_area();
-        PetscScalar fT = Heat_Transfer*(T_external()-T)*S;
+        PetscScalar boundary_area = fvm_node->outside_boundary_surface_area();
 
+        if(surface_recomb)
+        {
+          // surface recombination
+          Material::MaterialSemiconductor *mt =  sregion->material();
+          mt->mapping(fvm_node->root_node(), fvm_node->node_data(), SolverSpecify::clock);
+          PetscScalar GSurf = - mt->band->R_Surf(p, n, T) * boundary_area; //generation due to SRH
+
+          VecSetValue(f, fvm_node->global_offset()+1, GSurf, ADD_VALUES);
+          VecSetValue(f, fvm_node->global_offset()+2, GSurf, ADD_VALUES);
+        }
+
+        // add heat flux out of Neumann boundary to lattice temperature equatiuon
+        PetscScalar fT = Heat_Transfer*(T_external()-T)*boundary_area;
         VecSetValue(f, fvm_node->global_offset()+3, fT, ADD_VALUES);
 
         break;
@@ -89,11 +102,11 @@ void NeumannBC::DDM2_Function(PetscScalar * x, Vec f, InsertMode &add_value_flag
     case ElectrodeRegion :
     case InsulatorRegion :
       {
-        // process governing equation of T, which should consider heat exchange to entironment
+        // process governing equation of T, which should consider heat exchange to environment
         PetscScalar T = x[fvm_node->local_offset()+1];  // lattice temperature
         // add heat flux out of Neumann boundary to lattice temperature equatiuon
-        PetscScalar S  = fvm_node->outside_boundary_surface_area();
-        PetscScalar fT = Heat_Transfer*(T_external()-T)*S;
+        PetscScalar boundary_area  = fvm_node->outside_boundary_surface_area();
+        PetscScalar fT = Heat_Transfer*(T_external()-T)*boundary_area;
         VecSetValue(f, fvm_node->global_offset()+1, fT, ADD_VALUES);
 
         break;
@@ -118,20 +131,11 @@ void NeumannBC::DDM2_Function(PetscScalar * x, Vec f, InsertMode &add_value_flag
 /*---------------------------------------------------------------------
  * build function and its jacobian for DDML2 solver
  */
-void NeumannBC::DDM2_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_value_flag)
+void NeumannBC::DDM2_Jacobian(PetscScalar * x, SparseMatrix<PetscScalar> *jac, InsertMode &add_value_flag)
 {
   // Neumann boundary condition is processed here
+  bool surface_recomb = this->flag("surface.recombination");
   const PetscScalar Heat_Transfer = this->scalar("heat.transfer");
-
-  // only consider heat exchange with external environment, if heat transfer rate is zero, do nothing
-  if( Heat_Transfer == 0.0 ) return;
-
-  // since we will use ADD_VALUES operat, check the matrix state.
-  if( (add_value_flag != ADD_VALUES) && (add_value_flag != NOT_SET_VALUES) )
-  {
-    MatAssemblyBegin(*jac, MAT_FLUSH_ASSEMBLY);
-    MatAssemblyEnd(*jac, MAT_FLUSH_ASSEMBLY);
-  }
 
 
   BoundaryCondition::const_node_iterator node_it = nodes_begin();
@@ -148,17 +152,39 @@ void NeumannBC::DDM2_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_value_f
     {
     case SemiconductorRegion:
       {
-        //the indepedent variable number, we only need 1 here.
-        adtl::AutoDScalar::numdir=1;
+        // process interface traps
+        SemiconductorSimulationRegion * sregion = (SemiconductorSimulationRegion *) region;
 
-        // process governing equation of T, which should consider heat exchange to entironment
-        AutoDScalar T = x[fvm_node->local_offset()+3];  T.setADValue(0, 1.0); // lattice temperature
+        //the indepedent variable number, 4 for each node
+        adtl::AutoDScalar::numdir = 4;
+        PetscInt index[4] = {fvm_node->global_offset()+0,
+                             fvm_node->global_offset()+1,
+                             fvm_node->global_offset()+2,
+                             fvm_node->global_offset()+3};
+
+        AutoDScalar n   = x[fvm_node->local_offset()+1];   n.setADValue(1, 1.0);              // electron density
+        AutoDScalar p   = x[fvm_node->local_offset()+2];   p.setADValue(2, 1.0);              // hole density
+        // process governing equation of T, which should consider heat exchange to environment
+        AutoDScalar T   = x[fvm_node->local_offset()+3];   T.setADValue(3, 1.0); // lattice temperature
+
+        PetscScalar boundary_area = fvm_node->outside_boundary_surface_area();
+
+        Material::MaterialSemiconductor *mt =  sregion->material();
+        mt->mapping(fvm_node->root_node(), fvm_node->node_data(), SolverSpecify::clock);
+        //synchronize with material database
+        mt->set_ad_num(adtl::AutoDScalar::numdir);
+
+        if(surface_recomb)
+        {
+          // surface recombination
+          AutoDScalar GSurf = - mt->band->R_Surf(p, n, T) * boundary_area;
+          jac->add_row(  index[1],  4,  &index[0],  GSurf.getADValue() );
+          jac->add_row(  index[2],  4,  &index[0],  GSurf.getADValue() );
+        }
 
         // add heat flux out of Neumann boundary to lattice temperature equatiuon
-        PetscScalar S  = fvm_node->outside_boundary_surface_area();
-        AutoDScalar fT = Heat_Transfer*(T_external()-T)*S;
-
-        MatSetValue(*jac, fvm_node->global_offset()+3, fvm_node->global_offset()+3, fT.getADValue(0),  ADD_VALUES);
+        AutoDScalar fT = Heat_Transfer*(T_external()-T)*boundary_area;
+        jac->add( index[3],  index[3],  fT.getADValue(3) );
 
         break;
       }
@@ -169,14 +195,14 @@ void NeumannBC::DDM2_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_value_f
         //the indepedent variable number, we only need 1 here.
         adtl::AutoDScalar::numdir=1;
 
-        // process governing equation of T, which should consider heat exchange to entironment
+        // process governing equation of T, which should consider heat exchange to environment
         AutoDScalar T = x[fvm_node->local_offset()+1];  T.setADValue(0, 1.0); // lattice temperature
 
         // add heat flux out of Neumann boundary to lattice temperature equatiuon
-        PetscScalar S  = fvm_node->outside_boundary_surface_area();
-        AutoDScalar fT = Heat_Transfer*(T_external()-T)*S;
+        PetscScalar boundary_area  = fvm_node->outside_boundary_surface_area();
+        AutoDScalar fT = Heat_Transfer*(T_external()-T)*boundary_area;
 
-        MatSetValue(*jac, fvm_node->global_offset()+1, fvm_node->global_offset()+1, fT.getADValue(0),  ADD_VALUES);
+        jac->add( fvm_node->global_offset()+1,  fvm_node->global_offset()+1,  fT.getADValue(0) );
 
         break;
       }
@@ -192,3 +218,4 @@ void NeumannBC::DDM2_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_value_f
   add_value_flag = ADD_VALUES;
 
 }
+

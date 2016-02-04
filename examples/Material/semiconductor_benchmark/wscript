@@ -1,0 +1,28 @@
+def build(bld):
+  common_src = ['../adolc_init.cc', '../parser_parameter.cc', '../PMI.cc' ,
+                'PMI_benchmark_basic.cc',
+                'PMI_benchmark_band.cc',
+                'PMI_benchmark_mob.cc',
+                'PMI_benchmark_thermal.cc',
+                'PMI_benchmark_avalanche.cc',
+                'PMI_benchmark_optical.cc'
+               ]
+
+
+  bld.objects( source    = common_src,
+               includes  = '. .. ../include',
+               features  = 'cxx',
+               use       = 'opt',
+               target    = 'pmi_benchmark_objs',
+             )
+
+# sip module
+  if bld.env.SIP_BIN:
+      bld.shlib(
+         source    = 'sip/PMI_benchmark.sip',
+         includes  = '. .. ../include',
+         features  = 'cxx cxxshlib',
+         use       = ['pmi_benchmark_objs', 'SIP'],
+         target    = 'PMI_Benchmark',
+         install_path = '${PREFIX}/lib',
+      )

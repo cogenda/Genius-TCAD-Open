@@ -46,7 +46,7 @@ void InsulatorSimulationRegion::HALL_Fill_Value(Vec x, Vec L)
 /*---------------------------------------------------------------------
  * build function and its jacobian for DDM1 solver
  */
-void InsulatorSimulationRegion::HALL_Function(const VectorValue<double> &, PetscScalar * x, Vec f, InsertMode &add_value_flag)
+void InsulatorSimulationRegion::HALL_Function(const VectorValue<PetscScalar> &, PetscScalar * x, Vec f, InsertMode &add_value_flag)
 {
   this->DDM1_Function(x, f, add_value_flag);
 }
@@ -55,7 +55,7 @@ void InsulatorSimulationRegion::HALL_Function(const VectorValue<double> &, Petsc
 /*---------------------------------------------------------------------
  * build function and its jacobian for DDM1 solver
  */
-void InsulatorSimulationRegion::HALL_Jacobian(const VectorValue<double> &, PetscScalar * x, Mat *jac, InsertMode &add_value_flag)
+void InsulatorSimulationRegion::HALL_Jacobian(const VectorValue<PetscScalar> &, PetscScalar * x, SparseMatrix<PetscScalar> *jac, InsertMode &add_value_flag)
 {
   this->DDM1_Jacobian(x, jac, add_value_flag);
 }
@@ -67,27 +67,15 @@ void InsulatorSimulationRegion::HALL_Time_Dependent_Function(PetscScalar * x, Ve
 }
 
 
-void InsulatorSimulationRegion::HALL_Time_Dependent_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_value_flag)
+void InsulatorSimulationRegion::HALL_Time_Dependent_Jacobian(PetscScalar * x, SparseMatrix<PetscScalar> *jac, InsertMode &add_value_flag)
 {
   this->DDM1_Time_Dependent_Jacobian(x, jac, add_value_flag);
 }
-
-
-void InsulatorSimulationRegion::HALL_Function_Hanging_Node(PetscScalar *x, Vec f, InsertMode &add_value_flag)
-{
-  this->DDM1_Function_Hanging_Node(x, f, add_value_flag);
-}
-
-
-void InsulatorSimulationRegion::HALL_Jacobian_Hanging_Node(PetscScalar *x, Mat *jac, InsertMode &add_value_flag)
-{
-  this->DDM1_Jacobian_Hanging_Node(x, jac, add_value_flag);
-}
-
 
 void InsulatorSimulationRegion::HALL_Update_Solution(PetscScalar *lxx)
 {
   this->DDM1_Update_Solution(lxx);
 }
+
 
 

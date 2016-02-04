@@ -113,14 +113,16 @@ protected:
    */
   void _set_node_processor_ids(MeshBase& mesh);
 
+
+protected:
+
   /**
-   * cluster of mesh elements, the elems belongs to the same cluster
-   * will always be partitioned into the same block
+   * cluster of mesh elements
    */
   struct Cluster
   {
-    unsigned int id;
     std::vector<const Elem *> elems;
+    std::map<const Elem *, unsigned int> elem_id_map;
   };
 
   /**
@@ -129,24 +131,9 @@ protected:
   std::vector<Cluster *> _clusters;
 
   /**
-   * map elem to cluster _elem_cluster_map[elem->id]
+   * build claster
    */
-  std::vector<const Cluster *> _elem_cluster_map;
-
-  /**
-   * build the cluster, can be rewrite by derived class
-   */
-  virtual void _build_flat_cluster(MeshBase& mesh);
-
-  /**
-   * merge elems into cluster
-   */
-  virtual void _merge_elem_to_cluster(MeshBase& mesh, const std::vector<std::vector<unsigned int> > *);
-
-  /**
-   * get neighbor elems of a cluster
-   */
-  std::vector<const Elem *> cluster_neighbor_elem(const Cluster *) const;
+  void _build_cluster(MeshBase& mesh, const std::vector<std::vector<unsigned int> > *cluster_elems);
 
   /**
    * clear the cluster

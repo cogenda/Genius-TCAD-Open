@@ -40,12 +40,10 @@ namespace SolverSpecify
   enum SolverType
   {
     POISSON = 0,    // nonlinear poisson solver
-    HDM,            // hydrodynamic solver
     DDML1,          // level 1 drift-diffusion solver
     DDML1MIX,       // mixed type level 1 drift-diffusion solver (old)
     DDML1MIXA,      // mixed type level 1 drift-diffusion solver
     HALLDDML1,      // level 1 drift-diffusion solver with hall effect
-    DDML1R,         // level 1 drift-diffusion solver with electron PDE in resistive metal region
     DDML2,          // level 2 drift-diffusion solver
     DDML2MIX,       // mixed type level 2 drift-diffusion solver (old)
     DDML2MIXA,      // mixed type level 2 drift-diffusion solver
@@ -71,6 +69,12 @@ namespace SolverSpecify
     OPTG_ANALYTIC,
     STRESS,
     RIC,              // solver of radiation induced conductivity model
+    DICTAT,           // DICTAT like RIC solver
+    TID_TRAP,         // Simple TID solver (trap only) for SiO2
+    TIDOP,            // TID solver together with device OP, TID_DRIFT not have Poisson solver, must call other OP solver
+    TID_DRIFT,        // TID solver (electron/hole drift and trap) for SiO2
+    TID_FULL,         // TID solver (electron/hole drift, trap and hydrogen release) for SiO2
+    TID_KINETIC,      // TID solver (electron/hole drift and trap, hydrogen release/trap/de-trap) for SiO2
     SOLVER_BASE,
     INVALID_SOLVER
   };

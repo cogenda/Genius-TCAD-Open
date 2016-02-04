@@ -35,6 +35,12 @@ public:
    */
   std::string & label()
   { return _label;}
+  
+  
+  /**
+   * limit the dt by wave form
+   */
+  virtual void dt_critial_limit(const double t, double & dt, const double dt_min)  const {}
 
 
   virtual double waveform(double )=0;
@@ -86,7 +92,7 @@ public:
    * @return constant amplitude when t>td, else 0
    */
   double waveform(double t)
-{ return t>=_td? _amplitude:0.0;}
+  { return t>=_td? _amplitude:0.0;}
 
 };
 
@@ -147,6 +153,18 @@ public:
     else
       amp  = _amplitude_bias;
     return std::max(0.0, amp);
+  }
+  
+  
+  void dt_critial_limit(const double t, double & dt, const double dt_min) const
+  {
+    int cycles = _frequency*(t-_td);
+
+    double ta1 = cycles/_frequency + 0.25/_frequency + _td;
+    double ta2 = cycles/_frequency + 0.75/_frequency + _td;
+
+    if( t<ta1 && t+dt>ta1 && ta1-t>=dt_min ) { dt = ta1-t; return; }
+    if( t<ta2 && t+dt>ta2 && ta2-t>=dt_min ) { dt = ta2-t; return; }
   }
 };
 
@@ -228,6 +246,21 @@ public:
     }
   }
 
+  void dt_critial_limit(const double t, double & dt, const double dt_min) const
+  {
+    int cycles = (t-_td)/_pr;
+
+    double ta2 = _tr + cycles*_pr + _td;
+    double ta3 = _tr + _pw + cycles*_pr + _td;
+    double ta4 = _tr + _pw + _tf + cycles*_pr + _td;
+    double ta5 = 0  + (cycles+1)*_pr + _td;
+
+    if( t<ta2 && t+dt>ta2 && ta2-t>=dt_min ) { dt = ta2-t; return; }
+    if( t<ta3 && t+dt>ta3 && ta3-t>=dt_min ) { dt = ta3-t; return; }
+    if( t<ta4 && t+dt>ta4 && ta4-t>=dt_min ) { dt = ta4-t; return; }
+    if( t<ta5 && t+dt>ta5 && ta5-t>=dt_min ) { dt = ta5-t; return; }
+  }
+  
 };
 
 
@@ -299,6 +332,16 @@ public:
 
   }
 
+  
+  void dt_critial_limit(const double t, double & dt, const double dt_min) const
+  {
+    double ta1 = _td;
+    double ta2 = _tfd;
+
+    if( t<ta1 && t+dt>ta1 && ta1-t>=dt_min ) { dt = ta1-t; return; }
+    if( t<ta2 && t+dt>ta2 && ta2-t>=dt_min ) { dt = ta2-t; return; }
+  }
+  
 };
 
 
@@ -343,7 +386,20 @@ public:
    */
   double waveform(double t)
   {
-    return _amplitude*exp(-(t-_t0)*(t-_t0)/(_tao*_tao));
+    double p = (t-_t0)*(t-_t0)/(_tao*_tao);
+    if(p < 70.0)
+      return _amplitude*exp(-p);
+    return 0.0;
+  }
+  
+  
+  void dt_critial_limit(const double t, double & dt, const double dt_min) const
+  {
+    double ta1 = std::max(0.0, _t0-3*_tao);
+    double ta2 = _t0;
+    
+    if( t<ta1 && t+dt>ta1 && ta1-t>=dt_min ) { dt = ta1-t; return; }
+    if( t<ta2 && t+dt>ta2 && ta2-t>=dt_min ) { dt = ta2-t; return; }
   }
 
 };

@@ -25,6 +25,7 @@
 #include <iomanip>
 
 #include "solver_base.h"
+#include "spice_ckt.h"
 #include "probe_hook.h"
 #include "parallel.h"
 
@@ -36,7 +37,7 @@ ProbeHook::ProbeHook(SolverBase & solver, const std::string & name, void * param
     : Hook(solver, name), _probe_file(SolverSpecify::out_prefix + ".probe")
 {
   _p_solver = & solver;
-  _p_fvm_node   = NULL;
+  _p_fvm_node   = 0;
   _min_loc = invalid_uint;
 
   const std::vector<Parser::Parameter> & parm_list = *((std::vector<Parser::Parameter> *)param);
@@ -51,8 +52,15 @@ ProbeHook::ProbeHook(SolverBase & solver, const std::string & name, void * param
       _pp(2)=parm_it->get_real() * PhysicalUnit::um;
     if(parm_it->name() == "file" && parm_it->type() == Parser::STRING)
       _probe_file = parm_it->get_string();
+    if(parm_it->name() == "region" && parm_it->type() == Parser::STRING)
+      _region = parm_it->get_string();
+    if(parm_it->name() == "material" && parm_it->type() == Parser::STRING)
+      _material = parm_it->get_string();
   }
 
+  const SimulationSystem & system = _p_solver->get_system();
+  if(!_region.empty() && !system.has_region(_region)) _region.clear();
+  if(!_material.empty() && !system.has_region_with_material(_material)) _material.clear();
 
   if ( !Genius::processor_id() )
     _out.open(_probe_file.c_str());
@@ -80,6 +88,8 @@ void ProbeHook::on_init()
   for( unsigned int r=0; r<_p_solver->get_system().n_regions(); r++)
   {
     const SimulationRegion * region = _p_solver->get_system().region(r);
+    if(!_region.empty() && region->name() != _region) continue;
+    if(!_material.empty() && region->material() != _material) continue;
 
     SimulationRegion::const_processor_node_iterator node_it = region->on_processor_nodes_begin();
     SimulationRegion::const_processor_node_iterator node_it_end = region->on_processor_nodes_end();
@@ -100,15 +110,19 @@ void ProbeHook::on_init()
   // after this call, the _min_loc contains processor_id with minimal min_dis
   Parallel::min_loc(min_dis, _min_loc);
 
-  double x,y,z;
+  double x=0,y=0,z=0;
   std::string region;
   std::vector<std::string> var_name;
   int n_var;
 
-  x = (*_p_fvm_node->root_node())(0);
-  y = (*_p_fvm_node->root_node())(1);
-  z = (*_p_fvm_node->root_node())(2);
-  region = _p_solver->get_system().region(_p_fvm_node->subdomain_id())->label();
+  if(_p_fvm_node)
+  {
+    x = (*_p_fvm_node->root_node())(0);
+    y = (*_p_fvm_node->root_node())(1);
+    z = (*_p_fvm_node->root_node())(2);
+    region = _p_solver->get_system().region(_p_fvm_node->subdomain_id())->label();
+  }
+
   Parallel::broadcast(x, _min_loc);
   Parallel::broadcast(y, _min_loc);
   Parallel::broadcast(z, _min_loc);
@@ -120,16 +134,43 @@ void ProbeHook::on_init()
     switch (node_data->type())
     {
       case FVM_NodeData::SemiconductorData:
-        n_var = 3;
-        var_name.push_back("psi [V]");
-        var_name.push_back("n [cm^-3]");
-        var_name.push_back("p [cm^-3]");
+        if( SolverSpecify::Type==SolverSpecify::ACSWEEP)
+        {
+          n_var = 6;
+          var_name.push_back("psi_real [V]");
+          var_name.push_back("psi_imag [V]");
+
+          var_name.push_back("n_real [cm^-3]");
+          var_name.push_back("n_imag [cm^-3]");
+
+          var_name.push_back("p_real [cm^-3]");
+          var_name.push_back("p_imag [cm^-3]");
+        }
+        else
+        {
+          n_var = 5;
+          var_name.push_back("psi [V]");
+          var_name.push_back("n [cm^-3]");
+          var_name.push_back("p [cm^-3]");
+          var_name.push_back("Optical G [cm^-3/s]");
+          var_name.push_back("Partical G [cm^-3/s]");
+        }
         break;
+
       case FVM_NodeData::InsulatorData:
       case FVM_NodeData::ConductorData:
       case FVM_NodeData::ResistanceData:
-        n_var = 1;
-        var_name.push_back("psi [V]");
+        if( SolverSpecify::Type==SolverSpecify::ACSWEEP)
+        {
+          n_var = 2;
+          var_name.push_back("psi_real [V]");
+          var_name.push_back("psi_imag [V]");
+        }
+        else
+        {
+          n_var = 1;
+          var_name.push_back("psi [V]");
+        }
         break;
       default:
         n_var = 0;
@@ -161,22 +202,28 @@ void ProbeHook::on_init()
     {
       if ( SolverSpecify::Electrode_VScan.size() )
         for(unsigned int n=0; n<SolverSpecify::Electrode_VScan.size(); ++n)
-          _out << '#' << std::setw(10) << ++cCnt << std::setw(20) << SolverSpecify::Electrode_VScan[n]  << " [V]"<< std::endl;
+          _out << '#' << std::setw(10) << ++cCnt << std::setw(30) << SolverSpecify::Electrode_VScan[n]  << " [V]"<< std::endl;
 
       if ( SolverSpecify::Electrode_IScan.size() )
         for(unsigned int n=0; n<SolverSpecify::Electrode_IScan.size(); ++n)
-          _out << '#' << std::setw(10) << ++cCnt << std::setw(20) << SolverSpecify::Electrode_IScan[n]  << " [A]"<< std::endl;
+          _out << '#' << std::setw(10) << ++cCnt << std::setw(30) << SolverSpecify::Electrode_IScan[n]  << " [A]"<< std::endl;
     }
 
     // Transient
     if(SolverSpecify::Type==SolverSpecify::TRANSIENT)
     {
-      _out << '#' << std::setw(10) << ++cCnt << std::setw(20) << "Time [s]"  << std::endl;
+      _out << '#' << std::setw(10) << ++cCnt << std::setw(30) << "Time [s]"  << std::endl;
+    }
+
+    // AC
+    if( SolverSpecify::Type==SolverSpecify::ACSWEEP)
+    {
+      _out << '#' << std::setw(10) << ++cCnt << std::setw(30) << "Frequency [Hz]"  << std::endl;
     }
 
     for(int i=0; i<n_var; i++)
     {
-      _out << '#' << std::setw(10) << ++cCnt << std::setw(20) << var_name[i]  << std::endl;
+      _out << '#' << std::setw(10) << ++cCnt << std::setw(30) << var_name[i]  << std::endl;
     }
     _out << std::endl;
   }
@@ -201,28 +248,60 @@ void ProbeHook::post_solve()
   if (Genius::processor_id() == _min_loc)
   {
     const FVM_NodeData * node_data = _p_fvm_node->node_data();
+
     switch (node_data->type())
     {
       case FVM_NodeData::SemiconductorData:
-        n_var = 3;
-        var.push_back(node_data->psi()/PhysicalUnit::V);
-        var.push_back(node_data->n()/std::pow(PhysicalUnit::cm, -3));
-        var.push_back(node_data->p()/std::pow(PhysicalUnit::cm, -3));
+        if( SolverSpecify::Type==SolverSpecify::ACSWEEP)
+        {
+          n_var = 6;
+          var.push_back(node_data->psi_ac().real()/PhysicalUnit::V);
+          var.push_back(node_data->psi_ac().imag()/PhysicalUnit::V);
+
+          var.push_back(node_data->n_ac().real()/std::pow(PhysicalUnit::cm, -3));
+          var.push_back(node_data->n_ac().imag()/std::pow(PhysicalUnit::cm, -3));
+
+          var.push_back(node_data->p_ac().real()/std::pow(PhysicalUnit::cm, -3));
+          var.push_back(node_data->p_ac().imag()/std::pow(PhysicalUnit::cm, -3));
+        }
+        else
+        {
+          n_var = 5;
+          var.push_back(node_data->psi()/PhysicalUnit::V);
+          var.push_back(node_data->n()/std::pow(PhysicalUnit::cm, -3));
+          var.push_back(node_data->p()/std::pow(PhysicalUnit::cm, -3));
+
+          var.push_back(node_data->PatG()/(std::pow(PhysicalUnit::cm, -3)/PhysicalUnit::s));
+          var.push_back(node_data->OptG()/(std::pow(PhysicalUnit::cm, -3)/PhysicalUnit::s));
+        }
         break;
+
       case FVM_NodeData::InsulatorData:
       case FVM_NodeData::ConductorData:
       case FVM_NodeData::ResistanceData:
-        n_var = 1;
-        var.push_back(node_data->psi()/PhysicalUnit::V);
+        if( SolverSpecify::Type==SolverSpecify::ACSWEEP)
+        {
+          n_var = 2;
+          var.push_back(node_data->psi_ac().real()/PhysicalUnit::V);
+          var.push_back(node_data->psi_ac().imag()/PhysicalUnit::V);
+        }
+        else
+        {
+          n_var = 1;
+          var.push_back(node_data->psi()/PhysicalUnit::V);
+        }
         break;
       default:
         n_var = 0;
     }
   }
 
+
   Parallel::broadcast(n_var,_min_loc);
   if(n_var)
     Parallel::broadcast(var,_min_loc);
+
+  SPICE_CKT * ckt = _p_solver->get_system().get_circuit();
 
   if ( !Genius::processor_id() )
   {
@@ -237,26 +316,35 @@ void ProbeHook::post_solve()
     // DC Sweep
     if( SolverSpecify::Type==SolverSpecify::DCSWEEP || SolverSpecify::Type==SolverSpecify::TRACE )
     {
-      const BoundaryConditionCollector * bcs = this->get_solver().get_system().get_bcs();
-
       if ( SolverSpecify::Electrode_VScan.size() )
+      {
         for(unsigned int n=0; n<SolverSpecify::Electrode_VScan.size(); ++n)
-      {
-        const BoundaryCondition * bc = bcs->get_bc(SolverSpecify::Electrode_VScan[n]);
-        _out << std::setw(20) << bc->ext_circuit()->Vapp()/PhysicalUnit::V;
+        {
+          _out << std::setw(20) << SolverSpecify::Electrode_VScan_Voltage/PhysicalUnit::V;
+        }
       }
-
+      
       if ( SolverSpecify::Electrode_IScan.size() )
-        for(unsigned int n=0; n<SolverSpecify::Electrode_IScan.size(); ++n)
       {
-        const BoundaryCondition * bc = bcs->get_bc(SolverSpecify::Electrode_IScan[n]);
-        _out << std::setw(20) << bc->ext_circuit()->Iapp()/PhysicalUnit::A;
+        for(unsigned int n=0; n<SolverSpecify::Electrode_IScan.size(); ++n)
+        {
+          _out << std::setw(20) << SolverSpecify::Electrode_IScan_Current/PhysicalUnit::A;
+        }
       }
+        
     }
 
+    // Transient
     if(SolverSpecify::Type==SolverSpecify::TRANSIENT)
     {
       _out << std::setw(15) << SolverSpecify::clock/PhysicalUnit::s;
+    }
+
+    // AC
+    if( SolverSpecify::Type==SolverSpecify::ACSWEEP)
+    {
+      PetscScalar omega = 2*3.14159265358979323846*SolverSpecify::Freq*PhysicalUnit::s;
+      _out << std::setw(15) << SolverSpecify::Freq*PhysicalUnit::s;
     }
 
     for(unsigned int i=0; i<var.size(); i++)
@@ -264,6 +352,7 @@ void ProbeHook::post_solve()
 
     _out << std::endl;
   }
+
 }
 
 

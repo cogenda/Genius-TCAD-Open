@@ -261,6 +261,11 @@ private:
  /**
   * private functions for setting each source
   */
+ void  SetVMIX(const Parser::Card &c);
+
+ /**
+  * private functions for setting each source
+  */
  void  SetIDC(const Parser::Card &c);
 
  /**

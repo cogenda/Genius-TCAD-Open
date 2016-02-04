@@ -22,10 +22,13 @@
 
 // C++ includes
 #include<map>
+#include <iterator>
 
 // Local includes
 #include "silvaco.h"
 #include "medici.h"
+#include "suprem.h"
+
 
 #include "stanford_io.h"
 
@@ -36,6 +39,8 @@
 #include "log.h"
 #include "parallel.h"
 #include "material.h"
+
+#define DEBUG
 
 using PhysicalUnit::cm;
 using PhysicalUnit::um;
@@ -54,6 +59,8 @@ void STIFIO::read (const std::string& filename)
     tif_reader = new SilvacoTIF(filename);
   if(_format == "medici")
     tif_reader = new MediciTIF(filename);
+  if(_format == "suprem")
+    tif_reader = new SupremTIF(filename);
 
   // read tif file
   int ierr;
@@ -70,20 +77,105 @@ void STIFIO::read (const std::string& filename)
     genius_error();
   }
 
+  //tif_reader->export_tif("debug.tif");
+  //tif_reader->export_sup("debug.sup");
+
 
   // broadcast
   tif_reader->broadcast();
 
   if(tif_reader->dim() == 2)
-    read_2d(tif_reader);
+    _import_2d(tif_reader);
   else
-    read_3d_silvaco(tif_reader);
+    _import_3d_silvaco(tif_reader);
+
+
+  delete tif_reader;
 
 }
 
 
 
-void STIFIO::read_2d (StanfordTIF * tif_reader)
+void STIFIO::read (const std::vector<std::string> & files)
+{
+  std::vector<const StanfordTIF *> readers;
+
+  if(_format == "silvaco")
+  {
+    for(unsigned int n=0; n<files.size(); ++n)
+    {
+      StanfordTIF * reader = new SilvacoTIF(files[n]);
+
+      // read tif file
+      int ierr;
+      std::string err;
+      if( Genius::processor_id() == 0)
+      {
+        ierr = reader->read(err);
+      }
+      Parallel::broadcast(ierr);
+      if(!ierr)
+      {
+        delete reader;
+        MESSAGE<< err << std::endl; RECORD();
+        genius_error();
+      }
+
+      readers.push_back(reader);
+    }
+  }
+
+  if(_format == "medici")
+  {
+    for(unsigned int n=0; n<files.size(); ++n)
+    {
+      StanfordTIF * reader = new MediciTIF(files[n]);
+
+      // read tif file
+      int ierr;
+      std::string err;
+      if( Genius::processor_id() == 0)
+      {
+        ierr = reader->read(err);
+      }
+      Parallel::broadcast(ierr);
+      if(!ierr)
+      {
+        delete reader;
+        MESSAGE<< err << std::endl; RECORD();
+        genius_error();
+      }
+
+      readers.push_back(reader);
+    }
+  }
+
+  StanfordTIF * tif_reader = StanfordTIF::merge(readers);
+
+  for(unsigned int n=0; n<readers.size(); ++n)
+    delete readers[n];
+
+
+  //tif_reader->export_tif("debug.tif");
+
+
+  // broadcast
+  tif_reader->broadcast();
+
+  if(tif_reader->dim() == 2)
+    _import_2d(tif_reader);
+  else
+    _import_3d_silvaco(tif_reader);
+
+
+
+  delete tif_reader;
+}
+
+
+
+
+void STIFIO::_import_2d (StanfordTIF * tif_reader)
 {
   /*
    * after that, we fill mesh structure with mesh information read from TIF
@@ -98,6 +190,7 @@ void STIFIO::read_2d (StanfordTIF * tif_reader)
   std::map<Node *, int>       node_to_tif_index_map;
   // map tif region to mesh region
   std::map<int, int>          tif_region_to_mesh_region;
+  std::map<int, int>          mesh_region_to_tif_region;
 
   if( Genius::processor_id() == 0)
   {
@@ -121,10 +214,11 @@ void STIFIO::read_2d (StanfordTIF * tif_reader)
       {
         if(tif_region_it->segment) continue;
 
-        std::string material = tif_region_it->material;
+        std::string material = Material::FormatMaterialString(tif_region_it->material);
         mesh.set_subdomain_label(r, tif_region_it->name );
         mesh.set_subdomain_material(r, material);
         tif_region_to_mesh_region[tif_region_it->index] = r;
+        mesh_region_to_tif_region[r] = tif_region_it->index;
 
         for(unsigned int i=0; i<tif_region_it->boundary.size(); ++i)
         {
@@ -166,12 +260,22 @@ void STIFIO::read_2d (StanfordTIF * tif_reader)
     std::vector<StanfordTIF::Tri_t>::const_iterator tif_tri_it  = tif_reader->tif_tris().begin();
     for(; tif_tri_it!=tif_reader->tif_tris().end(); ++tif_tri_it)
     {
-      Elem* elem = mesh.add_elem(Elem::build(TRI3).release());
+      Elem* elem = 0;
+      bool quad = false;
+      if( tif_tri_it->c4 < 0 )
+        elem = mesh.add_elem(Elem::build(TRI3).release());
+      else
+      {
+        quad = true;
+        elem = mesh.add_elem(Elem::build(QUAD4).release());
+      }
 
       // tri elem node
       elem->set_node(0) = mesh.node_ptr( tif_tri_it->c1 );
       elem->set_node(1) = mesh.node_ptr( tif_tri_it->c2 );
       elem->set_node(2) = mesh.node_ptr( tif_tri_it->c3 );
+      if( quad )
+        elem->set_node(3) = mesh.node_ptr( tif_tri_it->c4 );
 
       // which region this tri belongs to
       elem->subdomain_id() = tif_region_to_mesh_region[tif_tri_it->region];
@@ -186,7 +290,6 @@ void STIFIO::read_2d (StanfordTIF * tif_reader)
       if( edge_pointer != edge_table.end() )
       {
         // this edge should on external boundary or region interface
-        genius_assert( tif_tri_it->t3<0 || tif_tri_it->region != tif_reader->tri(tif_tri_it->t3).region );
         mesh.boundary_info->add_side(elem, 0, edge_pointer->second);
       }
 
@@ -198,20 +301,41 @@ void STIFIO::read_2d (StanfordTIF * tif_reader)
       if( edge_pointer != edge_table.end() )
       {
         // this edge should on external boundary or region interface
-        genius_assert( tif_tri_it->t1<0 || tif_tri_it->region != tif_reader->tri(tif_tri_it->t1).region );
         mesh.boundary_info->add_side(elem, 1, edge_pointer->second);
       }
 
       // process edge2
-      edge.point1 = tif_tri_it->c3;
-      edge.point2 = tif_tri_it->c1;
-      if(edge.point1 > edge.point2) std::swap(edge.point1, edge.point2);
-      edge_pointer = edge_table.find(edge);
-      if( edge_pointer != edge_table.end() )
+      if(!quad)
       {
-        // this edge should on external boundary or region interface
-        genius_assert( tif_tri_it->t2<0 || tif_tri_it->region != tif_reader->tri(tif_tri_it->t2).region );
-        mesh.boundary_info->add_side(elem, 2, edge_pointer->second);
+        edge.point1 = tif_tri_it->c3;
+        edge.point2 = tif_tri_it->c1;
+        if(edge.point1 > edge.point2) std::swap(edge.point1, edge.point2);
+        edge_pointer = edge_table.find(edge);
+        if( edge_pointer != edge_table.end() )
+        {
+          // this edge should on external boundary or region interface
+          mesh.boundary_info->add_side(elem, 2, edge_pointer->second);
+        }
+      }
+      else
+      {
+        edge.point1 = tif_tri_it->c3;
+        edge.point2 = tif_tri_it->c4;
+        if(edge.point1 > edge.point2) std::swap(edge.point1, edge.point2);
+        edge_pointer = edge_table.find(edge);
+        if( edge_pointer != edge_table.end() )
+        {
+          mesh.boundary_info->add_side(elem, 2, edge_pointer->second);
+        }
+
+        edge.point1 = tif_tri_it->c4;
+        edge.point2 = tif_tri_it->c1;
+        if(edge.point1 > edge.point2) std::swap(edge.point1, edge.point2);
+        edge_pointer = edge_table.find(edge);
+        if( edge_pointer != edge_table.end() )
+        {
+          mesh.boundary_info->add_side(elem, 3, edge_pointer->second);
+        }
       }
     }
 
@@ -329,22 +453,15 @@ void STIFIO::read_2d (StanfordTIF * tif_reader)
 
   // broadcast node_id_to_tif_index_map and tif_region_to_mesh_region to all the processors
   Parallel::broadcast(node_id_to_tif_index_map , 0);
-  Parallel::broadcast(tif_region_to_mesh_region , 0);
-
+  Parallel::broadcast(tif_region_to_mesh_region, 0);
+  Parallel::broadcast(mesh_region_to_tif_region, 0);
 
 
   // ok, we had got enough informations for set up each simulation region
-  std::map<std::pair<int, int>, unsigned int> solution_map; // map <node_index, region_index> to data_index
-  typedef std::map<std::pair<int, int>, unsigned int>::iterator Solution_It;
 
-  for(unsigned int n=0; n<tif_reader->sol_data_array().size(); ++n)
-  {
-    int tif_region = tif_reader->sol_data(n).region_index;
-    int region = tif_region_to_mesh_region.find(tif_region)->second;
-    std::pair<int, int> key = std::make_pair(tif_reader->sol_data(n).index, region);
-    solution_map.insert(std::make_pair(key, n));
-  }
-
+#if defined(HAVE_FENV_H) && defined(DEBUG)
+  genius_assert( !fetestexcept(FE_INVALID) );
+#endif
 
   for(unsigned int r=0; r<system.n_regions(); r++)
   {
@@ -357,6 +474,14 @@ void STIFIO::read_2d (StanfordTIF * tif_reader)
         bool sigle   = Material::IsSingleCompSemiconductor(region->material());
         bool complex = Material::IsComplexCompSemiconductor(region->material());
 
+        const StanfordTIF::SolHead_t & sol_head = tif_reader->sol_head();
+        for(int n=0; n<sol_head.sol_num; ++n)
+        {
+          const std::string  variable = sol_head.sol_name_array[n];
+          const std::string  variable_unit = sol_head.solution_unit(variable);
+          region->add_variable( SimulationVariable(variable, SCALAR, POINT_CENTER, variable_unit, invalid_uint, true, true)  );
+        }
+
         SimulationRegion::local_node_iterator node_it = region->on_local_nodes_begin();
         SimulationRegion::local_node_iterator node_it_end = region->on_local_nodes_end();
         for(; node_it!=node_it_end; ++node_it)
@@ -364,29 +489,33 @@ void STIFIO::read_2d (StanfordTIF * tif_reader)
           FVM_Node * fvm_node = (*node_it);
           FVM_NodeData * node_data = fvm_node->node_data();  genius_assert(node_data);
 
+          int tif_region_index = mesh_region_to_tif_region[r];
           // tif_node_index is the index in TIF file that this FVM node has
           int tif_node_index = node_id_to_tif_index_map[fvm_node->root_node()->id()];
-          int region_index = r;
-          std::pair<int, int> key = std::make_pair(tif_node_index, region_index);
-          assert(solution_map.find(key) != solution_map.end());
-          unsigned int data_index = solution_map.find(key)->second;
 
           // doping
           {
-            node_data->Na()   = tif_reader->acceptor(data_index) * pow(cm, -3);
-            node_data->Nd()   = tif_reader->donor(data_index) * pow(cm, -3);
+            node_data->Na()   = tif_reader->acceptor(tif_region_index, tif_node_index) * pow(cm, -3);
+            node_data->Nd()   = tif_reader->donor(tif_region_index, tif_node_index) * pow(cm, -3);
           }
 
           // mole fraction
           if(sigle)
           {
-            node_data->mole_x()   = tif_reader->mole_x(data_index);
+            node_data->mole_x()   = tif_reader->mole_x(tif_region_index, tif_node_index);
           }
 
           if(complex)
           {
-            node_data->mole_x()   = tif_reader->mole_x(data_index);
-            node_data->mole_y()   = tif_reader->mole_y(data_index);
+            node_data->mole_x()   = tif_reader->mole_x(tif_region_index, tif_node_index);
+            node_data->mole_y()   = tif_reader->mole_y(tif_region_index, tif_node_index);
+          }
+
+          for(int n=0; n<sol_head.sol_num; ++n)
+          {
+            const std::string  variable_name = sol_head.sol_name_array[n];
+            const SimulationVariable & variable = region->get_variable(variable_name, POINT_CENTER);
+            node_data->data<PetscScalar>(variable.variable_index) = tif_reader->solution(n, tif_region_index, tif_node_index)*variable.variable_unit;
           }
         }
         region->init(system.T_external());
@@ -420,17 +549,19 @@ void STIFIO::read_2d (StanfordTIF * tif_reader)
     default: genius_error();
     }
   }
-
-
-  delete tif_reader;
-
+#if defined(HAVE_FENV_H) && defined(DEBUG)
+  genius_assert( !fetestexcept(FE_INVALID) );
+#endif
 
   system.init_region_post_process();
 
+#if defined(HAVE_FENV_H) && defined(DEBUG)
+  genius_assert( !fetestexcept(FE_INVALID) );
+#endif
 }
 
 
-void STIFIO::read_3d_silvaco (StanfordTIF * tif_reader)
+void STIFIO::_import_3d_silvaco (StanfordTIF * tif_reader)
 {
   /*
    * after that, we fill mesh structure with mesh information read from TIF
@@ -481,7 +612,7 @@ void STIFIO::read_3d_silvaco (StanfordTIF * tif_reader)
       {
         if(tif_region_it->segment) continue;
 
-        std::string material = tif_region_it->material;
+        std::string material = Material::FormatMaterialString(tif_region_it->material);
         mesh.set_subdomain_label(r, tif_region_it->name );
         mesh.set_subdomain_material(r, material);
         tif_region_to_mesh_region[tif_region_it->index] = r;
@@ -632,9 +763,9 @@ void STIFIO::read_3d_silvaco (StanfordTIF * tif_reader)
 
   Parallel::broadcast(tif_region_to_mesh_region , 0);
 
- /*
-  * set mesh structure for all processors, and build simulation system
-  */
+  /*
+   * set mesh structure for all processors, and build simulation system
+   */
 
   // broadcast mesh to all the processor
   MeshCommunication mesh_comm;
@@ -702,7 +833,7 @@ void STIFIO::read_3d_silvaco (StanfordTIF * tif_reader)
 
     switch ( region->type() )
     {
-      case SemiconductorRegion :
+    case SemiconductorRegion :
       {
         bool sigle   = Material::IsSingleCompSemiconductor(region->material());
         bool complex = Material::IsComplexCompSemiconductor(region->material());
@@ -745,47 +876,268 @@ void STIFIO::read_3d_silvaco (StanfordTIF * tif_reader)
         region->init(system.T_external());
         break;
       }
-      case InsulatorRegion     :
+    case InsulatorRegion     :
       {
         region->init(system.T_external());
         break;
       }
-      case ElectrodeRegion     :
+    case ElectrodeRegion     :
       {
         region->init(system.T_external());
         break;
       }
-      case MetalRegion    :
+    case MetalRegion    :
       {
         region->init(system.T_external());
         break;
       }
-      case VacuumRegion        :
+    case VacuumRegion        :
       {
         region->init(system.T_external());
         break;
       }
-      case PMLRegion           :
+    case PMLRegion           :
       {
         region->init(system.T_external());
         break;
       }
-      default: genius_error();
+    default: genius_error();
     }
   }
 
 
-  delete tif_reader;
 
 
   system.init_region_post_process();
 
+#if defined(HAVE_FENV_H) && defined(DEBUG)
+  genius_assert( !fetestexcept(FE_INVALID) );
+#endif
 
 }
 
 
 
 
+void STIFIO::write (const std::string& filename)
+{
+  const SimulationSystem & system = FieldOutput<SimulationSystem>::system();
+  if( system.dim() != 2 ) return;
+
+  const MeshBase & mesh = system.mesh();
+
+  std::map<std::string,  std::vector<unsigned int> >  region_nodes_map;
+  std::map<std::string,  std::map<std::string, std::vector<PetscScalar> > > region_solution_map;
+
+  for(unsigned int r=0; r<system.n_regions(); r++)
+  {
+    const SimulationRegion * region = system.region(r);
+    if(region->type() != SemiconductorRegion) continue;
+
+    region->region_node(region_nodes_map[region->name()]);
+    region->get_variable_data("Na", POINT_CENTER, region_solution_map[region->name()]["Na"]) ;
+    region->get_variable_data("Nd", POINT_CENTER, region_solution_map[region->name()]["Nd"]) ;
+    region->get_variable_data("mole_x", POINT_CENTER, region_solution_map[region->name()]["mole_x"]);
+    region->get_variable_data("mole_y", POINT_CENTER, region_solution_map[region->name()]["mole_y"]);
+  }
 
 
+  if(Genius::processor_id() == 0)
+  {
+    MediciTIF * tif_writer = new MediciTIF();
+
+    for (unsigned int n=0; n<mesh.n_nodes(); n++)
+    {
+      Point p = mesh.point(n);
+
+      StanfordTIF::Node_t node;
+      node.index = n;
+      node.x = p[0]/um;
+      node.y = p[1]/um;
+      node.z = node.h = 0.0;
+
+      tif_writer->tif_nodes().push_back(node);
+    }
+
+    //classfy boundary label
+    std::vector<unsigned int>       elems;
+    std::vector<unsigned short int> sides;
+    std::vector<short int>          bds;
+
+    std::set< std::pair<unsigned int, unsigned int> > edges;
+    std::map<std::string, std::vector< std::pair<unsigned int, unsigned int> > > bd_edges;
+    std::map<unsigned int, std::vector< std::pair<unsigned int, unsigned int> > > region_bd_edges;
+
+
+    // get all the boundary element
+    mesh.boundary_info->build_side_list (elems, sides, bds);
+    for(unsigned int b=0; b<bds.size(); ++b)
+    {
+      short int bd = bds[b];
+      std::string label = mesh.boundary_info->get_label_by_id(bd);
+      bool user_define = mesh.boundary_info->boundary_id_has_user_defined_label(bd);
+
+      const Elem * elem = mesh.elem(elems[b]);
+      unsigned int region = elem->subdomain_id();
+      unsigned short int side = sides[b];
+
+      AutoPtr<Elem> side_face = elem->build_side(side);
+      unsigned int edge_p1 = side_face->get_node(0)->id();
+      unsigned int edge_p2 = side_face->get_node(1)->id();
+      if(edge_p1 > edge_p2) std::swap(edge_p1, edge_p2);
+      edges.insert(std::make_pair(edge_p1, edge_p2));
+
+      region_bd_edges[region].push_back(std::make_pair(edge_p1, edge_p2));
+
+      if(user_define)
+      {
+        bd_edges[label].push_back(std::make_pair(edge_p1, edge_p2));
+      }
+    }
+
+
+    std::set< std::pair<unsigned int, unsigned int> >::iterator edge_it=edges.begin();
+    for(; edge_it!=edges.end(); ++edge_it)
+    {
+       const std::pair<unsigned int, unsigned int> & edge_points = *edge_it;
+       StanfordTIF:: Edge_t edge;
+       edge.index = std::distance(edges.begin(), edge_it);
+       edge.point1 = edge_points.first;
+       edge.point2 = edge_points.second;
+
+       tif_writer->tif_edges().push_back(edge);
+    }
+
+
+    // regions
+    for(unsigned int r=0; r<mesh.n_subdomains(); ++r)
+    {
+       std::string label = mesh.subdomain_label_by_id(r);
+       StanfordTIF::Region_t region;
+       region.index = r;
+       region.name = label;
+       region.material = mesh.subdomain_material(r);
+       region.segment = false;
+
+       const std::vector< std::pair<unsigned int, unsigned int> > & region_edges = region_bd_edges.find(r)->second;
+       for(unsigned int b=0; b<region_edges.size(); ++b)
+       {
+         const std::pair<unsigned int, unsigned int> & edge_points = region_edges[b];
+         unsigned int edge_index = std::distance(edges.begin(),  edges.find(edge_points));
+         region.boundary.push_back(edge_index);
+       }
+
+       tif_writer->region_array().push_back(region);
+    }
+
+
+    std::map<std::string, std::vector< std::pair<unsigned int, unsigned int> > >::const_iterator bd_edge_it = bd_edges.begin();
+    for(int b=0; bd_edge_it != bd_edges.end(); b++, bd_edge_it++)
+    {
+       StanfordTIF::Region_t region;
+       region.index = b;
+       region.name = bd_edge_it->first;
+       region.material = "surface";
+       region.segment = true;
+
+       const std::vector< std::pair<unsigned int, unsigned int> > & seg_edges = bd_edge_it->second;
+       for(unsigned int b=0; b<seg_edges.size(); ++b)
+       {
+         const std::pair<unsigned int, unsigned int> & edge_points = seg_edges[b];
+         unsigned int edge_index = std::distance(edges.begin(),  edges.find(edge_points));
+         region.boundary.push_back(edge_index);
+       }
+
+       tif_writer->region_array().push_back(region);
+    }
+
+    MeshBase::const_element_iterator       el  = mesh.active_elements_begin();
+    const MeshBase::const_element_iterator end = mesh.active_elements_end();
+    for (; el != end; ++el)
+    {
+      const Elem * elem = *el;
+      switch(elem->type())
+      {
+        case TRI3:
+        case TRI3_FVM:
+        case TRI3_CY_FVM:
+        {
+           StanfordTIF::Tri_t tri;
+           tri.index = elem->id();
+           tri.region = elem->subdomain_id();
+           tri.c1 = elem->get_node(0)->id();
+           tri.c2 = elem->get_node(1)->id();
+           tri.c3 = elem->get_node(2)->id();
+           tri.c4 = -1;
+           tri.t1 = elem->neighbor(1) ? elem->neighbor(1)->id() : -1024;
+           tri.t2 = elem->neighbor(2) ? elem->neighbor(2)->id() : -1024;
+           tri.t3 = elem->neighbor(0) ? elem->neighbor(0)->id() : -1024;
+           tri.t4 = -1;
+
+           tif_writer->tif_tris().push_back(tri);
+           break;
+        }
+        case QUAD4:
+        case QUAD4_FVM:
+        case QUAD4_CY_FVM:
+        {
+           StanfordTIF::Tri_t tri;
+           tri.index = elem->id();
+           tri.region = elem->subdomain_id();
+           tri.c1 = elem->get_node(0)->id();
+           tri.c2 = elem->get_node(1)->id();
+           tri.c3 = elem->get_node(2)->id();
+           tri.c4 = elem->get_node(3)->id();
+           tri.t1 = elem->neighbor(0) ? elem->neighbor(0)->id() : -1024;
+           tri.t2 = elem->neighbor(1) ? elem->neighbor(1)->id() : -1024;
+           tri.t3 = elem->neighbor(2) ? elem->neighbor(2)->id() : -1024;
+           tri.t4 = elem->neighbor(3) ? elem->neighbor(3)->id() : -1024;
+
+           tif_writer->tif_tris().push_back(tri);
+           break;
+        }
+        default: genius_error();
+      }
+    }
+
+    StanfordTIF::SolHead_t & sol_head = tif_writer->sol_head();
+    sol_head.sol_num = 4;
+    sol_head.sol_name_array.push_back("Net");
+    sol_head.sol_name_array.push_back("Total");
+    sol_head.sol_name_array.push_back("mole_x");
+    sol_head.sol_name_array.push_back("mole_y");
+    sol_head.sol_unit_array.push_back("cm^-3");
+    sol_head.sol_unit_array.push_back("cm^-3");
+    sol_head.sol_unit_array.push_back("1");
+    sol_head.sol_unit_array.push_back("1");
+
+    for(unsigned int r=0; r<system.n_regions(); r++)
+    {
+      const SimulationRegion * region = system.region(r);
+      if(region->type() != SemiconductorRegion) continue;
+
+      const std::vector<unsigned int> & nodes = region_nodes_map[region->name()];
+      const std::vector<PetscScalar> & na = region_solution_map[region->name()]["Na"];
+      const std::vector<PetscScalar> & nd = region_solution_map[region->name()]["Nd"];
+      const std::vector<PetscScalar> & mx = region_solution_map[region->name()]["mole_x"];
+      const std::vector<PetscScalar> & my = region_solution_map[region->name()]["mole_y"];
+
+      for(unsigned int n=0; n<nodes.size(); ++n)
+      {
+        StanfordTIF::SolData_t sol;
+        sol.index = nodes[n];
+        sol.material = region->material();
+        sol.data_array.push_back(nd[n]-na[n]);
+        sol.data_array.push_back(nd[n]+na[n]);
+        sol.data_array.push_back(mx[n]);
+        sol.data_array.push_back(my[n]);
+
+        tif_writer->sol_data_array().push_back(sol);
+      }
+    }
+
+    tif_writer->export_tif(filename);
+    delete tif_writer;
+  }
+}
 

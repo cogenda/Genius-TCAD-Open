@@ -130,7 +130,7 @@ bool SchurSolver::SchurSolve()
   std::cout<<A12;
   std::cout<<A21;
   std::cout<<A22;
-
+  
   std::cout<<"rhs"<<std::endl;
   std::cout<<b1;
   std::cout<<b2;
@@ -168,7 +168,7 @@ bool SchurSolver::SchurSolve()
   for(unsigned int n=0; n<cvs.size(); ++n)
     klu_solve (Symbolic, Numeric, cvs[n].size(), 1, &(cvs[n][0]), &Common) ;
 
-  klu_solve (Symbolic, Numeric, b.size(), 1, &(b[0]), &Common) ;
+  klu_solve (Symbolic, Numeric, b.size(), 1, &(b[0]), &Common) ;// now b=M
 
   klu_free_symbolic (&Symbolic, &Common) ;
   klu_free_numeric (&Numeric, &Common) ;
@@ -198,8 +198,11 @@ bool SchurSolver::SchurSolve()
   for(unsigned int i=0; i<rvs.size(); ++i)
   {
     const std::vector<double> & row = rvs[i];
+    assert(b.size() == row.size());
+    double r = 0.0;
     for(unsigned int j=0; j<b.size(); ++j)
-      v_schur.set_value(i, -row[j]*b[j], true);
+      r += row[j]*b[j];
+    v_schur.set_value(i, -r, true);
   }
 
   /*
@@ -266,12 +269,13 @@ void SchurSolver::SchueSolveX( const std::vector<double> & x)
   for(unsigned int i=0; i<rvs.size(); ++i)
   {
     const std::vector<double> & row = rvs[i];
+    assert(row.size() == x.size());
     for(unsigned int j=0; j<x.size(); ++j)
     {
       b[i] -= row[j]*x[j];
     }
   }
-
+  
   // use KLU
   klu_symbolic *Symbolic;
   klu_numeric *Numeric;
@@ -286,13 +290,6 @@ void SchurSolver::SchueSolveX( const std::vector<double> & x)
   klu_free_numeric (&Numeric, &Common) ;
 
   x2.v = b;
-
-  /*
-  std::cout<<"X"<<std::endl;
-  std::cout<<x1;
-  std::cout<<x2;
-  std::cout<<"XEND"<<std::endl;
-  */
 }
 
 

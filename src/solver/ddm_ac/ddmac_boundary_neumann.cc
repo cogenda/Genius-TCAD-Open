@@ -33,7 +33,7 @@ using PhysicalUnit::e;
 
 
 
-void NeumannBC::DDMAC_Fill_Matrix_Vector( Mat A, Vec b, const Mat J, const double omega, InsertMode & add_value_flag )
+void NeumannBC::DDMAC_Fill_Matrix_Vector( Mat A, Vec b, const Mat J, const PetscScalar omega, InsertMode & add_value_flag )
 {
 
   // Neumann boundary condition is processed here
@@ -66,7 +66,7 @@ void NeumannBC::DDMAC_Fill_Matrix_Vector( Mat A, Vec b, const Mat J, const doubl
       //the indepedent variable number, we only need 1 here.
       adtl::AutoDScalar::numdir=1;
 
-      // process governing equation of T, which should consider heat exchange to entironment
+      // process governing equation of T, which should consider heat exchange to environment
       AutoDScalar T = fvm_node->node_data()->T();  T.setADValue(0, 1.0); // lattice temperature
 
       // add heat flux out of Neumann boundary to lattice temperature equatiuon

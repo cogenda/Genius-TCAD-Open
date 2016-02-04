@@ -190,13 +190,12 @@ void InsulatorSemiconductorInterfaceBC::DDM1_Function(PetscScalar * x, Vec f, In
 
             // process interface fixed charge density
           PetscScalar boundary_area = fvm_nodes[i]->outside_boundary_surface_area();
-          VecSetValue(f, fvm_nodes[i]->global_offset(), qf*boundary_area, ADD_VALUES);
+          VecSetValue(f, fvm_nodes[i]->global_offset(), (qf+node_data->interface_charge())*boundary_area, ADD_VALUES);
 
           {
               // surface recombination
             Material::MaterialSemiconductor *mt =  sregion->material();
             mt->mapping(fvm_nodes[i]->root_node(), node_data, SolverSpecify::clock);
-            mt->band->nie(p, n, T);
             PetscScalar GSurf = - mt->band->R_Surf(p, n, T) * boundary_area; //generation due to SRH
 
             VecSetValue(f, fvm_nodes[i]->global_offset()+1, GSurf, ADD_VALUES);
@@ -275,93 +274,13 @@ void InsulatorSemiconductorInterfaceBC::DDM1_Function(PetscScalar * x, Vec f, In
 
 
 
-/*---------------------------------------------------------------------
- * reserve non zero pattern in jacobian matrix for DDML1 solver
- */
-void InsulatorSemiconductorInterfaceBC::DDM1_Jacobian_Reserve(Mat *jac, InsertMode &add_value_flag)
-{
-
-  // ADD 0 to some position of Jacobian matrix to prevent MatAssembly expurgation these position.
-
-  // since we will use ADD_VALUES operat, check the matrix state.
-  if( (add_value_flag != ADD_VALUES) && (add_value_flag != NOT_SET_VALUES) )
-  {
-    MatAssemblyBegin(*jac, MAT_FLUSH_ASSEMBLY);
-    MatAssemblyEnd(*jac, MAT_FLUSH_ASSEMBLY);
-  }
-
-  // search for all the node with this boundary type
-  BoundaryCondition::const_node_iterator node_it = nodes_begin();
-  BoundaryCondition::const_node_iterator end_it = nodes_end();
-
-  for(; node_it!=end_it; ++node_it )
-  {
-    // skip node not belongs to this processor
-    if( (*node_it)->processor_id()!=Genius::processor_id() ) continue;
-
-    // buffer for saving regions and fvm_nodes this *node_it involves
-    std::vector<const SimulationRegion *> regions;
-    std::vector<const FVM_Node *> fvm_nodes;
-
-    // search all the fvm_node which has *node_it as root node, these fvm_nodes have the same location in geometry,
-    // but belong to different regions in logic.
-    BoundaryCondition::region_node_iterator  rnode_it     = region_node_begin(*node_it);
-    BoundaryCondition::region_node_iterator  end_rnode_it = region_node_end(*node_it);
-    for(unsigned int i=0 ; rnode_it!=end_rnode_it; ++i, ++rnode_it  )
-    {
-      regions.push_back( (*rnode_it).second.first );
-      fvm_nodes.push_back( (*rnode_it).second.second );
-
-      switch ( regions[i]->type() )
-      {
-        // Insulator-Semiconductor interface at Semiconductor side, we should reserve entrance for later add operator
-        case SemiconductorRegion:
-        {
-          // semiconductor region should be the first region
-          genius_assert(i==0);
-
-          // since we know only one ghost node exit, there is ghost_node_begin()
-          FVM_Node::fvm_ghost_node_iterator gn_it = fvm_nodes[i]->ghost_node_begin();
-          const FVM_Node * ghost_fvm_node = (*gn_it).first;
-          MatSetValue(*jac, fvm_nodes[i]->global_offset(), ghost_fvm_node->global_offset(), 0, ADD_VALUES);
-
-          FVM_Node::fvm_neighbor_node_iterator  gnb_it = ghost_fvm_node->neighbor_node_begin();
-          for(; gnb_it != ghost_fvm_node->neighbor_node_end(); ++gnb_it)
-            MatSetValue(*jac, fvm_nodes[i]->global_offset(), (*gnb_it).first->global_offset(), 0, ADD_VALUES);
-          break;
-        }
-
-        // Insulator-Semiconductor interface at Insulator side, we should add the rows to semiconductor region
-        case InsulatorRegion:
-        {
-          // reserve for later operator
-          MatSetValue(*jac, fvm_nodes[i]->global_offset(), fvm_nodes[0]->global_offset(), 0, ADD_VALUES);
-
-          break;
-        }
-        case VacuumRegion:
-        break;
-
-        default: genius_error(); //we should never reach here
-      }
-    }
-
-  }
-
-  // the last operator is ADD_VALUES
-  add_value_flag = ADD_VALUES;
-
-  // gate current
-  _gate_current_jacobian_reserve(jac, add_value_flag);
-
-}
 
 
 
 /*---------------------------------------------------------------------
  * do pre-process to jacobian matrix for DDML1 solver
  */
-void InsulatorSemiconductorInterfaceBC::DDM1_Jacobian_Preprocess(PetscScalar *, Mat *jac, std::vector<PetscInt> &src_row,
+void InsulatorSemiconductorInterfaceBC::DDM1_Jacobian_Preprocess(PetscScalar *, SparseMatrix<PetscScalar> *jac, std::vector<PetscInt> &src_row,
     std::vector<PetscInt> &dst_row, std::vector<PetscInt> &clear_row)
 {
 
@@ -416,15 +335,9 @@ void InsulatorSemiconductorInterfaceBC::DDM1_Jacobian_Preprocess(PetscScalar *, 
 /*---------------------------------------------------------------------
  * build function and its jacobian for DDML1 solver
  */
-void InsulatorSemiconductorInterfaceBC::DDM1_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_value_flag)
+void InsulatorSemiconductorInterfaceBC::DDM1_Jacobian(PetscScalar * x, SparseMatrix<PetscScalar> *jac, InsertMode &add_value_flag)
 {
-  // since we will use ADD_VALUES operat, check the matrix state.
-  if( (add_value_flag != ADD_VALUES) && (add_value_flag != NOT_SET_VALUES) )
-  {
-    MatAssemblyBegin(*jac, MAT_FLUSH_ASSEMBLY);
-    MatAssemblyEnd(*jac, MAT_FLUSH_ASSEMBLY);
-  }
-
+ 
   const PetscScalar T   = T_external();
 
   // after that, set values to source rows
@@ -483,8 +396,8 @@ void InsulatorSemiconductorInterfaceBC::DDM1_Jacobian(PetscScalar * x, Mat *jac,
                 // surface recombination
                 AutoDScalar GSurf = - mt->band->R_Surf(p, n, T) * boundary_area;
 
-                MatSetValues(*jac, 1, &index[1], 3, &index[0], GSurf.getADValue(), ADD_VALUES);
-                MatSetValues(*jac, 1, &index[2], 3, &index[0], GSurf.getADValue(), ADD_VALUES);
+                jac->add_row(  index[1],  3,  &index[0],  GSurf.getADValue() );
+                jac->add_row(  index[2],  3,  &index[0],  GSurf.getADValue() );
               }
 
               if (sregion->get_advanced_model()->Trap)
@@ -492,12 +405,12 @@ void InsulatorSemiconductorInterfaceBC::DDM1_Jacobian(PetscScalar * x, Mat *jac,
 
                 mt->trap->Calculate(false,p,n,ni,T);
                 AutoDScalar TrappedC = mt->trap->ChargeAD(false) * boundary_area;
-                MatSetValues(*jac, 1, &index[0], 3, &index[0], TrappedC.getADValue(), ADD_VALUES);
+                jac->add_row(  index[0],  3,  &index[0],  TrappedC.getADValue() );
 
                 AutoDScalar GElec = - mt->trap->ElectronTrapRate(false,n,ni,T) * boundary_area;
                 AutoDScalar GHole = - mt->trap->HoleTrapRate    (false,p,ni,T) * boundary_area;
-                MatSetValues(*jac, 1, &index[1], 3, &index[0], GElec.getADValue(), ADD_VALUES);
-                MatSetValues(*jac, 1, &index[2], 3, &index[0], GHole.getADValue(), ADD_VALUES);
+                jac->add_row(  index[1],  3,  &index[0],  GElec.getADValue() );
+                jac->add_row(  index[2],  3,  &index[0],  GHole.getADValue() );
 
 
               }
@@ -523,8 +436,8 @@ void InsulatorSemiconductorInterfaceBC::DDM1_Jacobian(PetscScalar * x, Mat *jac,
             AutoDScalar  fpsi = V - V_semi;
 
             // set Jacobian of governing equation ff
-            MatSetValue(*jac, fvm_nodes[i]->global_offset(), fvm_nodes[i]->global_offset(), fpsi.getADValue(0), ADD_VALUES);
-            MatSetValue(*jac, fvm_nodes[i]->global_offset(), fvm_nodes[0]->global_offset(), fpsi.getADValue(1), ADD_VALUES);
+            jac->add( fvm_nodes[i]->global_offset(),  fvm_nodes[i]->global_offset(),  fpsi.getADValue(0) );
+            jac->add( fvm_nodes[i]->global_offset(),  fvm_nodes[0]->global_offset(),  fpsi.getADValue(1) );
 
             break;
 
@@ -543,4 +456,109 @@ void InsulatorSemiconductorInterfaceBC::DDM1_Jacobian(PetscScalar * x, Mat *jac,
   _gate_current_jacobian(x, jac, add_value_flag);
 }
 
+
+#if 1
+/*---------------------------------------------------------------------
+ * update electrode IV
+ */
+void InsulatorSemiconductorInterfaceBC::DDM1_Update_Solution(PetscScalar *x)
+{
+  PetscScalar I_displacement = 0.0;
+
+  // search for all the node with this boundary type
+  BoundaryCondition::const_node_iterator node_it = nodes_begin();
+  BoundaryCondition::const_node_iterator end_it = nodes_end();
+  for(; node_it!=end_it; ++node_it )
+  {
+
+    // skip node not belongs to this processor
+    if( (*node_it)->processor_id()!=Genius::processor_id() ) continue;
+
+    // buffer for saving regions and fvm_nodes this *node_it involves
+    std::vector<const SimulationRegion *> regions;
+    std::vector<const FVM_Node *> fvm_nodes;
+
+    // search all the fvm_node which has *node_it as root node, these fvm_nodes have the same location in geometry,
+    // but belong to different regions in logic.
+    BoundaryCondition::region_node_iterator  rnode_it     = region_node_begin(*node_it);
+    BoundaryCondition::region_node_iterator  end_rnode_it = region_node_end(*node_it);
+    for(unsigned int i=0 ; rnode_it!=end_rnode_it; ++i, ++rnode_it  )
+    {
+      regions.push_back( (*rnode_it).second.first );
+      fvm_nodes.push_back( (*rnode_it).second.second );
+
+      switch ( regions[i]->type() )
+      {
+        // Insulator-Semiconductor interface at Semiconductor side, do nothing
+      case SemiconductorRegion:
+        {
+          // semiconductor region should be the first region
+          genius_assert(i==0);
+
+          // process interface traps
+          SemiconductorSimulationRegion * sregion = (SemiconductorSimulationRegion *) regions[i];
+
+          const FVM_NodeData * node_data = fvm_nodes[i]->node_data();
+          genius_assert(node_data);
+
+          PetscScalar V   =  x[fvm_nodes[i]->local_offset()+0];
+
+          // process interface fixed charge density
+          PetscScalar boundary_area = fvm_nodes[i]->outside_boundary_surface_area();
+
+
+          //for transiet simulation, we should consider displacement current from insulator region
+          if(SolverSpecify::TimeDependent == true)
+          {
+
+            FVM_Node::fvm_neighbor_node_iterator nb_it = fvm_nodes[i]->neighbor_node_begin();
+            for(; nb_it != fvm_nodes[i]->neighbor_node_end(); ++nb_it)
+            {
+              const FVM_Node *nb_node = (*nb_it).first;
+              const FVM_NodeData * nb_node_data = nb_node->node_data();
+              // the psi of neighbor node
+              PetscScalar V_nb = x[nb_node->local_offset()+0];
+              // distance from nb node to this node
+              PetscScalar distance = (*(fvm_nodes[i]->root_node()) - *(nb_node->root_node())).size();
+              // area of out surface of control volume related with neighbor node
+              PetscScalar cv_boundary = fvm_nodes[i]->cv_surface_area(nb_node);
+              PetscScalar dEdt;
+              if(SolverSpecify::TS_type==SolverSpecify::BDF2 && SolverSpecify::BDF2_LowerOrder==false) //second order
+              {
+                PetscScalar r = SolverSpecify::dt_last/(SolverSpecify::dt_last + SolverSpecify::dt);
+                dEdt = ( (2-r)/(1-r)*(V-V_nb)
+                         - 1.0/(r*(1-r))*(node_data->psi()-nb_node_data->psi())
+                         + (1-r)/r*(node_data->psi_last()-nb_node_data->psi_last()))/distance/(SolverSpecify::dt_last+SolverSpecify::dt);
+              }
+              else//first order
+              {
+                dEdt = ((V-V_nb)-(node_data->psi()-nb_node_data->psi()))/distance/SolverSpecify::dt;
+              }
+              I_displacement += cv_boundary*node_data->eps() *dEdt;
+            }
+          }
+          break;
+        }
+
+        // Insulator-Semiconductor interface at Insulator side, we get the previous f for insulator region,
+        // as well as surface charge density, plus to corresponding function of semiconductor. and then
+        // force the potential equal to corresponding point in semiconductor
+      case InsulatorRegion:
+        {
+          break;
+        }
+      case VacuumRegion:
+        break;
+      default: genius_error(); //we should never reach here
+      }
+    }
+  }
+
+  Parallel::sum(I_displacement);
+
+  this->scalar("interface_current") = I_displacement;
+
+}
+
+#endif
 

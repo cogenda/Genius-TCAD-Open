@@ -148,6 +148,13 @@ class SerialMesh : public UnstructuredMesh
                                     std::vector<short int> &) const;
 
   /**
+   * @Return the clone of \f$ i^{th} \f$ node, even it is not local
+   * must be executed in parallel
+   * use AutoPtr to prevent memory lost.
+   */
+  virtual AutoPtr<Node> node_clone (const unsigned int i) const;
+
+  /**
    * @Return the clone of \f$ i^{th} \f$ element, even it is not local
    * NOTE this function also clone elem nodes
    * must be executed in parallel
@@ -197,12 +204,17 @@ class SerialMesh : public UnstructuredMesh
   /**
    * functions for reordering elems
    */
-  virtual void reorder_elems();
+  virtual bool reorder_elems(std::string &err);
 
   /**
    * functions for reordering nodes
    */
-  virtual void reorder_nodes ();
+  virtual bool reorder_nodes (std::string &err);
+
+  /**
+   * generate all boundary elem-side pair with given boundary id
+   */
+  virtual void generate_boundary_info(short int id);
 
   /**
    * the subdomain interconnect graph in CSR format

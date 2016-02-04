@@ -101,37 +101,39 @@ int DDM2Solver::solve()
 
   START_LOG("solve()", "DDM2Solver");
 
+  int ierr = 0;
+
   switch( SolverSpecify::Type )
   {
       case SolverSpecify::EQUILIBRIUM :
-      solve_equ(); break;
+      ierr=solve_equ(); break;
 
       case SolverSpecify::STEADYSTATE:
-      solve_steadystate(); break;
+      ierr=solve_steadystate(); break;
 
       case SolverSpecify::DCSWEEP:
-      solve_dcsweep(); break;
+      ierr=solve_dcsweep(); break;
 
       case SolverSpecify::OP:
-      solve_op();
+      ierr=solve_op();
       break;
 
       case SolverSpecify::TRANSIENT:
-      solve_transient();break;
+      ierr=solve_transient();break;
 
       case SolverSpecify::TRACE:
-      solve_iv_trace();break;
+      ierr=solve_iv_trace();break;
 
       default:
       MESSAGE<< '\n' << "DDM2Solver: Unsupported solve type."; RECORD();
-      genius_error();
+      //genius_error();
       break;
   }
 
 
   STOP_LOG("solve()", "DDM2Solver");
 
-  return 0;
+  return ierr;
 }
 
 
@@ -155,6 +157,23 @@ int DDM2Solver::post_solve_process()
     SimulationRegion * region = _system.region(n);
     region->DDM2_Update_Solution(lxx);
   }
+
+
+  // extra work, calculate the electric field
+  for(unsigned int n=0; n<_system.n_regions(); n++)
+  {
+    SimulationRegion * region = _system.region(n);
+
+    SimulationRegion::processor_node_iterator it = region->on_processor_nodes_begin();
+    SimulationRegion::processor_node_iterator it_end = region->on_processor_nodes_end();
+    for(; it!=it_end; ++it)
+    {
+      FVM_Node * fvm_node = *it;
+      FVM_NodeData * node_data = fvm_node->node_data();
+      node_data->E() = -fvm_node->gradient(POTENTIAL, true);
+    }
+  }
+
 
   // update bcs
   for(unsigned int b=0; b<_system.get_bcs()->n_bcs(); b++)
@@ -232,45 +251,7 @@ int DDM2Solver::diverged_recovery()
 }
 
 
-#if 0
-/**
- * function for line search pre check.
- */
-void DDM2Solver::sens_line_search_pre_check(Vec , Vec y, PetscBool *changed_y)
-{
-  PetscScalar    *yy;
-  VecGetArray(y, &yy);  // new search direction and length
 
-  for(unsigned int n=0; n<_system.n_regions(); n++)
-  {
-    // only consider semiconductor region
-    const SimulationRegion * region = _system.region(n);
-    if( region->type() != SemiconductorRegion ) continue;
-
-    SimulationRegion::const_processor_node_iterator it = region->on_processor_nodes_begin();
-    SimulationRegion::const_processor_node_iterator it_end = region->on_processor_nodes_end();
-    for(; it!=it_end; ++it)
-    {
-      const FVM_Node * fvm_node = *it;
-
-      // we konw the fvm_node->local_offset() is psi in semiconductor region
-      unsigned int local_offset = fvm_node->local_offset();
-
-      if ( yy[local_offset+0] > 2.0*V )
-        yy[local_offset+0] = 2.0*V;
-
-      // the lattice temperature limit
-      if ( yy[local_offset+3] > 50.0*K )
-        yy[local_offset+3] = 50.0*K;
-    }
-  }
-
-  VecRestoreArray(y, &yy);
-  *changed_y = PETSC_TRUE;
-  return;
-}
-
-#endif
 
 
 
@@ -279,7 +260,6 @@ void DDM2Solver::sens_line_search_pre_check(Vec , Vec y, PetscBool *changed_y)
  */
 void DDM2Solver::potential_damping(Vec x, Vec y, Vec w, PetscBool *changed_y, PetscBool *changed_w)
 {
-
   PetscScalar    *xx;
   PetscScalar    *yy;
   PetscScalar    *ww;
@@ -288,14 +268,19 @@ void DDM2Solver::potential_damping(Vec x, Vec y, Vec w, PetscBool *changed_y, Pe
   VecGetArray(y, &yy);  // new search direction and length
   VecGetArray(w, &ww);  // current candidate iterate
 
-  PetscScalar dV_max = 0.0; // the max changes of psi
-  const PetscScalar onePerCMC = 1.0*std::pow(cm,-3);
-
+  const PetscScalar onePerMC = 1.0e-6*std::pow(cm,-3);
+  const PetscScalar T_external = this->get_system().T_external();
   // the lattice temperature limit
   // I think 50K under T_external is ok even for semiconductor cooling.
-  PetscScalar TemperatureLimit = std::max(1*K, this->get_system().T_external() - 50*K);
+  PetscScalar TemperatureLimit = T_external - 50*K;
 
-  // we should find dV_max;
+
+  PetscScalar dV_min =  std::numeric_limits<PetscScalar>::max(); // the min changes of psi
+  PetscScalar dV_max = -std::numeric_limits<PetscScalar>::max(); // the max changes of psi
+  PetscScalar dV;
+  PetscScalar dV_comm;
+
+  // we should find dV_max/dV_min;
   // first, we find in local
   for(unsigned int n=0; n<_system.n_regions(); n++)
   {
@@ -311,49 +296,30 @@ void DDM2Solver::potential_damping(Vec x, Vec y, Vec w, PetscBool *changed_y, Pe
 
         // we konw the fvm_node->local_offset() is psi in semiconductor region
         unsigned int local_offset = fvm_node->local_offset();
-        dV_max = std::max(dV_max, std::abs(yy[local_offset]));
-
-        // the lattice temperature limit
-        if ( std::abs(yy[local_offset+3]) > 10*K )
-          ww[local_offset+3] = xx[local_offset+3] - std::sign(yy[local_offset+3])*10*K;
-        if ( ww[local_offset+3] < TemperatureLimit )
-          ww[local_offset+3] = TemperatureLimit;
-
-        //prevent negative carrier density
-        if ( ww[local_offset+1] < onePerCMC )
-          ww[local_offset+1] = onePerCMC;
-        if ( ww[local_offset+2] < onePerCMC )
-          ww[local_offset+2] = onePerCMC;
-      }
-    }
-    else
-    {
-      SimulationRegion::const_processor_node_iterator it = region->on_processor_nodes_begin();
-      SimulationRegion::const_processor_node_iterator it_end = region->on_processor_nodes_end();
-      for(; it!=it_end; ++it)
-      {
-        const FVM_Node * fvm_node = *it;
-
-        // we konw the fvm_node->local_offset() is psi in semiconductor region
-        unsigned int local_offset = fvm_node->local_offset();
-
-        // the lattice temperature limit
-        if ( std::abs(yy[local_offset+1]) > 10*K )
-          ww[local_offset+1] = xx[local_offset+1] - std::sign(yy[local_offset+1])*10*K;
-        if ( ww[local_offset+1] < TemperatureLimit )
-          ww[local_offset+1] = TemperatureLimit;
+        dV_max = std::max(dV_max, yy[local_offset]);
+        dV_min = std::min(dV_min, yy[local_offset]);
       }
     }
   }
 
-  // for parallel situation, we should find the dv_max in global.
+  // for parallel situation, we should find the dv_max/dV_min in global.
   Parallel::max( dV_max );
+  Parallel::min( dV_min );
 
-  if( dV_max > 1e-6*V )
+  if( dV_min > dV_max ) goto potential_damping_end;
+
+  // find the max/min in absolutely value
+  if( std::abs(dV_max) < std::abs(dV_min) ) std::swap(dV_max, dV_min);
+
+  // compute the dV and dV in common
+  dV = std::abs(dV_max - dV_min);
+  dV_comm = dV_max*dV_min > 0.0 ? dV_min : 0.0;
+
+  if( dV > 1e-6*V )
   {
     // compute logarithmic potential damping factor f;
     PetscScalar Vut = kb*this->get_system().T_external()/e * SolverSpecify::potential_update;
-    PetscScalar f = log(1+dV_max/Vut)/(dV_max/Vut);
+    PetscScalar f = log(1+dV/Vut)/(dV/Vut);
 
     // do newton damping here
     for(unsigned int n=0; n<_system.n_regions(); n++)
@@ -362,6 +328,26 @@ void DDM2Solver::potential_damping(Vec x, Vec y, Vec w, PetscBool *changed_y, Pe
       switch ( region->type() )
       {
           case SemiconductorRegion :
+          {
+            SimulationRegion::const_processor_node_iterator it = region->on_processor_nodes_begin();
+            SimulationRegion::const_processor_node_iterator it_end = region->on_processor_nodes_end();
+            for(; it!=it_end; ++it)
+            {
+              const FVM_Node * fvm_node = *it;
+              unsigned int local_offset = fvm_node->local_offset();
+              ww[local_offset+0] = xx[local_offset+0] - (dV_comm + f*(yy[local_offset+0]-dV_comm));
+
+              //prevent negative carrier density
+              if ( ww[local_offset+1] < 0 )
+              { ww[local_offset+1] = 1e-2*fabs(xx[local_offset+1]) + onePerMC;}
+              if ( ww[local_offset+2] < 0 )
+              { ww[local_offset+2] = 1e-2*fabs(xx[local_offset+2]) + onePerMC;}
+              // the lattice temperature limit
+              if ( ww[local_offset+3] < TemperatureLimit )
+              { ww[local_offset+3] = TemperatureLimit; }
+            }
+            break;
+          }
           case InsulatorRegion :
           case ElectrodeRegion :
           case MetalRegion :
@@ -372,7 +358,7 @@ void DDM2Solver::potential_damping(Vec x, Vec y, Vec w, PetscBool *changed_y, Pe
             {
               const FVM_Node * fvm_node = *it;
               unsigned int local_offset = fvm_node->local_offset();
-              ww[local_offset] = xx[local_offset] - f*yy[local_offset];
+              ww[local_offset+0] = xx[local_offset+0] - (dV_comm + f*(yy[local_offset+0]-dV_comm));
             }
             break;
           }
@@ -381,24 +367,27 @@ void DDM2Solver::potential_damping(Vec x, Vec y, Vec w, PetscBool *changed_y, Pe
     }
 
     // only the last processor do this
-    if(Genius::is_last_processor())
-    {
-      for(unsigned int b=0; b<_system.get_bcs()->n_bcs(); b++)
-      {
-        BoundaryCondition * bc = _system.get_bcs()->get_bc(b);
-        unsigned int array_offset = bc->array_offset();
-        if(array_offset != invalid_uint)
-          ww[array_offset] = xx[array_offset] - f*yy[array_offset];
-      }
-    }
+//     if(Genius::is_last_processor())
+//     {
+//       for(unsigned int b=0; b<_system.get_bcs()->n_bcs(); b++)
+//       {
+//         BoundaryCondition * bc = _system.get_bcs()->get_bc(b);
+//         unsigned int array_offset = bc->array_offset();
+//         if(array_offset != invalid_uint)
+//           ww[array_offset] = xx[array_offset] - f*yy[array_offset];
+//       }
+//     }
   }
+
+
+
+  *changed_w = PETSC_TRUE;
+
+potential_damping_end:
 
   VecRestoreArray(x, &xx);
   VecRestoreArray(y, &yy);
   VecRestoreArray(w, &ww);
-
-  *changed_y = PETSC_FALSE;
-  *changed_w = PETSC_TRUE;
 
   return;
 }
@@ -408,11 +397,8 @@ void DDM2Solver::potential_damping(Vec x, Vec y, Vec w, PetscBool *changed_y, Pe
 /*------------------------------------------------------------------
  * Bank-Rose Newton Damping
  */
-void DDM2Solver::bank_rose_damping(Vec , Vec , Vec , PetscBool *changed_y, PetscBool *changed_w)
+void DDM2Solver::bank_rose_damping(Vec x, Vec y, Vec w, PetscBool *changed_y, PetscBool *changed_w)
 {
-  *changed_y = PETSC_FALSE;
-  *changed_w = PETSC_FALSE;
-
   return;
 }
 
@@ -421,7 +407,7 @@ void DDM2Solver::bank_rose_damping(Vec , Vec , Vec , PetscBool *changed_y, Petsc
 /*------------------------------------------------------------------
  * positive density Newton Damping
  */
-void DDM2Solver::positive_density_damping(Vec x, Vec y, Vec w, PetscBool *changed_y, PetscBool *changed_w)
+void DDM2Solver::check_positive_density(Vec x, Vec y, Vec w, PetscBool *changed_y, PetscBool *changed_w)
 {
 
   PetscScalar    *xx;
@@ -453,9 +439,9 @@ void DDM2Solver::positive_density_damping(Vec x, Vec y, Vec w, PetscBool *change
         const FVM_Node * fvm_node = *it;
         unsigned int local_offset = fvm_node->local_offset();
 
-        // the maximum potential update is limited to 1V
-        if ( fabs(yy[local_offset]) > 1.0 )
-        { ww[local_offset] = xx[local_offset] - std::sign(yy[local_offset])*1.0; changed_flag = 1; }
+        // the lattice temperature limit
+        if ( std::abs(yy[local_offset+3]) > 10*K )
+        { ww[local_offset+3] = xx[local_offset+3] - std::sign(yy[local_offset+3])*10*K; changed_flag=1;}
 
         // the lattice temperature limit
         if ( ww[local_offset+3] < TemperatureLimit )
@@ -480,7 +466,6 @@ void DDM2Solver::positive_density_damping(Vec x, Vec y, Vec w, PetscBool *change
 
   if(changed_flag)
   {
-    *changed_y = PETSC_FALSE;
     *changed_w = PETSC_TRUE;
   }
 
@@ -582,6 +567,9 @@ PetscReal DDM2Solver::LTE_norm()
   PetscReal eps_r = SolverSpecify::TS_rtol;
   // abs error
   PetscReal eps_a = SolverSpecify::TS_atol;
+  PetscReal concentration = 5e22*std::pow(cm, -3);
+  PetscReal temperature = 10000*K;
+
 
   VecZeroEntries(xp);
   VecZeroEntries(LTE);
@@ -643,9 +631,10 @@ PetscReal DDM2Solver::LTE_norm()
             unsigned int local_offset = fvm_node->local_offset();
 
             ll[local_offset+0] = 0;
-            ll[local_offset+1] = ll[local_offset+1]/(eps_r*xx[local_offset+1]+eps_a); // current jn
-            ll[local_offset+2] = ll[local_offset+2]/(eps_r*xx[local_offset+2]+eps_a); // current jp
-            ll[local_offset+3] = ll[local_offset+3]/(eps_r*xx[local_offset+3]+eps_a); // temperature
+            ll[local_offset+1] = ll[local_offset+1]/(eps_r*xx[local_offset+1]+eps_a*concentration); // current jn
+            ll[local_offset+2] = ll[local_offset+2]/(eps_r*xx[local_offset+2]+eps_a*concentration); // current jp
+            ll[local_offset+3] = ll[local_offset+3]/(eps_r*xx[local_offset+3]+eps_a*temperature); // temperature
+
           }
           N += 3*region->n_on_processor_node();
           break;
@@ -662,7 +651,7 @@ PetscReal DDM2Solver::LTE_norm()
             unsigned int local_offset = fvm_node->local_offset();
 
             ll[local_offset+0] = 0;
-            ll[local_offset+1] = ll[local_offset+1]/(eps_r*xx[local_offset+1]+eps_a); // temperature
+            ll[local_offset+1] = ll[local_offset+1]/(eps_r*xx[local_offset+1]+eps_a*temperature); // temperature
           }
           N += region->n_on_processor_node();
           break;
@@ -940,16 +929,6 @@ void DDM2Solver::build_petsc_sens_residual(Vec x, Vec r)
       region->DDM2_Pseudo_Time_Step_Function(lxx, r, add_value_flag);
     }
 
-#if defined(HAVE_FENV_H) && defined(DEBUG)
-  genius_assert( !fetestexcept(FE_INVALID) );
-#endif
-
-  // process hanging node here
-  for(unsigned int n=0; n<_system.n_regions(); n++)
-  {
-    SimulationRegion * region = _system.region(n);
-    region->DDM2_Function_Hanging_Node(lxx, r, add_value_flag);
-  }
 
 #if defined(HAVE_FENV_H) && defined(DEBUG)
   genius_assert( !fetestexcept(FE_INVALID) );
@@ -1011,7 +990,7 @@ void DDM2Solver::build_petsc_sens_jacobian(Vec x, Mat *, Mat *)
   // get PetscScalar array contains solution from local solution vector lx
   VecGetArray(lx, &lxx);
 
-  MatZeroEntries(J);
+  Jac->zero();
 
   // flag for indicate ADD_VALUES operator.
   InsertMode add_value_flag = NOT_SET_VALUES;
@@ -1020,7 +999,7 @@ void DDM2Solver::build_petsc_sens_jacobian(Vec x, Mat *, Mat *)
   for(unsigned int n=0; n<_system.n_regions(); n++)
   {
     SimulationRegion * region = _system.region(n);
-    region->DDM2_Jacobian(lxx, &J, add_value_flag);
+    region->DDM2_Jacobian(lxx, Jac, add_value_flag);
   }
 
 #if defined(HAVE_FENV_H) && defined(DEBUG)
@@ -1032,7 +1011,7 @@ void DDM2Solver::build_petsc_sens_jacobian(Vec x, Mat *, Mat *)
     for(unsigned int n=0; n<_system.n_regions(); n++)
     {
       SimulationRegion * region = _system.region(n);
-      region->DDM2_Time_Dependent_Jacobian(lxx, &J, add_value_flag);
+      region->DDM2_Time_Dependent_Jacobian(lxx, Jac, add_value_flag);
     }
 
 
@@ -1041,61 +1020,36 @@ void DDM2Solver::build_petsc_sens_jacobian(Vec x, Mat *, Mat *)
     for(unsigned int n=0; n<_system.n_regions(); n++)
     {
       SimulationRegion * region = _system.region(n);
-      region->DDM2_Pseudo_Time_Step_Jacobian(lxx, &J, add_value_flag);
+      region->DDM2_Pseudo_Time_Step_Jacobian(lxx, Jac, add_value_flag);
     }
-
-  // process hanging node here
-  for(unsigned int n=0; n<_system.n_regions(); n++)
-  {
-    SimulationRegion * region = _system.region(n);
-    region->DDM2_Jacobian_Hanging_Node(lxx, &J, add_value_flag);
-  }
 
 #if defined(HAVE_FENV_H) && defined(DEBUG)
   genius_assert( !fetestexcept(FE_INVALID) );
 #endif
 
-  // before first assemble, resereve none zero pattern for each boundary
-  if( !jacobian_matrix_first_assemble )
-  {
-    for(unsigned int b=0; b<_system.get_bcs()->n_bcs(); b++)
-    {
-      BoundaryCondition * bc = _system.get_bcs()->get_bc(b);
-      bc->DDM2_Jacobian_Reserve(&J, add_value_flag);
-    }
-  }
-
-
-
-#if defined(HAVE_FENV_H) && defined(DEBUG)
-  genius_assert( !fetestexcept(FE_INVALID) );
-#endif
-
-  // evaluate Jacobian matrix of governing equations of DDML2 for all the boundaries
-  MatAssemblyBegin(J, MAT_FINAL_ASSEMBLY);
-  MatAssemblyEnd(J, MAT_FINAL_ASSEMBLY);
-
-  // we do not allow zero insert/add to matrix
-  if( !jacobian_matrix_first_assemble )
-    genius_assert(!MatSetOption(J, MAT_IGNORE_ZERO_ENTRIES, PETSC_TRUE));
+  
+  // assembly matrix
+  Jac->close(false);
 
   std::vector<PetscInt> src_row,  dst_row,  clear_row;
   for(unsigned int b=0; b<_system.get_bcs()->n_bcs(); b++)
   {
     BoundaryCondition * bc = _system.get_bcs()->get_bc(b);
-    bc->DDM2_Jacobian_Preprocess(lxx, &J, src_row, dst_row, clear_row);
+    bc->DDM2_Jacobian_Preprocess(lxx, Jac, src_row, dst_row, clear_row);
   }
 
+  
   //add source rows to destination rows
-  PetscUtils::MatAddRowToRow(J, src_row, dst_row);
+  Jac->add_row_to_row(src_row, dst_row);
   // clear row
-  PetscUtils::MatZeroRows(J, clear_row.size(), clear_row.empty() ? NULL : &clear_row[0], 0.0);
+  Jac->clear_row(clear_row);
+  
   add_value_flag = NOT_SET_VALUES;
 
   for(unsigned int b=0; b<_system.get_bcs()->n_bcs(); b++)
   {
     BoundaryCondition * bc = _system.get_bcs()->get_bc(b);
-    bc->DDM2_Jacobian(lxx, &J, add_value_flag);
+    bc->DDM2_Jacobian(lxx, Jac, add_value_flag);
   }
 
 
@@ -1106,24 +1060,11 @@ void DDM2Solver::build_petsc_sens_jacobian(Vec x, Mat *, Mat *)
   // restore array back to Vec
   VecRestoreArray(lx, &lxx);
 
-  // assembly the matrix
-  MatAssemblyBegin(J, MAT_FINAL_ASSEMBLY);
-  MatAssemblyEnd  (J, MAT_FINAL_ASSEMBLY);
+  Jac->close(true);
 
   //scaling the matrix
   MatDiagonalScale(J, L, PETSC_NULL);
 
-  // we use the reciprocal of matrix diagonal as scaling value
-  // this will take place at next call
-  //MatGetDiagonal(J, L);
-  //VecReciprocal(L);
-
-
-  //MatView(J,PETSC_VIEWER_STDOUT_WORLD );
-  //getchar();
-
-  if(!jacobian_matrix_first_assemble)
-    jacobian_matrix_first_assemble = true;
 
   STOP_LOG("DDM2Solver_Jacobian()", "DDM2Solver");
 }
@@ -1135,6 +1076,6 @@ void DDM2Solver::set_trace_electrode(BoundaryCondition *bc)
   // scatte global solution vector x to local vector lx
   //VecScatterBegin(scatter, x, lx, INSERT_VALUES, SCATTER_FORWARD);
   //VecScatterEnd  (scatter, x, lx, INSERT_VALUES, SCATTER_FORWARD);
-  bc->DDM2_Electrode_Trace(lx, &J, pdI_pdx, pdF_pdV);
+  bc->DDM2_Electrode_Trace(lx, Jac, pdI_pdx, pdF_pdV);
 }
 

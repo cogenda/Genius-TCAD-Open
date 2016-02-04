@@ -37,12 +37,15 @@ def options(opt):
   opt.add_option('--with-git', action='store', default=None, dest='GIT', help='git binary [git]')
   opt.add_option('--cc-opt', action='store', default=None, dest='cc_opt', help='CC optimization options. [default: autodetect]')
   opt.add_option('--debug', action='store_true', default=False, dest='debug', help='Enable debug')
+  opt.add_option('--profile', action='store_true', default=False, dest='profile', help='Enable profile')
   opt.add_option('--with-netgen-dir', action='store', default=None, dest='netgen_dir', help='Directory to Netgen.')
   opt.add_option('--with-cgns-dir', action='store', default=None, dest='cgns_dir', help='Directory to CGNS.')
   opt.add_option('--with-vtk-dir', action='store', default=None, dest='vtk_dir', help='Directory to VTK.')
   opt.add_option('--with-vtk-ver', action='store', default='vtk-5.4', dest='vtk_ver', help='Version of VTK [vtk-5.4]')
   opt.add_option('--with-petsc-dir',  action='store', default='/usr/local/petsc', dest='petsc_dir', help='Directory to Petsc.')
   opt.add_option('--with-petsc-arch', action='store', default='linux-intel-cc', dest='petsc_arch', help='Petsc Arch.')
+  opt.add_option('--with-hdf5', action='store_true', default=False, dest='hdf5_enabled', help='Build with HDF5')
+  opt.add_option('--with-hdf5-dir',  action='store', default='/usr/local/hdf5', dest='hdf5_dir', help='Directory to HDF5.')
   opt.add_option('--with-ams', action='store_true', default=False, dest='ams_enabled', help='Build with AMS')
   opt.add_option('--with-ams-dir',  action='store', default='/usr/local/ams', dest='ams_dir', help='Directory to AMS.')
   opt.add_option('--with-slepc', action='store_true', default=False, dest='slepc_enabled', help='Build with Slepc')
@@ -106,6 +109,9 @@ def configure(conf):
       ccflags_common.extend(['-fPIC'])
       cxxflags_common.extend(['-fPIC'])
       fcflags_common.extend(['-fPIC'])
+      ccflags_common.extend(['-pipe'])
+      cxxflags_common.extend(['-pipe'])
+      fcflags_common.extend(['-pipe'])
 
     ldflags_common.extend(['-ldl', '-Wl,--export-dynamic'])
     if conf.env['COMPILER_CC'] in ['icc']:
@@ -423,6 +429,47 @@ END PROGRAM  TEST
         conf.env.append_value('FCFLAGS_opt', conf.env.CFLAGS_opt)
   # }}}
 
+
+  # {{{ test_profile()
+  def test_profile():
+    # options to turn off optimization
+    if platform=='Linux':
+      if conf.env['COMPILER_CC'] in ['gcc', 'icc']:
+        conf.env.append_value('CFLAGS_optoff', '-pg -O0')
+        conf.env.append_value('CXXFLAGS_optoff', '-pg -O0')
+
+        conf.start_msg('Detecting profile options')
+
+        oopts = ['-pg -O2 -unroll -axSSE4.2,SSE4.1,SSSE3 -msse3',
+                 '-pg -O2 -unroll -axS -msse3',
+                 '-pg -O2 -unroll -msse3',
+                 '-pg -O2']
+        if conf.options.cc_opt:
+          oopts.insert(0, conf.options.cc_opt)
+
+        for oopt in oopts:
+           if test_opt(oopt): break
+        conf.end_msg(oopt)
+        conf.env.append_value('CFLAGS_opt', oopt.split())
+
+        for oopt,msg in [('-fvisibility-inlines-hidden', 'Checking for visibility flags')]:
+          conf.start_msg(msg)
+          if test_opt(oopt, lang='cxx'):
+            conf.end_msg('yes')
+            conf.env.append_value('CXXFLAGS_opt', oopt.split())
+          else:
+            conf.end_msg('no')
+
+        conf.env.append_value('CXXFLAGS_opt', conf.env.CFLAGS_opt)
+        conf.env.append_value('FCFLAGS_opt', conf.env.CFLAGS_opt)
+
+        conf.env.append_value('LINKFLAGS', '-pg')
+        conf.env.append_value('LINKFLAGS_cshlib', '-pg')
+        conf.env.append_value('LINKFLAGS_cxxshlib', '-pg')
+
+  # }}}
+
+
   # {{{ test_debug()
   def test_debug():
     if platform=='Linux':
@@ -444,6 +491,8 @@ END PROGRAM  TEST
 
   if conf.options.debug:
     test_debug()
+  elif conf.options.profile:
+    test_profile()
   else:
     test_optimize()
 
@@ -571,6 +620,12 @@ stringstream message; message << "Hello"; return 0;
       if not petsc_vars.has_key(v): continue
       linkflags.extend( parse_lib_str(petsc_vars[v]) )
 
+    petsc_defines=Utils.readf(os.path.join(arch_dir, 'include/petscconf.h'))
+    petsc_with_float128 = re.search('#define\s+PETSC_USE_REAL___FLOAT128\s+(\d+)', petsc_defines)
+    if petsc_with_float128:  print 'PETSC USE REAL __float128'; conf.define('WITH_PETSCSCALAR_FLOAT128', 1);
+    petsc_with_double = re.search('#define\s+PETSC_USE_REAL_DOUBLE\s+(\d+)', petsc_defines)
+    if petsc_with_double:  print 'PETSC USE REAL double'; conf.define('WITH_PETSCSCALAR_DOUBLE', 1);
+
     # MPI
     conf.start_msg('Checking for MPI')
     inc_mpi = petsc_vars.get('MPI_INCLUDE', 'mpiuni').strip()
@@ -660,8 +715,27 @@ stringstream message; message << "Hello"; return 0;
   if conf.options.slepc_enabled:
     config_slepc()
 
+  # {{{ config_hdf5()
+  def config_hdf5():
+    base_dir = conf.options.hdf5_dir
 
-# {{{ config_ams()
+    conf.check_cxx(header_name='hdf5.h',
+                   cxxflags=[conf.env.CPPPATH_ST % os.path.join(base_dir, 'include')],
+                   uselib_store='HDF5', define_name='HAVE_HDF5')
+
+    libs     = ['hdf5']
+    if not platform=='Windows':
+      libs.append('z')
+    conf.check_cxx(lib=libs,
+                   linkflags=[conf.env.LIBPATH_ST % os.path.join(base_dir, 'lib')],
+                   uselib_store='HDF5', msg='Checking for library HDF5')
+
+  # }}}
+  if conf.options.hdf5_enabled:
+    config_hdf5()
+
+
+  # {{{ config_ams()
   def config_ams():
     base_dir = conf.options.ams_dir
 
@@ -674,7 +748,7 @@ stringstream message; message << "Hello"; return 0;
                    linkflags=[conf.env.LIBPATH_ST % os.path.join(base_dir, 'lib')],
                    uselib_store='AMS', msg='Checking for library AMS')
 
-# }}}
+  # }}}
   if conf.options.ams_enabled:
     config_ams()
 
@@ -700,7 +774,7 @@ stringstream message; message << "Hello"; return 0;
     #if not found:
     #  conf.fatal('Can not find the Netgen library!')
   # }}}
-  config_netgen()
+  #config_netgen()
 
   # {{{ CGNS
   def config_cgns():
@@ -789,9 +863,12 @@ stringstream message; message << "Hello"; return 0;
   #print conf.env
 
 def build(bld):
-  #print bld.env
+  import platform
   bld.contrib_objs =[]
   bld.recurse('src')
+  if platform.system()=='Linux':
+    bld.recurse('examples/Material/semiconductor_benchmark')
+    bld.recurse('examples/Material/conductor_benchmark')
 
 
   bld.install_files('${PREFIX}/lib',

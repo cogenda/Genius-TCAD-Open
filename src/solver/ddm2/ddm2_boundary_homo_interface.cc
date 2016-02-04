@@ -40,9 +40,11 @@ using PhysicalUnit::e;
 /*---------------------------------------------------------------------
  * do pre-process to function for DDML2 solver
  */
-void HomoInterfaceBC::DDM2_Function_Preprocess(PetscScalar * ,Vec f, std::vector<PetscInt> &src_row,
+void HomoInterfaceBC::DDM2_Function_Preprocess(PetscScalar * x, Vec f, std::vector<PetscInt> &src_row,
     std::vector<PetscInt> &dst_row, std::vector<PetscInt> &clear_row)
 {
+  _ddm_current_interface(x, f);
+
   // search for all the node with this boundary type
   BoundaryCondition::const_node_iterator node_it = nodes_begin();
   BoundaryCondition::const_node_iterator end_it = nodes_end();
@@ -238,132 +240,12 @@ void HomoInterfaceBC::DDM2_Function(PetscScalar * x, Vec f, InsertMode &add_valu
 
 
 
-/*---------------------------------------------------------------------
- * reserve non zero pattern in jacobian matrix for DDML2 solver
- */
-void HomoInterfaceBC::DDM2_Jacobian_Reserve(Mat *jac, InsertMode &add_value_flag)
-{
-
-  // ADD 0 to some position of Jacobian matrix to prevent MatAssembly expurgation these position.
-
-  // since we will use ADD_VALUES operat, check the matrix state.
-  if( (add_value_flag != ADD_VALUES) && (add_value_flag != NOT_SET_VALUES) )
-  {
-    MatAssemblyBegin(*jac, MAT_FLUSH_ASSEMBLY);
-    MatAssemblyEnd(*jac, MAT_FLUSH_ASSEMBLY);
-  }
-
-  // search for all the node with this boundary type
-  BoundaryCondition::const_node_iterator node_it = nodes_begin();
-  BoundaryCondition::const_node_iterator end_it = nodes_end();
-
-  for(; node_it!=end_it; ++node_it )
-  {
-    // skip node not belongs to this processor
-    if( (*node_it)->processor_id()!=Genius::processor_id() ) continue;
-
-    // buffer for saving regions and fvm_nodes this *node_it involves
-    std::vector<const FVM_Node *> fvm_nodes;
-
-    // search all the fvm_node which has *node_it as root node, these fvm_nodes have the same location in geometry,
-    // but belong to different regions in logic.
-    BoundaryCondition::region_node_iterator  rnode_it     = region_node_begin(*node_it);
-    BoundaryCondition::region_node_iterator  end_rnode_it = region_node_end(*node_it);
-    for(unsigned int i=0 ; rnode_it!=end_rnode_it; ++i, ++rnode_it  )
-    {
-      const SimulationRegion * region = (*rnode_it).second.first;
-      const FVM_Node * fvm_node = (*rnode_it).second.second;
-
-      fvm_nodes.push_back( fvm_node );
-
-      // the first semiconductor region
-      if(i==0)
-      {
-        genius_assert( region->type() == SemiconductorRegion );
-        // do nothing.
-      }
-
-      // other semiconductor region
-      else
-      {
-        switch( region->type() )
-        {
-            case SemiconductorRegion :
-            {
-              // reserve items for all the ghost nodes
-              std::vector<int> rows, cols;
-              rows.push_back(fvm_nodes[0]->global_offset()+0);
-              rows.push_back(fvm_nodes[0]->global_offset()+1);
-              rows.push_back(fvm_nodes[0]->global_offset()+2);
-              rows.push_back(fvm_nodes[0]->global_offset()+3);
-
-              cols.push_back(fvm_nodes[i]->global_offset()+0);
-              cols.push_back(fvm_nodes[i]->global_offset()+1);
-              cols.push_back(fvm_nodes[i]->global_offset()+2);
-              cols.push_back(fvm_nodes[i]->global_offset()+3);
-
-              FVM_Node::fvm_neighbor_node_iterator  nb_it = fvm_nodes[i]->neighbor_node_begin();
-              for(; nb_it != fvm_nodes[i]->neighbor_node_end(); ++nb_it)
-              {
-                cols.push_back((*nb_it).first->global_offset()+0);
-                cols.push_back((*nb_it).first->global_offset()+1);
-                cols.push_back((*nb_it).first->global_offset()+2);
-                cols.push_back((*nb_it).first->global_offset()+3);
-              }
-
-              std::vector<PetscScalar> value(rows.size()*cols.size(),0);
-
-              MatSetValues(*jac, rows.size(), &rows[0], cols.size(), &cols[0], &value[0], ADD_VALUES);
-
-              // reserve for later operator
-              MatSetValue(*jac, fvm_nodes[i]->global_offset()+0, fvm_nodes[0]->global_offset()+0, 0, ADD_VALUES);
-              MatSetValue(*jac, fvm_nodes[i]->global_offset()+1, fvm_nodes[0]->global_offset()+1, 0, ADD_VALUES);
-              MatSetValue(*jac, fvm_nodes[i]->global_offset()+2, fvm_nodes[0]->global_offset()+2, 0, ADD_VALUES);
-              MatSetValue(*jac, fvm_nodes[i]->global_offset()+3, fvm_nodes[0]->global_offset()+3, 0, ADD_VALUES);
-              break;
-            }
-            case InsulatorRegion:
-            {
-              // reserve items for all the ghost nodes
-              std::vector<int> rows, cols;
-              rows.push_back(fvm_nodes[0]->global_offset()+0);
-              rows.push_back(fvm_nodes[0]->global_offset()+3);
-              cols.push_back(fvm_nodes[i]->global_offset()+0);
-              cols.push_back(fvm_nodes[i]->global_offset()+1);
-
-              FVM_Node::fvm_neighbor_node_iterator  nb_it = fvm_nodes[i]->neighbor_node_begin();
-              for(; nb_it != fvm_nodes[i]->neighbor_node_end(); ++nb_it)
-              {
-                cols.push_back((*nb_it).first->global_offset()+0);
-                cols.push_back((*nb_it).first->global_offset()+1);
-              }
-
-              std::vector<PetscScalar> value(rows.size()*cols.size(),0);
-
-              MatSetValues(*jac, rows.size(), &rows[0], cols.size(), &cols[0], &value[0], ADD_VALUES);
-
-              MatSetValue(*jac, fvm_nodes[i]->global_offset()+0, fvm_nodes[0]->global_offset()+0, 0, ADD_VALUES);
-              MatSetValue(*jac, fvm_nodes[i]->global_offset()+1, fvm_nodes[0]->global_offset()+3, 0, ADD_VALUES);
-              break;
-            }
-            default: genius_error();
-        }
-      }
-    }
-
-  }
-
-  // the last operator is ADD_VALUES
-  add_value_flag = ADD_VALUES;
-
-}
-
 
 
 /*---------------------------------------------------------------------
  * do pre-process to jacobian matrix for DDML2 solver
  */
-void HomoInterfaceBC::DDM2_Jacobian_Preprocess(PetscScalar *,Mat *jac, std::vector<PetscInt> &src_row,
+void HomoInterfaceBC::DDM2_Jacobian_Preprocess(PetscScalar *,SparseMatrix<PetscScalar> *jac, std::vector<PetscInt> &src_row,
     std::vector<PetscInt> &dst_row, std::vector<PetscInt> &clear_row)
 {
   // search for all the node with this boundary type
@@ -438,16 +320,10 @@ void HomoInterfaceBC::DDM2_Jacobian_Preprocess(PetscScalar *,Mat *jac, std::vect
 /*---------------------------------------------------------------------
  * build function and its jacobian for DDML2 solver
  */
-void HomoInterfaceBC::DDM2_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_value_flag)
+void HomoInterfaceBC::DDM2_Jacobian(PetscScalar * x, SparseMatrix<PetscScalar> *jac, InsertMode &add_value_flag)
 {
   // the Jacobian of HomoInterface boundary condition is processed here
 
-  // since we will use ADD_VALUES operat, check the matrix state.
-  if( (add_value_flag != ADD_VALUES) && (add_value_flag != NOT_SET_VALUES) )
-  {
-    MatAssemblyBegin(*jac, MAT_FLUSH_ASSEMBLY);
-    MatAssemblyEnd(*jac, MAT_FLUSH_ASSEMBLY);
-  }
 
   // after that, set values to source rows
   BoundaryCondition::const_node_iterator node_it = nodes_begin();
@@ -518,10 +394,10 @@ void HomoInterfaceBC::DDM2_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_v
               cols.push_back(fvm_nodes[0]->global_offset()+3);
 
               // set Jacobian of governing equations
-              MatSetValues(*jac, 1, &rows[0], cols.size(), &cols[0], ff1.getADValue(), ADD_VALUES);
-              MatSetValues(*jac, 1, &rows[1], cols.size(), &cols[0], ff2.getADValue(), ADD_VALUES);
-              MatSetValues(*jac, 1, &rows[2], cols.size(), &cols[0], ff3.getADValue(), ADD_VALUES);
-              MatSetValues(*jac, 1, &rows[3], cols.size(), &cols[0], ff4.getADValue(), ADD_VALUES);
+              jac->add_row(  rows[0],  cols.size(),  &cols[0],  ff1.getADValue() );
+              jac->add_row(  rows[1],  cols.size(),  &cols[0],  ff2.getADValue() );
+              jac->add_row(  rows[2],  cols.size(),  &cols[0],  ff3.getADValue() );
+              jac->add_row(  rows[3],  cols.size(),  &cols[0],  ff4.getADValue() );
               break;
             }
             case InsulatorRegion :
@@ -540,11 +416,11 @@ void HomoInterfaceBC::DDM2_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_v
 
               PetscInt row_psi = fvm_nodes[i]->global_offset()+0;
               PetscInt cols_psi[2] = { fvm_nodes[i]->global_offset()+0,  fvm_nodes[0]->global_offset()+0};
-              MatSetValues(*jac, 1, &row_psi, 2, cols_psi, ff1.getADValue(), ADD_VALUES);
+              jac->add_row(  row_psi,  2,  cols_psi,  ff1.getADValue() );
 
               PetscInt row_t = fvm_nodes[i]->global_offset()+1;
               PetscInt cols_t[2] = { fvm_nodes[i]->global_offset()+1,  fvm_nodes[0]->global_offset()+3};
-              MatSetValues(*jac, 1, &row_t, 2, cols_t, ff2.getADValue(), ADD_VALUES);
+              jac->add_row(  row_t,  2,  cols_t,  ff2.getADValue() );
 
               break;
             }
@@ -559,3 +435,4 @@ void HomoInterfaceBC::DDM2_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_v
   // the last operator is ADD_VALUES
   add_value_flag = ADD_VALUES;
 }
+

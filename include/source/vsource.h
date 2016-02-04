@@ -498,11 +498,101 @@ public:
 
   void dt_critial_limit(const double t, double & dt, const double dt_min) const
   {
-    double ta1 = tfd;
+    double ta1 = td;
+    double ta2 = tfd;
 
     if( t<ta1 && t+dt>ta1 && ta1-t>=dt_min ) { dt = ta1-t; return; }
+    if( t<ta2 && t+dt>ta2 && ta2-t>=dt_min ) { dt = ta2-t; return; }
   }
 
+};
+
+
+
+/**
+ * single gaussion pulse
+ */
+class VGAUSSION : public VSource
+{
+private:
+
+  double _vamp;
+  double _t0;
+  double _tau;
+
+public:
+
+  VGAUSSION(const std::string &s, double vamp, double t0, double tau) : VSource(s), _vamp(vamp), _t0(t0), _tau(tau)
+  {}
+
+ /**
+  * @return waveform of exponential source
+  */
+  double vapp(const double t) const
+  {
+    double q = (t-_t0)*(t-_t0)/(_tau*_tau);
+    if(q > 30) return 0.0;
+    return _vamp*exp(-q);
+  }
+
+ /**
+  * @return the max value of vapp(t+delta_t)-vapp(t), delta_t in [0, dt]
+  */
+  double dv_max(const double t, const double dt, const double dt_min) const
+  {
+    if(t+dt < _t0) return  vapp(t+dt) - vapp(t);
+    if(t    > _t0) return  vapp(t) - vapp(t+dt);
+    return std::max( _vamp - vapp(t), _vamp - vapp(t+dt) );
+  }
+  
+  void dt_critial_limit(const double t, double & dt, const double dt_min) const
+  {
+    if( t<_t0 && t+dt>_t0 && _t0-t>=dt_min ) { dt = _t0-t; return; }
+  }
+  
+};
+
+
+/**
+ * double expotential pulse, as a description of HEMP pulse
+ */
+class VDEXP : public VSource
+{
+private:
+
+  double _vamp;
+  double _h;
+  double _alpha;
+  double _beta;
+  double _tp;
+
+public:
+
+  VDEXP(const std::string &s, double vamp, double h, double alpha, double beta) : VSource(s), _vamp(vamp), _h(h), _alpha(alpha), _beta(beta)
+  {
+    _tp = (log(_alpha)-log(_beta)) / (_alpha - _beta);
+  }
+
+ /**
+  * @return waveform of exponential source
+  */
+  double vapp(const double t) const
+  {
+    double q1 = _alpha*t;
+    double q2 = _beta*t;
+    if(q1 > 30 && q2 > 30) return 0.0;
+    return _h*_vamp*(exp(-q1) - exp(-q2));
+  }
+
+ /**
+  * @return the max value of vapp(t+delta_t)-vapp(t), delta_t in [0, dt]
+  */
+  double dv_max(const double t, const double dt, const double dt_min) const
+  {
+    if(t+dt < _tp) return  vapp(t+dt) - vapp(t);
+    if(t    > _tp) return  vapp(t) - vapp(t+dt);
+    return std::max( _vamp - vapp(t), _vamp - vapp(t+dt) );
+  }
 };
 
 
@@ -528,6 +618,13 @@ public:
     return expr_evaluator(0,0,0,t);
   }
 
+ /**
+  * @return the max value of vapp(t+delta_t)-vapp(t), delta_t in [0, dt]
+  */
+  virtual double dv_max(const double t, const double dt, const double dt_min) const
+  {
+    return 0.0;
+  }
 };
 
 
@@ -585,6 +682,60 @@ public:
   double vapp(double t) const
   {
      return scale_V*Vapp_Shell(t/scale_t);
+  }
+
+
+ /**
+  * @return the max value of vapp(t+delta_t)-vapp(t), delta_t in [0, dt]
+  */
+  virtual double dv_max(const double t, const double dt, const double dt_min) const
+  {
+    return 0.0;
+  }
+
+};
+
+
+/**
+ * Voltage mixer Current source
+ */
+class VMIX: public VSource
+{
+private:
+
+  const VSource * _v1;
+
+  const VSource * _v2;
+
+public:
+
+  /**
+   * constructor
+   */
+  VMIX(const std::string & s, const VSource *v1, const VSource *v2)
+   : VSource(s), _v1(v1), _v2(v2)
+  {}
+
+  /**
+   * destructor have nothing to do
+   */
+  ~VMIX()  {}
+
+  /**
+   * @return constant vapp when t>td, else 0
+   */
+  double vapp(const double t) const
+  { return _v1->vapp(t) * _v2->vapp(t) ;}
+
+
+  /**
+   * @return the max value of vapp(t+delta_t)-vapp(t), delta_t in [0, dt]
+   */
+  double dv_max(const double t, const double dt, const double dt_min) const
+  {
+    double dv_max1 = _v1->dv_max(t, dt, dt_min);
+    double dv_max2 = _v2->dv_max(t, dt, dt_min);
+    return dv_max1*dv_max2;
   }
 
 };

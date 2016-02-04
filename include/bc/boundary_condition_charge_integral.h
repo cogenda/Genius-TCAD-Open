@@ -119,16 +119,11 @@ private:
    * set governing equation for Charge Integral node
    */
   void charge_integral_function(PetscScalar *x , Vec f, InsertMode &add_value_flag);
-
-  /**
-   * reserve matrix entries
-   */
-  void charge_integral_reserve(Mat *jac, InsertMode &add_value_flag);
-
+  
   /**
    * set jacobian matrix entries
    */
-  void charge_integral_jacobian(PetscScalar *x , Mat *jac, InsertMode &add_value_flag);
+  void charge_integral_jacobian(PetscScalar *x , SparseMatrix<PetscScalar> *jac, InsertMode &add_value_flag);
 
   /**
    * update solution data
@@ -137,6 +132,9 @@ private:
 
 
 public:
+
+#ifdef TCAD_SOLVERS
+
   //////////////////////////////////////////////////////////////////////////////////////////////
   //----------------Function and Jacobian evaluate for Poisson's Equation---------------------//
   //////////////////////////////////////////////////////////////////////////////////////////////
@@ -154,15 +152,9 @@ public:
   { charge_integral_function(x, f, add_value_flag); }
 
   /**
-   * reserve none zero pattern in petsc matrix.
-   */
-  virtual void Poissin_Jacobian_Reserve(Mat *jac, InsertMode &add_value_flag)
-  { charge_integral_reserve(jac, add_value_flag); }
-
-  /**
    * build function and its jacobian for level 1 DDM solver, nothing to do
    */
-  virtual void Poissin_Jacobian(PetscScalar *x , Mat *jac, InsertMode &add_value_flag)
+  virtual void Poissin_Jacobian(PetscScalar *x , SparseMatrix<PetscScalar> *jac, InsertMode &add_value_flag)
   { charge_integral_jacobian(x, jac, add_value_flag); }
 
   /**
@@ -189,15 +181,9 @@ public:
   { charge_integral_function(x, f, add_value_flag); }
 
   /**
-   * reserve none zero pattern in petsc matrix.
-   */
-  virtual void DDM1_Jacobian_Reserve(Mat *jac, InsertMode &add_value_flag)
-  { charge_integral_reserve(jac, add_value_flag); }
-
-  /**
    * build function and its jacobian for level 1 DDM solver, nothing to do
    */
-  virtual void DDM1_Jacobian(PetscScalar *x , Mat *jac, InsertMode &add_value_flag)
+  virtual void DDM1_Jacobian(PetscScalar *x , SparseMatrix<PetscScalar> *jac, InsertMode &add_value_flag)
   { charge_integral_jacobian(x, jac, add_value_flag); }
 
   /**
@@ -223,15 +209,9 @@ public:
   { charge_integral_function(x, f, add_value_flag); }
 
   /**
-   * reserve none zero pattern in petsc matrix.
-   */
-  virtual void DDM2_Jacobian_Reserve(Mat *jac, InsertMode &add_value_flag)
-  { charge_integral_reserve(jac, add_value_flag); }
-
-  /**
    * build function and its jacobian for level 2 DDM solver
    */
-  virtual void DDM2_Jacobian(PetscScalar *x , Mat *jac, InsertMode &add_value_flag)
+  virtual void DDM2_Jacobian(PetscScalar *x , SparseMatrix<PetscScalar> *jac, InsertMode &add_value_flag)
   { charge_integral_jacobian(x, jac, add_value_flag); }
 
   /**
@@ -257,15 +237,9 @@ public:
   { charge_integral_function(x, f, add_value_flag); }
 
   /**
-   * reserve none zero pattern in petsc matrix.
-   */
-  virtual void EBM3_Jacobian_Reserve(Mat *jac, InsertMode &add_value_flag)
-  { charge_integral_reserve(jac, add_value_flag); }
-
-  /**
    * build function and its jacobian for level 3 EBM solver
    */
-  virtual void EBM3_Jacobian(PetscScalar *x , Mat *jac, InsertMode &add_value_flag)
+  virtual void EBM3_Jacobian(PetscScalar *x , SparseMatrix<PetscScalar> *jac, InsertMode &add_value_flag)
   { charge_integral_jacobian(x, jac, add_value_flag); }
 
   /**
@@ -274,7 +248,9 @@ public:
   virtual void EBM3_Update_Solution(PetscScalar *x)
   { charge_integral_update_solution(x); }
 
+#endif
 
+#ifdef IDC_SOLVERS
 #ifdef COGENDA_COMMERCIAL_PRODUCT
   //////////////////////////////////////////////////////////////////////////////////
   //----------------Function and Jacobian evaluate for RIC   ---------------------//
@@ -283,33 +259,49 @@ public:
   /**
    * fill solution data into petsc vector of RIC equation.
    */
-  virtual void RIC_Fill_Value(Vec x, Vec L)
-  { charge_integral_fill_value(x, L); }
+  virtual void RIC_Fill_Value(Vec x, Vec L);
 
   /**
    * build function and its jacobian for RIC solver, nothing to do
    */
-  virtual void RIC_Function(PetscScalar *x , Vec f, InsertMode &add_value_flag)
-  { charge_integral_function(x, f, add_value_flag); }
-
-  /**
-   * reserve none zero pattern in petsc matrix.
-   */
-  virtual void RIC_Jacobian_Reserve(Mat *jac, InsertMode &add_value_flag)
-  { charge_integral_reserve(jac, add_value_flag); }
+  virtual void RIC_Function(PetscScalar *x , Vec f, InsertMode &add_value_flag);
 
   /**
    * build function and its jacobian for RIC solver, nothing to do
    */
-  virtual void RIC_Jacobian(PetscScalar *x , Mat *jac, InsertMode &add_value_flag)
-  { charge_integral_jacobian(x, jac, add_value_flag); }
+  virtual void RIC_Jacobian(PetscScalar *x , SparseMatrix<PetscScalar> *jac, InsertMode &add_value_flag);
 
   /**
    * update solution data of RIC solver.
    */
-  virtual void RIC_Update_Solution(PetscScalar *x)
-  { charge_integral_update_solution(x); }
+  virtual void RIC_Update_Solution(PetscScalar *x);
 
+
+  //////////////////////////////////////////////////////////////////////////////////
+  //----------------Function and Jacobian evaluate for DICTAT---------------------//
+  //////////////////////////////////////////////////////////////////////////////////
+
+  /**
+   * fill solution data into petsc vector of DICTAT equation.
+   */
+  virtual void DICTAT_Fill_Value(Vec x, Vec L);
+
+  /**
+   * build function and its jacobian for DICTAT solver, nothing to do
+   */
+  virtual void DICTAT_Function(PetscScalar *x , Vec f, InsertMode &add_value_flag);
+
+  /**
+   * build function and its jacobian for DICTAT solver, nothing to do
+   */
+  virtual void DICTAT_Jacobian(PetscScalar *x , SparseMatrix<PetscScalar> *jac, InsertMode &add_value_flag);
+
+  /**
+   * update solution data of DICTAT solver.
+   */
+  virtual void DICTAT_Update_Solution(PetscScalar *x);
+
+#endif
 #endif
 
 };

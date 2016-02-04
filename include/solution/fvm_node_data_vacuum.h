@@ -178,7 +178,7 @@ class FVM_Vacuum_NodeData : public FVM_NodeData
     /**
      * @return data by enum name
      */
-    virtual Real  get_variable_real ( SolutionVariable variable ) const
+    virtual PetscScalar  get_variable_real ( SolutionVariable variable ) const
     {
       switch ( variable )
       {
@@ -193,7 +193,7 @@ class FVM_Vacuum_NodeData : public FVM_NodeData
     /**
      * set variable by enum name
      */
-    virtual void set_variable_real ( SolutionVariable variable, Real value )
+    virtual void set_variable_real ( SolutionVariable variable, PetscScalar value )
     {
       switch ( variable )
       {
@@ -221,76 +221,76 @@ class FVM_Vacuum_NodeData : public FVM_NodeData
     /**
      * @return the statistic potential
      */
-    virtual Real         psi()        const
+    virtual PetscScalar         psi()        const
     { return _data_storage->scalar ( _psi_, _offset ); }
 
     /**
      * @return the statistic potential
      */
-    virtual Real &       psi()
+    virtual PetscScalar &       psi()
     { return _data_storage->scalar ( _psi_, _offset ); }
 
 
     /**
      * @return the statistic potential
      */
-    virtual std::complex<Real>         psi_ac()          const
+    virtual std::complex<PetscScalar>         psi_ac()          const
     { return _data_storage->complex ( _psi_, _offset ); }
 
     /**
      * @return the writable reference to statistic potential
      */
-    virtual std::complex<Real> &       psi_ac()
+    virtual std::complex<PetscScalar> &       psi_ac()
     { return _data_storage->complex ( _psi_, _offset ); }
 
     /**
      * @return the statistic potential at previous time step
      */
-    virtual Real         psi_last()          const
+    virtual PetscScalar         psi_last()          const
     { return _data_storage->scalar ( _psi_last_, _offset ); }
 
     /**
      * @return the writable reference to statistic potential at previous time step
      */
-    virtual Real &       psi_last()
+    virtual PetscScalar &       psi_last()
     { return _data_storage->scalar ( _psi_last_, _offset ); }
 
 
     /**
      * @return the complex E file. only used by EM FEM solver
      */
-    virtual std::complex<Real>         OptE_complex()          const
+    virtual std::complex<PetscScalar>         OptE_complex()          const
     { return _data_storage->complex ( _OpE_complex_, _offset ); }
 
     /**
      * @return the writable reference to complex E file. only used by EM FEM solver
      */
-    virtual std::complex<Real> &       OptE_complex()
+    virtual std::complex<PetscScalar> &       OptE_complex()
     { return _data_storage->complex ( _OpE_complex_, _offset ); }
 
     /**
      * @return the complex H file. only used by EM FEM solver
      */
-    virtual std::complex<Real>         OptH_complex()          const
+    virtual std::complex<PetscScalar>         OptH_complex()          const
     { return _data_storage->complex ( _OpH_complex_, _offset ); }
 
     /**
      * @return the writable reference to complex H file. only used by EM FEM solver
      */
-    virtual std::complex<Real> &       OptH_complex()
+    virtual std::complex<PetscScalar> &       OptH_complex()
     { return _data_storage->complex ( _OpH_complex_, _offset ); }
 
 
     /**
      * @return the electron affinity
      */
-    virtual Real         affinity()          const
+    virtual PetscScalar         affinity()          const
     { return _data_storage->scalar ( _affinity_, _offset ); }
 
     /**
      * @return the writable reference to the electron affinity
      */
-    virtual Real &       affinity()
+    virtual PetscScalar &       affinity()
     { return _data_storage->scalar ( _affinity_, _offset ); }
 
 
@@ -298,13 +298,13 @@ class FVM_Vacuum_NodeData : public FVM_NodeData
     /**
      * @return the mass density of the material
      */
-    virtual Real         density()          const
+    virtual PetscScalar         density()          const
     { return _data_storage->scalar ( _density_, _offset ); }
 
     /**
      * @return the writable reference to the mass density of the material
      */
-    virtual Real &       density()
+    virtual PetscScalar &       density()
     { return _data_storage->scalar ( _density_, _offset ); }
 
 
@@ -312,13 +312,13 @@ class FVM_Vacuum_NodeData : public FVM_NodeData
     /**
      * @return the dielectric permittivity
      */
-    virtual Real         eps()          const
+    virtual PetscScalar         eps()          const
     { return _data_storage->scalar ( _eps_, _offset ); }
 
     /**
      * @return the writable reference to the dielectric permittivity
      */
-    virtual Real &       eps()
+    virtual PetscScalar &       eps()
     { return _data_storage->scalar ( _eps_, _offset ); }
 
 
@@ -326,27 +326,27 @@ class FVM_Vacuum_NodeData : public FVM_NodeData
     /**
      * @return the megnetic permeability
      */
-    virtual Real         mu()          const
+    virtual PetscScalar         mu()          const
     { return _data_storage->scalar ( _mu_, _offset ); }
 
     /**
      * @return the writable reference to the megnetic permeability
      */
-    virtual Real &       mu()
+    virtual PetscScalar &       mu()
     { return _data_storage->scalar ( _mu_, _offset ); }
 
 
     /**
      * @return the electrical field
      */
-    virtual VectorValue<Real> E()       const
+    virtual VectorValue<PetscScalar> E()       const
     { return _data_storage->vector ( _E_, _offset );}
 
 
     /**
      * @return the writable reference to electrical field
      */
-    virtual VectorValue<Real> & E()
+    virtual VectorValue<PetscScalar> & E()
     { return _data_storage->vector ( _E_, _offset );}
 
 

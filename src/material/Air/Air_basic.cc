@@ -53,20 +53,26 @@ public:
   PetscScalar Affinity      (const PetscScalar &Tl) const { return AFFINITY; }
 
   PetscScalar Conductance   (const PetscScalar &Tl, const PetscScalar &E) const
-  { return 1.0/(1e+19*V/A*m); }
+  { return 1.0/(1e+30*V/A*m); }
   AutoDScalar Conductance   (const AutoDScalar &Tl, const AutoDScalar &E) const
-  { return 1.0/(1e+19*V/A*m); }
+  { return 1.0/(1e+30*V/A*m); }
 
   PetscScalar RadConductance(const PetscScalar &DRate)const
   { return 0.0; }
 
-  PetscScalar Mobility      (const PetscScalar &Tl) const
-  { return 1e-4*cm*cm/V/s; }
+  PetscScalar RadGenRate   (const PetscScalar &E) const
+  { return 0.0; }
 
-  void atom_fraction(std::vector<std::string> &atoms, std::vector<double> & fraction) const
+  PetscScalar ElecMobility      (const PetscScalar &Tl) const
+  { return 1e-15*cm*cm/V/s; }
+
+  PetscScalar HoleMobility      (const PetscScalar &Tl) const
+  { return 5e-11*cm*cm/V/s; }
+
+  void G4Material(std::vector<Atom> &atoms, std::vector<double> & fraction) const
   {
-    atoms.push_back("O"); //Oxygen
-    atoms.push_back("N"); //Nitrogen
+    atoms.push_back(Atom("Oxygen",   "O", 8, 16.0)); //Oxygen
+    atoms.push_back(Atom("Nitrogen", "N", 7, 14.01)); //Nitrogen
 
     fraction.push_back(0.3);
     fraction.push_back(0.7);

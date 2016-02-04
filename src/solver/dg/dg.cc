@@ -101,42 +101,44 @@ int DGSolver::solve()
 
   START_LOG("solve()", "DGSolver");
 
+  int ierr=0;
+
   switch( SolverSpecify::Type )
   {
   case SolverSpecify::EQUILIBRIUM :
-    solve_equ();
+    ierr=solve_equ();
     break;
 
   case SolverSpecify::STEADYSTATE:
-    solve_steadystate();
+    ierr=solve_steadystate();
     break;
 
   case SolverSpecify::DCSWEEP:
-    solve_dcsweep();
+    ierr=solve_dcsweep();
     break;
 
   case SolverSpecify::OP:
-    solve_op();
+    ierr=solve_op();
     break;
 
   case SolverSpecify::TRANSIENT:
-    solve_transient();
+    ierr=solve_transient();
     break;
 
   case SolverSpecify::TRACE:
-    solve_iv_trace();
+    ierr=solve_iv_trace();
     break;
 
   default:
     MESSAGE<< '\n' << "DGSolver: Unsupported solve type.";
     RECORD();
-    genius_error();
+    //genius_error();
     break;
   }
 
   STOP_LOG("solve()", "DGSolver");
 
-  return 0;
+  return ierr;
 }
 
 
@@ -160,6 +162,23 @@ int DGSolver::post_solve_process()
     SimulationRegion * region = _system.region(n);
     region->DG_Update_Solution(lxx);
   }
+
+
+  // extra work, calculate the electric field
+  for(unsigned int n=0; n<_system.n_regions(); n++)
+  {
+    SimulationRegion * region = _system.region(n);
+
+    SimulationRegion::processor_node_iterator it = region->on_processor_nodes_begin();
+    SimulationRegion::processor_node_iterator it_end = region->on_processor_nodes_end();
+    for(; it!=it_end; ++it)
+    {
+      FVM_Node * fvm_node = *it;
+      FVM_NodeData * node_data = fvm_node->node_data();
+      node_data->E() = -fvm_node->gradient(POTENTIAL, true);
+    }
+  }
+
 
   // update bcs
   for(unsigned int b=0; b<_system.get_bcs()->n_bcs(); b++)
@@ -216,20 +235,22 @@ int DGSolver::diverged_recovery()
 /*------------------------------------------------------------------
  * Potential Newton Damping
  */
-void DGSolver::potential_damping(Vec x, Vec y, PetscBool *changed_y)
+void DGSolver::potential_damping(Vec x, Vec y, Vec w, PetscBool *changed_y, PetscBool *changed_w)
 {
 
   PetscScalar    *xx;
   PetscScalar    *yy;
+  PetscScalar    *ww;
 
 
   VecGetArray(x, &xx);  // previous iterate value
   VecGetArray(y, &yy);  // new search direction and length
+  VecGetArray(w, &ww);  // current candidate iterate
 
 
   PetscScalar dV_max = 0.0; // the max changes of psi
   const PetscScalar T = this->get_system().T_external();
-  const PetscScalar onePerCMC = 1.0*std::pow(cm,-3);
+  const PetscScalar onePerMC = 1.0e-6*std::pow(cm,-3);
 
   // we should find dV_max;
   // first, we find in local
@@ -281,10 +302,18 @@ void DGSolver::potential_damping(Vec x, Vec y, PetscBool *changed_y)
           {
             const FVM_Node * fvm_node = *it;
             unsigned int local_offset = fvm_node->local_offset();
-            yy[local_offset+0] *= f;
+            ww[local_offset+0] = xx[local_offset+0] - f*yy[local_offset+0];
 
-            if(qn_offset!=invalid_uint) yy[local_offset+qn_offset] *= f;
-            if(qp_offset!=invalid_uint) yy[local_offset+qp_offset] *= f;
+            //prevent negative carrier density
+            if ( ww[local_offset+1] < 0 )
+              ww[local_offset+1] = 1e-2*fabs(xx[local_offset+1]) + onePerMC;
+            if ( ww[local_offset+2] < 0 )
+              ww[local_offset+2] = 1e-2*fabs(xx[local_offset+2]) + onePerMC;
+
+            if(qn_offset!=invalid_uint)
+              ww[local_offset+qn_offset] = xx[local_offset+qn_offset] - f*yy[local_offset+qn_offset];
+            if(qp_offset!=invalid_uint)
+              ww[local_offset+qp_offset] = xx[local_offset+qp_offset] - f*yy[local_offset+qp_offset];
           }
           break;
         }
@@ -297,7 +326,8 @@ void DGSolver::potential_damping(Vec x, Vec y, PetscBool *changed_y)
           for(; it!=it_end; ++it)
           {
             const FVM_Node * fvm_node = *it;
-            yy[fvm_node->local_offset()+0] *= f;
+            unsigned int local_offset = fvm_node->local_offset();
+            ww[local_offset+0] = xx[local_offset+0] - f*yy[local_offset+0];
           }
           break;
         }
@@ -321,11 +351,13 @@ void DGSolver::potential_damping(Vec x, Vec y, PetscBool *changed_y)
   }
 
 
+
+
+  *changed_w = PETSC_TRUE;
+
   VecRestoreArray(x, &xx);
   VecRestoreArray(y, &yy);
-
-
-  *changed_y = PETSC_TRUE;
+  VecRestoreArray(w, &ww);
 
 
   return;
@@ -336,9 +368,8 @@ void DGSolver::potential_damping(Vec x, Vec y, PetscBool *changed_y)
 /*------------------------------------------------------------------
  * Bank-Rose Newton Damping
  */
-void DGSolver::bank_rose_damping(Vec , Vec , PetscBool *changed_y)
+void DGSolver::bank_rose_damping(Vec x, Vec y, Vec w, PetscBool *changed_y, PetscBool *changed_w)
 {
-  *changed_y = PETSC_FALSE;
   return;
 }
 
@@ -389,7 +420,6 @@ void DGSolver::check_positive_density(Vec x, Vec y, Vec w, PetscBool *changed_y,
 
   if(changed_flag)
   {
-    *changed_y = PETSC_FALSE;
     *changed_w = PETSC_TRUE;
   }
 
@@ -483,6 +513,8 @@ PetscReal DGSolver::LTE_norm()
   PetscReal eps_r = SolverSpecify::TS_rtol;
   // abs error
   PetscReal eps_a = SolverSpecify::TS_atol;
+  PetscReal concentration = 5e22*std::pow(cm, -3);
+
 
   VecZeroEntries(xp);
   VecZeroEntries(LTE);
@@ -549,8 +581,8 @@ PetscReal DGSolver::LTE_norm()
           unsigned int local_offset = fvm_node->local_offset();
 
           ll[local_offset+0] = 0;
-          ll[local_offset+1] = std::abs(ll[local_offset+1])/(eps_r*std::abs(xx[local_offset+1])+eps_a);
-          ll[local_offset+2] = std::abs(ll[local_offset+2])/(eps_r*std::abs(xx[local_offset+2])+eps_a);
+          ll[local_offset+1] = std::abs(ll[local_offset+1])/(eps_r*std::abs(xx[local_offset+1])+eps_a*concentration);
+          ll[local_offset+2] = std::abs(ll[local_offset+2])/(eps_r*std::abs(xx[local_offset+2])+eps_a*concentration);
           N += 2;
 
           if(qn_offset!=invalid_uint) ll[local_offset+qn_offset] = 0;
@@ -783,7 +815,7 @@ void DGSolver::error_norm()
 
 
 ///////////////////////////////////////////////////////////////
-// provide function and jacobian evaluation for DDML1 solver //
+// provide function and jacobian evaluation for QDDM solver  //
 ///////////////////////////////////////////////////////////////
 
 
@@ -896,7 +928,7 @@ void DGSolver::build_petsc_sens_jacobian(Vec x, Mat *, Mat *)
   // get PetscScalar array contains solution from local solution vector lx
   VecGetArray(lx, &lxx);
 
-  MatZeroEntries(J);
+  Jac->zero();
 
   START_LOG("DGSolver_Jacobian(R)", "DGSolver");
 
@@ -907,7 +939,7 @@ void DGSolver::build_petsc_sens_jacobian(Vec x, Mat *, Mat *)
   for(unsigned int n=0; n<_system.n_regions(); n++)
   {
     SimulationRegion * region = _system.region(n);
-    region->DG_Jacobian(lxx, &J, add_value_flag);
+    region->DG_Jacobian(lxx, Jac, add_value_flag);
   }
 
 
@@ -920,7 +952,7 @@ void DGSolver::build_petsc_sens_jacobian(Vec x, Mat *, Mat *)
     for(unsigned int n=0; n<_system.n_regions(); n++)
     {
       SimulationRegion * region = _system.region(n);
-      region->DG_Time_Dependent_Jacobian(lxx, &J, add_value_flag);
+      region->DG_Time_Dependent_Jacobian(lxx, Jac, add_value_flag);
     }
 
 
@@ -933,45 +965,35 @@ void DGSolver::build_petsc_sens_jacobian(Vec x, Mat *, Mat *)
   START_LOG("DGSolver_Jacobian(B)", "DGSolver");
   // before first assemble, resereve none zero pattern for each boundary
 
-  if( !jacobian_matrix_first_assemble )
-  {
-    for(unsigned int b=0; b<_system.get_bcs()->n_bcs(); b++)
-    {
-      BoundaryCondition * bc = _system.get_bcs()->get_bc(b);
-      bc->DG_Jacobian_Reserve(&J, add_value_flag);
-    }
-  }
-
 
 #if defined(HAVE_FENV_H) && defined(DEBUG)
   genius_assert( !fetestexcept(FE_INVALID) );
 #endif
 
-  // evaluate Jacobian matrix of governing equations of DDML1 for all the boundaries
-  MatAssemblyBegin(J, MAT_FINAL_ASSEMBLY);
-  MatAssemblyEnd(J, MAT_FINAL_ASSEMBLY);
+  
+  // assembly matrix
+  Jac->close(false);
 
-  // we do not allow zero insert/add to matrix
-  if( !jacobian_matrix_first_assemble )
-    genius_assert(!MatSetOption(J, MAT_IGNORE_ZERO_ENTRIES, PETSC_TRUE));
 
   std::vector<PetscInt> src_row,  dst_row,  clear_row;
   for(unsigned int b=0; b<_system.get_bcs()->n_bcs(); b++)
   {
     BoundaryCondition * bc = _system.get_bcs()->get_bc(b);
-    bc->DG_Jacobian_Preprocess(lxx, &J, src_row, dst_row, clear_row);
+    bc->DG_Jacobian_Preprocess(lxx, Jac, src_row, dst_row, clear_row);
   }
 
+
   //add source rows to destination rows
-  PetscUtils::MatAddRowToRow(J, src_row, dst_row);
+  Jac->add_row_to_row(src_row, dst_row);
   // clear row
-  PetscUtils::MatZeroRows(J, clear_row.size(), clear_row.empty() ? NULL : &clear_row[0], 0.0);
+  Jac->clear_row(clear_row);
+
 
   add_value_flag = NOT_SET_VALUES;
   for(unsigned int b=0; b<_system.get_bcs()->n_bcs(); b++)
   {
     BoundaryCondition * bc = _system.get_bcs()->get_bc(b);
-    bc->DG_Jacobian(lxx, &J, add_value_flag);
+    bc->DG_Jacobian(lxx, Jac, add_value_flag);
   }
 
   STOP_LOG("DGSolver_Jacobian(B)", "DGSolver");
@@ -983,18 +1005,11 @@ void DGSolver::build_petsc_sens_jacobian(Vec x, Mat *, Mat *)
   // restore array back to Vec
   VecRestoreArray(lx, &lxx);
 
-  // assembly the matrix
-  MatAssemblyBegin(J, MAT_FINAL_ASSEMBLY);
-  MatAssemblyEnd  (J, MAT_FINAL_ASSEMBLY);
+  Jac->close(true);
 
   //scaling the matrix
   MatDiagonalScale(J, L, PETSC_NULL);
 
-  //MatView(J, PETSC_VIEWER_STDOUT_WORLD);
-  //getchar();
-
-  if(!jacobian_matrix_first_assemble)
-    jacobian_matrix_first_assemble = true;
 
   STOP_LOG("DGSolver_Jacobian()", "DGSolver");
 

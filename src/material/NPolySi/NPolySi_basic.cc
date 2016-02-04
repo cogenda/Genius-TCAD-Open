@@ -37,7 +37,7 @@ private:
 
   void   Basic_Init()
   {
-    PERMITTI = 1.1800000e+01;
+    PERMITTI = 1.1700000e+01;
     PERMEABI = 1.0;//---not magnetism material,assigned its permeability equals 1.
     AFFINITY = 4.170000e+00*eV;
     DENSITY  = 2.320000e-03*kg*std::pow(cm,-3);
@@ -62,12 +62,18 @@ public:
   PetscScalar Affinity      (const PetscScalar &Tl) const { return AFFINITY;    }
   PetscScalar Conductance   ()                      const { return CONDUCTANCE; }
   PetscScalar ThermalVn     (const PetscScalar &Tl) const { return 1e6*cm/s;    }
-
-  void atom_fraction(std::vector<std::string> &atoms, std::vector<double> & fraction) const
+    
+  PetscScalar CurrentDensity(const PetscScalar &E, const PetscScalar &Tl) const 
+  { return E*CONDUCTANCE; }
+  
+  AutoDScalar CurrentDensity(const AutoDScalar &E, const AutoDScalar &Tl) const 
+  { return E*CONDUCTANCE; }
+  
+  void G4Material(std::vector<Atom> &atoms, std::vector<double> & fraction) const
   {
-    atoms.push_back("Si");//Silicon
+    atoms.push_back(Atom("Silicon",    "Si", 14, 28.086));//Silicon
     fraction.push_back(0.999);
-    atoms.push_back("P");//Phosphorus
+    atoms.push_back(Atom("Phosphorus", "P",  15, 30.9738));//Phosphorus
     fraction.push_back(0.001);
   }
 

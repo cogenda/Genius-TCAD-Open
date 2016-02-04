@@ -42,6 +42,16 @@ Real ExternalCircuitRCL::inter_connect_resistance() const
 { return std::max(1e-3*PhysicalUnit::Ohm, _res); }
 
 
+Real ExternalCircuitRCL::mna_scaling(Real dt) const
+{
+  if( this->is_voltage_driven() )
+    return (_ind/dt+_res);
+  if( this->is_current_driven() )
+    return 1.0;
+  return 1.0;
+}
+
+
 Real ExternalCircuitRCL::mna_function(Real dt)
 {
   if( this->is_voltage_driven() )
@@ -62,4 +72,18 @@ Real ExternalCircuitRCL:: mna_jacobian(Real dt)
   else
     return 0.0;
 }
+
+std::complex <Real> ExternalCircuitRCL::mna_ac_scaling(Real omega)
+{ return std::complex <Real>(_res, omega*_ind); }
+
+
+
+std::complex <Real> ExternalCircuitRCL::mna_ac_jacobian(Real omega)
+{
+  std::complex <Real> Z1(_res, omega*_ind);
+  std::complex <Real> Y2(0.0, omega*_cap);
+  std::complex <Real> K = Z1*Y2 + 1.0;
+  return K;
+}
+  
 

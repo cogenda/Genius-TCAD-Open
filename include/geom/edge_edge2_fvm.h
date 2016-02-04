@@ -90,6 +90,11 @@ public:
 
 
   /**
+   * @return true for fvm element
+   */
+  virtual bool is_fvm_elem() const {return true;}
+
+  /**
    * @return the gradient of input variable in the cell
    */
   virtual VectorValue<PetscScalar> gradient( const std::vector<PetscScalar> & var) const;

@@ -33,7 +33,7 @@ class DoseRate;
 
 /**
  * interface to G4 particle simulator to get position of trapped particle
- * and RIC enhancement 
+ * and RIC enhancement
  */
 class ParticleCaptureG4Hook : public Hook
 {
@@ -165,6 +165,8 @@ private:
 
   // end point of each step
   std::vector<double> ParticleStep;
+
+  std::vector<double> ParticleWeight;
 
   std::vector<double> StepEnergy;
 

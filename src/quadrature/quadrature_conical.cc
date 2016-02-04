@@ -52,7 +52,7 @@ void QConical::conical_product_tri(unsigned int p)
 {
   // Be sure the underlying rule object was built with the same dimension as the
   // rule we are about to construct.
-  genius_assert (this->get_dim() == 2);
+  assert (this->get_dim() == 2);
 
   QGauss  gauss1D(1,static_cast<Order>(_order+2*p));
   QJacobi jac1D(1,static_cast<Order>(_order+2*p),1,0);
@@ -66,14 +66,14 @@ void QConical::conical_product_tri(unsigned int p)
   // Now construct the points and weights for the conical product rule.
 
   // Both rules should have the same number of points.
-  genius_assert(gauss1D.n_points() == jac1D.n_points());
+  assert(gauss1D.n_points() == jac1D.n_points());
 
   // Save the number of points as a convenient variable
   const unsigned int n_points = gauss1D.n_points();
 
   // Both rules should be between x=0 and x=1
-  genius_assert(gauss1D.qp(0)(0) >= 0.0); genius_assert(gauss1D.qp(n_points-1)(0) <= 1.0);
-  genius_assert(jac1D.qp(0)(0)   >= 0.0); genius_assert(jac1D.qp(n_points-1)(0) <= 1.0);
+  assert(gauss1D.qp(0)(0) >= 0.0); assert(gauss1D.qp(n_points-1)(0) <= 1.0);
+  assert(jac1D.qp(0)(0)   >= 0.0); assert(jac1D.qp(n_points-1)(0) <= 1.0);
 
   // Resize the points and weights vectors
   _points.resize(n_points * n_points);
@@ -101,7 +101,7 @@ void QConical::conical_product_tet(unsigned int p)
 {
   // Be sure the underlying rule object was built with the same dimension as the
   // rule we are about to construct.
-  genius_assert (this->get_dim() == 3);
+  assert (this->get_dim() == 3);
 
   QGauss  gauss1D(1,static_cast<Order>(_order+2*p));
   QJacobi jacA1D(1,static_cast<Order>(_order+2*p),1,0);
@@ -116,16 +116,16 @@ void QConical::conical_product_tet(unsigned int p)
   // Now construct the points and weights for the conical product rule.
 
   // All rules should have the same number of points
-  genius_assert(gauss1D.n_points() == jacA1D.n_points());
-  genius_assert(jacA1D.n_points()  == jacB1D.n_points());
+  assert(gauss1D.n_points() == jacA1D.n_points());
+  assert(jacA1D.n_points()  == jacB1D.n_points());
 
   // Save the number of points as a convenient variable
   const unsigned int n_points = gauss1D.n_points();
 
   // All rules should be between x=0 and x=1
-  genius_assert(gauss1D.qp(0)(0) >= 0.0); genius_assert(gauss1D.qp(n_points-1)(0) <= 1.0);
-  genius_assert(jacA1D.qp(0)(0)  >= 0.0); genius_assert(jacA1D.qp(n_points-1)(0)  <= 1.0);
-  genius_assert(jacB1D.qp(0)(0)  >= 0.0); genius_assert(jacB1D.qp(n_points-1)(0)  <= 1.0);
+  assert(gauss1D.qp(0)(0) >= 0.0); assert(gauss1D.qp(n_points-1)(0) <= 1.0);
+  assert(jacA1D.qp(0)(0)  >= 0.0); assert(jacA1D.qp(n_points-1)(0)  <= 1.0);
+  assert(jacB1D.qp(0)(0)  >= 0.0); assert(jacB1D.qp(n_points-1)(0)  <= 1.0);
 
   // Resize the points and weights vectors
   _points.resize(n_points * n_points * n_points);
@@ -175,13 +175,13 @@ void QConical::conical_product_pyramid(unsigned int p)
 {
   // Be sure the underlying rule object was built with the same dimension as the
   // rule we are about to construct.
-  genius_assert (this->get_dim() == 3);
+  assert (this->get_dim() == 3);
 
   QGauss  gauss1D(1,static_cast<Order>(_order+2*p));
   QJacobi jac1D(1,static_cast<Order>(_order+2*p),2,0);
 
   // These rules should have the same number of points
-  genius_assert(gauss1D.n_points() == jac1D.n_points());
+  assert(gauss1D.n_points() == jac1D.n_points());
 
   // Save the number of points as a convenient variable
   const unsigned int n_points = gauss1D.n_points();

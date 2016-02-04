@@ -322,8 +322,7 @@ void FVM_Node::truncate_cv_surface_area()
 
 bool FVM_Node::on_boundary() const
 {
-  genius_error();
-  return false;
+  return _boundary_id != BoundaryInfo::invalid_id;
 }
 
 
@@ -669,7 +668,7 @@ void FVM_Node::prepare_gradient()
     const FVM_Node * neighbor_node = neighbor_it->first;
     genius_assert(neighbor_node->on_local());
 
-    Real w = 1.0/ this->distance(neighbor_node);
+    Real w = std::pow(1.0/ this->distance(neighbor_node), 2);
     Real dx = neighbor_node->root_node()->x() - this->root_node()->x();
     Real dy = neighbor_node->root_node()->y() - this->root_node()->y();
     Real dz = neighbor_node->root_node()->z() - this->root_node()->z();
@@ -706,7 +705,7 @@ void FVM_Node::prepare_gradient()
         const FVM_Node * neighbor_node = neighbor_it->first;
         genius_assert(neighbor_node->on_local());
 
-        Real w = 1.0/ ghost_node->distance(neighbor_node);
+        Real w = std::pow(1.0/ ghost_node->distance(neighbor_node), 2);
         Real dx = neighbor_node->root_node()->x() - ghost_node->root_node()->x();
         Real dy = neighbor_node->root_node()->y() - ghost_node->root_node()->y();
         Real dz = neighbor_node->root_node()->z() - ghost_node->root_node()->z();
@@ -788,7 +787,9 @@ VectorValue<PetscScalar> FVM_Node::gradient(SolutionVariable var, bool ghost) co
   VectorValue<PetscScalar> grad;
   for(unsigned int n=0; n<dphi_array.size(); ++n )
   {
-    grad += dphi_array[n]*_gradient[n];
+    grad[0] += dphi_array[n]*_gradient[n][0];
+    grad[1] += dphi_array[n]*_gradient[n][1];
+    grad[2] += dphi_array[n]*_gradient[n][2];
   }
 
   return grad;

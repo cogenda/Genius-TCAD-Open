@@ -211,17 +211,8 @@ void SemiconductorSimulationRegion::Poissin_Function(PetscScalar * x, Vec f, Ins
 /*---------------------------------------------------------------------
  * build function and its jacobian for poisson solver
  */
-void SemiconductorSimulationRegion::Poissin_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_value_flag)
+void SemiconductorSimulationRegion::Poissin_Jacobian(PetscScalar * x, SparseMatrix<PetscScalar> *jac, InsertMode &add_value_flag)
 {
-
-  // note, we will use ADD_VALUES to set values of matrix J
-  // if the previous operator is not ADD_VALUES, we should flush the matrix
-  if( (add_value_flag != ADD_VALUES) && (add_value_flag != NOT_SET_VALUES) )
-  {
-    MatAssemblyBegin(*jac, MAT_FLUSH_ASSEMBLY);
-    MatAssemblyEnd(*jac, MAT_FLUSH_ASSEMBLY);
-  }
-
 
   //common used variable
   PetscScalar T   = T_external();
@@ -254,7 +245,7 @@ void SemiconductorSimulationRegion::Poissin_Jacobian(PetscScalar * x, Mat *jac, 
     const unsigned int n2_local_offset = fvm_n2->local_offset();
 
     // the row/colume position of variables in the matrix
-    PetscInt row[2],col[2];
+    unsigned int row[2],col[2];
     row[0] = col[0] = fvm_n1->global_offset();
     row[1] = col[1] = fvm_n2->global_offset();
 
@@ -275,12 +266,12 @@ void SemiconductorSimulationRegion::Poissin_Jacobian(PetscScalar * x, Mat *jac, 
       // ignore thoese ghost nodes
       if( fvm_n1->on_processor() )
       {
-        MatSetValues(*jac, 1, &row[0], 2, &col[0], f.getADValue(), ADD_VALUES);
+        jac->add_row(row[0], 2, &col[0], f.getADValue());
       }
 
       if( fvm_n2->on_processor() )
       {
-        MatSetValues(*jac, 1, &row[1], 2, &col[0], (-f).getADValue(), ADD_VALUES);
+        jac->add_row(row[1], 2, &col[0], (-f).getADValue());
       }
     }
   }
@@ -329,7 +320,7 @@ void SemiconductorSimulationRegion::Poissin_Jacobian(PetscScalar * x, Mat *jac, 
       doping = mt->band->Nd_II(n, T, get_advanced_model()->Fermi) - mt->band->Na_II(p, T, get_advanced_model()->Fermi);
     AutoDScalar rho = e*( doping + p - n)*fvm_node->volume(); // the charge density
 
-    MatSetValue(*jac, fvm_node->global_offset(), fvm_node->global_offset(), rho.getADValue(0), ADD_VALUES);  // save value in the buffer
+    jac->add(fvm_node->global_offset(), fvm_node->global_offset(), rho.getADValue(0));  // save value in the buffer
 
   }
 
@@ -343,290 +334,6 @@ void SemiconductorSimulationRegion::Poissin_Jacobian(PetscScalar * x, Mat *jac, 
 #endif
 }
 
-
-#if 0
-/*---------------------------------------------------------------------
- * build function and its jacobian for poisson solver
- */
-void SemiconductorSimulationRegion::Poissin_Function(PetscScalar * x, Vec f, InsertMode &add_value_flag)
-{
-
-  // note, we will use ADD_VALUES to set values of vec f
-  // if the previous operator is not ADD_VALUES, we should assembly the vec first!
-  if( (add_value_flag != ADD_VALUES) && (add_value_flag != NOT_SET_VALUES) )
-  {
-    VecAssemblyBegin(f);
-    VecAssemblyEnd(f);
-  }
-
-  // set local buf here
-  std::vector<int>          iy;
-  std::vector<PetscScalar>  y;
-
-  // slightly overkill -- the HEX8 element has 12 edges, each edge has 2 node
-  iy.reserve(24*this->n_cell()+this->n_node());
-  y.reserve(24*this->n_cell()+this->n_node());
-
-
-  // search all the element in this region.
-  // note, they are all local element, thus must be processed
-
-  //common used variable
-  PetscScalar T   = T_external();
-  PetscScalar nie = mt->band->ni(T);
-
-  // process \nabla operator for all cells
-
-  const_element_iterator it = elements_begin();
-  const_element_iterator it_end = elements_end();
-  for(; it!=it_end; ++it)
-  {
-    const Elem * elem = *it;
-
-    //search for all the Edge this cell own
-    for(unsigned int ne=0; ne<elem->n_edges(); ++ne )
-    {
-      std::pair<unsigned int, unsigned int> edge_nodes;
-      elem->nodes_on_edge(ne, edge_nodes);
-
-      // the length of this edge
-      const double length = elem->edge_length(ne);
-
-      // partial area associated with this edge
-      const double partial_area = elem->partial_area_with_edge(ne);
-
-      // fvm_node of node1
-      const FVM_Node * fvm_n1 = elem->get_fvm_node(edge_nodes.first);
-      // fvm_node of node2
-      const FVM_Node * fvm_n2 = elem->get_fvm_node(edge_nodes.second);
-
-      // fvm_node_data of node1
-      const FVM_NodeData * n1_data = fvm_n1->node_data();
-      // fvm_node_data of node2
-      const FVM_NodeData * n2_data = fvm_n2->node_data();
-
-      const unsigned int n1_local_offset = fvm_n1->local_offset();
-      const unsigned int n2_local_offset = fvm_n2->local_offset();
-
-      // build nonlinear poisson's equation
-      {
-
-        PetscScalar V1   =  x[n1_local_offset]; // electrostatic potential of node1
-        PetscScalar eps1 =  n1_data->eps();     // permittivity of node1
-
-        PetscScalar V2   =  x[n2_local_offset]; // electrostatic potential of node2
-        PetscScalar eps2 =  n2_data->eps();     // permittivity of node2
-
-        PetscScalar eps = 0.5*(eps1+eps2);      // eps at mid point of the edge
-
-        // ignore thoese ghost nodes (ghost nodes is local but with different processor_id())
-        if( fvm_n1->root_node()->processor_id()==Genius::processor_id() )
-        {
-          iy.push_back(fvm_n1->global_offset());
-          y.push_back( eps*partial_area*(V2 - V1)/length );
-        }
-
-        if( fvm_n2->root_node()->processor_id()==Genius::processor_id() )
-        {
-          iy.push_back( fvm_n2->global_offset() );
-          y.push_back( eps*partial_area*(V1 - V2)/length );
-        }
-      }
-
-    }
-
-  }
-
-#if defined(HAVE_FENV_H) && defined(DEBUG)
-  genius_assert( !fetestexcept(FE_INVALID) );
-#endif
-
-  // process \rho of poisson's equation
-  const_processor_node_iterator node_it = on_processor_nodes_begin();
-  const_processor_node_iterator node_it_end = on_processor_nodes_end();
-  for(; node_it!=node_it_end; ++node_it)
-  {
-    const FVM_Node * fvm_node = *node_it;
-    const FVM_NodeData * fvm_node_data = fvm_node->node_data();
-
-    PetscScalar V   =  x[fvm_node->local_offset()];
-    mt->mapping(fvm_node->root_node(), fvm_node_data, 0.0);
-
-    // intrinsic Fermi potential.
-    PetscScalar V_i =  V + fvm_node_data->affinity() + fvm_node_data->Eg()/(2*e) + kb*T*log(fvm_node_data->Nc()/fvm_node_data->Nv())/(2*e);
-    // electron density
-    PetscScalar n   =  nie*exp( e/(kb*T)*V_i);
-    // hole density
-    PetscScalar p   =  nie*exp(-e/(kb*T)*V_i);
-    // total chrage density
-    PetscScalar rho =  e*(fvm_node_data->Net_doping() + p - n )*fvm_node->volume();
-
-    iy.push_back(fvm_node->global_offset());                                  // save index in the buffer
-    y.push_back( rho );                                                       // save value in the buffer
-
-  }
-
-  if(iy.size()) VecSetValues(f, iy.size(), &iy[0], &y[0], ADD_VALUES);
-
-  // after the first scan, every nodes are updated.
-  // however, boundary condition should be processed later.
-
-  // the last operator is ADD_VALUES
-  add_value_flag = ADD_VALUES;
-
-#if defined(HAVE_FENV_H) && defined(DEBUG)
-  genius_assert( !fetestexcept(FE_INVALID) );
-#endif
-}
-
-
-
-
-
-
-/*---------------------------------------------------------------------
- * build function and its jacobian for poisson solver
- */
-void SemiconductorSimulationRegion::Poissin_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_value_flag)
-{
-
-  // note, we will use ADD_VALUES to set values of matrix J
-  // if the previous operator is not ADD_VALUES, we should flush the matrix
-  if( (add_value_flag != ADD_VALUES) && (add_value_flag != NOT_SET_VALUES) )
-  {
-    MatAssemblyBegin(*jac, MAT_FLUSH_ASSEMBLY);
-    MatAssemblyEnd(*jac, MAT_FLUSH_ASSEMBLY);
-  }
-
-
-  //common used variable
-  PetscScalar T   = T_external();
-  PetscScalar nie = mt->band->ni(T);
-
-  // search all the element in this region.
-  // note, they are all local element, thus must be processed
-
-  //the indepedent variable is 2
-  adtl::AutoDScalar::numdir = 2;
-  //synchronize with material database
-  mt->set_ad_num(adtl::AutoDScalar::numdir);
-
-  const_element_iterator it = elements_begin();
-  const_element_iterator it_end = elements_end();
-  for(; it!=it_end; ++it)
-  {
-    const Elem * elem = *it;
-    //search for all the Edge this cell own
-    for(unsigned int ne=0; ne<elem->n_edges(); ++ne )
-    {
-      std::pair<unsigned int, unsigned int> edge_nodes;
-      elem->nodes_on_edge(ne, edge_nodes);
-
-      // the length of this edge
-      const double length = elem->edge_length(ne);
-
-      // partial area associated with this edge
-      const double partial_area = elem->partial_area_with_edge(ne);
-
-      // fvm_node of node1
-      const FVM_Node * fvm_n1 = elem->get_fvm_node(edge_nodes.first);
-      // fvm_node of node2
-      const FVM_Node * fvm_n2 = elem->get_fvm_node(edge_nodes.second);
-
-      // fvm_node_data of node1
-      const FVM_NodeData * n1_data =  fvm_n1->node_data();
-      // fvm_node_data of node2
-      const FVM_NodeData * n2_data =  fvm_n2->node_data();
-
-      const unsigned int n1_local_offset = fvm_n1->local_offset();
-      const unsigned int n2_local_offset = fvm_n2->local_offset();
-
-      // the row/colume position of variables in the matrix
-      PetscInt row[2],col[2];
-      row[0] = col[0] = fvm_n1->global_offset();
-      row[1] = col[1] = fvm_n2->global_offset();
-
-      // here we use AD, however it is great overkill for such a simple problem.
-      {
-
-        // electrostatic potential, as independent variable
-        AutoDScalar V1   =  x[n1_local_offset];   V1.setADValue(0, 1.0);
-        // eps
-        PetscScalar eps1 =  n1_data->eps();
-
-
-        // electrostatic potential, as independent variable
-        AutoDScalar V2   =  x[n2_local_offset];   V2.setADValue(1, 1.0);
-        // eps
-        PetscScalar eps2 =  n2_data->eps();
-
-        PetscScalar eps = 0.5*(eps1+eps2);
-
-        // ignore thoese ghost nodes
-        if( fvm_n1->root_node()->processor_id()==Genius::processor_id() )
-        {
-          AutoDScalar f =  eps*partial_area*(V2 - V1)/length ;
-          MatSetValues(*jac, 1, &row[0], 2, &col[0], f.getADValue(), ADD_VALUES);
-        }
-
-        if( fvm_n2->root_node()->processor_id()==Genius::processor_id() )
-        {
-          AutoDScalar f =  eps*partial_area*(V1 - V2)/length ;
-          MatSetValues(*jac, 1, &row[1], 2, &col[0], f.getADValue(), ADD_VALUES);
-        }
-
-      }
-    }
-
-
-  }
-
-#if defined(HAVE_FENV_H) && defined(DEBUG)
-  genius_assert( !fetestexcept(FE_INVALID) );
-#endif
-
-  // process \rho of poisson's equation
-
-  //the indepedent variable is 1
-  adtl::AutoDScalar::numdir = 1;
-  //synchronize with material database
-  mt->set_ad_num(adtl::AutoDScalar::numdir);
-
-  // process \rho of poisson's equation, search all the vertex of this cell
-  const_processor_node_iterator node_it = on_processor_nodes_begin();
-  const_processor_node_iterator node_it_end = on_processor_nodes_end();
-  for(; node_it!=node_it_end; ++node_it)
-  {
-    const FVM_Node * fvm_node = *node_it;
-    const FVM_NodeData * fvm_node_data = fvm_node->node_data();
-
-    AutoDScalar V   =  x[fvm_node->local_offset()];  V.setADValue(0, 1.0);
-    mt->mapping(fvm_node->root_node(), fvm_node_data, 0.0);
-
-    // intrinsic Fermi potential.
-    AutoDScalar V_i =  V + fvm_node_data->affinity() + fvm_node_data->Eg()/(2*e) + kb*T*log(fvm_node_data->Nc()/fvm_node_data->Nv())/(2*e);
-    // electron density
-    AutoDScalar n   =  nie*exp( e/(kb*T)*V_i);
-    // hole density
-    AutoDScalar p   =  nie*exp(-e/(kb*T)*V_i);
-
-    // total chrage density
-    AutoDScalar rho =  e*(fvm_node_data->Net_doping() + p - n)*fvm_node->volume();
-
-    MatSetValue(*jac, fvm_node->global_offset(), fvm_node->global_offset(), rho.getADValue(0), ADD_VALUES);  // save value in the buffer
-
-  }
-
-  // boundary condition should be processed later!
-
-  // the last operator is ADD_VALUES
-  add_value_flag = ADD_VALUES;
-
-#if defined(HAVE_FENV_H) && defined(DEBUG)
-  genius_assert( !fetestexcept(FE_INVALID) );
-#endif
-}
-#endif
 
 
 void SemiconductorSimulationRegion::Poissin_Update_Solution(PetscScalar *lxx)
@@ -660,21 +367,21 @@ void SemiconductorSimulationRegion::Poissin_Update_Solution(PetscScalar *lxx)
       PetscScalar n    =  ni*exp(e/(kb*T)*V_i);
       // hole density
       PetscScalar p    =  ni*exp(-e/(kb*T)*V_i);
-
+#if 0
       // consider bandgap narrow
       PetscScalar dEg = mt->band->EgNarrow(p, n, T);
-      node_data->n()   =  n*exp(dEg);
-      node_data->p()   =  p*exp(dEg);
-
+      node_data->n()   =  n*exp(dEg/(2*kb*T));
+      node_data->p()   =  p*exp(dEg/(2*kb*T));
+#endif
       //update psi
       PetscScalar Eg = mt->band->Eg(T);
       node_data->psi() = V;
-      node_data->Eg() = Eg - mt->band->EgNarrow(p, n, T);
-      node_data->Ec() = -(e*V + node_data->affinity() + mt->band->EgNarrowToEc(p, n, T));
-      node_data->Ev() = -(e*V + node_data->affinity() - mt->band->EgNarrowToEv(p, n, T) + Eg);
+      node_data->Eg() = Eg;
+      node_data->Ec() = -(e*V + node_data->affinity());
+      node_data->Ev() = -(e*V + node_data->affinity()+ Eg);
 
-      node_data->qFn() = -(e*V + node_data->affinity()) + log(fabs(n/node_data->Nc()))*kb*T;
-      node_data->qFp() = -(e*V + node_data->affinity()  + Eg) - log(fabs(p/node_data->Nv()))*kb*T;
+      node_data->qFn() = node_data->Ec() + log(fabs(n/node_data->Nc()))*kb*T;
+      node_data->qFp() = node_data->Ev() - log(fabs(p/node_data->Nv()))*kb*T;
     }
   }
 

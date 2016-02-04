@@ -26,6 +26,7 @@
 
 
 #include "vector_value.h"
+#include "tensor_value.h"
 #include "enum_solution.h"
 #include "enum_solver_specify.h"
 #include "error_vector.h"
@@ -82,8 +83,12 @@ public:
   /**
    * @return true iff we run in the resistive metal mode
    */
-  bool resistive_metal_mode() const
-  { return _resistive_metal_mode; }
+  bool resistive_metal_mode() const  { return _resistive_metal_mode; }
+
+  /**
+   * @return true when we use cylindrical mesh mode
+   */
+  bool cylindrical_mesh() const { return _cylindrical_mesh; }
 
   /**
    * set resistive metal mode
@@ -150,19 +155,46 @@ public:
   void import_silvaco(const std::string& filename);
 
   /**
+   * @brief load device information from Silvaco files.
+   */
+  void import_silvaco_list(const std::vector<std::string> & filenames);
+
+  /**
    * @brief load device information from TIF file, which is used by synopsys Medici and Tsuprem.
    */
   void import_tif(const std::string& filename);
 
   /**
+   * @brief load device information from several TIF files.
+   */
+  void import_tif_list(const std::vector<std::string> & filenames);
+
+  /**
    * @brief load device information from TIF3D file, which is used by our GDSII to 3D model tool.
    */
   void import_tif3d(const std::string& filename);
-
+  
+  /**
+   * @brief load device information from suprem file
+   */
+  void import_suprem(const std::string& filename);
+  
   /**
    * @brief load device information from DF-ISE file, which is used by synopsys sentaurus.
    */
   void import_ise(const std::string& filename);
+
+
+  /**
+   * @brief load device information from GMSH file.
+   */
+  void import_gmsh(const std::string& filename);
+
+
+  /**
+   * @brief load device information from I-deas universal file format.
+   */
+  void import_unv(const std::string& filename);
 
 
   /**
@@ -176,19 +208,24 @@ public:
   void export_ise(const std::string& filename) const;
 
   /**
+   * @brief save mesh and doping to tif file
+   */
+  void export_tif(const std::string& filename) const;
+
+  /**
    * @brief export solution to vtk file
    */
   void export_vtk(const std::string& filename, bool ascii) const;
 
   /**
-   * @brief write geometry and material info to gdml file
+   * @brief export solution to vtk file
    */
-  void export_gdml_surface(const std::string& filename) const;
+  void export_vtk2(const std::string& filename, const std::vector<std::string> &) const;
 
   /**
    * @brief write geometry and material info to gdml file
    */
-  void export_gdml_body(const std::string& filename) const;
+  void export_gdml_surface(const std::string& filename) const;
 
   /**
    * @brief save node location to file
@@ -199,6 +236,16 @@ public:
    * @return true if the system is empty
    */
   bool empty() const { return _simulation_regions.empty(); }
+
+  /**
+   * has region with given name
+   */
+  bool has_region(const std::string & region_label) const;
+
+  /**
+   * has region with material name
+   */
+  bool has_region_with_material(const std::string & material) const;
 
   /**
    * @return the pointer to nth region
@@ -377,12 +424,27 @@ private:
   MeshBase & _mesh;
 
   /**
+   * orientation of the simulation coordinate system
+   */
+  std::vector<int> _axis_x, _axis_y, _axis_z;
+
+  /**
+   * convert a point(vector) from simulation coordinate system to crystal coordinate system
+   */
+  TensorValue<double> _coord_to_crystal_coord;
+
+  /**
+   * compute _coord_to_crystal_coord
+   */
+  void _build_coord_to_crystal_coord();
+
+  /**
    * flag for cylindrically symmetric mesh
    */
   bool _cylindrical_mesh;
-  
+
   /**
-   * enable distributed mesh 
+   * enable distributed mesh
    */
   bool _distributed_mesh;
 

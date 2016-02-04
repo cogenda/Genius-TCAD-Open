@@ -184,8 +184,9 @@ int TIF3D::read()
   }
 
   // check if empty region exist
-  for(unsigned int n=0; n<_regions.size(); ++n)
-    assert(_regions[n].tet_num > 0);
+  // NOTE now we enable empty region
+  //for(unsigned int n=0; n<_regions.size(); ++n)
+  //  assert(_regions[n].tet_num > 0);
 
   return 0;
 }

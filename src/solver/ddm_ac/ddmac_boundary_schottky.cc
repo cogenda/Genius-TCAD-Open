@@ -33,7 +33,7 @@
 
 using PhysicalUnit::e;
 
-void SchottkyContactBC::DDMAC_Fill_Matrix_Vector( Mat A, Vec b, const Mat J, const double omega, InsertMode & add_value_flag )
+void SchottkyContactBC::DDMAC_Fill_Matrix_Vector( Mat A, Vec b, const Mat J, const PetscScalar omega, InsertMode & add_value_flag )
 {
 
 
@@ -164,9 +164,9 @@ void SchottkyContactBC::DDMAC_Fill_Matrix_Vector( Mat A, Vec b, const Mat J, con
 
 
             // schottky boundary condition of poisson's equation
-            AutoDScalar ff1 = V + Work_Function - deltaVB - Ve;
-            MatSetValues(A, 1, &row_re[node_psi_offset], col_re.size(), &col_re[0], ff1.getADValue(), ADD_VALUES);
-            MatSetValues(A, 1, &row_im[node_psi_offset], col_im.size(), &col_im[0], ff1.getADValue(), ADD_VALUES);
+            AutoDScalar f_phi = V + Work_Function - deltaVB - Ve;
+            MatSetValues(A, 1, &row_re[node_psi_offset], col_re.size(), &col_re[0], f_phi.getADValue(), ADD_VALUES);
+            MatSetValues(A, 1, &row_im[node_psi_offset], col_im.size(), &col_im[0], f_phi.getADValue(), ADD_VALUES);
 
             // process the Jacobian of Schottky current
             regions[i]->DDMAC_Fill_Nodal_Matrix_Vector(fvm_nodes[i], ELECTRON, A, b, J, omega, add_value_flag);
@@ -379,7 +379,7 @@ void SchottkyContactBC::DDMAC_Fill_Matrix_Vector( Mat A, Vec b, const Mat J, con
 /*---------------------------------------------------------------------
  * update electrode potential
  */
-void SchottkyContactBC::DDMAC_Update_Solution(const PetscScalar * lxx, const Mat, const double omega)
+void SchottkyContactBC::DDMAC_Update_Solution(const PetscScalar * lxx, const Mat, const PetscScalar omega)
 {
   PetscScalar IacRe = 0;
   PetscScalar IacIm = 0;

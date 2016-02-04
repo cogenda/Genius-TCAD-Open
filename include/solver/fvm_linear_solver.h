@@ -59,6 +59,44 @@ public:
   void clear_linear_data();
 
   /**
+   * dump jacobian matrix in petsc format to external file
+   * for more detailed analysis of the properties of jacobian matrix
+   */
+  virtual void dump_matrix_petsc(const Mat mat, const std::string &file) const;
+
+  /**
+   * dump jacobian matrix in Harwell-Boeing format to external file
+   * for more detailed analysis of the properties of jacobian matrix
+   * when rhs is true, also dump rhs vector
+   * however, this must run in serial
+   */
+  //void dump_jacobian_matrix_hb(const std::string &file, bool rhs=false) const;
+
+  /**
+   * dump jacobian matrix in asc format to external file
+   * for more detailed analysis of the properties of jacobian matrix
+   */
+  virtual void dump_matrix_asc(const Mat mat, const std::string &file) const;
+
+   /**
+   * dump jacobian matrix in triplet format to external file
+   * for more detailed analysis of the properties of jacobian matrix
+    */
+  virtual void dump_matrix_triplet(const Mat mat, const std::string &file) const;
+
+  /**
+   * dump vector to external file
+   * for more detailed analysis of the properties
+   */
+  virtual void dump_vector_petsc(const Vec vec, const std::string &file) const;
+
+  /**
+   * load vector from external file
+   * for more detailed analysis of the properties
+   */
+  virtual void load_vector_petsc(Vec vec, const std::string &file) const;
+
+  /**
    * @return the condition number of matrix
    */
   double condition_number_of_matrix();

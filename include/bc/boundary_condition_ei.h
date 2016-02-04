@@ -77,6 +77,9 @@ public:
 
 public:
 
+
+#ifdef TCAD_SOLVERS
+
   //////////////////////////////////////////////////////////////////////////////////////////////
   //----------------Function and Jacobian evaluate for Poisson's Equation---------------------//
   //////////////////////////////////////////////////////////////////////////////////////////////
@@ -97,29 +100,19 @@ public:
   virtual void Poissin_Function(PetscScalar * , Vec , InsertMode &);
 
   /**
-   * reserve none zero pattern in petsc matrix.
-   */
-  virtual void Poissin_Jacobian_Reserve(Mat *, InsertMode &);
-
-  /**
    * preprocess Jacobian Matrix for poisson solver
    */
-  virtual void Poissin_Jacobian_Preprocess(PetscScalar *, Mat *, std::vector<PetscInt>&, std::vector<PetscInt>&, std::vector<PetscInt>&);
+  virtual void Poissin_Jacobian_Preprocess(PetscScalar *, SparseMatrix<PetscScalar> *, std::vector<PetscInt>&, std::vector<PetscInt>&, std::vector<PetscInt>&);
 
   /**
      * build function and its jacobian for poisson solver, nothing to do
    */
-  virtual void Poissin_Jacobian(PetscScalar * , Mat *, InsertMode &);
+  virtual void Poissin_Jacobian(PetscScalar * , SparseMatrix<PetscScalar> *, InsertMode &);
 
 
   //////////////////////////////////////////////////////////////////////////////////
   //----------------Function and Jacobian evaluate for L1 DDM---------------------//
   //////////////////////////////////////////////////////////////////////////////////
-
-  /**
-   * reserve none zero pattern in petsc matrix.
-   */
-  virtual void DDM1_Jacobian_Reserve(Mat *, InsertMode &);
 
   /**
    * preprocess function for level 1 DDM solver
@@ -134,12 +127,12 @@ public:
   /**
    * preprocess Jacobian Matrix of level 1 DDM equation.
    */
-  virtual void DDM1_Jacobian_Preprocess(PetscScalar *, Mat *, std::vector<PetscInt>&, std::vector<PetscInt>&, std::vector<PetscInt>&);
+  virtual void DDM1_Jacobian_Preprocess(PetscScalar *, SparseMatrix<PetscScalar> *, std::vector<PetscInt>&, std::vector<PetscInt>&, std::vector<PetscInt>&);
 
   /**
    * build function and its jacobian for DDML1 solver
    */
-  virtual void DDM1_Jacobian(PetscScalar * , Mat *, InsertMode &);
+  virtual void DDM1_Jacobian(PetscScalar * , SparseMatrix<PetscScalar> *, InsertMode &);
 
 
   //////////////////////////////////////////////////////////////////////////////////
@@ -157,19 +150,14 @@ public:
   virtual void DDM2_Function(PetscScalar * , Vec , InsertMode &);
 
   /**
-   * reserve none zero pattern in petsc matrix.
-   */
-  virtual void DDM2_Jacobian_Reserve(Mat *, InsertMode &);
-
-  /**
    * preprocess Jacobian Matrix of level 2 DDM equation.
    */
-  virtual void DDM2_Jacobian_Preprocess(PetscScalar *,Mat *, std::vector<PetscInt>&, std::vector<PetscInt>&, std::vector<PetscInt>&);
+  virtual void DDM2_Jacobian_Preprocess(PetscScalar *,SparseMatrix<PetscScalar> *, std::vector<PetscInt>&, std::vector<PetscInt>&, std::vector<PetscInt>&);
 
   /**
    * build function and its jacobian for DDML2 solver
    */
-  virtual void DDM2_Jacobian(PetscScalar * , Mat *, InsertMode &);
+  virtual void DDM2_Jacobian(PetscScalar * , SparseMatrix<PetscScalar> *, InsertMode &);
 
 
   //////////////////////////////////////////////////////////////////////////////////
@@ -188,19 +176,14 @@ public:
   virtual void EBM3_Function(PetscScalar * , Vec , InsertMode &);
 
   /**
-   * reserve none zero pattern in petsc matrix.
-   */
-  virtual void EBM3_Jacobian_Reserve(Mat *, InsertMode &);
-
-  /**
    * preprocess Jacobian Matrix of EBM3 solver
    */
-  virtual void EBM3_Jacobian_Preprocess(PetscScalar * ,Mat *, std::vector<PetscInt>&, std::vector<PetscInt>&, std::vector<PetscInt>&);
+  virtual void EBM3_Jacobian_Preprocess(PetscScalar * ,SparseMatrix<PetscScalar> *, std::vector<PetscInt>&, std::vector<PetscInt>&, std::vector<PetscInt>&);
 
   /**
    * build function and its jacobian for EBM3 solver
    */
-  virtual void EBM3_Jacobian(PetscScalar * , Mat *, InsertMode &);
+  virtual void EBM3_Jacobian(PetscScalar * , SparseMatrix<PetscScalar> *, InsertMode &);
 
 
   //////////////////////////////////////////////////////////////////////////////////
@@ -210,7 +193,7 @@ public:
   /**
    *  evaluating matrix and rhs vector for ddm ac solver
    */
-  virtual void DDMAC_Fill_Matrix_Vector( Mat A, Vec b, const Mat J, const double omega, InsertMode & add_value_flag );
+  virtual void DDMAC_Fill_Matrix_Vector( Mat A, Vec b, const Mat J, const PetscScalar omega, InsertMode & add_value_flag );
 
 
 #ifdef COGENDA_COMMERCIAL_PRODUCT
@@ -243,6 +226,74 @@ public:
    * function for build RHS and matrix for half implicit poisson correction equation.
    */
   virtual void DDM1_Half_Implicit_Poisson_Correction(PetscScalar * x, Mat A, Vec r, InsertMode &add_value_flag);
+
+#endif
+
+#ifdef COGENDA_COMMERCIAL_PRODUCT
+
+  //////////////////////////////////////////////////////////////////////////////////
+  //-------------- Function and Jacobian evaluate for TID Solver -----------------//
+  //////////////////////////////////////////////////////////////////////////////////
+
+
+  /**
+   * fill vector of TID drift equation.
+   */
+  virtual void TID_Drift_Fill_Value(Vec , Vec );
+
+  /**
+   * preprocess for TID drift equation
+   */
+  virtual void TID_Drift_Function_Preprocess(PetscScalar *, Vec, std::vector<PetscInt>&, std::vector<PetscInt>&, std::vector<PetscInt>&);
+
+  /**
+   * evaluating TID drift equation
+   */
+  virtual void TID_Drift_Function(PetscScalar * x, Vec f, InsertMode &add_value_flag);
+
+  /**
+   * preprocess Jacobian Matrix of TID drift equation.
+   */
+  virtual void TID_Drift_Jacobian_Preprocess(PetscScalar *, SparseMatrix<PetscScalar> *, std::vector<PetscInt>&, std::vector<PetscInt>&, std::vector<PetscInt>&);
+
+  /**
+   * evaluating Jacobian of TID drift equation.
+   */
+  virtual void TID_Drift_Jacobian(PetscScalar * x, SparseMatrix<PetscScalar> *jac, InsertMode &add_value_flag);
+  
+    
+  //////////////////////////////////////////////////////////////////////////////////
+  //----------Function and Jacobian evaluate for TID drift-reaction Solver--------//
+  //////////////////////////////////////////////////////////////////////////////////
+
+
+  /**
+   * fill vector of TID drift-reaction equation.
+   */
+  virtual void TID_DriftReaction_Fill_Value(Vec , Vec );
+
+  /**
+   * preprocess for TID drift-reaction equation
+   */
+  virtual void TID_DriftReaction_Function_Preprocess(PetscScalar *, Vec, std::vector<PetscInt>&, std::vector<PetscInt>&, std::vector<PetscInt>&);
+
+  /**
+   * evaluating TID drift-reaction equation
+   */
+  virtual void TID_DriftReaction_Function(PetscScalar * x, Vec f, InsertMode &add_value_flag);
+  
+  /**
+   * preprocess Jacobian Matrix of TID drift-reaction equation.
+   */
+  virtual void TID_DriftReaction_Jacobian_Preprocess(PetscScalar *, SparseMatrix<PetscScalar> *, std::vector<PetscInt>&, std::vector<PetscInt>&, std::vector<PetscInt>&);
+ 
+  /**
+   * evaluating Jacobian of TID drift-reaction equation.
+   */
+  virtual void TID_DriftReaction_Jacobian(PetscScalar * x, SparseMatrix<PetscScalar> *, InsertMode &add_value_flag);
+
+#endif
+
 
 #endif
 

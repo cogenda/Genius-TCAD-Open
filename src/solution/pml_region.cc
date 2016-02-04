@@ -41,8 +41,8 @@ using PhysicalUnit::mu0;
 
 
 
-PMLSimulationRegion::PMLSimulationRegion(const std::string &name, const std::string &material, const double T, const double z)
-:SimulationRegion(name, material, T, z)
+PMLSimulationRegion::PMLSimulationRegion(const std::string &name, const std::string &material, const double T, const unsigned int dim, const double z)
+:SimulationRegion(name, material, T, dim, z)
 {
   this->set_region_variables();
   mt = new Material::MaterialPML(this);

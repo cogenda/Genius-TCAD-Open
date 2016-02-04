@@ -115,7 +115,7 @@ class UnstructuredMesh : public MeshBase
    * build the partition cluster, the elems belongs to the same cluster will be partitioned into the same block
    * here set subdomain with metal material as cluster
    */
-  virtual void partition_cluster(std::vector<std::vector<unsigned int> > &);
+  virtual bool partition_cluster(std::vector<std::vector<unsigned int> > &);
 
   /**
    * Deep copy of another unstructured mesh class (used by subclass

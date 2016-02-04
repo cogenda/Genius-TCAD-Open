@@ -208,7 +208,7 @@ void SolderPadBC::Poissin_Function(PetscScalar * x, Vec f, InsertMode &add_value
 /*---------------------------------------------------------------------
  * do pre-process to jacobian matrix for poisson solver
  */
-void SolderPadBC::Poissin_Jacobian_Preprocess(PetscScalar *, Mat *jac, std::vector<PetscInt> &src_row,
+void SolderPadBC::Poissin_Jacobian_Preprocess(PetscScalar *, SparseMatrix<PetscScalar> *jac, std::vector<PetscInt> &src_row,
     std::vector<PetscInt> &dst_row, std::vector<PetscInt> &clear_row)
 {
     BoundaryCondition::const_node_iterator node_it = nodes_begin();
@@ -238,17 +238,11 @@ void SolderPadBC::Poissin_Jacobian_Preprocess(PetscScalar *, Mat *jac, std::vect
 /*---------------------------------------------------------------------
  * build function and its jacobian for poisson solver
  */
-void SolderPadBC::Poissin_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_value_flag)
+void SolderPadBC::Poissin_Jacobian(PetscScalar * x, SparseMatrix<PetscScalar> *jac, InsertMode &add_value_flag)
 {
 
   // the Jacobian of SolderPad boundary condition is processed here
 
-  // since we will use ADD_VALUES operat, check the matrix state.
-  if( (add_value_flag != ADD_VALUES) && (add_value_flag != NOT_SET_VALUES) )
-  {
-    MatAssemblyBegin(*jac, MAT_FLUSH_ASSEMBLY);
-    MatAssemblyEnd(*jac, MAT_FLUSH_ASSEMBLY);
-  }
 
   PetscScalar Ve = ext_circuit()->Vapp();
 
@@ -292,7 +286,7 @@ void SolderPadBC::Poissin_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_va
             AutoDScalar f_phi = V + node_data->affinity()/e - Ve;
 
             //governing equation
-            MatSetValue(*jac, fvm_node->global_offset(), fvm_node->global_offset(), f_phi.getADValue(0), ADD_VALUES);
+            jac->add(fvm_node->global_offset(), fvm_node->global_offset(), f_phi.getADValue(0));
             break;
           }
           case InsulatorRegion :
@@ -302,7 +296,7 @@ void SolderPadBC::Poissin_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_va
             AutoDScalar f_phi = (V + workfunction - Ve);
 
             //governing equation
-            MatSetValue(*jac, fvm_node->global_offset(), fvm_node->global_offset(), f_phi.getADValue(0), ADD_VALUES);
+            jac->add(fvm_node->global_offset(), fvm_node->global_offset(), f_phi.getADValue(0));
             break;
           }
           default: genius_error();

@@ -27,17 +27,17 @@
 class GSS_Cu_Thermal : public PMIC_Thermal
 {
 public:
-  PetscScalar HeatCapacity  (const PetscScalar &Tl) const 
+  PetscScalar HeatCapacity  (const PetscScalar &Tl) const
   {
-    return 3.42*J/(K*std::pow(cm,3));
+    return 0.381*J/(K*g);
   }
-  PetscScalar HeatConduction(const PetscScalar &Tl) const 
+  PetscScalar HeatConduction(const PetscScalar &Tl) const
   {
     return 3.85*W/(K*cm);
   }
   GSS_Cu_Thermal(const PMIC_Environment &env):PMIC_Thermal(env)
   {
-    
+
   }
   ~GSS_Cu_Thermal()
   {

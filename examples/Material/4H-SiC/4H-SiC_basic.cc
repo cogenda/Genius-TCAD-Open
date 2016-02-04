@@ -36,7 +36,7 @@ private:
   {
     PERMITTI = 9.780000E+00;
     PERMEABI = 1.0;
-    AFFINITY = 3.800000E+00*eV;
+    AFFINITY = 3.240000E+00*eV;
     DENSITY  = 3.210000E-03*kg*std::pow(cm,-3);
 
 #ifdef __CALIBRATE__
@@ -52,10 +52,10 @@ public:
   PetscScalar Permeability  ()                      const { return PERMEABI; }
   PetscScalar Affinity      (const PetscScalar &Tl) const { return AFFINITY; }
 
-  void atom_fraction(std::vector<std::string> &atoms, std::vector<double> & fraction) const
+  void G4Material(std::vector<Atom> &atoms, std::vector<double> & fraction) const
   {
-    atoms.push_back("C"); //Carbon
-    atoms.push_back("Si");//Silicon
+    atoms.push_back(Atom("Carbon",   "C", 6, 12.01115)); //Carbon
+    atoms.push_back(Atom("Silicon",    "Si", 14, 28.086));//Silicon
 
     fraction.push_back(1.0);
     fraction.push_back(1.0);

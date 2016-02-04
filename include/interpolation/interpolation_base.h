@@ -97,7 +97,7 @@ protected:
     {
       case Linear    : return value;
       case SignedLog : return (value>0 ? 1.0 : -1.0)*std::log(1.0+std::abs(value));
-      case Asinh     : return boost::math::asinh(value);
+      case Asinh     : return asinh(value);
     }
     return 0.0; //prevent warning
   }

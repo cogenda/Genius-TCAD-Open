@@ -24,6 +24,7 @@
 
 #include <string>
 #include <vector>
+#include <map>
 
 
 /**
@@ -33,6 +34,12 @@
 class StanfordTIF
 {
 public:
+
+
+  /**
+   * constructor
+   */
+  StanfordTIF() {}
 
   /**
    * constructor
@@ -47,7 +54,7 @@ public:
   /**
    * read file
    */
-  virtual bool read(std::string &err)=0;
+  virtual bool read(std::string &err) {}
 
   /**
    * DIM, most TIF is 2D, except silvaco has 3D extersion
@@ -66,8 +73,18 @@ public:
 
 
   /// debug only
-  void export_vtk() const;
+  void export_vtk(const std::string & file) const;
 
+  
+  virtual void export_tif(const std::string & file) const {}
+  
+  
+  virtual void export_sup(const std::string & file) const {}
+
+  /**
+   * merge several tif files to one
+   */
+  static StanfordTIF * merge( const std::vector<const StanfordTIF *> &);
 
 public:
 
@@ -182,6 +199,11 @@ public:
     int c3;
 
     /**
+     * coordinate index of the triangle node 4 (quad element), or -1
+     */
+    int c4;
+
+    /**
      * triangle index of neighbor triangle opposite node c1
      * A code of -1024 is used instead of a neighbor triangle index for nodes opposite a
      * reflecting boundary, and -1022 is used instead of a neighbor triangle index for
@@ -190,14 +212,20 @@ public:
     int  t1;
 
     /**
-     * triangle index of neighbor triangle opposite node c1
+     * triangle index of neighbor triangle opposite node c2
      */
     int  t2;
 
     /**
-     * triangle index of neighbor triangle opposite node c1
+     * triangle index of neighbor triangle opposite node c3
      */
     int  t3;
+
+    /**
+     * triangle index of neighbor triangle opposite node c4 (quad element), or -1
+     */
+    int  t4;
+
 
     /** ? */
     int father;
@@ -224,7 +252,7 @@ public:
     int  region;
 
     /**
-     * tri index, the Prism made of 
+     * tri index, the Prism made of
      */
     int tri;
 
@@ -247,6 +275,18 @@ public:
    */
   struct Region_t
   {
+  public:
+    /**
+     * if an entire region is the electrode.
+     * -1 means it is only a boundary
+     */
+    bool is_interface() const
+    {
+      if (-1==region)
+        return false;
+      return true;
+    }
+
     /**
      * region index (sequential, starts at 0)
      */
@@ -263,7 +303,7 @@ public:
     int  tri_num;
 
     /**
-     * the region is an electrode
+     * the region is an electrode, silvaco tif
      */
     bool electrode;
 
@@ -284,7 +324,7 @@ public:
 
     /**
      * Region index if an entire region is the electrode.
-     * -1 means it is only a boundary
+     * -1 means it is only a boundary, medici tif
      */
     int  region;
 
@@ -317,12 +357,29 @@ public:
     std::vector<std::string> sol_name_array;
 
     /**
+     * the unit of each solution variables
+     */
+    std::vector<std::string> sol_unit_array;
+
+    /**
      * clear solution head structure
      */
     void clear()
     {
       sol_num = 0;
       sol_name_array.clear();
+      sol_unit_array.clear();
+    }
+
+    /**
+     * @return true when solution exist
+     */
+    bool has_solution(const std::string & sol_name) const
+    {
+      for(unsigned int i=0; i<sol_name_array.size(); i++)
+        if( sol_name_array[i] == sol_name )
+          return true;
+      return false;
     }
 
     /**
@@ -335,6 +392,19 @@ public:
           return i;
       return static_cast<unsigned int>(-1);
     }
+
+    /**
+     * @return the unit of sol_name in sol_name_array
+     */
+    std::string solution_unit(const std::string & sol_name) const
+    {
+      unsigned int index = solution_index(sol_name);
+      if( index != static_cast<unsigned int>(-1) && index < sol_unit_array.size() )
+        return  sol_unit_array[index];
+      return std::string("1.0");
+    }
+    
+    std::vector<std::string> extra_infos;
   };
 
   /**
@@ -373,16 +443,28 @@ public:
   const std::vector<Node_t> & tif_nodes() const
     { return  _nodes; }
 
+  std::vector<Node_t> & tif_nodes()
+    { return  _nodes; }
+
   const std::vector<Edge_t> & tif_edges() const
     { return  _edges; }
 
+  std::vector<Edge_t> & tif_edges()
+    { return  _edges; }
+
   const std::vector<Tri_t> & tif_tris() const
+    { return  _tris; }
+
+  std::vector<Tri_t> & tif_tris()
     { return  _tris; }
 
   const std::vector<Prism_t> & tif_prisms() const
     { return  _prisms; }
 
   const std::vector<Region_t> & region_array() const
+    { return _regions; }
+
+  std::vector<Region_t> & region_array()
     { return _regions; }
 
   const SolHead_t & sol_head() const
@@ -437,6 +519,11 @@ public:
 
 
 public:
+
+  double solution(unsigned int sol_index, unsigned int index) const;
+  
+  double solution(unsigned int sol_index, unsigned int r, unsigned int n) const;
+
   /// return the acceptor in sol_data
   virtual double acceptor(unsigned int index) const;
   /// return the donor in sol_data
@@ -446,6 +533,17 @@ public:
   virtual double mole_x(unsigned int index) const;
   /// return the mole_y in sol_data
   virtual double mole_y(unsigned int index) const;
+
+
+  /// return the acceptor in sol_data by region index and node index
+  virtual double acceptor(unsigned int r, unsigned int n) const;
+  /// return the donor in sol_data by region index and node index
+  virtual double donor(unsigned int r, unsigned int n) const;
+
+  /// return the mole_x in sol_data by region index and node index
+  virtual double mole_x(unsigned int r, unsigned int n) const;
+  /// return the mole_y in sol_data by region index and node index
+  virtual double mole_y(unsigned int r, unsigned int n) const;
 
 protected:
 
@@ -467,17 +565,17 @@ protected:
 
   std::vector<SolData_t> _sol_data;
 
-  /// index of acceptor in sol_data
-  unsigned int _acceptor_index;
+  std::map<std::string, unsigned int> _solution_index_map;
+  
+  std::map<int, std::string> _region_material; 
 
-  /// index of donor in sol_data
-  unsigned int _donor_index;
+  /// map (node_index, material) to data_index
+  std::map<std::pair<unsigned int, std::string>, unsigned int> _solution_map;
 
-  /// index of mole_x in sol_data
-  unsigned int _mole_x_index;
-
-  /// index of mole_y in sol_data
-  unsigned int _mole_y_index;
+  /**
+   * make sure each region/boundary has unique name
+   */
+  bool _check_duplicate_name() const;
 
   /**
    * solution has a material string to indicate which region it belongs to

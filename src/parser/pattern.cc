@@ -29,7 +29,7 @@
 namespace Parser
 {
 
-  void to_lower(char & x)
+  static void to_lower(char & x)
   {
     if(isupper(x) )
       x = tolower(x);

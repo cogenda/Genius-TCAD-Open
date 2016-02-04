@@ -5,20 +5,53 @@
 #ifdef WINDOWS
 #include "mathfunc.h"
 #endif
+#include "physical_unit.h"
 
+using PhysicalUnit::um;
 
 //------------------------------------------------------------------
 
 double UniformDopingFunction::profile(double x,double y,double z)
 {
-  if( x >= _xmin-1e-6 && x <= _xmax+1e-6 &&
-      y >= _ymin-1e-6 && y <= _ymax+1e-6 &&
-      z >= _zmin-1e-6 && z <= _zmax+1e-6 )
+  if( x >= _xmin-1e-6*um && x <= _xmax+1e-6*um &&
+      y >= _ymin-1e-6*um && y <= _ymax+1e-6*um &&
+      z >= _zmin-1e-6*um && z <= _zmax+1e-6*um )
     return _ion*_peak;
   else
     return 0.0;
 }
 
+
+//------------------------------------------------------------------
+
+
+double LinearDopingFunction::profile(double x,double y,double z)
+{
+    if( x >= _xmin-1e-6*um && x <= _xmax+1e-6*um &&
+        y >= _ymin-1e-6*um && y <= _ymax+1e-6*um &&
+        z >= _zmin-1e-6*um && z <= _zmax+1e-6*um )
+    {
+      switch(_dir)
+      {
+        case X_Direction:
+         if(x >= _base_plane && x <= _end_plane)
+           return  _ion*(_doping_begin + (x-_base_plane)*_doping_slope);
+         return 0.0;
+        case Y_Direction:
+         if(y >= _base_plane && y <= _end_plane)
+           return  _ion*(_doping_begin + (y-_base_plane)*_doping_slope);
+         return 0.0;
+        case Z_Direction:
+         if(z >= _base_plane && z <= _end_plane)
+           return  _ion*(_doping_begin + (z-_base_plane)*_doping_slope);
+         return 0.0;
+        default: genius_error();
+      }
+    }
+    
+    return 0;
+  
+}
 
 
 //------------------------------------------------------------------

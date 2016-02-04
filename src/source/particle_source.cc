@@ -28,12 +28,15 @@
 #include "simulation_system.h"
 #include "simulation_region.h"
 #include "semiconductor_region.h"
+#include "insulator_region.h"
 #include "interpolation_2d_csa.h"
 //#include "interpolation_3d_qshep.h"
 #include "interpolation_3d_nbtet.h"
 #include "nearest_node_locator.h"
+#include "object_tree.h"
 #include "parallel.h"
 #include "mathfunc.h"
+#include "solver_specify.h"
 #include "log.h"
 
 //#define DEBUG
@@ -47,36 +50,78 @@ using PhysicalUnit::g;
 
 
 
-double Particle_Source::carrier_generation(double t) const
+
+
+void Particle_Source::carrier_generation(double t)
 {
-  if( t>= _t0 && (t-_t_max)*(t-_t_max)/(_t_char*_t_char)<30)
-    return exp(-(t-_t_max)*(t-_t_max)/(_t_char*_t_char));
-  return 0;
+  double ct = 0.5*(carrier_generation_t(t+0.5*SolverSpecify::dt) + carrier_generation_t(t-0.5*SolverSpecify::dt));
+
+  for(unsigned int n=0; n<_system.n_regions(); n++)
+  {
+    SimulationRegion * region = _system.region(n);
+
+    if( region->type() != SemiconductorRegion ) continue;
+
+    SimulationRegion::processor_node_iterator it = region->on_processor_nodes_begin();
+    SimulationRegion::processor_node_iterator it_end = region->on_processor_nodes_end();
+    for(; it!=it_end; ++it)
+    {
+      FVM_Node * fvm_node = (*it);
+      FVM_NodeData * node_data = fvm_node->node_data();
+
+      node_data->PatG() += _fvm_node_particle_deposit[fvm_node]*ct;
+    }
+  }
 }
 
-#if 0
-double Particle_Source::limit_dt(double time, double dt) const
-{
-  const double total = 0.5*sqrt(3.1415926536)*_t_char*(1 - Erf((_t0-_t_max)/_t_char));
-  while( 0.5*(carrier_generation(time) + carrier_generation(time+dt))*dt  > 0.05*total ) dt*=0.9;
-  return dt;
-}
-#endif
 
-double Particle_Source::limit_dt(double time, double dt) const
+double Particle_Source::limit_dt(double time, double dt, double dt_min) const
 {
   const double total = 0.5*sqrt(3.1415926536)*_t_char*(1 - Erf((_t0-_t_max)/_t_char));
-  if(carrier_generation(time) < 0.001*total && carrier_generation(time+dt) < 0.001*total ) return dt;
+  bool before = time+dt < _t_max;
+  bool after  = time > _t_max;
+  if( (before || after) && carrier_generation_t(time) < 0.001*total && carrier_generation_t(time+dt) < 0.001*total ) return dt;
 
   do{
     const double interval = 0.5*sqrt(3.1415926536)*_t_char*(Erf((time+dt-_t_max)/_t_char) - Erf((time-_t_max)/_t_char));
-    double error = std::abs(0.5*(carrier_generation(time) + carrier_generation(time+dt))*dt - interval);
-    if( error < 0.001*total || error < 0.001*interval || dt < 0.05*_t_char) break;
+    double error = std::abs(0.5*(carrier_generation_t(time) + carrier_generation_t(time+dt))*dt - interval);
+    if( error < 0.001*total || error < 0.001*interval || dt < 0.05*_t_char || dt < dt_min) break;
     dt *= 0.9;
   }
   while(1);
 
   return dt;
+}
+
+
+
+double Particle_Source::quan_eff(const SimulationRegion * region) const
+{
+  switch(region->type())
+  {
+    case SemiconductorRegion:
+    {
+      const SemiconductorSimulationRegion * semi_region = dynamic_cast<const SemiconductorSimulationRegion *>(region);
+      return semi_region->material()->band->ParticleQuantumEffect(_system.T_external());
+    }
+    case InsulatorRegion:
+    {
+      const InsulatorSimulationRegion * insu_region = dynamic_cast<const InsulatorSimulationRegion *>(region);
+      return insu_region->material()->band->ParticleQuantumEffect(_system.T_external());
+    }
+    default: return 3.6*eV;
+  }
+
+  return 3.6*eV;
+}
+
+
+
+double Particle_Source::carrier_generation_t(double t) const
+{
+  if( t>= _t0 && (t-_t_max)*(t-_t_max)/(_t_char*_t_char)<30)
+    return exp(-(t-_t_max)*(t-_t_max)/(_t_char*_t_char));
+  return 0;
 }
 
 //-------------------------------------------------------------------------------------------------------------------------
@@ -97,7 +142,7 @@ Particle_Source_DataFile::Particle_Source_DataFile(SimulationSystem &system, con
   _t0     = c.get_real("t0", 0.0)*s;
   _t_max  = c.get_real("tmax", 0.0)*s;
   _t_char = c.get_real("t.char", 2e-12)*s;
-  _quan_eff = c.get_real("quan.eff", 3.6)*eV;
+
 
   MESSAGE<<"ok\n"<<std::endl; RECORD();
 
@@ -245,25 +290,24 @@ void Particle_Source_DataFile::set_particle_profile_fromfile3d(const Parser::Car
 }
 
 
-void Particle_Source_DataFile::update_system()
+void Particle_Source_DataFile::update_source()
 {
   // interpolate to mesh node
   for(unsigned int n=0; n<_system.n_regions(); n++)
   {
-    SimulationRegion * region = _system.region(n);
+    const SimulationRegion * region = _system.region(n);
 
     if( region->type() != SemiconductorRegion ) continue;
+    double _quan_eff = quan_eff(region);
 
-    SimulationRegion::processor_node_iterator it = region->on_processor_nodes_begin();
-    SimulationRegion::processor_node_iterator it_end = region->on_processor_nodes_end();
+    SimulationRegion::const_processor_node_iterator it = region->on_processor_nodes_begin();
+    SimulationRegion::const_processor_node_iterator it_end = region->on_processor_nodes_end();
     for(; it!=it_end; ++it)
     {
-      FVM_Node * fvm_node = (*it);
-      FVM_NodeData * node_data = fvm_node->node_data();
+      const FVM_Node * fvm_node = (*it);
 
       double E = interpolator->get_interpolated_value(*(fvm_node->root_node()), 0);
-      node_data->PatG() += 2*E/_quan_eff/_t_char/sqrt(3.1415926536)/(1+Erf((_t_max-_t0)/_t_char));
-
+      _fvm_node_particle_deposit[fvm_node] = 2*E/_quan_eff/_t_char/sqrt(3.1415926536)/(1+Erf((_t_max-_t0)/_t_char));
     }
   }
 }
@@ -274,73 +318,151 @@ void Particle_Source_DataFile::update_system()
 
 Particle_Source_Analytic::Particle_Source_Analytic(SimulationSystem &system, const Parser::Card &c):Particle_Source(system)
 {
-  MESSAGE<<"Setting Radiation Source from analytic expression..."; RECORD();
+  MESSAGE<<"Setting Radiation Source from analytic expression..."<<std::endl; RECORD();
 
   genius_assert(c.key() == "PARTICLE");
 
-  _start.x() = c.get_real("x", 0.0)*um;
-  _start.y() = c.get_real("y", 0.0)*um;
-  _start.z() = c.get_real("z", 0.0)*um;
+  _start.x() = c.get_real("start.x", 0.0)*um;
+  _start.y() = c.get_real("start.y", 0.0)*um;
+  _start.z() = c.get_real("start.z", 0.0)*um;
 
-  // ray direction
-  double phi   = c.get_real("k.phi",   0.0)/180.0*3.14159265358979323846;
-  double theta = c.get_real("k.theta", 0.0)/180.0*3.14159265358979323846;
-  _dir = Point(sin(phi)*cos(theta), cos(phi), sin(phi)*sin(theta));
+  if( c.is_parameter_exist("dir.x") || c.is_parameter_exist("dir.y") || c.is_parameter_exist("dir.z") )
+  {
+    _dir.x() = c.get_real("dir.x", 0.0);
+    _dir.y() = c.get_real("dir.y", 0.0);
+    _dir.z() = c.get_real("dir.z", 0.0);
+  }
+  else
+  {
+    // ray direction
+    double phi   = c.get_real("k.phi",   0.0)/180.0*3.14159265358979323846;
+    double theta = c.get_real("k.theta", 0.0)/180.0*3.14159265358979323846;
+    _dir = Point(sin(phi)*cos(theta), cos(phi), sin(phi)*sin(theta));
+  }
+
+  _dir.to_unit();
 
   _t0     = c.get_real("t0", 0.0)*s;
   _t_max  = c.get_real("tmax", 0.0)*s;
   _t_char = c.get_real("t.char", 2e-12)*s;
-  _quan_eff = c.get_real("quan.eff", 3.6)*eV;
+
 
   _lateral_char = c.get_real("lateral.char", 0.1)*um;
   _length = c.get_real("length", 50.0)*um;
 
-  _LET = c.get_real("let", 0.0)*1e6*eV*cm*cm/(g/1e3);
-
-  MESSAGE<<"ok\n"<<std::endl; RECORD();
+  if( c.is_parameter_exist("dedx") )
+    _dEdx = c.get_real("let", 8.0)*1e6*eV/um;
+  else if ( c.is_parameter_exist("let") )
+    _dEdx = c.get_real("let", 35.0)*1e6*eV*cm*cm/(g/1e3)*(2.32*g/(cm*cm*cm));
+  else
+    _dEdx = 0.0;
 }
 
 
 
 
 
-void Particle_Source_Analytic::update_system()
+void Particle_Source_Analytic::update_source()
 {
   const double pi = 3.1415926536;
-  bool is_2d = _system.mesh().mesh_dimension() == 2;
+  bool is_2d = (_system.mesh().mesh_dimension() == 2) && (!_system.cylindrical_mesh());
+  double z_width = is_2d ? _system.z_width() : 1.0;
+
+  // make sure the track not exceeds the device domain
+  bool hit;
+  std::pair<double, double> t;
+  if(Genius::processor_id()==0)
+  {
+    // processor 0 has all the mesh elements, infact, boundary elements should exist on all the processors
+    ObjectTree * surface_elem_tree = new ObjectTree(_system.mesh(), Trees::ELEMENTS_ON_BOUNDARY);
+    hit = surface_elem_tree->hit_domain(_start, _dir, t);
+    delete surface_elem_tree;
+  }
+
+  Parallel::broadcast(hit);
+  Parallel::broadcast(t.first);
+  Parallel::broadcast(t.second);
+
+  MESSAGE<<"Process carrier generation from particle analytic expression..."<<std::endl; RECORD();
+  if(hit && t.second>0.0)
+  {
+    if(t.first > 0.0)
+    {
+      _start = _start + t.first*_dir;
+      _length = std::min(t.second - t.first, _length);
+
+      MESSAGE<<"  Particle dEdx " << _dEdx/(1e6*eV/um) << " MeV/um," << std::endl; RECORD();
+      MESSAGE<<"  Particle hit device at " << _start/um << " um." << std::endl; RECORD();
+      MESSAGE<<"  Particle effective length limited to " << _length/um << " um due to the size of device." <<std::endl; RECORD();
+    }
+    else
+    {
+      _length = std::min(t.second, _length);
+
+      MESSAGE<<"  Particle dEdx " << _dEdx/(1e6*eV/um) << " MeV/um" << std::endl; RECORD();
+      MESSAGE<<"  Particle start at " << _start/um << " um." << std::endl; RECORD();
+      MESSAGE<<"  Particle effective length limited to " << _length/um << " um due to the size of device." <<std::endl; RECORD();
+    }
+  }
+  else
+  {
+    MESSAGE<<"  Particle does not hit device, skip." << std::endl; RECORD();
+    return;
+  }
+
+
+  const double dEdx = _dEdx;
+  const double total_energy = dEdx*_length;
+
+  //used for energy conservation
+  double track_energy = 0.0;
+  std::map<const FVM_Node *, double> track_energy_density;
 
   for(unsigned int n=0; n<_system.n_regions(); n++)
   {
-    SimulationRegion * region = _system.region(n);
+    const SimulationRegion * region = _system.region(n);
 
-    if( region->type() != SemiconductorRegion ) continue;
+    double lateral_norm = pi*_lateral_char*_lateral_char;
 
-    SemiconductorSimulationRegion * semi_region = dynamic_cast<SemiconductorSimulationRegion *>(region);
-    double E = _LET*semi_region->material()->basic->Density(semi_region->T_external());
-
-    double lateral_norm;
-    if(is_2d)
-      lateral_norm = sqrt(pi)*_lateral_char*1.0*um;
-    else
-      lateral_norm = pi*_lateral_char*_lateral_char;
-
-    double G0 = E/_quan_eff/(lateral_norm)/(_t_char/2.0*sqrt(pi)*(1+Erf((_t_max-_t0)/_t_char)));
-
-    SimulationRegion::processor_node_iterator it = region->on_processor_nodes_begin();
-    SimulationRegion::processor_node_iterator it_end = region->on_processor_nodes_end();
+    SimulationRegion::const_processor_node_iterator it = region->on_processor_nodes_begin();
+    SimulationRegion::const_processor_node_iterator it_end = region->on_processor_nodes_end();
     for(; it!=it_end; ++it)
     {
-      FVM_Node * fvm_node = (*it);
+      const FVM_Node * fvm_node = (*it);
 
-      Point  p = (*fvm_node->root_node());
-      double d = (p-_start).dot(_dir);
-      double r = (p-_start - (p-_start).dot(_dir)*_dir).size();
+      Point loc = fvm_node->position();
+      Point loc_pp = _start + (loc-_start)*_dir*_dir;
 
-      FVM_NodeData * node_data = fvm_node->node_data();
-      if(d < _length)
-        node_data->PatG() += G0*exp(-r*r/(_lateral_char*_lateral_char));
-      else
-        node_data->PatG() += 0;
+      double r = (loc-loc_pp).size();
+      double e_r = exp(-r*r/(_lateral_char*_lateral_char));
+      double e_z = Erf((loc_pp-_start)*_dir/_lateral_char) - Erf((loc_pp-(_start+_length*_dir))*_dir/_lateral_char);
+      double energy_density = _dEdx/(2*lateral_norm)*e_r*e_z;
+
+      track_energy += energy_density*fvm_node->volume()*z_width;
+      track_energy_density[fvm_node] += energy_density;
+    }
+  }
+
+  Parallel::sum(track_energy);
+
+
+  if(track_energy > 0.0)
+  {
+    double alpha = total_energy/track_energy; //used for keep energy conservation
+
+    std::map<const FVM_Node *, double>::const_iterator it = track_energy_density.begin();
+    for(; it != track_energy_density.end(); ++it)
+    {
+      const FVM_Node * fvm_node = it->first;
+      if(!fvm_node) continue;
+
+      const SimulationRegion * region = _system.region(fvm_node->subdomain_id());
+      if( region->type() != SemiconductorRegion) continue;
+
+      double energy_density = it->second;
+      double _quan_eff = quan_eff(region);
+
+      _fvm_node_particle_deposit[fvm_node] += alpha*energy_density/_quan_eff/(_t_char/2.0*sqrt(pi)*(1+Erf((_t_max-_t0)/_t_char)));
     }
   }
 
@@ -359,26 +481,33 @@ Particle_Source_Track::Particle_Source_Track(SimulationSystem &system, const Par
   _t0     = c.get_real("t0", 0.0)*s;
   _t_max  = c.get_real("tmax", 0.0)*s;
   _t_char = c.get_real("t.char", 2e-12)*s;
-  _quan_eff = c.get_real("quan.eff", 3.6)*eV;
+
 
   std::string track_file = c.get_string("profile.file", "");
+  std::string hdf5_file = c.get_string("profile.hdf5", "");
+  std::string event_path = c.get_string("hdf5.path", "");
 
   MESSAGE<<"Setting Radiation Source from particle event file " << track_file << "..."; RECORD();
-  _read_particle_profile_track(track_file, c.get_real("lateral.char", 0.1));
+  if(!track_file.empty())
+    _read_particle_profile_track_evt(track_file, c.get_real("lateral.char", 0.1));
+#ifdef HAVE_HDF5
+  if(!hdf5_file.empty())
+    _read_particle_profile_track_hdf5(hdf5_file, event_path, c.get_real("lateral.char", 0.1));
+#endif
   MESSAGE<<"ok\n"<<std::endl; RECORD();
 }
 
 
 
-void Particle_Source_Track::_read_particle_profile_track(const std::string & file, Real lateral_char)
+void Particle_Source_Track::_read_particle_profile_track_evt(const std::string & filename, Real lateral_char)
 {
   std::vector<double> meta_data;
   if(Genius::processor_id()==0)
   {
-    std::ifstream in(file.c_str());
+    std::ifstream in(filename.c_str());
     if(!in.good())
     {
-      MESSAGE<<"ERROR PARTICLE: file "<<file<<" can't be opened."<<std::endl; RECORD();
+      MESSAGE<<"ERROR PARTICLE: file "<<filename<<" can't be opened."<<std::endl; RECORD();
       genius_error();
     }
 
@@ -438,18 +567,115 @@ void Particle_Source_Track::_read_particle_profile_track(const std::string & fil
 
 }
 
+#ifdef HAVE_HDF5
 
-
-
-
-
-
-#if 1
-void Particle_Source_Track::update_system()
+#include "ParticleEvent.h"
+void Particle_Source_Track::_read_particle_profile_track_hdf5(const std::string & filename, const std::string & path, Real lateral_char)
 {
-  START_LOG("update_system()", "Particle_Source_Track");
+  std::vector<double> meta_data;
+  if(Genius::processor_id()==0)
+  {
+    hid_t    file_handle;
 
-  MESSAGE<< "  process particle generation";
+    file_handle = H5Fopen(filename.c_str(), H5F_ACC_RDONLY, H5P_DEFAULT);
+    if (file_handle<0)
+    {
+      MESSAGE<<"ERROR PARTICLE: file "<<filename<<" can't be opened."<<std::endl; RECORD();
+      genius_error();
+    }
+
+    H5G_info_t ginfo;
+    H5Gget_info(file_handle, &ginfo);
+
+    CogendaHDF5::LookupTable region_lut;
+    std::vector<std::string> material_list;
+    {
+      hid_t grp;
+      grp = H5Gopen(file_handle, "target", H5P_DEFAULT);
+      material_list = CogendaHDF5::getAttribute< std::vector<std::string> >(grp, ".", "MaterialList");
+      region_lut   = CogendaHDF5::getAttribute< CogendaHDF5::LookupTable >(grp, ".", "RegionList");
+    }
+
+    //for(unsigned int n=0; n<material_list.size(); ++n)
+    //  std::cout<<material_list[n]<<std::endl;
+
+    //std::string event_path = "./" + path;
+    CogendaHDF5::GSeat::Event evt_hdf5(region_lut, material_list);
+    bool rc = evt_hdf5.readData(file_handle, path);
+    if (!rc)
+    {
+      MESSAGE<<"ERROR PARTICLE: file "<<filename<<" path " << path << " can not be opened." <<std::endl; RECORD();
+      genius_error();
+    }
+
+    for (CogendaHDF5::GSeat::Event::TrackIter iTrack = evt_hdf5.track_begin();  iTrack != evt_hdf5.track_end(); ++iTrack)
+    {
+      const CogendaHDF5::GSeat::Track & track_hdf5 = *iTrack;
+
+      std::vector<double> p = track_hdf5.StartPoint();
+      Point StartPoint(p[0], p[1], p[2]);
+
+      CogendaHDF5::GSeat::Event::StepIter iStep = evt_hdf5.step_begin(track_hdf5);
+      for (unsigned int c=0; iStep != evt_hdf5.step_end(track_hdf5); ++iStep, ++c)
+      {
+        const CogendaHDF5::GSeat::Step & step_hdf5 = *iStep;
+
+        std::vector<double> p = step_hdf5.EndPoint();
+        Point EndPoint(p[0], p[1], p[2]);
+        double energy = step_hdf5.EnergyDeposit();
+
+        meta_data.push_back(StartPoint[0]*um);
+        meta_data.push_back(StartPoint[1]*um);
+        meta_data.push_back(StartPoint[2]*um);
+        meta_data.push_back(EndPoint[0]*um);
+        meta_data.push_back(EndPoint[1]*um);
+        meta_data.push_back(EndPoint[2]*um);
+        meta_data.push_back(energy*1e6*eV);
+
+        double sigma=lateral_char;
+        meta_data.push_back(sigma*um);
+
+        StartPoint = EndPoint;
+      }
+    }
+
+    H5Fclose(file_handle);
+  }
+
+  //std::cout<<meta_data.size() << std::endl;
+
+  Parallel::broadcast(meta_data);
+  for(unsigned int n=0; n<meta_data.size()/8; ++n)
+  {
+    track_t track;
+    track.start.x()    = meta_data[8*n+0];
+    track.start.y()    = meta_data[8*n+1];
+    track.start.z()    = meta_data[8*n+2];
+    track.end.x()      = meta_data[8*n+3];
+    track.end.y()      = meta_data[8*n+4];
+    track.end.z()      = meta_data[8*n+5];
+    track.energy       = meta_data[8*n+6];
+    track.lateral_char = meta_data[8*n+7];
+
+    // skip zero length track
+    if( track.energy <= 0.0 || (track.end - track.start).size() == 0.0 ) continue;
+
+    _tracks.push_back(track);
+  }
+
+  Parallel::verify(_tracks.size());
+
+}
+
+#endif
+
+
+
+void Particle_Source_Track::update_source()
+{
+  START_LOG("update_source()", "Particle_Source_Track");
+
+  MESSAGE<< "Process carrier generation from particle track";
   RECORD();
 
   const double pi = 3.1415926536;
@@ -480,10 +706,10 @@ void Particle_Source_Track::update_system()
     */
 
     double track_energy = 0.0;
-    std::map<FVM_Node *, double> track_energy_density;
+    std::map<const FVM_Node *, double> track_energy_density;
 
     const Point track_dir = (track.end - track.start).unit(); // track direction
-    const double ed = track.energy/(track.end - track.start).size(); // linear energy density
+    const double dEdx = track.energy/(track.end - track.start).size(); // linear energy density
     const double lateral_char = track.lateral_char;
     // find the nodes that near the track
     for(unsigned int r=0; r<_system.n_regions(); r++)
@@ -501,14 +727,14 @@ void Particle_Source_Track::update_system()
       for(unsigned int n=0; n<nn.size(); ++n)
       {
         Point loc = *nn[n];
-        FVM_Node * fvm_node = region->region_fvm_node(nn[n]); // may be NULL, if not on local
+        const FVM_Node * fvm_node = region->region_fvm_node(nn[n]); // may be NULL, if not on local
         if(!fvm_node || !fvm_node->on_processor()) continue;
 
         Point loc_pp = track.start + (loc-track.start)*track_dir*track_dir;
         Real r = (loc-loc_pp).size();
         double e_r = exp(-r*r/(lateral_char*lateral_char));
         double e_z = Erf((loc_pp-track.start)*track_dir/lateral_char) - Erf((loc_pp-track.end)*track_dir/lateral_char);
-        double energy_density = ed/(2*pi*lateral_char*lateral_char)*e_r*e_z;
+        double energy_density = dEdx/(2*pi*lateral_char*lateral_char)*e_r*e_z;
         track_energy += energy_density*fvm_node->volume();
         track_energy_density[fvm_node] += energy_density;
       }
@@ -519,22 +745,22 @@ void Particle_Source_Track::update_system()
     if(track_energy > 0.0)
     {
       double alpha = track.energy/track_energy; //used for keep energy conservation track.energy;
-      std::map<FVM_Node *, double>::const_iterator it = track_energy_density.begin();
+      std::map<const FVM_Node *, double>::const_iterator it = track_energy_density.begin();
       for(; it != track_energy_density.end(); ++it)
       {
-        FVM_Node * fvm_node = it->first;
+        const FVM_Node * fvm_node = it->first;
         if(!fvm_node) continue;
 
         double energy_density = it->second;
 
-        SimulationRegion * region = _system.region(fvm_node->subdomain_id());
-        //if( region->type() != SemiconductorRegion) continue;
+        const SimulationRegion * region = _system.region(fvm_node->subdomain_id());
+        // if( region->type() != SemiconductorRegion) continue;
+        double _quan_eff = quan_eff(region);
 
         if(fvm_node && fvm_node->on_local())
         {
-          FVM_NodeData * node_data = fvm_node->node_data();
-          node_data->PatG() += alpha*energy_density/_quan_eff/(_t_char/2.0*sqrt(pi)*(1+Erf((_t_max-_t0)/_t_char)));
-          node_data->PatE() += alpha*energy_density;
+          _fvm_node_particle_deposit[fvm_node] += alpha*energy_density/_quan_eff/(_t_char/2.0*sqrt(pi)*(1+Erf((_t_max-_t0)/_t_char)));
+          //node_data->PatE() += alpha*energy_density;
           total_energy += alpha*energy_density*fvm_node->volume();
           region_energy[ fvm_node->subdomain_id() ] += alpha*energy_density*fvm_node->volume();
         }
@@ -543,7 +769,7 @@ void Particle_Source_Track::update_system()
     else
     {
       // find the nearest node of the track
-      FVM_Node * neraset_node=0;
+      const FVM_Node * neraset_node=0;
       double distance=std::numeric_limits<double>::infinity();
       for(unsigned int r=0; r<_system.n_regions(); r++)
       {
@@ -552,7 +778,7 @@ void Particle_Source_Track::update_system()
         const Node * n = nn_locator->nearest_node(0.5*(track.start+track.end), r, dist);
         if(n == NULL) continue;
 
-        FVM_Node * fvm_node = region->region_fvm_node(n); // may be NULL, if not on local
+        const FVM_Node * fvm_node = region->region_fvm_node(n); // may be NULL, if not on local
         if(!fvm_node || !fvm_node->on_processor()) continue;
 
         if( dist < distance)
@@ -567,10 +793,12 @@ void Particle_Source_Track::update_system()
 
       if( min_distance == distance && neraset_node)
       {
+        const SimulationRegion * region = _system.region(neraset_node->subdomain_id());
+        double _quan_eff = quan_eff(region);
+
         double energy_density = track.energy/neraset_node->volume();
-        FVM_NodeData * node_data = neraset_node->node_data();
-        node_data->PatG() += energy_density/_quan_eff/(_t_char/2.0*sqrt(pi)*(1+Erf((_t_max-_t0)/_t_char)));
-        node_data->PatE() += energy_density;
+        _fvm_node_particle_deposit[neraset_node] += energy_density/_quan_eff/(_t_char/2.0*sqrt(pi)*(1+Erf((_t_max-_t0)/_t_char)));
+        //node_data->PatE() += energy_density;
         total_energy += track.energy;
         region_energy[neraset_node->subdomain_id()] += track.energy;
       }
@@ -581,14 +809,14 @@ void Particle_Source_Track::update_system()
   MESSAGE<< "ok" <<std::endl;
   RECORD();
 
-  STOP_LOG("update_system()", "Particle_Source_Track");
+  STOP_LOG("update_source()", "Particle_Source_Track");
 
 }
 
-#endif
+
 
 #if 0
-void Particle_Source_Track::update_system()
+void Particle_Source_Track::update_source()
 {
   const double pi = 3.1415926536;
   genius_assert(_system.mesh().mesh_dimension() == 3);

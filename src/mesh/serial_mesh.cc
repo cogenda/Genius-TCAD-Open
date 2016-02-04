@@ -312,9 +312,8 @@ void SerialMesh::delete_node(Node* n)
 
 
 
-void SerialMesh::reorder_elems()
+bool SerialMesh::reorder_elems(std::string &err)
 {
-  START_LOG("reorder_elems()", "Mesh");
 
   // do it only on serial mesh
   assert(_is_serial);
@@ -330,7 +329,7 @@ void SerialMesh::reorder_elems()
     unsigned int new_index = 0;
     // a queue for Breadth-First Search
     std::queue<const Elem *> Q;
-    std::vector<unsigned int> new_order(n_elem(), invalid_uint);
+    std::vector<unsigned int> new_order(_elements.size(), invalid_uint);
 
     // do Breadth-First Search
     // begin at this node.
@@ -361,8 +360,22 @@ void SerialMesh::reorder_elems()
     }
 
     // ok, assign ordered index to each elem
+    std::set<unsigned int> disconnect_regions;
     for(unsigned int n=0; n<_elements.size(); ++n)
+    {
+      unsigned int new_id = new_order[_elements[n]->id()];
+      if(new_id == invalid_uint)
+        disconnect_regions.insert(_elements[n]->subdomain_id());
       _elements[n]->set_id () = new_order[_elements[n]->id()];
+    }
+
+    if(!disconnect_regions.empty())
+    {
+      std::set<unsigned int>::const_iterator it = disconnect_regions.begin();
+      for( ; it != disconnect_regions.end(); ++it)
+        err += "Error: disconnect elem in region " + subdomain_label_by_id(*it) + '\n';
+      return false;
+    }
 
     // sort the elems by new ID
     DofObject::Less less;
@@ -399,14 +412,13 @@ void SerialMesh::reorder_elems()
     std::sort( _nodes.begin(), _nodes.end(), less );
   }
 
-  STOP_LOG("reorder_elems()", "Mesh");
+  return true;
 }
 
 
 
-void SerialMesh::reorder_nodes()
+bool SerialMesh::reorder_nodes(std::string &err)
 {
-  START_LOG("reorder_nodes()", "Mesh");
 
   // do it only on serial mesh
   assert(_is_serial);
@@ -472,8 +484,29 @@ void SerialMesh::reorder_nodes()
   DofObject::Less less;
   std::sort( _nodes.begin(), _nodes.end(), less );
 
-  STOP_LOG("reorder_nodes()", "Mesh");
+  return true;
+
 }
+
+
+void SerialMesh::generate_boundary_info(short int id)
+{
+  for(unsigned int n=0; n<_elements.size(); ++n)
+  {
+    const Elem * elem = _elements[n];
+
+    for (unsigned int s=0; s<elem->n_sides(); s++)
+    {
+      if( elem->neighbor(s) == 0 || elem->neighbor(s)->subdomain_id() != elem->subdomain_id() )
+      {
+        if( !boundary_info->is_boundary_elem_side(elem, s) )
+          boundary_info->add_side(elem, s, id);
+      }
+    }
+  }
+}
+
+
 
 
 
@@ -511,6 +544,35 @@ void SerialMesh::clear ()
     _nodes.clear();
   }
 
+}
+
+
+
+
+AutoPtr<Node> SerialMesh::node_clone (const unsigned int i) const
+{
+  const Node * node = _nodes[i];
+
+  std::vector<Real> pts; // node location
+  unsigned int node_id;
+  unsigned int node_processor_id=invalid_uint; // elem on which processor
+
+  if( node && node->processor_id()==Genius::processor_id())
+  {
+    const Point & p = *node;
+    pts.push_back( p[0] );
+    pts.push_back( p[1] );
+    pts.push_back( p[2] );
+    node_id = node->id();
+    node_processor_id = node->processor_id();
+  }
+
+  Parallel::min(node_processor_id); // sync the processor_id
+  Parallel::broadcast(pts,  node_processor_id);
+  Parallel::broadcast(node_id,  node_processor_id);
+
+  AutoPtr<Node> clone(new Node(pts[0], pts[1], pts[2], node_id));
+  return clone;
 }
 
 

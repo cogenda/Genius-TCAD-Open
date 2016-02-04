@@ -35,12 +35,18 @@ public:
 
   PetscScalar Eg            (const PetscScalar &Tl) const
   { return 0.0;  }
+  
+  PetscScalar EffecElecMass (const PetscScalar &Tl) const { return me; }
+  
+  PetscScalar EffecHoleMass  (const PetscScalar &Tl) const { return me; }
+  
+  PetscScalar ARichardson() const { return 0.0; }
 
-  PetscScalar HCI_Barrier_n(const PetscScalar &affinity_semi, const PetscScalar &,
+  PetscScalar HCI_Barrier_n(const PetscScalar &affinity_semi, const PetscScalar &, const PetscScalar &affinity_ins,
                             const PetscScalar &, const PetscScalar &) const
   { return affinity_semi - 0.0; }
 
-  PetscScalar HCI_Barrier_p(const PetscScalar &affinity_semi, const PetscScalar & Eg_semi,
+  PetscScalar HCI_Barrier_p(const PetscScalar &affinity_semi, const PetscScalar & Eg_semi, const PetscScalar &affinity_ins,
                             const PetscScalar &, const PetscScalar &) const
   { return 0.0 - affinity_semi -  Eg_semi; }
 

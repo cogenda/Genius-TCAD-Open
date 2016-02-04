@@ -37,6 +37,7 @@
 #include "external_circuit.h"
 #include "petscvec.h"
 #include "petscmat.h"
+#include "sparse_matrix.h"
 #include "solver_specify.h"
 #include "enum_region.h"
 #include "enum_bc.h"
@@ -435,13 +436,13 @@ private:
 public:
 
   /**
-   * @return the temperature of external entironment.
+   * @return the temperature of external environment.
    */
   virtual PetscScalar T_external() const
     {return _T_Ext;}
 
   /**
-   * @return writable reference to temperature of external entironment
+   * @return writable reference to temperature of external environment
    * however, we should never reach here
    */
   virtual PetscScalar & T_external()
@@ -553,7 +554,7 @@ private:
 
 
   /**
-   * temperature of external entironment
+   * temperature of external environment
    */
   PetscScalar   _T_Ext;
 
@@ -812,6 +813,7 @@ public:
 
 public:
 
+#ifdef TCAD_SOLVERS
   //////////////////////////////////////////////////////////////////////////////////////////////
   //----------------Function and Jacobian evaluate for Poisson's Equation---------------------//
   //////////////////////////////////////////////////////////////////////////////////////////////
@@ -860,16 +862,6 @@ public:
 
 
   /**
-   * @brief virtual function for reserve none zero pattern in petsc matrix.
-   *
-   * @param Mat*             petsc global jacobian matrix
-   * @param InsertMode&      flag for last operator is ADD_VALUES
-   *
-   * @note each derived boundary condition can override it
-   */
-  virtual void Poissin_Jacobian_Reserve(Mat *, InsertMode &) {}
-
-  /**
    * @brief virtual function for preprocess Jacobian Matrix of poisson's equation.
    *
    * @param PetscScalar*     local unknown vector
@@ -880,7 +872,7 @@ public:
    *
    * @note each derived boundary condition can override it
    */
-  virtual void Poissin_Jacobian_Preprocess(PetscScalar * /*x*/, Mat */*jac*/,
+  virtual void Poissin_Jacobian_Preprocess(PetscScalar * /*x*/, SparseMatrix<PetscScalar> */*jac*/,
                                            std::vector<PetscInt> &/*src*/,
                                            std::vector<PetscInt> &/*dst*/,
                                            std::vector<PetscInt> &/*clear*/)
@@ -895,7 +887,7 @@ public:
    *
    * @note each derived boundary condition should override it
    */
-  virtual void Poissin_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_value_flag)=0;
+  virtual void Poissin_Jacobian(PetscScalar * x, SparseMatrix<PetscScalar> *jac, InsertMode &add_value_flag)=0;
 
   /**
    * @brief virtual function for update solution value of poisson's equation.
@@ -966,17 +958,6 @@ public:
    */
   virtual void DDM1_Function(PetscScalar * x, Vec f, InsertMode &add_value_flag)=0;
 
-
-  /**
-   * @brief virtual function for reserve none zero pattern in petsc matrix.
-   *
-   * @param Mat*              petsc global jacobian matrix
-   * @param InsertMode&       flag for last operator is ADD_VALUES
-   *
-   * @note each derived boundary condition can override it
-   */
-  virtual void DDM1_Jacobian_Reserve(Mat *, InsertMode &) {}
-
   /**
    * @brief virtual function for preprocess Jacobian Matrix of level 1 DDM equation.
    *
@@ -988,7 +969,7 @@ public:
    *
    * @note each derived boundary condition can override it
    */
-  virtual void DDM1_Jacobian_Preprocess(PetscScalar * /*x*/, Mat */*jac*/,
+  virtual void DDM1_Jacobian_Preprocess(PetscScalar * /*x*/, SparseMatrix<PetscScalar> */*jac*/,
                                         std::vector<PetscInt> &/*src*/,
                                         std::vector<PetscInt> &/*dst*/,
                                         std::vector<PetscInt> &/*clear*/)
@@ -1003,7 +984,7 @@ public:
    *
    * @note each derived boundary condition should override it
    */
-  virtual void DDM1_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_value_flag)=0;
+  virtual void DDM1_Jacobian(PetscScalar * x, SparseMatrix<PetscScalar> *jac, InsertMode &add_value_flag)=0;
 
   /**
    * @brief virtual function for evaluating trace parameter of level 1 DDM equation.
@@ -1016,7 +997,7 @@ public:
    *
    * @note each derived boundary condition should override it
    */
-  virtual void DDM1_Electrode_Trace(Vec, Mat *, Vec , Vec) {}
+  virtual void DDM1_Electrode_Trace(Vec, SparseMatrix<PetscScalar> *, Vec , Vec) {}
 
   /**
    * @brief virtual function for update solution value of level 1 DDM equation.
@@ -1042,125 +1023,6 @@ public:
    * @note each derived boundary condition can override it
    */
   virtual void DDM1_Post_Process() {}
-
-
-
-
-  //////////////////////////////////////////////////////////////////////////////////
-  //--------------Function and Jacobian evaluate for new L1 DDM-------------------//
-  //////////////////////////////////////////////////////////////////////////////////
-
-
-  /**
-   * @brief virtual function for fill vector of level 1 DDM equation.
-   *
-   * filling solution data into petsc vector of level 1 DDM equation.
-   * can be used as initial data of nonlinear equation or diverged recovery.
-   *
-   * @param Vec              global solution vector
-   * @param Vec              the left scaling vector
-   * @note each derived boundary condition can override it
-   */
-  virtual void DDM1R_Fill_Value(Vec x, Vec L )
-  { this->DDM1_Fill_Value(x, L); }
-
-  /**
-   * @brief virtual function for preprocess for level 1 DDM equation.
-   *
-   * @param f            petsc global function vector
-   * @param src          source row
-   * @param dst          destination row
-   * @param clear        row for clear
-   *
-   * @note each derived boundary condition can override it
-   */
-  virtual void DDM1R_Function_Preprocess(PetscScalar *x, Vec f, std::vector<PetscInt> &src,  std::vector<PetscInt> &dst, std::vector<PetscInt> &clear)
-  { this->DDM1_Function_Preprocess(x, f, src, dst, clear); }
-
-
-  /**
-   * @brief virtual function for evaluating level 1 DDM equation.
-   *
-   * @param PetscScalar*    local unknown vector
-   * @param Vec             petsc global function vector
-   * @param InsertMode&     flag for last operator is ADD_VALUES
-   *
-   * @note each derived boundary condition should override it
-   */
-  virtual void DDM1R_Function(PetscScalar *x , Vec f, InsertMode &add_value_flag)
-  { this->DDM1_Function(x , f, add_value_flag ); }
-
-
-  /**
-   * @brief virtual function for reserve none zero pattern in petsc matrix.
-   *
-   * @param Mat*              petsc global jacobian matrix
-   * @param InsertMode&       flag for last operator is ADD_VALUES
-   *
-   * @note each derived boundary condition can override it
-   */
-  virtual void DDM1R_Jacobian_Reserve(Mat * jac, InsertMode &add_value_flag)
-  { this->DDM1_Jacobian_Reserve(jac, add_value_flag ); }
-
-
-  /**
-   * @brief virtual function for preprocess Jacobian Matrix of level 1 DDM equation.
-   *
-   * @param jac          petsc global jacobian matrix
-   * @param src          source row
-   * @param dst          destination row
-   * @param clear        row for clear
-   *
-   * @note each derived boundary condition can override it
-   */
-  virtual void DDM1R_Jacobian_Preprocess(PetscScalar *x, Mat *jac, std::vector<PetscInt> &src,  std::vector<PetscInt> &dst, std::vector<PetscInt> &clear)
-  { this->DDM1_Jacobian_Preprocess(x, jac, src, dst, clear); }
-
-  /**
-   * @brief virtual function for evaluating Jacobian of level 1 DDM equation.
-   *
-   * @param PetscScalar*     local unknown vector
-   * @param Mat*             petsc global jacobian matrix
-   * @param InsertMode&      flag for last operator is ADD_VALUES
-   *
-   * @note each derived boundary condition should override it
-   */
-  virtual void DDM1R_Jacobian(PetscScalar * x, Mat * jac, InsertMode &add_value_flag)
-  { this->DDM1_Jacobian(x, jac, add_value_flag); }
-
-  /**
-   * @brief virtual function for evaluating trace parameter of level 1 DDM equation.
-   *
-   * @param Vec              local unknown vector
-   * @param Mat*             petsc global jacobian matrix
-   * @param Vec              vector for dI/dx
-   * @param Vec              vector for dF/dV
-   * @param InsertMode&      flag for last operator is ADD_VALUES
-   *
-   * @note each derived boundary condition should override it
-   */
-  virtual void DDM1R_Electrode_Trace(Vec x, Mat *jac, Vec pdI_pdx, Vec pdF_pdV)
-  { this->DDM1R_Electrode_Trace(x, jac, pdI_pdx, pdF_pdV); }
-
-  /**
-   * @brief virtual function for update solution value of level 1 DDM equation.
-   *
-   * @param PetscScalar*     global solution vector
-   *
-   * @note each derived boundary condition can override it
-   */
-  virtual void DDM1R_Update_Solution(PetscScalar *lxx)
-  { this->DDM1_Update_Solution(lxx); }
-
-
-  /**
-   * @brief virtual function for post process of level 1 DDM equation.
-   *
-   * @param PetscScalar*     global solution vector
-   *
-   * @note each derived boundary condition can override it
-   */
-  virtual void DDM1R_Post_Process() {}
 
 
 
@@ -1207,18 +1069,6 @@ public:
   { this->DDM1_Function(x , f, add_value_flag ); }
 
   /**
-   * @brief virtual function for reserve none zero pattern in petsc matrix.
-   *
-   * @param Mat *              petsc global jacobian matrix
-   * @param InsertMode&        flag for last operator is ADD_VALUES
-   *
-   * @note only electrode boundary need to override it
-   */
-  virtual void Mix_DDM1_Jacobian_Reserve(Mat * jac, InsertMode &add_value_flag)
-  { this->DDM1_Jacobian_Reserve(jac, add_value_flag ); }
-
-
-  /**
    * @brief virtual function for preprocess Jacobian Matrix for Mixed type level 1 DDM equation.
    *
    * @param jac          petsc global jacobian matrix
@@ -1228,7 +1078,7 @@ public:
    *
    * @note each derived boundary condition can override it
    */
-  virtual void Mix_DDM1_Jacobian_Preprocess(PetscScalar *x, Mat *jac, std::vector<PetscInt> &src,  std::vector<PetscInt> &dst, std::vector<PetscInt> &clear)
+  virtual void Mix_DDM1_Jacobian_Preprocess(PetscScalar *x, SparseMatrix<PetscScalar> *jac, std::vector<PetscInt> &src,  std::vector<PetscInt> &dst, std::vector<PetscInt> &clear)
   { this->DDM1_Jacobian_Preprocess(x, jac, src, dst, clear); }
 
   /**
@@ -1240,9 +1090,19 @@ public:
    *
    * @note only electrode boundary need to override it
    */
-  virtual void Mix_DDM1_Jacobian(PetscScalar * x, Mat * jac, InsertMode &add_value_flag)
+  virtual void Mix_DDM1_Jacobian(PetscScalar * x, SparseMatrix<PetscScalar> * jac, InsertMode &add_value_flag)
   { this->DDM1_Jacobian(x, jac, add_value_flag); }
 
+
+
+  /**
+   * @brief virtual function for update solution value of Mixed type of level 1 DDM equation.
+   *
+   * @param PetscScalar*     global solution vector
+   *
+   * @note each derived boundary condition can override it
+   */
+  virtual void Mix_DDM1_Update_Solution(PetscScalar *)  {  }
 
   //////////////////////////////////////////////////////////////////////////////////
   //----------Function and Jacobian evaluate for Advanced Mixed DDML1-------------//
@@ -1287,18 +1147,6 @@ public:
   { this->DDM1_Function(x , f, add_value_flag ); }
 
   /**
-   * @brief virtual function for reserve none zero pattern in petsc matrix.
-   *
-   * @param Mat *              petsc global jacobian matrix
-   * @param InsertMode&        flag for last operator is ADD_VALUES
-   *
-   * @note only electrode boundary need to override it
-   */
-  virtual void MixA_DDM1_Jacobian_Reserve(Mat * jac, InsertMode &add_value_flag)
-  { this->DDM1_Jacobian_Reserve(jac, add_value_flag ); }
-
-
-  /**
    * @brief virtual function for preprocess Jacobian Matrix for Advanced Mixed type level 1 DDM equation.
    *
    * @param jac          petsc global jacobian matrix
@@ -1308,7 +1156,7 @@ public:
    *
    * @note each derived boundary condition can override it
    */
-  virtual void MixA_DDM1_Jacobian_Preprocess(PetscScalar *x, Mat *jac, std::vector<PetscInt> &src,  std::vector<PetscInt> &dst, std::vector<PetscInt> &clear)
+  virtual void MixA_DDM1_Jacobian_Preprocess(PetscScalar *x, SparseMatrix<PetscScalar> *jac, std::vector<PetscInt> &src,  std::vector<PetscInt> &dst, std::vector<PetscInt> &clear)
   { this->DDM1_Jacobian_Preprocess(x, jac, src, dst, clear); }
 
   /**
@@ -1320,11 +1168,19 @@ public:
    *
    * @note only electrode boundary need to override it
    */
-  virtual void MixA_DDM1_Jacobian(PetscScalar * x, Mat * jac, InsertMode &add_value_flag)
+  virtual void MixA_DDM1_Jacobian(PetscScalar * x, SparseMatrix<PetscScalar> * jac, InsertMode &add_value_flag)
   { this->DDM1_Jacobian(x, jac, add_value_flag); }
 
 
 
+  /**
+   * @brief virtual function for update solution value of Advanced Mixed type of level 1 DDM equation.
+   *
+   * @param PetscScalar*     global solution vector
+   *
+   * @note each derived boundary condition can override it
+   */
+  virtual void MixA_DDM1_Update_Solution(PetscScalar *)  {  }
 
   //////////////////////////////////////////////////////////////////////////////////
   //------------Function and Jacobian evaluate for Density Gradient---------------//
@@ -1372,18 +1228,6 @@ public:
 
 
   /**
-   * @brief virtual function for reserve none zero pattern in petsc matrix.
-   *
-   * @param Mat*              petsc global jacobian matrix
-   * @param InsertMode&       flag for last operator is ADD_VALUES
-   *
-   * @note each derived boundary condition can override it
-   */
-  virtual void DG_Jacobian_Reserve(Mat * jac, InsertMode &add_value_flag)
-  { this->DDM1_Jacobian_Reserve(jac, add_value_flag ); }
-
-
-  /**
    * @brief virtual function for preprocess Jacobian Matrix of Density Gradient equation.
    *
    * @param jac          petsc global jacobian matrix
@@ -1393,7 +1237,7 @@ public:
    *
    * @note each derived boundary condition can override it
    */
-  virtual void DG_Jacobian_Preprocess(PetscScalar *x, Mat *jac, std::vector<PetscInt> &src,  std::vector<PetscInt> &dst, std::vector<PetscInt> &clear)
+  virtual void DG_Jacobian_Preprocess(PetscScalar *x, SparseMatrix<PetscScalar> *jac, std::vector<PetscInt> &src,  std::vector<PetscInt> &dst, std::vector<PetscInt> &clear)
   { this->DDM1_Jacobian_Preprocess(x, jac, src, dst, clear); }
 
   /**
@@ -1405,7 +1249,7 @@ public:
    *
    * @note each derived boundary condition should override it
    */
-  virtual void DG_Jacobian(PetscScalar * x, Mat * jac, InsertMode &add_value_flag)
+  virtual void DG_Jacobian(PetscScalar * x, SparseMatrix<PetscScalar> * jac, InsertMode &add_value_flag)
   { this->DDM1_Jacobian(x, jac, add_value_flag); }
 
 
@@ -1480,16 +1324,6 @@ public:
   virtual void DDM2_Function(PetscScalar * x, Vec f, InsertMode &add_value_flag)=0;
 
   /**
-   * @brief virtual function for reserve none zero pattern in petsc matrix.
-   *
-   * @param Mat *              petsc global jacobian matrix
-   * @param InsertMode&        flag for last operator is ADD_VALUES
-   *
-   * @note each derived boundary condition can override it
-     */
-  virtual void DDM2_Jacobian_Reserve(Mat *, InsertMode &) {}
-
-  /**
    * @brief virtual function for preprocess Jacobian Matrix of level 2 DDM equation.
    *
    * @param jac          petsc global jacobian matrix
@@ -1499,7 +1333,7 @@ public:
    *
    * @note each derived boundary condition can override it
      */
-  virtual void DDM2_Jacobian_Preprocess(PetscScalar *,Mat */*jac*/, std::vector<PetscInt> &/*src*/,  std::vector<PetscInt> &/*dst*/, std::vector<PetscInt> &/*clear*/) {}
+  virtual void DDM2_Jacobian_Preprocess(PetscScalar *,SparseMatrix<PetscScalar> */*jac*/, std::vector<PetscInt> &/*src*/,  std::vector<PetscInt> &/*dst*/, std::vector<PetscInt> &/*clear*/) {}
 
   /**
    * @brief virtual function for evaluating Jacobian of level 2 DDM equation.
@@ -1510,7 +1344,7 @@ public:
    *
    * @note each derived boundary condition should override it
    */
-  virtual void DDM2_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_value_flag)=0;
+  virtual void DDM2_Jacobian(PetscScalar * x, SparseMatrix<PetscScalar> *jac, InsertMode &add_value_flag)=0;
 
   /**
    * @brief virtual function for evaluating trace parameter of level 2 DDM equation.
@@ -1523,7 +1357,7 @@ public:
    *
    * @note each derived boundary condition should override it
    */
-  virtual void DDM2_Electrode_Trace(Vec, Mat *, Vec , Vec) {}
+  virtual void DDM2_Electrode_Trace(Vec, SparseMatrix<PetscScalar> *, Vec , Vec) {}
 
   /**
    * @brief virtual function for update solution value of level 2 DDM equation.
@@ -1594,17 +1428,6 @@ public:
   { this->DDM2_Function(x , f, add_value_flag ); }
 
   /**
-   * @brief virtual function for reserve none zero pattern in petsc matrix.
-   *
-   * @param Mat *              petsc global jacobian matrix
-   * @param InsertMode&        flag for last operator is ADD_VALUES
-   *
-   * @note only electrode boundary need to override it
-   */
-  virtual void MixA_DDM2_Jacobian_Reserve(Mat * jac, InsertMode &add_value_flag)
-  { this->DDM2_Jacobian_Reserve(jac, add_value_flag ); }
-
-  /**
    * @brief virtual function for preprocess Jacobian Matrix for Advanced Mixed type level 2 DDM equation.
    *
    * @param jac          petsc global jacobian matrix
@@ -1614,7 +1437,7 @@ public:
    *
    * @note each derived boundary condition can override it
    */
-  virtual void MixA_DDM2_Jacobian_Preprocess(PetscScalar *x, Mat *jac, std::vector<PetscInt> &src,  std::vector<PetscInt> &dst, std::vector<PetscInt> &clear)
+  virtual void MixA_DDM2_Jacobian_Preprocess(PetscScalar *x, SparseMatrix<PetscScalar> *jac, std::vector<PetscInt> &src,  std::vector<PetscInt> &dst, std::vector<PetscInt> &clear)
   { this->DDM2_Jacobian_Preprocess(x,jac, src, dst, clear); }
 
   /**
@@ -1626,9 +1449,18 @@ public:
    *
    * @note only electrode boundary need to override it
    */
-  virtual void MixA_DDM2_Jacobian(PetscScalar * x, Mat * jac, InsertMode &add_value_flag)
+  virtual void MixA_DDM2_Jacobian(PetscScalar * x, SparseMatrix<PetscScalar> * jac, InsertMode &add_value_flag)
   { this->DDM2_Jacobian(x, jac, add_value_flag); }
 
+
+  /**
+   * @brief virtual function for update solution value of Advanced Mixed type of level 2 DDM equation.
+   *
+   * @param PetscScalar*     global solution vector
+   *
+   * @note each derived boundary condition can override it
+   */
+  virtual void MixA_DDM2_Update_Solution(PetscScalar *)  {  }
 
   //////////////////////////////////////////////////////////////////////////////////
   //----------------Function and Jacobian evaluate for Hybrid EBM-----------------//
@@ -1671,16 +1503,6 @@ public:
   virtual void EBM3_Function(PetscScalar *, Vec , InsertMode &) {}
 
   /**
-   * @brief virtual function for reserve none zero pattern in petsc matrix.
-   *
-   * @param Mat *              petsc global jacobian matrix
-   * @param InsertMode&        flag for last operator is ADD_VALUES
-   *
-   * @note each derived boundary condition can override it
-   */
-  virtual void EBM3_Jacobian_Reserve(Mat *, InsertMode &) {}
-
-  /**
    * @brief virtual function for preprocess Jacobian Matrix of level 3 EBM equation.
    *
    * @param jac          petsc global jacobian matrix
@@ -1690,7 +1512,7 @@ public:
    *
    * @note each derived boundary condition can override it
    */
-  virtual void EBM3_Jacobian_Preprocess(PetscScalar * ,Mat */*jac*/, std::vector<PetscInt> &/*src*/,  std::vector<PetscInt> &/*dst*/, std::vector<PetscInt> &/*clear*/) {}
+  virtual void EBM3_Jacobian_Preprocess(PetscScalar * ,SparseMatrix<PetscScalar> */*jac*/, std::vector<PetscInt> &/*src*/,  std::vector<PetscInt> &/*dst*/, std::vector<PetscInt> &/*clear*/) {}
 
   /**
    * @brief virtual function for evaluating Jacobian of level 3 EBM equation.
@@ -1701,7 +1523,7 @@ public:
    *
    * @note each derived boundary condition should override it
    */
-  virtual void EBM3_Jacobian(PetscScalar * , Mat *, InsertMode &) {}
+  virtual void EBM3_Jacobian(PetscScalar * , SparseMatrix<PetscScalar> *, InsertMode &) {}
 
   /**
    * @brief virtual function for evaluating trace parameter of level 3 EBM equation.
@@ -1714,7 +1536,7 @@ public:
    *
    * @note each derived boundary condition should override it
    */
-  virtual void EBM3_Electrode_Trace(Vec, Mat *, Vec , Vec) {}
+  virtual void EBM3_Electrode_Trace(Vec, SparseMatrix<PetscScalar> *, Vec , Vec) {}
 
   /**
    * @brief virtual function for update solution value of level 3 EBM equation.
@@ -1784,17 +1606,6 @@ public:
   virtual void MixA_EBM3_Function_Preprocess(PetscScalar *x, Vec f, std::vector<PetscInt> &src,  std::vector<PetscInt> &dst, std::vector<PetscInt> &clear)
   { this->EBM3_Function_Preprocess(x, f, src, dst, clear); }
 
-  /**
-   * @brief virtual function for reserve none zero pattern in petsc matrix.
-   *
-   * @param Mat *              petsc global jacobian matrix
-   * @param InsertMode&        flag for last operator is ADD_VALUES
-   *
-   * @note only electrode boundary need to override it
-   */
-  virtual void MixA_EBM3_Jacobian_Reserve(Mat * jac, InsertMode &add_value_flag)
-  { this->EBM3_Jacobian_Reserve(jac, add_value_flag ); }
-
 
   /**
    * @brief virtual function for preprocess Jacobian Matrix for Advanced Mixed type level 3 EBM equation.
@@ -1806,7 +1617,7 @@ public:
    *
    * @note each derived boundary condition can override it
    */
-  virtual void MixA_EBM3_Jacobian_Preprocess(PetscScalar *x, Mat *jac, std::vector<PetscInt> &src,  std::vector<PetscInt> &dst, std::vector<PetscInt> &clear)
+  virtual void MixA_EBM3_Jacobian_Preprocess(PetscScalar *x, SparseMatrix<PetscScalar> *jac, std::vector<PetscInt> &src,  std::vector<PetscInt> &dst, std::vector<PetscInt> &clear)
   { this->EBM3_Jacobian_Preprocess(x, jac, src, dst, clear); }
 
   /**
@@ -1818,10 +1629,19 @@ public:
    *
    * @note only electrode boundary need to override it
    */
-  virtual void MixA_EBM3_Jacobian(PetscScalar * x, Mat * jac, InsertMode &add_value_flag)
+  virtual void MixA_EBM3_Jacobian(PetscScalar * x, SparseMatrix<PetscScalar> * jac, InsertMode &add_value_flag)
   { this->EBM3_Jacobian(x, jac, add_value_flag); }
 
 
+
+  /**
+   * @brief virtual function for update solution value of Advanced Mixed type of level 3 EBM equation.
+   *
+   * @param PetscScalar*     global solution vector
+   *
+   * @note each derived boundary condition can override it
+   */
+  virtual void MixA_EBM3_Update_Solution(PetscScalar *)  {  }
 
   //////////////////////////////////////////////////////////////////////////////////
   //--------------Matrix and RHS Vector evaluate for DDM AC Solver----------------//
@@ -1833,12 +1653,12 @@ public:
    * @param Mat              petsc AC matrix
    * @param Vec              rhs vector
    * @param Mat              petsc global jacobian matrix
-   * @param double           AC frequency
+   * @param omega            AC frequency
    * @param InsertMode&      flag for last operator is ADD_VALUES
    *
    * @note only electrode boundary need to override it
    */
-  virtual void DDMAC_Fill_Matrix_Vector( Mat,  Vec, const Mat, const double, InsertMode &  ) {}
+  virtual void DDMAC_Fill_Matrix_Vector( Mat,  Vec, const Mat, const PetscScalar omega, InsertMode &  ) {}
 
   /**
    * @brief virtual function for update solution value for ddm ac solver
@@ -1848,7 +1668,7 @@ public:
    *
    * @note each derived boundary condition can override it
    */
-  virtual void DDMAC_Update_Solution(const PetscScalar * , const Mat, const double) {}
+  virtual void DDMAC_Update_Solution(const PetscScalar * , const Mat, const PetscScalar omega) {}
 
 
 #ifdef COGENDA_COMMERCIAL_PRODUCT
@@ -2081,8 +1901,11 @@ public:
    * @note each derived region should override it
    */
   virtual void LinearPoissin_RHS(Vec b, InsertMode &) {}
+#endif
 
 
+
+#ifdef IDC_SOLVERS
 #ifdef COGENDA_COMMERCIAL_PRODUCT
   //////////////////////////////////////////////////////////////////////////////////
   //--------------Function and Jacobian evaluate for RIC Solver-------------------//
@@ -2132,16 +1955,6 @@ public:
 
 
   /**
-   * @brief virtual function for reserve none zero pattern in petsc matrix.
-   *
-   * @param Mat*              petsc global jacobian matrix
-   * @param InsertMode&       flag for last operator is ADD_VALUES
-   *
-   * @note each derived boundary condition can override it
-   */
-  virtual void RIC_Jacobian_Reserve(Mat *, InsertMode &) {}
-
-  /**
    * @brief virtual function for preprocess Jacobian Matrix of RIC equation.
    *
    * @param PetscScalar*     local unknown vector
@@ -2152,7 +1965,7 @@ public:
    *
    * @note each derived boundary condition can override it
    */
-  virtual void RIC_Jacobian_Preprocess(PetscScalar * /*x*/, Mat */*jac*/,
+  virtual void RIC_Jacobian_Preprocess(PetscScalar * /*x*/, SparseMatrix<PetscScalar> */*jac*/,
                                         std::vector<PetscInt> &/*src*/,
                                         std::vector<PetscInt> &/*dst*/,
                                         std::vector<PetscInt> &/*clear*/)
@@ -2161,13 +1974,13 @@ public:
   /**
    * @brief virtual function for evaluating Jacobian of RIC equation.
    *
-   * @param PetscScalar*     local unknown vector
-   * @param Mat*             petsc global jacobian matrix
-   * @param InsertMode&      flag for last operator is ADD_VALUES
+   * @param PetscScalar*                local unknown vector
+   * @param jac                         petsc global jacobian matrix
+   * @param InsertMode&                 flag for last operator is ADD_VALUES
    *
    * @note each derived boundary condition should override it
    */
-  virtual void RIC_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_value_flag) {}
+  virtual void RIC_Jacobian(PetscScalar * x, SparseMatrix<PetscScalar> *jac, InsertMode &add_value_flag) {}
 
   /**
    * @brief virtual function for update solution value of RIC equation.
@@ -2193,6 +2006,282 @@ public:
    * @note each derived boundary condition can override it
    */
   virtual void RIC_Post_Process() {}
+
+
+  //////////////////////////////////////////////////////////////////////////////////
+  //--------------Function and Jacobian evaluate for DICTAT Solver----------------//
+  //////////////////////////////////////////////////////////////////////////////////
+
+
+  /**
+   * @brief virtual function for fill vector of DICTAT equation.
+   *
+   * filling solution data into petsc vector of DICTAT equation.
+   * can be used as initial data of nonlinear equation or diverged recovery.
+   *
+   * @param Vec              global solution vector
+   * @param Vec              the left scaling vector
+   * @note each derived boundary condition can override it
+   */
+  virtual void DICTAT_Fill_Value(Vec , Vec ) {}
+
+  /**
+   * @brief virtual function for preprocess for DICTAT equation.
+   *
+   * @param PetscScalar*     local unknown vector
+   * @param f                petsc global function vector
+   * @param src              source row
+   * @param dst              destination row
+   * @param clear            row for clear
+   *
+   * @note each derived boundary condition can override it
+   */
+  virtual void DICTAT_Function_Preprocess(PetscScalar * /*x*/, Vec /*f*/,
+                                       std::vector<PetscInt> &/*src*/,
+                                       std::vector<PetscInt> &/*dst*/,
+                                       std::vector<PetscInt> &/*clear*/)
+  {}
+
+
+  /**
+   * @brief virtual function for evaluating DICTAT equation.
+   *
+   * @param PetscScalar*    local unknown vector
+   * @param Vec             petsc global function vector
+   * @param InsertMode&     flag for last operator is ADD_VALUES
+   *
+   * @note each derived boundary condition should override it
+   */
+  virtual void DICTAT_Function(PetscScalar * x, Vec f, InsertMode &add_value_flag) {}
+
+
+  /**
+   * @brief virtual function for preprocess Jacobian Matrix of DICTAT equation.
+   *
+   * @param PetscScalar*     local unknown vector
+   * @param jac              petsc global jacobian matrix
+   * @param src              source row
+   * @param dst              destination row
+   * @param clear            row for clear
+   *
+   * @note each derived boundary condition can override it
+   */
+  virtual void DICTAT_Jacobian_Preprocess(PetscScalar * /*x*/, SparseMatrix<PetscScalar> */*jac*/,
+                                       std::vector<PetscInt> &/*src*/,
+                                       std::vector<PetscInt> &/*dst*/,
+                                       std::vector<PetscInt> &/*clear*/)
+  {}
+
+  /**
+   * @brief virtual function for evaluating Jacobian of DICTAT equation.
+   *
+   * @param PetscScalar*     local unknown vector
+   * @param Mat*             petsc global jacobian matrix
+   * @param InsertMode&      flag for last operator is ADD_VALUES
+   *
+   * @note each derived boundary condition should override it
+   */
+  virtual void DICTAT_Jacobian(PetscScalar * x, SparseMatrix<PetscScalar> *jac, InsertMode &add_value_flag) {}
+
+  /**
+   * @brief virtual function for update solution value of DICTAT equation.
+   *
+   * @param PetscScalar*     global solution vector
+   *
+   * @note each derived boundary condition can override it
+   */
+  virtual void DICTAT_Update_Solution(PetscScalar *) {}
+
+
+  /**
+   * @brief virtual function for pre process of DICTAT equation.
+   *
+   * @note each derived boundary condition can override it
+   */
+  virtual void DICTAT_Pre_Process() {}
+
+
+  /**
+   * @brief virtual function for post process of DICTAT equation.
+   *
+   * @note each derived boundary condition can override it
+   */
+  virtual void DICTAT_Post_Process() {}
+
+#endif
+#endif
+
+
+#ifdef COGENDA_COMMERCIAL_PRODUCT
+
+  //////////////////////////////////////////////////////////////////////////////////
+  //-------------- Function and Jacobian evaluate for TID Solver -----------------//
+  //////////////////////////////////////////////////////////////////////////////////
+
+
+  /**
+   * @brief virtual function for fill vector of TID drift equation.
+   *
+   * filling solution data into petsc vector of TID drift equation.
+   * can be used as initial data of nonlinear equation or diverged recovery.
+   *
+   * @param Vec              global solution vector
+   * @param Vec              the left scaling vector
+   * @note each derived boundary condition can override it
+   */
+  virtual void TID_Drift_Fill_Value(Vec , Vec ) {}
+
+  /**
+   * @brief virtual function for preprocess for TID drift equation.
+   *
+   * @param PetscScalar*     local unknown vector
+   * @param f                petsc global function vector
+   * @param src              source row
+   * @param dst              destination row
+   * @param clear            row for clear
+   *
+   * @note each derived boundary condition can override it
+   */
+  virtual void TID_Drift_Function_Preprocess(PetscScalar * /*x*/, Vec /*f*/,
+                                       std::vector<PetscInt> &/*src*/,
+                                       std::vector<PetscInt> &/*dst*/,
+                                       std::vector<PetscInt> &/*clear*/)
+  {}
+
+
+  /**
+   * @brief virtual function for evaluating TID drift equation.
+   *
+   * @param PetscScalar*    local unknown vector
+   * @param Vec             petsc global function vector
+   * @param InsertMode&     flag for last operator is ADD_VALUES
+   *
+   * @note each derived boundary condition should override it
+   */
+  virtual void TID_Drift_Function(PetscScalar * x, Vec f, InsertMode &add_value_flag) {}
+
+  /**
+   * @brief virtual function for preprocess Jacobian Matrix of TID drift equation.
+   *
+   * @param PetscScalar*     local unknown vector
+   * @param jac              petsc global jacobian matrix
+   * @param src              source row
+   * @param dst              destination row
+   * @param clear            row for clear
+   *
+   * @note each derived boundary condition can override it
+   */
+  virtual void TID_Drift_Jacobian_Preprocess(PetscScalar * /*x*/, SparseMatrix<PetscScalar> */*jac*/,
+                                       std::vector<PetscInt> &/*src*/,
+                                       std::vector<PetscInt> &/*dst*/,
+                                       std::vector<PetscInt> &/*clear*/)
+  {}
+
+  /**
+   * @brief virtual function for evaluating Jacobian of TID drift equation.
+   *
+   * @param PetscScalar*     local unknown vector
+   * @param Mat*             petsc global jacobian matrix
+   * @param InsertMode&      flag for last operator is ADD_VALUES
+   *
+   * @note each derived boundary condition should override it
+   */
+  virtual void TID_Drift_Jacobian(PetscScalar * x, SparseMatrix<PetscScalar> *jac, InsertMode &add_value_flag) {}
+
+
+  /**
+   * @brief virtual function for update solution value of TID drift equation.
+   *
+   * @param PetscScalar*     global solution vector
+   *
+   * @note each derived boundary condition can override it
+   */
+  virtual void TID_Drift_Update_Solution(PetscScalar *) {}
+
+
+  //////////////////////////////////////////////////////////////////////////////////
+  //----------Function and Jacobian evaluate for TID drift-reaction Solver--------//
+  //////////////////////////////////////////////////////////////////////////////////
+
+
+  /**
+   * @brief virtual function for fill vector of TID drift-reaction equation.
+   *
+   * filling solution data into petsc vector of TID drift-reaction equation.
+   * can be used as initial data of nonlinear equation or diverged recovery.
+   *
+   * @param Vec              global solution vector
+   * @param Vec              the left scaling vector
+   * @note each derived boundary condition can override it
+   */
+  virtual void TID_DriftReaction_Fill_Value(Vec , Vec ) {}
+
+  /**
+   * @brief virtual function for preprocess for TID drift-reaction equation.
+   *
+   * @param PetscScalar*     local unknown vector
+   * @param f                petsc global function vector
+   * @param src              source row
+   * @param dst              destination row
+   * @param clear            row for clear
+   *
+   * @note each derived boundary condition can override it
+   */
+  virtual void TID_DriftReaction_Function_Preprocess(PetscScalar * /*x*/, Vec /*f*/,
+                                       std::vector<PetscInt> &/*src*/,
+                                       std::vector<PetscInt> &/*dst*/,
+                                       std::vector<PetscInt> &/*clear*/)
+  {}
+
+
+  /**
+   * @brief virtual function for evaluating TID drift-reaction equation.
+   *
+   * @param PetscScalar*    local unknown vector
+   * @param Vec             petsc global function vector
+   * @param InsertMode&     flag for last operator is ADD_VALUES
+   *
+   * @note each derived boundary condition should override it
+   */
+  virtual void TID_DriftReaction_Function(PetscScalar * x, Vec f, InsertMode &add_value_flag) {}
+
+  /**
+   * @brief virtual function for preprocess Jacobian Matrix of TID drift-reaction equation.
+   *
+   * @param PetscScalar*     local unknown vector
+   * @param jac              petsc global jacobian matrix
+   * @param src              source row
+   * @param dst              destination row
+   * @param clear            row for clear
+   *
+   * @note each derived boundary condition can override it
+   */
+  virtual void TID_DriftReaction_Jacobian_Preprocess(PetscScalar * /*x*/, SparseMatrix<PetscScalar> */*jac*/,
+                                                     std::vector<PetscInt> &/*src*/,
+                                                     std::vector<PetscInt> &/*dst*/,
+                                                     std::vector<PetscInt> &/*clear*/)
+  {}
+
+  /**
+   * @brief virtual function for evaluating Jacobian of TID drift-reaction equation.
+   *
+   * @param PetscScalar*     local unknown vector
+   * @param Mat*             petsc global jacobian matrix
+   * @param InsertMode&      flag for last operator is ADD_VALUES
+   *
+   * @note each derived boundary condition should override it
+   */
+  virtual void TID_DriftReaction_Jacobian(PetscScalar * x, SparseMatrix<PetscScalar> *jac, InsertMode &add_value_flag) {}
+
+
+  /**
+   * @brief virtual function for update solution value of TID drift-reaction equation.
+   *
+   * @param PetscScalar*     global solution vector
+   *
+   * @note each derived boundary condition can override it
+   */
+  virtual void TID_DriftReaction_Update_Solution(PetscScalar *) {}
 
 #endif
 

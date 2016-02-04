@@ -201,75 +201,13 @@ void ChargedContactBC::DDM2_Function(PetscScalar * x, Vec f, InsertMode &add_val
 
 
 
-/*---------------------------------------------------------------------
- * reserve non zero pattern in jacobian matrix for DDM2 solver
- */
-void ChargedContactBC::DDM2_Jacobian_Reserve(Mat *jac, InsertMode &add_value_flag)
-{
-
-  // ADD 0 to some position of Jacobian matrix to prevent MatAssembly expurgation these position.
-
-  // since we will use ADD_VALUES operator, check the matrix state.
-  if( (add_value_flag != ADD_VALUES) && (add_value_flag != NOT_SET_VALUES) )
-  {
-    MatAssemblyBegin(*jac, MAT_FLUSH_ASSEMBLY);
-    MatAssemblyEnd(*jac, MAT_FLUSH_ASSEMBLY);
-  }
-
-  //MatSetValue(*jac, this->inter_connect_hub()->global_offset(), this->inter_connect_hub()->global_offset(), 0.0, ADD_VALUES);
-
-  const SimulationRegion * _r1 = bc_regions().first;
-  genius_assert(_r1->type() == InsulatorRegion);
-  const SimulationRegion * _r2 = bc_regions().second;
-  genius_assert(_r2->type() == ElectrodeRegion || _r2->type() == MetalRegion);
-
-  // search for all the node with this boundary type
-  BoundaryCondition::const_node_iterator node_it = nodes_begin();
-  BoundaryCondition::const_node_iterator end_it = nodes_end();
-  for(; node_it!=end_it; ++node_it )
-  {
-
-    const FVM_Node * metal_node = get_region_fvm_node ( ( *node_it ), _r2 );
-    MatSetValue(*jac, metal_node->global_offset(), this->inter_connect_hub()->global_offset(), 0.0, ADD_VALUES);
-    MatSetValue(*jac, metal_node->global_offset(), metal_node->global_offset(), 0.0, ADD_VALUES);
-    // search all the fvm_node which has *node_it as root node, these fvm_nodes have the same location in geometry,
-    // but belong to different regions in logic.
-    BoundaryCondition::region_node_iterator  rnode_it     = region_node_begin(*node_it);
-    BoundaryCondition::region_node_iterator  end_rnode_it = region_node_end(*node_it);
-    for(unsigned int i=0 ; rnode_it!=end_rnode_it; ++i, ++rnode_it  )
-    {
-      const SimulationRegion * region = (*rnode_it).second.first;
-      if( region->type() != InsulatorRegion ) continue;
-
-      const FVM_Node * insulator_node  = (*rnode_it).second.second;
-      MatSetValue(*jac, insulator_node->global_offset(), metal_node->global_offset(), 0, ADD_VALUES);
-      MatSetValue(*jac, insulator_node->global_offset(), insulator_node->global_offset(), 0, ADD_VALUES);
-
-      MatSetValue(*jac, insulator_node->global_offset()+1, metal_node->global_offset()+1, 0, ADD_VALUES);
-      MatSetValue(*jac, insulator_node->global_offset()+1, insulator_node->global_offset()+1, 0, ADD_VALUES);
-
-      MatSetValue(*jac, this->inter_connect_hub()->global_offset(), insulator_node->global_offset(), 0, ADD_VALUES);
-      FVM_Node::fvm_neighbor_node_iterator nb_it = insulator_node->neighbor_node_begin();
-      FVM_Node::fvm_neighbor_node_iterator nb_it_end = insulator_node->neighbor_node_end();
-      for(; nb_it != nb_it_end; ++nb_it)
-      {
-        const FVM_Node *nb_node = (*nb_it).first;
-        MatSetValue(*jac, this->inter_connect_hub()->global_offset(), nb_node->global_offset(), 0, ADD_VALUES);
-      }
-    }
-  }
-
-  // the last operator is ADD_VALUES
-  add_value_flag = ADD_VALUES;
-}
-
 
 
 
 /*---------------------------------------------------------------------
  * do pre-process to jacobian matrix for DDM2 solver
  */
-void ChargedContactBC::DDM2_Jacobian_Preprocess(PetscScalar *,Mat *jac, std::vector<PetscInt> &src_row,
+void ChargedContactBC::DDM2_Jacobian_Preprocess(PetscScalar *,SparseMatrix<PetscScalar> *jac, std::vector<PetscInt> &src_row,
     std::vector<PetscInt> &dst_row, std::vector<PetscInt> &clear_row)
 {
 
@@ -314,7 +252,7 @@ void ChargedContactBC::DDM2_Jacobian_Preprocess(PetscScalar *,Mat *jac, std::vec
 /*---------------------------------------------------------------------
  * build function and its jacobian for DDM2 solver
  */
-void ChargedContactBC::DDM2_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_value_flag)
+void ChargedContactBC::DDM2_Jacobian(PetscScalar * x, SparseMatrix<PetscScalar> *jac, InsertMode &add_value_flag)
 {
  // Jacobian of Electrode-Insulator interface is processed here
 
@@ -352,8 +290,8 @@ void ChargedContactBC::DDM2_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_
     // psi of metal node phi + affinity = fermi
     AutoDScalar f_fermi = V_metal + metal_node_data->affinity()/e - phi_f;
     // set Jacobian of governing equation ff
-    MatSetValue(*jac, metal_node->global_offset(), metal_node->global_offset(), f_fermi.getADValue(1), ADD_VALUES);
-    MatSetValue(*jac, metal_node->global_offset(), this->inter_connect_hub()->global_offset(), f_fermi.getADValue(0), ADD_VALUES);
+    jac->add( metal_node->global_offset(),  metal_node->global_offset(),  f_fermi.getADValue(1) );
+    jac->add( metal_node->global_offset(),  this->inter_connect_hub()->global_offset(),  f_fermi.getADValue(0) );
 
 
     // search all the fvm_node which has *node_it as root node, these fvm_nodes have the same location in geometry,
@@ -376,14 +314,14 @@ void ChargedContactBC::DDM2_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_
       // the psi of insulator node is equal to psi of float metal
       AutoDScalar f_psi = V_insulator - V_metal;
       // set Jacobian of governing equation f_psi
-      MatSetValue(*jac, insulator_node->global_offset(), insulator_node->global_offset(), f_psi.getADValue(2), ADD_VALUES);
-      MatSetValue(*jac, insulator_node->global_offset(), metal_node->global_offset(), f_psi.getADValue(1), ADD_VALUES);
+      jac->add( insulator_node->global_offset(),  insulator_node->global_offset(),  f_psi.getADValue(2) );
+      jac->add( insulator_node->global_offset(),  metal_node->global_offset(),  f_psi.getADValue(1) );
 
       // the T of insulator node is equal to psi of float metal
       AutoDScalar f_T = T_insulator - T_metal;
       // set Jacobian of governing equation f_T
-      MatSetValue(*jac, insulator_node->global_offset()+1, insulator_node->global_offset()+1, f_T.getADValue(2), ADD_VALUES);
-      MatSetValue(*jac, insulator_node->global_offset()+1, metal_node->global_offset()+1, f_T.getADValue(1), ADD_VALUES);
+      jac->add( insulator_node->global_offset()+1,  insulator_node->global_offset()+1,  f_T.getADValue(2) );
+      jac->add( insulator_node->global_offset()+1,  metal_node->global_offset()+1,  f_T.getADValue(1) );
 
       FVM_Node::fvm_neighbor_node_iterator nb_it = insulator_node->neighbor_node_begin();
       FVM_Node::fvm_neighbor_node_iterator nb_it_end = insulator_node->neighbor_node_end();
@@ -403,9 +341,9 @@ void ChargedContactBC::DDM2_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_
 
         // since the governing equation is \sum \integral D + \sigma = 0
         // and \integral D = \sum cv_boundary*D
-        // here we use MatSetValue ADD_VALUES to process \sum \integral D one by one
-        MatSetValue(*jac, this->inter_connect_hub()->global_offset(), insulator_node->global_offset(), (cv_boundary*D).getADValue(2), ADD_VALUES);
-        MatSetValue(*jac, this->inter_connect_hub()->global_offset(), nb_node->global_offset(), (cv_boundary*D).getADValue(0), ADD_VALUES);
+        // here we  to process \sum \integral D one by one
+        jac->add( this->inter_connect_hub()->global_offset(),  insulator_node->global_offset(),  (cv_boundary*D).getADValue(2) );
+        jac->add( this->inter_connect_hub()->global_offset(),  nb_node->global_offset(),  (cv_boundary*D).getADValue(0) );
       }
     }
   }
@@ -422,7 +360,7 @@ void ChargedContactBC::DDM2_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_
 void ChargedContactBC::DDM2_Update_Solution(PetscScalar *lxx)
 {
   const SimulationRegion * _r2 = bc_regions().second;
-  this->psi() = lxx[this->inter_connect_hub()->local_offset()] - _r2->get_affinity(T_external())/e;
+  this->psi() = lxx[this->inter_connect_hub()->local_offset()] - _r2->get_affinity()/e;
 }
 
 
@@ -431,6 +369,7 @@ void ChargedContactBC::DDM2_Pre_Process()
 {
   _current_flow = 0.0;
 }
+
 
 
 

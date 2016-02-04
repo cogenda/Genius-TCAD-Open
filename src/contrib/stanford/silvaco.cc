@@ -27,51 +27,16 @@
 
 #include "silvaco.h"
 
+SilvacoTIF::SilvacoTIF()
+: _dim(2)
+{
+  _init_index_string_map();
+}
 
-//stuff for the Silvaco read write
+
 SilvacoTIF::SilvacoTIF(const std::string & file) : StanfordTIF(file), _dim(2)
 {
-  // init SilImp
-  SilImp[   0] = "Vacancy";
-  SilImp[   1] = "Interstitial";
-  SilImp[   2] = "Arsenic";
-  SilImp[   3] = "Phosphorus";
-  SilImp[   4] = "Antimony";
-  SilImp[   5] = "Boron";
-  SilImp[   6] = "Electrons";
-  SilImp[   7] = "Holes";
-  SilImp[  10] = "Oxidant";
-  SilImp[  11] = "Oxidant";
-  SilImp[  12] = "Traps";
-  SilImp[  14] = "Potential";
-  SilImp[  25] = "Doping";
-  SilImp[  71] = "Donor";
-  SilImp[  72] = "Acceptor";
-  SilImp[ 151] = "BoronActive";
-  SilImp[ 152] = "PhosphorusActive";
-  SilImp[ 153] = "ArsenicActive";
-  SilImp[ 154] = "AntimonyActive";
-
-  SilImp[ 513] = "Region";
-  SilImp[ 600] = "ZPlaneIndex";
-
-  // init SilMat
-  SilMat[   0] = "Gas";
-  SilMat[   1] = "Oxide";
-  SilMat[   2] = "Nitride";
-  SilMat[   3] = "Silicon";
-  SilMat[   4] = "Poly";
-  SilMat[   5] = "Oxynitride";
-  SilMat[   6] = "Aluminum";
-  SilMat[   7] = "Photores";
-  SilMat[   8] = "GaAs";
-  SilMat[  14] = "Titanium";
-  SilMat[  28] = "Gas";
-  SilMat[  32] = "Ge";
-  SilMat[  81] = "TiSi2";
-  SilMat[  91] = "Elec";
-  SilMat[ 101] = "SiGe";
-  SilMat[ 102] = "4H-SiC";
+  _init_index_string_map();
 }
 
 
@@ -95,9 +60,9 @@ bool SilvacoTIF::read(std::string &err)
     case 'v' :
       {
         ctmp >> _version;
-        if( _version != "ATLAS" && _version != "ATHENA" )
+        if( _version != "ATLAS" && _version != "ATHENA" && _version != "DEVEDIT")
         {
-          err = "Only support silvaco ATLAS/ATHENA file, but get " + _version + " file.";
+          err = "Only support silvaco ATLAS/ATHENA/DEVEDIT file, but get " + _version + " file.";
           return false;
         }
         break;
@@ -117,6 +82,14 @@ bool SilvacoTIF::read(std::string &err)
           std::string rubbish;
           std::getline(ctmp, rubbish);
         }
+
+        if( _version == "DEVEDIT" )
+        {
+          _dim = 2;
+          std::string rubbish;
+          std::getline(ctmp, rubbish);
+        }
+
         break;
       }
       // node coordinate
@@ -124,6 +97,7 @@ bool SilvacoTIF::read(std::string &err)
       {
         Node_t node;
         ctmp >> node.index >> node.x >> node.y >> node.z;
+        node.h = node.z;
         // correct subscript
         node.index = node.index - 1;
         // save it
@@ -160,6 +134,8 @@ bool SilvacoTIF::read(std::string &err)
         t.t1 = t.t1 -1;
         t.t2 = t.t2 -1;
         t.t3 = t.t3 -1;
+        t.c4 = -1;
+        t.t4 = -1;
         // save it
         _tris.push_back(t);
       }
@@ -201,7 +177,9 @@ bool SilvacoTIF::read(std::string &err)
         region.segment   = false;
         if(SilMat.find(material_index)==SilMat.end())
         {
-          std::cerr<<"Unrecognized material code " << material_index << "in silvaco file." << std::endl;
+          std::stringstream ss;
+          ss << "Unrecognized material code " << material_index << " in silvaco file." << std::endl;
+          err = ss.str();
           return false;
         }
         region.material  = SilMat[material_index];
@@ -359,25 +337,45 @@ bool SilvacoTIF::read(std::string &err)
     _find_solution_region_by_material();
   }
 
+  //
+  if(!_check_duplicate_name())
+  {
+    err = "Silvaco file with duplicate region/boundary names.";
+    return false;
+  }
 
-  //std::cout<<_sol_head.sol_num << std::endl;
+  if(_sol_head.has_solution("Acceptor"))
+    _solution_index_map.insert(std::make_pair("acceptor_index", _sol_head.solution_index("Acceptor")));
 
+  if(_sol_head.has_solution("Donor"))
+    _solution_index_map.insert(std::make_pair("donor_index", _sol_head.solution_index("Donor")));
 
+  if(_sol_head.has_solution("mole_x"))
+    _solution_index_map.insert(std::make_pair("mole_x_index", _sol_head.solution_index("mole_x")));
 
-  _acceptor_index = _sol_head.solution_index("Acceptor");
-  _donor_index    = _sol_head.solution_index("Donor");
-  _mole_x_index   = _sol_head.solution_index("mole_x");
-  _mole_y_index   = _sol_head.solution_index("mole_y");
+  if(_sol_head.has_solution("mole_y"))
+    _solution_index_map.insert(std::make_pair("mole_y_index", _sol_head.solution_index("mole_y")));
 
-  //std::cout << _acceptor_index << std::endl;
-  //std::cout << _donor_index << std::endl;
+  if(_sol_head.has_solution("Arsenic"))
+    _solution_index_map.insert(std::make_pair("As_index", _sol_head.solution_index("Arsenic")));
+
+  if(_sol_head.has_solution("Phosphorus"))
+    _solution_index_map.insert(std::make_pair("P_index", _sol_head.solution_index("Phosphorus")));
+
+  if(_sol_head.has_solution("Antimony"))
+    _solution_index_map.insert(std::make_pair("Sb_index", _sol_head.solution_index("Antimony")));
+
+  if(_sol_head.has_solution("Boron"))
+    _solution_index_map.insert(std::make_pair("B_index", _sol_head.solution_index("Boron")));
 
 
   //export_scatter_doping_na();
   //export_scatter_doping_nd();
-  
+
   return true;
 }
+
+
 
 
 
@@ -453,5 +451,107 @@ void SilvacoTIF::export_scatter_doping_nd() const
 }
 
 
+void SilvacoTIF::_init_index_string_map()
+{
+  // init SilImp
+  SilImp[   0] = "Vacancy";
+  SilImp[   1] = "Interstitial";
+  SilImp[   2] = "Arsenic";
+  SilImp[   3] = "Phosphorus";
+  SilImp[   4] = "Antimony";
+  SilImp[   5] = "Boron";
+  SilImp[   6] = "Electrons";
+  SilImp[   7] = "Holes";
+  SilImp[  10] = "Oxidant";
+  SilImp[  11] = "Oxidant";
+  SilImp[  12] = "Traps";
+  SilImp[  14] = "Potential";
+  SilImp[  25] = "Doping";
+  SilImp[  71] = "Donor";
+  SilImp[  72] = "Acceptor";
+  SilImp[ 151] = "BoronActive";
+  SilImp[ 152] = "PhosphorusActive";
+  SilImp[ 153] = "ArsenicActive";
+  SilImp[ 154] = "AntimonyActive";
 
+  SilImp[ 513] = "Region";
+  SilImp[ 600] = "ZPlaneIndex";
+
+  // init SilMat
+  SilMat[   0] = "Gas";
+  SilMat[   1] = "Oxide";
+  SilMat[   2] = "Nitride";
+  SilMat[   3] = "Silicon";
+  SilMat[   4] = "Poly";
+  SilMat[   5] = "Oxynitride";
+  SilMat[   6] = "Aluminum";
+  SilMat[   7] = "Photores";
+  SilMat[   8] = "GaAs";
+  SilMat[   9] = "Sapphire";
+  SilMat[  10] = "Au";
+  SilMat[  11] = "Ag";
+  SilMat[  12] = "AlSi";
+  SilMat[  13] = "W";
+  SilMat[  14] = "Ti";
+  SilMat[  17] = "Co";
+  SilMat[  21] = "Ta";
+  SilMat[  24] = "AlGaAs";
+  SilMat[  25] = "InGaAs";
+  SilMat[  26] = "AlInAs";
+  SilMat[  27] = "InP";
+  SilMat[  28] = "Vacuum";
+  SilMat[  32] = "Ge";
+  SilMat[  81] = "TiSi2";
+  SilMat[  91] = "Elec";
+  SilMat[  99] = "3C-SiC";
+  SilMat[ 100] = "Diamond";
+  SilMat[ 101] = "SiGe";
+  SilMat[ 102] = "6H-SiC";
+  SilMat[ 103] = "4H-SiC";
+  SilMat[ 104] = "AlP";
+  SilMat[ 105] = "AlSb";
+  SilMat[ 106] = "GaSb";
+  SilMat[ 107] = "GaP";
+  SilMat[ 108] = "InSb";
+  SilMat[ 109] = "InAs";
+  SilMat[ 110] = "ZnS";
+  SilMat[ 111] = "ZnSe";
+  SilMat[ 112] = "ZnTe";
+  SilMat[ 113] = "CdS";
+  SilMat[ 114] = "CdSe";
+  SilMat[ 115] = "CdTe";
+  SilMat[ 116] = "HgS";
+  SilMat[ 117] = "HgSe";
+  SilMat[ 118] = "HgTe";
+  SilMat[ 119] = "PbS";
+  SilMat[ 120] = "PbSe";
+  SilMat[ 121] = "PbTe";
+  SilMat[ 122] = "SnTe";
+  SilMat[ 123] = "ScN";
+  SilMat[ 124] = "GaN";
+  SilMat[ 125] = "AlN";
+  SilMat[ 126] = "InN";
+  SilMat[ 127] = "BeTe";
+  SilMat[ 128] = "InGaP";
+  SilMat[ 129] = "GaSbP";
+  SilMat[ 130] = "GaSbAs";
+  SilMat[ 131] = "InAlAs";
+  SilMat[ 132] = "InAsP";
+  SilMat[ 133] = "GaAsP";
+  SilMat[ 134] = "HgCdTe";
+  SilMat[ 135] = "InGaAsP";
+  SilMat[ 136] = "AlGaAsP";
+  SilMat[ 137] = "AlGaAsSb";
+  SilMat[ 140] = "SiN";
+  SilMat[ 143] = "Si";
+  SilMat[ 144] = "Polymer";
+  SilMat[ 145] = "CuInGaSe";
+  SilMat[ 146] = "InGaN";
+  SilMat[ 147] = "AlGaN";
+  SilMat[ 148] = "InAlGaN";
+  SilMat[ 149] = "InGaNAs";
+  SilMat[ 198] = "ITO";
+   
+}
+ 
 

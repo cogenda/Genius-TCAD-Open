@@ -61,6 +61,8 @@ void ParticleMonitorHook::pre_solve()
 void ParticleMonitorHook::post_solve()
 {
   const SimulationSystem & system = this->get_solver().get_system();
+  double z_width = system.z_width();
+
   for(unsigned int n=0; n<system.n_regions(); n++)
   {
     const SimulationRegion * region = system.region(n);
@@ -74,7 +76,7 @@ void ParticleMonitorHook::post_solve()
         const FVM_Node * fvm_node = (*it);
         const FVM_NodeData * fvm_node_data = fvm_node->node_data();
 
-        _carrier_number += fvm_node_data->Field_G()*SolverSpecify::dt*fvm_node->volume();
+        _carrier_number += fvm_node_data->Field_G()*SolverSpecify::dt*fvm_node->volume()*z_width;
       }
     }
   }
@@ -83,7 +85,7 @@ void ParticleMonitorHook::post_solve()
   Parallel::sum(carrier_number);
 
   if ( !Genius::processor_id() )
-    std::cout<<"Charge Generated: " << PhysicalUnit::e*carrier_number/(1e-15*PhysicalUnit::C) << std::endl;
+    std::cout<<"Charge Generated: " << carrier_number << " e-h pairs, " << PhysicalUnit::e*carrier_number/(1e-15*PhysicalUnit::C) << " fC"<< std::endl;
 }
 
 

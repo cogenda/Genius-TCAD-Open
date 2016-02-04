@@ -88,8 +88,11 @@
     <parameter name="reflection" type="bool" default="false">
       <description></description>
     </parameter>
+    <parameter name="surface.recombination" type="bool" default="false">
+      <description></description>
+    </parameter>
     <parameter name="coatings" type="num[]" default="">
-      <description>anti-reflection coatings</description>
+      <description>anti-reflection coatings, each layer has [n, k, thick], from out surface to inside</description>
     </parameter>
     <parameter name="res" type="num" default="0">
       <description></description>
@@ -127,6 +130,7 @@
       <enum>homojunction</enum>
       <enum>insulatorinterface</enum>
       <enum>neumann</enum>
+      <enum>chargeemit</enum>
       <enum>ohmiccontact</enum>
       <enum>metalohmicinterface</enum>
       <enum>schottkycontact</enum>
@@ -150,6 +154,9 @@
     <parameter name="spice.file" type="string" default="">
       <description></description>
     </parameter>
+    <parameter name="spice.nodeset" type="string" default="">
+      <description></description>
+    </parameter>
   </command>
   <command name="CONTACT">
     <description></description>
@@ -163,7 +170,10 @@
       <description></description>
     </parameter>
     <parameter name="id" type="string" default="">
-      <description></description>
+      <description>region label</description>
+    </parameter>
+    <parameter name="property" type="string" default="">
+      <description>region label</description>
     </parameter>
     <parameter name="ind" type="num" default="0">
       <description></description>
@@ -172,6 +182,12 @@
       <description></description>
     </parameter>
     <parameter name="qf" type="num" default="0">
+      <description></description>
+    </parameter>
+    <parameter name="qf.gen" type="num" default="0">
+      <description></description>
+    </parameter>
+    <parameter name="leakage" type="bool" default="false">
       <description></description>
     </parameter>
     <parameter name="charge" type="num" default="0">
@@ -184,7 +200,7 @@
       <description></description>
       <enum>floatmetal</enum>
       <enum>fixedpotential</enum>
-      <enum>emit</enum>
+      <enum>chargeemit</enum>
       <enum>gatecontact</enum>
       <enum>ohmiccontact</enum>
       <enum>schottkycontact</enum>
@@ -407,7 +423,10 @@
     <parameter name="isefile" type="string" default="">
       <description></description>
     </parameter>
-    <parameter name="gdml.body" type="string" default="">
+    <parameter name="tiffile" type="string" default="">
+      <description></description>
+    </parameter>
+    <parameter name="gdml" type="string" default="">
       <description></description>
     </parameter>
     <parameter name="gdml.surface" type="string" default="">
@@ -430,6 +449,15 @@
       <description></description>
     </parameter>
     <parameter name="vtkfile" type="string" default="">
+      <description></description>
+    </parameter>
+    <parameter name="vtufile" type="string" default="">
+      <description></description>
+    </parameter>
+    <parameter name="spice.nodeset" type="string" default="">
+      <description></description>
+    </parameter>
+    <parameter name="vtu.variables" type="string[]" default="">
       <description></description>
     </parameter>
   </command>
@@ -522,6 +550,24 @@
     <parameter name="number" type="int" default="0">
       <description></description>
     </parameter>
+    <parameter name="r" type="num" default="0">
+      <description></description>
+    </parameter>
+    <parameter name="r.max" type="num" default="0">
+      <description></description>
+    </parameter>
+    <parameter name="r.min" type="num" default="0">
+      <description></description>
+    </parameter>
+    <parameter name="theta" type="num" default="0">
+      <description></description>
+    </parameter>
+    <parameter name="theta.max" type="num" default="0">
+      <description></description>
+    </parameter>
+    <parameter name="theta.min" type="num" default="0">
+      <description></description>
+    </parameter>
     <parameter name="x" type="num" default="0">
       <description></description>
     </parameter>
@@ -597,6 +643,15 @@
     <parameter name="z.width" type="num" default="1">
       <description></description>
     </parameter>
+    <parameter name="axis.x" type="int[]" default="1 0 0">
+      <description></description>
+    </parameter>
+    <parameter name="axis.y" type="int[]" default="0 -1 -1">
+      <description></description>
+    </parameter>
+    <parameter name="axis.z" type="int[]" default="0 1 1">
+      <description></description>
+    </parameter>
     <parameter name="resistivemetal" type="bool" default="false">
       <description>Resistive-metal mode. In this mode, Ohms law and continuity equation is solved in metal materials.</description>
     </parameter>
@@ -636,16 +691,34 @@
     <parameter name="cgnsfile" type="string" default="">
       <description></description>
     </parameter>
+    <parameter name="gmshfile" type="string" default="">
+      <description></description>
+    </parameter>
+    <parameter name="unvfile" type="string" default="">
+      <description></description>
+    </parameter>
     <parameter name="isefile" type="string" default="">
       <description></description>
     </parameter>
     <parameter name="silvacofile" type="string" default="">
       <description></description>
     </parameter>
+    <parameter name="silvacolist" type="string[]" default="">
+      <description></description>
+    </parameter>
+    <parameter name="strfile" type="string" default="">
+      <description></description>
+    </parameter>
     <parameter name="tiffile" type="string" default="">
       <description></description>
     </parameter>
+    <parameter name="tiflist" type="string[]" default="">
+      <description></description>
+    </parameter>
     <parameter name="tif3dfile" type="string" default="">
+      <description></description>
+    </parameter>
+    <parameter name="supremfile" type="string" default="">
       <description></description>
     </parameter>
     <parameter name="vtkfile" type="string" default="">
@@ -801,6 +874,9 @@
   </command>
   <command name="LIGHT">
     <description></description>
+    <parameter name="envelop" type="string" default="">
+      <description></description>
+    </parameter>
     <parameter name="funit" type="enum" default="m">
       <description></description>
       <enum>cm</enum>
@@ -814,6 +890,9 @@
     <parameter name="optical.gen" type="num" default="0">
       <description></description>
     </parameter>
+    <parameter name="optical.power" type="num" default="0">
+      <description></description>
+    </parameter>
     <parameter name="lambda" type="num" default="0.532">
       <description></description>
     </parameter>
@@ -824,12 +903,14 @@
       <enum>nm</enum>
       <enum>um</enum>
     </parameter>
-    <parameter name="profile" type="enum" default="fromfile3d">
+    <parameter name="profile" type="enum" default="efile3d">
       <description></description>
-      <enum>fromfile2d</enum>
-      <enum>fromfile3d</enum>
+      <enum>efile2d</enum>
+      <enum>efile3d</enum>
+      <enum>pfile2d</enum>
+      <enum>pfile3d</enum>
     </parameter>
-    <parameter name="profile.file" type="string" default="">
+    <parameter name="data.file" type="string" default="">
       <description></description>
     </parameter>
     <parameter name="quan.eff" type="num" default="1">
@@ -949,6 +1030,8 @@
       <enum>s_quad4</enum>
       <enum>s_tet4</enum>
       <enum>s_tri3</enum>
+      <enum>c_2d</enum>
+      <enum>c_3d</enum>
     </parameter>
   </command>
   <command name="METHOD">
@@ -972,6 +1055,9 @@
     <parameter name="halfimplicit.carrierweight" type="num" default="0">
       <description>Poisson correction parameter</description>
     </parameter>
+    <parameter name="halfimplicit.dumpsystem" type="bool" default="false">
+      <description>dump matrix and rhs for further analysis</description>
+    </parameter>
     <parameter name="truncation" type="enum" default="always">
       <description></description>
       <enum>boundary</enum>
@@ -981,21 +1067,52 @@
     <parameter name="potential.update" type="num" default="1.0">
       <description></description>
     </parameter>
-    <parameter name="elec.continuity.tol" type="num"
-    default="5e-18">
+    <parameter name="damping.spice" type="bool" default="false">
+      <description></description>
+    </parameter>
+    <parameter name="divergence.factor" type="num" default="1e20">
+      <description></description>
+    </parameter>
+    <parameter name="elec.continuity.tol" type="num" default="5e-18">
+      <description></description>
+    </parameter>
+    <parameter name="elec.c.tol" type="num" default="5e-18">
       <description></description>
     </parameter>
     <parameter name="elec.energy.tol" type="num" default="1e-18">
       <description></description>
     </parameter>
-    <parameter name="electrode.tol" type="num" default="1e-09">
+    <parameter name="elec.e.tol" type="num" default="1e-18">
       <description></description>
     </parameter>
-    <parameter name="hole.continuity.tol" type="num"
-    default="5e-18">
+    <parameter name="elec.quantum.tol" type="num" default="1e-26">
+      <description></description>
+    </parameter>
+    <parameter name="elec.q.tol" type="num" default="1e-26">
+      <description></description>
+    </parameter>
+    <parameter name="hole.continuity.tol" type="num" default="5e-18">
+      <description></description>
+    </parameter>
+    <parameter name="hole.c.tol" type="num" default="5e-18">
       <description></description>
     </parameter>
     <parameter name="hole.energy.tol" type="num" default="1e-18">
+      <description></description>
+    </parameter>
+    <parameter name="hole.e.tol" type="num" default="1e-18">
+      <description></description>
+    </parameter>
+    <parameter name="hole.quantum.tol" type="num" default="1e-26">
+      <description></description>
+    </parameter>
+    <parameter name="hole.q.tol" type="num" default="1e-26">
+      <description></description>
+    </parameter>
+    <parameter name="electrode.tol" type="num" default="1e-09">
+      <description></description>
+    </parameter>
+    <parameter name="snes.rtol" type="num" default="1e-08">
       <description></description>
     </parameter>
     <parameter name="ksp.atol" type="num" default="1e-20">
@@ -1267,7 +1384,7 @@
       <enum>ddmac</enum>
       <enum>ddml1</enum>
       <enum>ddml1r</enum>
-      <enum>ddml1h</enum>
+      <enum>ddml1ms</enum>
       <enum>ddml1m</enum>
       <enum>ddml2</enum>
       <enum>ddml2m</enum>
@@ -1285,6 +1402,7 @@
       <enum>halfimplicit</enum>
       <enum>raytrace</enum>
       <enum>ric</enum>
+      <enum>dictat</enum>
       <enum>sp</enum>
       <enum>stress</enum>
     </parameter>
@@ -1430,6 +1548,16 @@
       <enum>nm</enum>
       <enum>um</enum>
     </parameter>
+    <parameter name="axes" type="enum" default="xy">
+      <description></description>
+      <enum>x</enum>
+      <enum>y</enum>
+      <enum>z</enum>
+      <enum>xy</enum>
+      <enum>xz</enum>
+      <enum>yz</enum>
+      <enum>xyz</enum>
+    </parameter>
     <parameter name="skipline" type="int" default="0">
       <description></description>
     </parameter>
@@ -1559,7 +1687,10 @@
     <parameter name="length" type="num" default="50">
       <description></description>
     </parameter>
-    <parameter name="let" type="num" default="0">
+    <parameter name="let" type="num" default="35">
+      <description></description>
+    </parameter>
+    <parameter name="dedx" type="num" default="8">
       <description></description>
     </parameter>
     <parameter name="phi" type="num" default="0">
@@ -1573,6 +1704,12 @@
       <enum>fromfile3d</enum>
     </parameter>
     <parameter name="profile.file" type="string" default="">
+      <description></description>
+    </parameter>
+    <parameter name="profile.hdf5" type="string" default="">
+      <description></description>
+    </parameter>
+    <parameter name="hdf5.path" type="string" default="">
       <description></description>
     </parameter>
     <parameter name="quan.eff" type="num" default="3.6">
@@ -1635,13 +1772,22 @@
     <parameter name="translate.z" type="num" default="0">
       <description></description>
     </parameter>
-    <parameter name="x" type="num" default="0">
+    <parameter name="start.x" type="num" default="0">
       <description></description>
     </parameter>
-    <parameter name="y" type="num" default="0">
+    <parameter name="start.y" type="num" default="0">
       <description></description>
     </parameter>
-    <parameter name="z" type="num" default="0">
+    <parameter name="start.z" type="num" default="0">
+      <description></description>
+    </parameter>
+    <parameter name="dir.x" type="num" default="0">
+      <description></description>
+    </parameter>
+    <parameter name="dir.y" type="num" default="0">
+      <description></description>
+    </parameter>
+    <parameter name="dir.z" type="num" default="-1">
       <description></description>
     </parameter>
   </command>
@@ -1687,14 +1833,23 @@
     <parameter name="file" type="string" default="">
       <description></description>
     </parameter>
+    <parameter name="region" type="string" default="">
+      <description></description>
+    </parameter>
+    <parameter name="region.type" type="string" default="">
+      <description></description>
+    </parameter>
+    <parameter name="material" type="string" default="">
+      <description></description>
+    </parameter>
+    <parameter name="ion" type="string" default="">
+      <description></description>
+    </parameter>
     <parameter name="id" type="string" default="">
       <description></description>
     </parameter>
-    <parameter name="ion" type="enum" default="donor">
+    <parameter name="species" type="string" default="">
       <description></description>
-      <enum>acceptor</enum>
-      <enum>custom</enum>
-      <enum>donor</enum>
     </parameter>
     <parameter name="lunit" type="enum" default="um">
       <description></description>
@@ -1712,6 +1867,21 @@
       <enum>xz</enum>
       <enum>yz</enum>
       <enum>xyz</enum>
+    </parameter>
+    <parameter name="n" type="num" default="0">
+      <description></description>
+    </parameter>
+    <parameter name="n.slope" type="num" default="0">
+      <description></description>
+    </parameter>
+    <parameter name="n.grad" type="enum" default="y.linear">
+      <description></description>
+      <enum>x.linear</enum>
+      <enum>y.linear</enum>
+      <enum>z.linear</enum>
+    </parameter>
+    <parameter name="n.end" type="num" default="0">
+      <description></description>
     </parameter>
     <parameter name="n.peak" type="num" default="0">
       <description></description>
@@ -1797,6 +1967,7 @@
       <enum>analytic2</enum>
       <enum>file</enum>
       <enum>uniform</enum>
+      <enum>linear</enum>
     </parameter>
     <parameter name="x.char" type="num" default="0.25">
       <description></description>
@@ -1891,14 +2062,23 @@
     <parameter name="file" type="string" default="">
       <description></description>
     </parameter>
-    <parameter name="id" type="string" default="">
+    <parameter name="region" type="string" default="">
       <description></description>
     </parameter>
-    <parameter name="ion" type="enum" default="donor">
+    <parameter name="region.type" type="string" default="">
       <description></description>
-      <enum>acceptor</enum>
-      <enum>custom</enum>
-      <enum>donor</enum>
+    </parameter>
+    <parameter name="material" type="string" default="">
+      <description></description>
+    </parameter>
+    <parameter name="ion" type="string" default="">
+      <description></description>
+    </parameter>
+    <parameter name="species" type="string" default="">
+      <description></description>
+    </parameter>
+    <parameter name="id" type="string" default="">
+      <description></description>
     </parameter>
     <parameter name="lunit" type="enum" default="um">
       <description></description>
@@ -1916,6 +2096,21 @@
       <enum>XZ</enum>
       <enum>YZ</enum>
       <enum>XYZ</enum>
+    </parameter>
+    <parameter name="n" type="num" default="0">
+      <description></description>
+    </parameter>
+    <parameter name="n.slope" type="num" default="0">
+      <description></description>
+    </parameter>
+    <parameter name="n.grad" type="enum" default="y.linear">
+      <description></description>
+      <enum>x.linear</enum>
+      <enum>y.linear</enum>
+      <enum>z.linear</enum>
+    </parameter>
+    <parameter name="n.end" type="num" default="0">
+      <description></description>
     </parameter>
     <parameter name="n.peak" type="num" default="0">
       <description></description>
@@ -1998,6 +2193,7 @@
       <enum>analytic2</enum>
       <enum>file</enum>
       <enum>uniform</enum>
+      <enum>linear</enum>
     </parameter>
     <parameter name="x.char" type="num" default="0.25">
       <description></description>
@@ -2118,6 +2314,9 @@
     </parameter>
     <parameter name="lens" type="string" default="">
       <description></description>
+    </parameter>
+    <parameter name="ray.grating" type="string" default="">
+      <description>math expression for gratings</description>
     </parameter>
     <parameter name="quan.eff" type="num" default="1">
       <description></description>
@@ -2284,6 +2483,12 @@
       <description></description>
     </parameter>
   </command>
+  <command name="ROTATE">
+    <description></description>
+    <parameter name="n.sectors" type="int" default="24">
+      <description></description>
+    </parameter>
+  </command>
   <command name="REGION">
     <description></description>
     <parameter name="ix.left" type="int" default="0">
@@ -2336,6 +2541,18 @@
       <enum>ellipse</enum>
       <enum>rectangle</enum>
     </parameter>
+    <parameter name="r.max" type="num" default="0">
+      <description></description>
+    </parameter>
+    <parameter name="r.min" type="num" default="0">
+      <description></description>
+    </parameter>
+    <parameter name="theta.max" type="num" default="0">
+      <description></description>
+    </parameter>
+    <parameter name="theta.min" type="num" default="0">
+      <description></description>
+    </parameter>
     <parameter name="x.left" type="num" default="0">
       <description></description>
     </parameter>
@@ -2378,19 +2595,31 @@
     <parameter name="region" type="string" default="">
       <description></description>
     </parameter>
-    <parameter name="x.mole" type="num" default="0.0">
+    <parameter name="variable" type="string" default="">
       <description></description>
     </parameter>
-    <parameter name="y.mole" type="num" default="0.0">
+    <parameter name="value" type="num" default="0">
       <description></description>
     </parameter>
-    <parameter name="doping.na" type="num" default="0.0">
+    <parameter name="unit" type="string" default="">
       <description></description>
     </parameter>
-    <parameter name="doping.nd" type="num" default="0.0">
+    <parameter name="reinit" type="bool" default="false">
       <description></description>
     </parameter>
-    <parameter name="opt.gen" type="num" default="0.0">
+  </command>
+  <command name="BOUNDARYSET">
+    <description></description>
+    <parameter name="boundary" type="string" default="">
+      <description></description>
+    </parameter>
+    <parameter name="variable" type="string" default="">
+      <description></description>
+    </parameter>
+    <parameter name="value" type="num" default="0">
+      <description></description>
+    </parameter>
+    <parameter name="unit" type="string" default="">
       <description></description>
     </parameter>
   </command>
@@ -2616,10 +2845,22 @@
     <parameter name="vol.ratio" type="num" default="0.44">
       <description></description>
     </parameter>
+    <parameter name="center" type="num" default="1">
+      <description></description>
+    </parameter>
     <parameter name="width" type="num" default="0">
       <description></description>
     </parameter>
+    <parameter name="x.max" type="num" default="0">
+      <description></description>
+    </parameter>
+    <parameter name="x.min" type="num" default="0">
+      <description></description>
+    </parameter>
     <parameter name="y.lower" type="num" default="0">
+      <description></description>
+    </parameter>
+    <parameter name="y.undisturbed" type="num" default="0">
       <description></description>
     </parameter>
   </command>
@@ -2701,6 +2942,39 @@
   <command name="STRESS">
     <description></description>
   </command>
+  <command name="TID">
+    <description></description>
+    <parameter name="totaldose" type="num" default="0">
+      <description></description>
+    </parameter>
+    <parameter name="trapa" type="string" default="">
+      <description></description>
+    </parameter>
+    <parameter name="trapb" type="string" default="">
+      <description></description>
+    </parameter>
+    <parameter name="doserate" type="num" default="0">
+      <description></description>
+    </parameter>
+    <parameter name="dosestep" type="num" default="0">
+      <description></description>
+    </parameter>
+    <parameter name="opstep" type="num" default="0">
+      <description></description>
+    </parameter>
+    <parameter name="fixedcharge" type="bool" default="true">
+      <description></description>
+    </parameter>
+    <parameter name="type" type="enum" default="trap">
+      <description></description>
+      <enum>trap</enum>
+      <enum>drift</enum>
+      <enum>full</enum>
+    </parameter>
+    <parameter name="out.prefix" type="string" default="">
+      <description></description>
+    </parameter>
+  </command>
   <command name="VISIT">
     <description></description>
   </command>
@@ -2713,6 +2987,12 @@
       <description></description>
     </parameter>
     <parameter name="expression" type="string" default="1.0*V">
+      <description></description>
+    </parameter>
+    <parameter name="vin1" type="string" default="">
+      <description></description>
+    </parameter>
+    <parameter name="vin2" type="string" default="">
       <description></description>
     </parameter>
     <parameter name="freq" type="num" default="0">
@@ -2752,6 +3032,7 @@
       <description></description>
       <enum>vdc</enum>
       <enum>vexp</enum>
+      <enum>vmix</enum>
       <enum>vpulse</enum>
       <enum>vshell</enum>
       <enum>vsin</enum>
@@ -2853,6 +3134,64 @@
       <description></description>
     </parameter>
   </command>
+  <command name="XRAYPULSE">
+    <parameter name="doserate" type="num" default="0">
+      <description></description>
+    </parameter>
+    <parameter name="waveform" type="enum" default="">
+      <description></description>
+      <enum>pulse</enum>
+      <enum>gaussian</enum>
+    </parameter>
+    <parameter name="t0" type="num" default="0">
+      <description></description>
+    </parameter>
+    <parameter name="tr" type="num" default="0">
+      <description></description>
+    </parameter>
+    <parameter name="tf" type="num" default="0">
+      <description></description>
+    </parameter>
+    <parameter name="pw" type="num" default="0">
+      <description></description>
+    </parameter>
+    <parameter name="fwhm" type="num" default="0">
+      <description></description>
+    </parameter>
+  </command>
+  <command name="R.MESH">
+    <description></description>
+    <parameter name="h1" type="num" default="0">
+      <description></description>
+    </parameter>
+    <parameter name="h2" type="num" default="0">
+      <description></description>
+    </parameter>
+    <parameter name="min.space" type="num" default="0.0001">
+      <description></description>
+    </parameter>
+    <parameter name="n.spaces" type="int" default="1">
+      <description></description>
+    </parameter>
+    <parameter name="ratio" type="num" default="1">
+      <description></description>
+    </parameter>
+    <parameter name="width" type="num" default="0">
+      <description></description>
+    </parameter>
+    <parameter name="r.max" type="num" default="0">
+      <description></description>
+    </parameter>
+    <parameter name="r.min" type="num" default="0">
+      <description></description>
+    </parameter>
+    <parameter name="theta.division" type="int" default="12">
+      <description></description>
+    </parameter>
+    <parameter name="theta.refine" type="bool" default="false">
+      <description></description>
+    </parameter>
+  </command>
   <command name="X.MESH">
     <description></description>
     <parameter name="h1" type="num" default="0">
@@ -2861,7 +3200,7 @@
     <parameter name="h2" type="num" default="0">
       <description></description>
     </parameter>
-    <parameter name="min.spac" type="num" default="0.0001">
+    <parameter name="min.space" type="num" default="0.0001">
       <description></description>
     </parameter>
     <parameter name="n.spaces" type="int" default="1">
@@ -2927,7 +3266,7 @@
     <parameter name="h2" type="num" default="0">
       <description></description>
     </parameter>
-    <parameter name="min.spac" type="num" default="0.001">
+    <parameter name="min.space" type="num" default="0.001">
       <description></description>
     </parameter>
     <parameter name="n.spaces" type="int" default="1">

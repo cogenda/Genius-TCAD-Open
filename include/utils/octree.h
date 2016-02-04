@@ -308,7 +308,7 @@ public:
 
 
   /**
-   * @return point location in its sub node 
+   * @return point location in its sub node
    */
   OcTreeLocation get_sub_location(const Point & point ) const
   {
@@ -359,8 +359,7 @@ public:
     }
     else
     {
-      if( p.y() < low.y() || p.y() >upp.y() ) return false;
-      if( p.z() < low.z() || p.z() >upp.z() ) return false;
+      if( p.x() < low.x() || p.x() >upp.x() ) return false;
     }
 
     if( dir.y() != 0.0 )
@@ -380,8 +379,7 @@ public:
     }
     else
     {
-      if( p.x() < low.x() || p.x() >upp.x() ) return false;
-      if( p.z() < low.z() || p.z() >upp.z() ) return false;
+      if( p.y() < low.y() || p.y() >upp.y() ) return false;
     }
 
     if( dir.z() != 0.0 )
@@ -400,8 +398,7 @@ public:
     }
     else
     {
-      if( p.y() < low.y() || p.y() >upp.y() ) return false;
-      if( p.x() < low.x() || p.x() >upp.x() ) return false;
+      if( p.z() < low.z() || p.z() >upp.z() ) return false;
     }
 
     //std::cout<< txmin << " " << txmax << std::endl;
@@ -531,9 +528,9 @@ public:
   void refine();
 
 
-  typedef typename tree< OcTreeNode >::iterator_base     tree_iterator_base;
-  typedef typename tree< OcTreeNode >::leaf_iterator     tree_leaf_iterator;
-  typedef typename tree< OcTreeNode >::sibling_iterator  tree_sibling_iterator;
+  typedef tree< OcTreeNode >::iterator_base     tree_iterator_base;
+  typedef tree< OcTreeNode >::leaf_iterator     tree_leaf_iterator;
+  typedef tree< OcTreeNode >::sibling_iterator  tree_sibling_iterator;
 
   /**
   * add point to quadtree.
@@ -577,7 +574,7 @@ public:
   void print_path ( const tree_iterator_base & it ) const;
 
   /**
-   * find the leaf which has point p 
+   * find the leaf which has point p
    */
   tree_iterator_base find_leaf_has_point ( const Point & p ) const;
 

@@ -65,12 +65,25 @@ public:
   /**
    * @return data by enum name
    */
-  virtual Real  get_variable_real(SolutionVariable variable) const=0;
+  virtual PetscScalar  get_variable_real(SolutionVariable variable) const=0;
 
   /**
    * set variable by enum name
    */
-  virtual void set_variable_real(SolutionVariable variable, Real value)=0;
+  virtual void set_variable_real(SolutionVariable variable, PetscScalar value)=0;
+
+
+  /**
+   * @return the minimal distange to surface
+   */
+  virtual PetscScalar         dmin()          const
+    { return 0; }
+
+  /**
+   * @return the writable reference to the minimal distange to surface
+   */
+  virtual PetscScalar &       dmin()
+  { return FVM_NodeData::_scalar_dummy_; }
 
   //--------------------------------------------------------------------
   // these virtual functions should be overloaded by its derived classes
@@ -79,38 +92,38 @@ public:
   /**
    * @return the statistic potential
    */
-  virtual Real         psi()          const
+  virtual PetscScalar         psi()          const
     { return 0; }
 
   /**
    * @return the writable reference to statistic potential
    */
-  virtual Real &       psi()
+  virtual PetscScalar &       psi()
   { return FVM_NodeData::_scalar_dummy_; }
 
 
   /**
    * @return the correction of potential
    */
-  virtual Real         dpsi()          const
+  virtual PetscScalar         dpsi()          const
   { return 0; }
 
   /**
    * @return the writable reference to correction of potential
    */
-  virtual Real &       dpsi()
+  virtual PetscScalar &       dpsi()
   { return FVM_NodeData::_scalar_dummy_; }
 
   /**
    * @return the lattice temperature
    */
-  virtual Real         T()          const
+  virtual PetscScalar         T()          const
     { return 0; }
 
   /**
    * @return the writable reference to lattice temperature
    */
-  virtual Real &       T()
+  virtual PetscScalar &       T()
   { return FVM_NodeData::_scalar_dummy_; }
 
 
@@ -118,13 +131,13 @@ public:
   /**
    * @return the electron density
    */
-  virtual Real         n()          const
+  virtual PetscScalar         n()          const
     { return 0; }
 
   /**
    * @return the writable reference to electron density
    */
-  virtual Real &       n()
+  virtual PetscScalar &       n()
   { return FVM_NodeData::_scalar_dummy_; }
 
 
@@ -132,88 +145,143 @@ public:
   /**
    * @return the hole density
    */
-  virtual Real         p()          const
+  virtual PetscScalar         p()          const
     { return 0; }
 
   /**
    * @return the writable reference to hole density
    */
-  virtual Real &       p()
+  virtual PetscScalar &       p()
+  { return FVM_NodeData::_scalar_dummy_; }
+
+
+  /**
+   * @return the H+ densiy
+   */
+  virtual PetscScalar         HIon()          const
+    { return 0; }
+
+  /**
+   * @return the writable reference to H+ densiy
+   */
+  virtual PetscScalar &       HIon()
+  { return FVM_NodeData::_scalar_dummy_; }
+
+  /**
+   * @return the A type trap density
+   */
+  virtual PetscScalar         trap_a()          const
+    { return 0; }
+
+  /**
+   * @return the writable reference to A type trap density
+   */
+  virtual PetscScalar &       trap_a()
+  { return FVM_NodeData::_scalar_dummy_; }
+
+
+
+  /**
+   * @return the B type trap density
+   */
+  virtual PetscScalar         trap_b()          const
+    { return 0; }
+
+
+  /**
+   * @return the writable reference to B type trap density
+   */
+  virtual PetscScalar &       trap_b()
+  { return FVM_NodeData::_scalar_dummy_; }
+
+
+
+  /**
+   * @return the neutral state B type trap density
+   */
+  virtual PetscScalar         trap_bn()          const
+    { return 0; }
+
+
+  /**
+   * @return the writable reference to neutral state B type trap density
+   */
+  virtual PetscScalar &       trap_bn()
   { return FVM_NodeData::_scalar_dummy_; }
 
 
   /**
    * @return the electron temperature
    */
-  virtual Real         Tn()          const
+  virtual PetscScalar         Tn()          const
   { return 0; }
 
   /**
    * @return the writable reference to electron temperature
    */
-  virtual Real &       Tn()
+  virtual PetscScalar &       Tn()
   { return FVM_NodeData::_scalar_dummy_; }
 
   /**
    * @return the hole temperature
    */
-  virtual Real         Tp()          const
+  virtual PetscScalar         Tp()          const
   { return 0; }
 
   /**
    * @return the writable reference to hole temperature
    */
-  virtual Real &       Tp()
+  virtual PetscScalar &       Tp()
   { return FVM_NodeData::_scalar_dummy_; }
 
 
   /**
    * @return the quantum conduction band
    */
-  virtual Real         Eqc()          const
+  virtual PetscScalar         Eqc()          const
   { return 0; }
 
   /**
    * @return the writable reference to quantum conduction band
    */
-  virtual Real &       Eqc()
+  virtual PetscScalar &       Eqc()
   { return FVM_NodeData::_scalar_dummy_; }
 
   /**
    * @return the quantum valence band
    */
-  virtual Real         Eqv()          const
+  virtual PetscScalar         Eqv()          const
   { return 0; }
 
   /**
    * @return the writable reference to quantum valence band
    */
-  virtual Real &       Eqv()
+  virtual PetscScalar &       Eqv()
   { return FVM_NodeData::_scalar_dummy_; }
 
   /**
    * @return the statistic potential
    */
-  virtual std::complex<Real>         psi_ac()          const
-    { return std::complex<Real>(0.0, 0.0); }
+  virtual std::complex<PetscScalar>         psi_ac()          const
+    { return std::complex<PetscScalar>(0.0, 0.0); }
 
   /**
    * @return the writable reference to statistic potential
    */
-  virtual std::complex<Real> &       psi_ac()
+  virtual std::complex<PetscScalar> &       psi_ac()
   { return FVM_NodeData::_complex_dummy_; }
 
 
   /**
    * @return the lattice temperature
    */
-  virtual std::complex<Real>         T_ac()          const
-    { return std::complex<Real>(0.0, 0.0); }
+  virtual std::complex<PetscScalar>         T_ac()          const
+    { return std::complex<PetscScalar>(0.0, 0.0); }
 
   /**
    * @return the writable reference to lattice temperature
    */
-  virtual std::complex<Real> &       T_ac()
+  virtual std::complex<PetscScalar> &       T_ac()
   { return FVM_NodeData::_complex_dummy_; }
 
 
@@ -221,13 +289,13 @@ public:
   /**
    * @return the electron density
    */
-  virtual std::complex<Real>         n_ac()          const
-    { return std::complex<Real>(0.0, 0.0); }
+  virtual std::complex<PetscScalar>         n_ac()          const
+    { return std::complex<PetscScalar>(0.0, 0.0); }
 
   /**
    * @return the writable reference to electron density
    */
-  virtual std::complex<Real> &       n_ac()
+  virtual std::complex<PetscScalar> &       n_ac()
   { return FVM_NodeData::_complex_dummy_; }
 
 
@@ -235,88 +303,88 @@ public:
   /**
    * @return the hole density
    */
-  virtual std::complex<Real>         p_ac()          const
-    { return std::complex<Real>(0.0, 0.0); }
+  virtual std::complex<PetscScalar>         p_ac()          const
+    { return std::complex<PetscScalar>(0.0, 0.0); }
 
   /**
    * @return the writable reference to hole density
    */
-  virtual std::complex<Real> &       p_ac()
+  virtual std::complex<PetscScalar> &       p_ac()
   { return FVM_NodeData::_complex_dummy_; }
 
 
   /**
    * @return the electron temperature
    */
-  virtual std::complex<Real>         Tn_ac()          const
-  { return std::complex<Real>(0.0, 0.0); }
+  virtual std::complex<PetscScalar>         Tn_ac()          const
+  { return std::complex<PetscScalar>(0.0, 0.0); }
 
   /**
    * @return the writable reference to electron temperature
    */
-  virtual std::complex<Real> &       Tn_ac()
+  virtual std::complex<PetscScalar> &       Tn_ac()
   { return FVM_NodeData::_complex_dummy_; }
 
   /**
    * @return the hole temperature
    */
-  virtual std::complex<Real>         Tp_ac()          const
-  { return std::complex<Real>(0.0, 0.0); }
+  virtual std::complex<PetscScalar>         Tp_ac()          const
+  { return std::complex<PetscScalar>(0.0, 0.0); }
 
   /**
    * @return the writable reference to hole temperature
    */
-  virtual std::complex<Real> &       Tp_ac()
+  virtual std::complex<PetscScalar> &       Tp_ac()
   { return FVM_NodeData::_complex_dummy_; }
 
 
   /**
    * @return the complex E file. only used by EM FEM solver
    */
-  virtual std::complex<Real>         OptE_complex()          const
-  { return std::complex<Real>(0.0, 0.0); }
+  virtual std::complex<PetscScalar>         OptE_complex()          const
+  { return std::complex<PetscScalar>(0.0, 0.0); }
 
   /**
    * @return the writable reference to complex E file. only used by EM FEM solver
    */
-  virtual std::complex<Real> &       OptE_complex()
+  virtual std::complex<PetscScalar> &       OptE_complex()
   { return FVM_NodeData::_complex_dummy_; }
 
   /**
    * @return the complex H file. only used by EM FEM solver
    */
-  virtual std::complex<Real>         OptH_complex()          const
-  { return std::complex<Real>(0.0, 0.0); }
+  virtual std::complex<PetscScalar>         OptH_complex()          const
+  { return std::complex<PetscScalar>(0.0, 0.0); }
 
   /**
    * @return the writable reference to complex H file. only used by EM FEM solver
    */
-  virtual std::complex<Real> &       OptH_complex()
+  virtual std::complex<PetscScalar> &       OptH_complex()
   { return FVM_NodeData::_complex_dummy_; }
 
 
   /**
    * @return the statistic potential at previous time step
    */
-  virtual Real         psi_last()          const
+  virtual PetscScalar         psi_last()          const
     { return 0; }
 
   /**
    * @return the writable reference to statistic potential at previous time step
    */
-  virtual Real &       psi_last()
+  virtual PetscScalar &       psi_last()
   { return FVM_NodeData::_scalar_dummy_; }
 
   /**
    * @return the old statistic potential
    */
-  virtual Real         psi_old()          const
+  virtual PetscScalar         psi_old()          const
   { return 0; }
 
   /**
    * @return the writable reference to old statistic potential
    */
-  virtual Real &       psi_old()
+  virtual PetscScalar &       psi_old()
   { return FVM_NodeData::_scalar_dummy_; }
 
 
@@ -324,13 +392,13 @@ public:
   /**
    * @return the lattice temperature at previous time step
    */
-  virtual Real         T_last()          const
+  virtual PetscScalar         T_last()          const
     { return 0; }
 
   /**
    * @return the writable reference to lattice temperature at previous time step
    */
-  virtual Real &       T_last()
+  virtual PetscScalar &       T_last()
   { return FVM_NodeData::_scalar_dummy_; }
 
 
@@ -338,26 +406,26 @@ public:
   /**
    * @return the electron density at previous time step
    */
-  virtual Real         n_last()          const
+  virtual PetscScalar         n_last()          const
     { return 0; }
 
   /**
    * @return the writable reference to electron density at previous time step
    */
-  virtual Real &       n_last()
+  virtual PetscScalar &       n_last()
   { return FVM_NodeData::_scalar_dummy_; }
 
 
   /**
    * @return the old electron density
    */
-  virtual Real         n_old()          const
+  virtual PetscScalar         n_old()          const
   { return 0; }
 
   /**
    * @return the writable reference to old electron density
    */
-  virtual Real &       n_old()
+  virtual PetscScalar &       n_old()
   { return FVM_NodeData::_scalar_dummy_; }
 
 
@@ -365,165 +433,189 @@ public:
   /**
    * @return the hole density at previous time step
    */
-  virtual Real         p_last()          const
+  virtual PetscScalar         p_last()          const
     { return 0; }
 
   /**
    * @return the writable reference to hole density at previous time step
    */
-  virtual Real &       p_last()
+  virtual PetscScalar &       p_last()
   { return FVM_NodeData::_scalar_dummy_; }
 
 
   /**
    * @return the old hole density
    */
-  virtual Real         p_old()          const
+  virtual PetscScalar         p_old()          const
   { return 0; }
 
   /**
    * @return the writable reference to old hole density
    */
-  virtual Real &       p_old()
+  virtual PetscScalar &       p_old()
   { return FVM_NodeData::_scalar_dummy_; }
 
 
   /**
    * @return the electron temperature at previous time step
    */
-  virtual Real         Tn_last()          const
+  virtual PetscScalar         Tn_last()          const
   { return 0; }
 
   /**
    * @return the writable reference to electron temperature at previous time step
    */
-  virtual Real &       Tn_last()
+  virtual PetscScalar &       Tn_last()
   { return FVM_NodeData::_scalar_dummy_; }
 
   /**
    * @return the hole temperature at previous time step
    */
-  virtual Real         Tp_last()          const
+  virtual PetscScalar         Tp_last()          const
   { return 0; }
 
   /**
    * @return the writable reference to hole temperature at previous time step
    */
-  virtual Real &       Tp_last()
+  virtual PetscScalar &       Tp_last()
   { return FVM_NodeData::_scalar_dummy_; }
 
 
   /**
    * @return the electron affinity
    */
-  virtual Real         affinity()          const
+  virtual PetscScalar         affinity()          const
     { return 0; }
 
   /**
    * @return the writable reference to the electron affinity
    */
-  virtual Real &       affinity()
+  virtual PetscScalar &       affinity()
   { return FVM_NodeData::_scalar_dummy_; }
 
   /**
    * @return the conduction band
    */
-  virtual Real         Ec()          const
+  virtual PetscScalar         Ec()          const
   { return 0; }
 
   /**
    * @return the writable reference to the conduction band
    */
-  virtual Real &       Ec()
+  virtual PetscScalar &       Ec()
   { return FVM_NodeData::_scalar_dummy_; }
 
   /**
    * @return the valance band
    */
-  virtual Real         Ev()          const
+  virtual PetscScalar         Ev()          const
   { return 0; }
 
   /**
    * @return the writable reference to the valance band
    */
-  virtual Real &       Ev()
+  virtual PetscScalar &       Ev()
+  { return FVM_NodeData::_scalar_dummy_; }
+
+  /**
+   * @return the change of conduction band due to strain
+   */
+  virtual PetscScalar         dEcStrain()          const
+  { return 0; }
+
+  /**
+   * @return the writable reference to the change of conduction band due to strain
+   */
+  virtual PetscScalar &       dEcStrain()
+  { return FVM_NodeData::_scalar_dummy_; }
+
+  /**
+   * @return the change of valance band due to strain
+   */
+  virtual PetscScalar         dEvStrain()          const
+  { return 0; }
+
+  /**
+   * @return the writable reference to the change of valance band due to strain
+   */
+  virtual PetscScalar &       dEvStrain()
   { return FVM_NodeData::_scalar_dummy_; }
 
 
   /**
    * @return the mass density of the material
    */
-  virtual Real         density()          const
+  virtual PetscScalar         density()          const
     { return 0; }
 
   /**
    * @return the writable reference to the mass density of the material
    */
-  virtual Real &       density()
+  virtual PetscScalar &       density()
   { return FVM_NodeData::_scalar_dummy_; }
 
 
   /**
    * @return the dielectric permittivity
    */
-  virtual Real         eps()          const
+  virtual PetscScalar         eps()          const
     { return 0; }
 
   /**
    * @return the writable reference to the dielectric permittivity
    */
-  virtual Real &       eps()
+  virtual PetscScalar &       eps()
   { return FVM_NodeData::_scalar_dummy_; }
 
 
   /**
    * @return the megnetic permeability
    */
-  virtual Real         mu()          const
+  virtual PetscScalar         mu()          const
     { return 0; }
 
   /**
    * @return the writable reference to the megnetic permeability
    */
-  virtual Real &       mu()
+  virtual PetscScalar &       mu()
   { return FVM_NodeData::_scalar_dummy_; }
 
 
   /**
    * @return the effective density of states in the conduction band
    */
-  virtual Real         Nc()          const
+  virtual PetscScalar         Nc()          const
     { return 0; }
 
   /**
    * @return the writable reference to the effective density of states in the conduction band
    */
-  virtual Real &       Nc()
+  virtual PetscScalar &       Nc()
   { return FVM_NodeData::_scalar_dummy_; }
 
 
   /**
    * @return the effective density of states in the valence band
    */
-  virtual Real         Nv()          const
+  virtual PetscScalar         Nv()          const
     { return 0; }
 
   /**
    * @return the writable reference to the effective density of states in the valence band
    */
-  virtual Real &       Nv()
+  virtual PetscScalar &       Nv()
   { return FVM_NodeData::_scalar_dummy_; }
 
   /**
    * @return the bandgap
    */
-  virtual Real         Eg()          const
+  virtual PetscScalar         Eg()          const
     { return 0; }
 
   /**
    * @return the writable reference to the bandgap
    */
-  virtual Real &       Eg()
+  virtual PetscScalar &       Eg()
   { return FVM_NodeData::_scalar_dummy_; }
 
 
@@ -531,13 +623,13 @@ public:
   /**
    * @return the mole fraction for single compound material
    */
-  virtual Real         mole_x()          const
+  virtual PetscScalar         mole_x()          const
     { return 0; }
 
   /**
    * @return the writable reference to the mole fraction for single compound material
    */
-  virtual Real &       mole_x()
+  virtual PetscScalar &       mole_x()
   { return FVM_NodeData::_scalar_dummy_; }
 
 
@@ -545,38 +637,38 @@ public:
   /**
   * @return the mole fraction for dual compound material
   */
-  virtual Real         mole_y()          const
+  virtual PetscScalar         mole_y()          const
     { return 0; }
 
   /**
    * @return the writable reference to the mole fraction for dual compound material
    */
-  virtual Real &       mole_y()
+  virtual PetscScalar &       mole_y()
   { return FVM_NodeData::_scalar_dummy_; }
 
 
   /**
    * @return the electron mobility
    */
-  virtual Real         mun()          const
+  virtual PetscScalar         mun()          const
     { return 0; }
 
   /**
    * @return the writable reference to electron mobility
    */
-  virtual Real &       mun()
+  virtual PetscScalar &       mun()
   { return FVM_NodeData::_scalar_dummy_; }
 
   /**
    * @return the hole mobility
    */
-  virtual Real         mup()          const
+  virtual PetscScalar         mup()          const
     { return 0; }
 
   /**
    * @return the writable reference to hole mobility
    */
-  virtual Real &       mup()
+  virtual PetscScalar &       mup()
   { return FVM_NodeData::_scalar_dummy_; }
 
 
@@ -585,200 +677,200 @@ public:
   /**
    * @return the general doping concentration of acceptor
    */
-  virtual Real         Na()          const
+  virtual PetscScalar         Na()          const
     { return 0; }
 
   /**
    * @return the writable reference to the general doping concentration of acceptor
    */
-  virtual Real &       Na()
+  virtual PetscScalar &       Na()
   { return FVM_NodeData::_scalar_dummy_; }
 
   /**
    * @return the general doping concentration of donor
    */
-  virtual Real         Nd()          const
+  virtual PetscScalar         Nd()          const
     { return 0; }
 
   /**
    * @return the writable reference to the general doping concentration of donor
    */
-  virtual Real &       Nd()
+  virtual PetscScalar &       Nd()
   { return FVM_NodeData::_scalar_dummy_; }
 
 
   /**
    * @return the carrier generation ratio due to OptG and PatG
    */
-  virtual Real         Field_G()          const
+  virtual PetscScalar         Field_G()          const
   { return 0; }
 
   /**
    * @return the writable carrier generation ratio due to OptG and PatG
    */
-  virtual Real &       Field_G()
+  virtual PetscScalar &       Field_G()
   { return FVM_NodeData::_scalar_dummy_; }
 
   /**
    * @return the optical generation ratio
    */
-  virtual Real         OptG()          const
+  virtual PetscScalar         OptG()          const
   { return 0; }
 
   /**
    * @return the writable optical generation ratio
    */
-  virtual Real &       OptG()
+  virtual PetscScalar &       OptG()
   { return FVM_NodeData::_scalar_dummy_; }
 
   /**
    * @return the heat generation ratio due to optical incident
    */
-  virtual Real         OptQ()          const
+  virtual PetscScalar         OptQ()          const
   { return 0; }
 
   /**
    * @return the writable heat generation ratio due to optical incident
    */
-  virtual Real &       OptQ()
+  virtual PetscScalar &       OptQ()
   { return FVM_NodeData::_scalar_dummy_; }
 
   /**
    * @return the optical energy
    */
-  virtual Real         OptE()          const
+  virtual PetscScalar         OptE()          const
   { return 0; }
 
   /**
    * @return the writable optical energy
    */
-  virtual Real &       OptE()
+  virtual PetscScalar &       OptE()
   { return FVM_NodeData::_scalar_dummy_; }
 
 
   /**
    * @return the particle generation ratio
    */
-  virtual Real         PatG()          const
+  virtual PetscScalar         PatG()          const
   { return 0; }
 
   /**
    * @return the writable particle generation ratio
    */
-  virtual Real &       PatG()
+  virtual PetscScalar &       PatG()
   { return FVM_NodeData::_scalar_dummy_; }
 
   /**
    * @return the particle energy
    */
-  virtual Real         PatE()          const
+  virtual PetscScalar         PatE()          const
   { return 0; }
 
   /**
    * @return the writable particle generation ratio
    */
-  virtual Real &       PatE()
+  virtual PetscScalar &       PatE()
   { return FVM_NodeData::_scalar_dummy_; }
 
 
   /**
    * @return the dose rate, Gy/s
    */
-  virtual Real         DoseRate()          const
+  virtual PetscScalar         DoseRate()          const
   { return 0; }
 
   /**
    * @return the writable reference to dose rate
    */
-  virtual Real &       DoseRate()
+  virtual PetscScalar &       DoseRate()
   { return FVM_NodeData::_scalar_dummy_; }
 
   /**
    * @return the electron injected in to the FVM cell.
    * NOTE: it is the flux flow into the FVM cell or total electron density generated in the cell
    */
-  virtual Real         EIn()          const
+  virtual PetscScalar         EIn()          const
   { return 0; }
 
   /**
    * @return the writable reference of electron injected in to the FVM cell.
    */
-  virtual Real &       EIn()
+  virtual PetscScalar &       EIn()
   { return FVM_NodeData::_scalar_dummy_; }
 
 
   /**
    * @return the hole inject injected in to the FVM cell.
    */
-  virtual Real         HIn()          const
+  virtual PetscScalar         HIn()          const
   { return 0; }
 
   /**
    * @return the writable reference of hole injected in to the FVM cell.
    */
-  virtual Real &       HIn()
+  virtual PetscScalar &       HIn()
   { return FVM_NodeData::_scalar_dummy_; }
 
 
   /**
    * @return the total acceptor concentration
    */
-  virtual Real         Total_Na()     const
+  virtual PetscScalar         Total_Na()     const
     { return 0; }
 
   /**
    * @return the total donor concentration
    */
-  virtual Real         Total_Nd()     const
+  virtual PetscScalar         Total_Nd()     const
     {return 0;}
 
   /**
    * @return net concentration
    */
-  virtual Real         Net_doping()   const
+  virtual PetscScalar         Net_doping()   const
     {return 0;}
 
   /**
    * @return the total donor concentration
    */
-  virtual Real         Total_doping() const
+  virtual PetscScalar         Total_doping() const
     {return 0;}
 
   /**
    * @return net charge concentration
    */
-  virtual Real         Net_charge()   const
+  virtual PetscScalar         Net_charge()   const
     {return 0;}
 
   /**
    * @return the intrinsic carrier concentration.
    * @note will not consider bandgap narrowing
    */
-  virtual Real         ni()           const
+  virtual PetscScalar         ni()           const
     { return 0; }
 
   /**
    * @return the quasi-fermi potential of electron
    */
-  virtual Real         qFn()           const
+  virtual PetscScalar         qFn()           const
   { return 0; }
 
   /**
    * @return the quasi-fermi potential of electron
    */
-  virtual Real  &      qFn()
+  virtual PetscScalar  &      qFn()
   { return FVM_NodeData::_scalar_dummy_; }
 
   /**
    * @return the quasi-fermi potential of hole
    */
-  virtual Real         qFp()           const
+  virtual PetscScalar         qFp()           const
   { return 0; }
 
   /**
    * @return the quasi-fermi potential of hole
    */
-  virtual Real &        qFp()
+  virtual PetscScalar &        qFp()
   { return FVM_NodeData::_scalar_dummy_; }
 
 
@@ -787,138 +879,183 @@ public:
    * this variable is used for data exchange
    * between hdm solver and poisson solver
    */
-  virtual Real         rho()          const
+  virtual PetscScalar         rho()          const
   { return 0; }
 
   /**
    * @return the writable reference to charge density
    */
-  virtual Real &       rho()
+  virtual PetscScalar &       rho()
+  { return FVM_NodeData::_scalar_dummy_; }
+
+
+  /**
+   * @return the interface charge density
+   */
+  virtual PetscScalar         interface_charge()          const
+  { return 0; }
+
+  /**
+   * @return the writable reference to interface charge density
+   */
+  virtual PetscScalar &       interface_charge()
   { return FVM_NodeData::_scalar_dummy_; }
 
 
   /**
    * @return the recombnation rate
    */
-  virtual Real         Recomb()          const
+  virtual PetscScalar         Recomb()          const
   { return 0; }
 
   /**
    * @return the writable reference to recombnation rate
    */
-  virtual Real &       Recomb()
+  virtual PetscScalar &       Recomb()
   { return FVM_NodeData::_scalar_dummy_; }
 
 
   /**
    * @return the direct(optical) recombnation rate
    */
-  virtual Real         Recomb_Dir()          const
+  virtual PetscScalar         Recomb_Dir()          const
   { return 0; }
 
   /**
    * @return the writable reference to direct(optical) recombnation rate
    */
-  virtual Real &       Recomb_Dir()
+  virtual PetscScalar &       Recomb_Dir()
   { return FVM_NodeData::_scalar_dummy_; }
 
 
   /**
    * @return the SRH recombnation rate
    */
-  virtual Real         Recomb_SRH()          const
+  virtual PetscScalar         Recomb_SRH()          const
   { return 0; }
 
   /**
    * @return the writable reference to SRH recombnation rate
    */
-  virtual Real &       Recomb_SRH()
+  virtual PetscScalar &       Recomb_SRH()
   { return FVM_NodeData::_scalar_dummy_; }
 
 
   /**
    * @return the impact ionization
    */
-  virtual Real         ImpactIonization()          const
+  virtual PetscScalar         ImpactIonization()          const
   { return 0; }
 
   /**
    * @return the writable reference to impact ionization
    */
-  virtual Real &       ImpactIonization()
+  virtual PetscScalar &       ImpactIonization()
   { return FVM_NodeData::_scalar_dummy_; }
 
 
   /**
    * @return the Auger recombnation rate
    */
-  virtual Real         Recomb_Auger()          const
+  virtual PetscScalar         Recomb_Auger()          const
   { return 0; }
 
   /**
    * @return the writable reference to Auger recombnation rate
    */
-  virtual Real &       Recomb_Auger()
+  virtual PetscScalar &       Recomb_Auger()
   { return FVM_NodeData::_scalar_dummy_; }
 
 
   /**
    * @return the electrical field
    */
-  virtual VectorValue<Real> E()       const
-  { return VectorValue<Real>(0,0,0);}
+  virtual VectorValue<PetscScalar> E()       const
+  { return VectorValue<PetscScalar>(0,0,0);}
 
 
   /**
    * @return the writable reference to electrical field
    */
-  virtual VectorValue<Real> & E()
+  virtual VectorValue<PetscScalar> & E()
   { return _vector_dummy_;}
 
   /**
    * @return the electron current
    */
-  virtual VectorValue<Real> Jn()       const
-  { return VectorValue<Real>(0,0,0);}
+  virtual VectorValue<PetscScalar> Jn()       const
+  { return VectorValue<PetscScalar>(0,0,0);}
 
 
   /**
    * @return the writable reference to electron current
    */
-  virtual VectorValue<Real> & Jn()
+  virtual VectorValue<PetscScalar> & Jn()
   { return _vector_dummy_;}
 
 
   /**
    * @return the hole current
    */
-  virtual VectorValue<Real> Jp()       const
-  { return VectorValue<Real>(0,0,0);}
+  virtual VectorValue<PetscScalar> Jp()       const
+  { return VectorValue<PetscScalar>(0,0,0);}
 
 
   /**
    * @return the writable reference to hole current
    */
-  virtual VectorValue<Real> & Jp()
+  virtual VectorValue<PetscScalar> & Jp()
   { return _vector_dummy_;}
 
+
+  /**
+   * @return the stress tensor
+   */
+  virtual TensorValue<PetscScalar> stress()       const
+  { return TensorValue<PetscScalar>();}
+
+
+  /**
+   * @return the writable reference to stress tensor
+   */
+  virtual TensorValue<PetscScalar> & stress()
+  { return _tensor_dummy_;}
+
+
+  /**
+   * @return the strain tensor
+   */
+  virtual TensorValue<PetscScalar> strain()       const
+  { return TensorValue<PetscScalar>();}
+
+
+  /**
+   * @return the writable reference to strain tensor
+   */
+  virtual TensorValue<PetscScalar> & strain()
+  { return _tensor_dummy_;}
 
 protected:
 
   /**
    * dummy scalar parameter to avoid compile problem
    */
-  static Real _scalar_dummy_;
+  static PetscScalar _scalar_dummy_;
 
   /**
    * dummy scalar parameter to avoid compile problem
    */
-  static std::complex<Real> _complex_dummy_;
+  static std::complex<PetscScalar> _complex_dummy_;
 
   /**
    * dummy vector parameter to avoid compile problem
    */
-  static VectorValue<Real> _vector_dummy_;
+  static VectorValue<PetscScalar> _vector_dummy_;
+
+  /**
+   * dummy tensor parameter to avoid compile problem
+   */
+  static TensorValue<PetscScalar> _tensor_dummy_;
 };
 
 

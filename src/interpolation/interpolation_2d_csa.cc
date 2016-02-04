@@ -46,7 +46,7 @@ void Interpolation2D_CSA::add_scatter_data(const Point & point, int group, doubl
   {
   case Linear    : p.z = value; break;
   case SignedLog : p.z = (value>0 ? 1.0 : -1.0)*std::log(1.0+std::abs(value)); break;
-  case Asinh     : p.z = boost::math::asinh(value); break;
+  case Asinh     : p.z = asinh(value); break;
   }
 
   csa_points[group].push_back(p);

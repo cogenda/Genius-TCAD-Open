@@ -103,6 +103,16 @@ namespace PhysicalUnit
   double   W;
 
   /**
+   * energy density, define as J/kg
+   */
+  double   Gy;
+
+  /**
+   * energy density, define as 0.01*J/kg
+   */
+  double   rad;
+
+  /**
    *  define as 1e-6*s
    */
   double   us;
@@ -131,6 +141,21 @@ namespace PhysicalUnit
    *  define as V/A
    */
   double   Ohm;
+
+  /**
+   *  Newton, define as kg.m.s^-2
+   */
+  double   N;
+
+  /**
+   *  define as 1e-5*N
+   */
+  double   dyne;
+
+  /**
+   * the stress unit, F/S
+   */
+  double   Pa;
 
   // Fundamental Physical Constants
 
@@ -184,6 +209,8 @@ namespace PhysicalUnit
     J  = C*V;
     W  = J/s;
     kg = J/(m*m)*s*s;
+    Gy = J/kg;
+    rad= 0.01*Gy;
     g  = 1e-3*kg;
     eV = 1.602176462e-19*J;
     us = 1e-6*s;
@@ -191,7 +218,10 @@ namespace PhysicalUnit
     ps = 1e-12*s;
     A  = C/s;
     mA = 1e-3*A;
-    Ohm= V/A; 
+    Ohm= V/A;
+    N  = kg*m/s/s;
+    dyne=1e-5*N;
+    Pa = N/m/m;
 
     kb   = 1.3806503e-23*J/K;
     e    = 1.602176462e-19*C;
@@ -219,6 +249,8 @@ namespace PhysicalUnit
     J  = C*V;
     W  = J/s;
     kg = J/(m*m)*s*s;
+    Gy = J/kg;
+    rad= 0.01*Gy;
     g  = 1e-3*kg;
     eV = 1.602176462e-19*J;
     us = 1e-6*s;
@@ -226,7 +258,10 @@ namespace PhysicalUnit
     ps = 1e-12*s;
     A  = C/s;
     mA = 1e-3*A;
-    Ohm= V/A; 
+    Ohm= V/A;
+    N  = kg*m/s/s;
+    dyne=1e-5*N;
+    Pa = N/m/m;
 
     kb   = 1.3806503e-23*J/K;
     e    = 1.602176462e-19*C;
@@ -253,6 +288,8 @@ namespace PhysicalUnit
     J  = C*V;
     W  = J/s;
     kg = J/(m*m)*s*s;
+    Gy = J/kg;
+    rad= 0.01*Gy;
     g  = 1e-3*kg;
     eV = 1.602176462e-19*J;
     us = 1e-6*s;
@@ -260,7 +297,10 @@ namespace PhysicalUnit
     ps = 1e-12*s;
     A  = C/s;
     mA = 1e-3*A;
-    Ohm= V/A; 
+    Ohm= V/A;
+    N  = kg*m/s/s;
+    dyne=1e-5*N;
+    Pa = N/m/m;
 
     kb   = 1.3806503e-23*J/K;
     e    = 1.602176462e-19*C;
@@ -289,6 +329,8 @@ namespace PhysicalUnit
     J  = C*V;
     W  = J/s;
     kg = J/(m*m)*s*s;
+    Gy = J/kg;
+    rad= 0.01*Gy;
     g  = 1e-3*kg;
     eV = 1.602176462e-19*J;
     us = 1e-6*s;
@@ -296,7 +338,11 @@ namespace PhysicalUnit
     ps = 1e-12*s;
     A  = C/s;
     mA = 1e-3*A;
-    Ohm= V/A; 
+    Ohm= V/A;
+    Pa = kg/s/s/m;
+    N  = kg*m/s/s;
+    dyne=1e-5*N;
+    Pa = N/m/m;
 
     kb   = 1.3806503e-23*J/K;
     e    = 1.602176462e-19*C;

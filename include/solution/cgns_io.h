@@ -169,7 +169,7 @@ private:
   /**
    * aux function to sort x by increase order of id
    */
-  std::vector<double> & _sort_it (std::vector<double> & x, const std::vector<unsigned int > &id);
+  std::vector<double>  _sort_it (const std::vector<PetscScalar> & x, const std::vector<unsigned int > &id);
 
 };
 

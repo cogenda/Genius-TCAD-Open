@@ -66,7 +66,7 @@ void CVHook::on_init()
       {
         _sweep_electrode = bc->label();
       }
-      if( bc->bc_type() == GateContact )
+      if( bc->bc_type() == GateContact || bc->bc_type() == IF_Insulator_Metal )
       {
         _gate_electrodes.push_back (bc->label());
       }
@@ -103,13 +103,10 @@ void CVHook::post_solve()
       BoundaryCondition * bc = bcs->get_bc(n);
 
       // Save sweep voltage
-      if(bc->label() == SolverSpecify::Electrode_VScan[0])
-      {
-        _vsweep.push_back(bc->ext_circuit()->Vapp()/PhysicalUnit::V);
-      }
+      _vsweep.push_back(SolverSpecify::Electrode_VScan_Voltage/PhysicalUnit::V);
 
       // skip bc which is not gate
-      if( bc->bc_type() != GateContact ) continue;
+      if( bc->bc_type() != GateContact && bc->bc_type() != IF_Insulator_Metal) continue;
 
       std::vector<double> flux_buffer;
 
@@ -158,6 +155,7 @@ void CVHook::post_solve()
                 break;
               }
             case ElectrodeRegion:
+            case MetalRegion:
               {
                 break;
               }
@@ -206,6 +204,7 @@ void CVHook::on_close()
 
       _out << std::endl;
 
+      if(_vsweep.size())
       {
         unsigned int i=0;
         _out << _vsweep[i];
@@ -232,6 +231,7 @@ void CVHook::on_close()
         _out << std::endl;
       }
 
+      if(_vsweep.size())
       {
         unsigned int i= _n_values-1;
         _out << _vsweep[i];

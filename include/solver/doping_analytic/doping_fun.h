@@ -30,6 +30,7 @@
 
 #include "point.h"
 #include "plane.h"
+#include "enum_direction.h"
 
 
 enum PROFILE_CARD_ERROR
@@ -142,6 +143,96 @@ private:
   double _zmax;
 };
 
+
+//------------------------------------------------------------------
+
+
+/**
+ * linear doping function
+ */
+class LinearDopingFunction : public DopingFunction
+{
+public:
+
+  /**
+   * constructor
+   */
+  LinearDopingFunction(double ion, double xmin, double xmax, double ymin, double ymax, double zmin, double zmax,
+                       double doping_begin, double doping_slope, double base_plane, double end_plane, Direction dir)
+      : DopingFunction(ion),   _xmin(xmin), _xmax(xmax), _ymin(ymin), _ymax(ymax), _zmin(zmin), _zmax(zmax),
+      _doping_begin(doping_begin), _doping_slope(doping_slope), _base_plane(base_plane), _end_plane(end_plane), _dir(dir)
+  {}
+
+  /**
+   * destructor, do nothing
+   */
+  virtual ~LinearDopingFunction() {}
+
+  /**
+   * compute profile
+   */
+  double profile(double x,double y,double z);
+
+
+private:
+
+  
+  /**
+   * bound box of doping region
+   */
+  double _xmin;    // bound box
+
+  /**
+   * bound box of doping region
+   */
+  double _xmax;
+
+  /**
+   * bound box of doping region
+   */
+  double _ymin;
+
+  /**
+   * bound box of doping region
+   */
+  double _ymax;
+
+  /**
+   * bound box of doping region
+   */
+  double _zmin;
+
+  /**
+   * bound box of doping region
+   */
+  double _zmax;
+  
+  /**
+   * doping fraction at the _base_plane
+   */
+  double _doping_begin;
+
+  /**
+   * the slope of the doping fraction for graded compounds
+   */
+  double _doping_slope;
+
+  /**
+   * the reference base plane, at which the doping fraction is _doping_begin
+   */
+  double _base_plane;
+
+  /**
+   * the end plane, between which the doping fraction is _doping_begin + x*_doping_slope
+   */
+  double _end_plane;
+
+  /**
+   * the doping fraction grading direction
+   */
+  Direction _dir;
+
+};
 
 
 //------------------------------------------------------------------

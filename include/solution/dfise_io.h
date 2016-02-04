@@ -219,6 +219,16 @@ private:
   std::vector<std::string> _materials;
 
   /**
+   * mapping genius material name to sentaurus material name
+   */
+  std::map<std::string, std::string> _material_name_map;
+
+  /**
+   * build the material name mapping
+   */
+  void _build_material_name_map();
+
+  /**
    * region + electrode boundary element list
    */
   std::vector< std::vector<unsigned int> > _region_elements;

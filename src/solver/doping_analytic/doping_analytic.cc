@@ -45,16 +45,11 @@ DopingAnalytic::DopingAnalytic(SimulationSystem & system, Parser::InputParser & 
 
 DopingAnalytic::~DopingAnalytic()
 {
-  for(size_t n=0; n<_doping_funs.size(); n++)
-    delete _doping_funs[n];
-  _doping_funs.clear();
-  for(size_t n=0; n<_doping_data.size(); n++)
-    delete _doping_data[n].second;
-  _doping_data.clear();
-  for(std::map<std::string,DopingFunction *>::iterator it=_custom_profile_funs.begin();
-      it!=_custom_profile_funs.end(); it++)
-    delete it->second;
-  _custom_profile_funs.clear();
+  for(size_t i=0; i<_custom_profile_funs.size(); ++i)
+    delete _custom_profile_funs[i].df;
+  
+  for(size_t i=0; i<_custom_profile_data.size(); ++i)
+    delete _custom_profile_data[i].df.second;
 }
 
 
@@ -83,6 +78,9 @@ int DopingAnalytic::create_solver()
 
       if(c.is_enum_value("type","analytic"))
         set_doping_function_analytic(c);
+      
+      if(c.is_enum_value("type","linear"))
+        set_doping_function_linear(c);
 
       if(c.is_enum_value("type","analytic2"))
       {
@@ -91,6 +89,7 @@ int DopingAnalytic::create_solver()
         else
           set_doping_function_analytic2_rec_mask(c);
       }
+      
       if(c.is_enum_value("type","file"))
         set_doping_function_file(c);
     }
@@ -116,56 +115,52 @@ int DopingAnalytic::post_solve_process()
 }
 
 /*------------------------------------------------------------------
- * assign doping profile to semiconductor region
+ * assign doping profile to regions
  */
 int DopingAnalytic::solve()
 {
-  //search for all the regions
-  for(unsigned int n=0; n<_system.n_regions(); n++)
+  for(size_t i=0; i<_custom_profile_funs.size(); ++i)
   {
-    SimulationRegion * region = _system.region(n);
-
-    //we only process semiconductor region
-    if( region->type() != SemiconductorRegion ) continue;
-    SemiconductorSimulationRegion * semiconductor_region = dynamic_cast<SemiconductorSimulationRegion *>(region);
-    // prepare region custom defined variable
-    std::map<std::string, std::pair<unsigned int, int> > ion_map;
-    for (std::map<std::string,DopingFunction *>::iterator it = _custom_profile_funs.begin();
-         it!=_custom_profile_funs.end(); it++)
+    const std::string & ion = _custom_profile_funs[i].label;
+    const std::string & region_app = _custom_profile_funs[i].region;  
+    DopingFunction * df = _custom_profile_funs[i].df;
+    
+    if(ion == "Na" || ion == "Nd")
     {
-      const std::string & name = it->first;
-      unsigned int ion_index = region->add_variable(SimulationVariable(name, SCALAR, POINT_CENTER, "cm^-3", invalid_uint, true, true));
-      int ion_type = semiconductor_region->material()->band->IonType(name);
-      ion_map.insert(std::make_pair(name, std::make_pair(ion_index, ion_type)));
+      _doping_function_apply(df, region_app);
     }
-
-    SimulationRegion::local_node_iterator node_it = region->on_local_nodes_begin();
-    SimulationRegion::local_node_iterator node_it_end = region->on_local_nodes_end();
-    for(; node_it!=node_it_end; ++node_it)
+    else 
     {
-      FVM_Node * fvm_node = *node_it;
-      FVM_NodeData * node_data = fvm_node->node_data();
-      genius_assert(node_data!=NULL);
-
-      const Node * node = fvm_node->root_node();
-      node_data->Na() = doping_Na( node );
-      node_data->Nd() = doping_Nd( node );
-      // fill custom defined variable
-      for (std::map<std::string,DopingFunction *>::iterator it = _custom_profile_funs.begin();
-           it!=_custom_profile_funs.end(); it++)
-      {
-        const std::string & name = it->first;
-        double d = it->second->profile((*node)(0),(*node)(1),(*node)(2));
-        node_data->data<Real>(ion_map[name].first) = d;
-        if(ion_map[name].second < 0 ) node_data->Na() += d;
-        if(ion_map[name].second > 0 ) node_data->Nd() += d;
-      }
+      _custom_profile_function_apply(ion, df, region_app);
     }
-
   }
-
+  
+  for(size_t i=0; i<_custom_profile_data.size(); ++i)
+  {
+    const std::string & ion = _custom_profile_data[i].label;
+    const std::string & region_app = _custom_profile_data[i].region;  
+    std::pair<int, InterpolationBase * > df = _custom_profile_data[i].df;
+    
+    if(ion == "Na" || ion == "Nd")
+    {
+      _doping_data_apply(df, region_app);
+    }
+    else 
+    {
+      _custom_profile_data_apply(ion, df, region_app);
+    }
+  }
+ 
   return 0;
 }
+
+
+
+
+
+
+
+
 
 
 //-----------------------------------------------------------------------
@@ -202,11 +197,19 @@ void DopingAnalytic::set_doping_function_file(const Parser::Card & c)
                                     c.get_real("transform.zx", 0.0), c.get_real("transform.zy", 0.0), c.get_real("transform.zz", 1.0));
   }
 
+  
   double ion  = 0;
+  std::string ion_type;
   if(c.is_enum_value("ion","donor"))
+  {  
     ion = 1.0;
+    ion_type = "Na";
+  }
   else if(c.is_enum_value("ion","acceptor"))
+  {
     ion = -1.0;
+    ion_type = "Nd";
+  }
 
   bool is_3D_mesh = (_system.mesh().mesh_dimension() == 3);
   PetscScalar LUnit;
@@ -283,23 +286,34 @@ void DopingAnalytic::set_doping_function_file(const Parser::Card & c)
 
     while(!in.eof() && in.good())
     {
+      std::string line;
+      std::getline(in, line);
+
+      // skip empty lines
+      if(line.size()==0) continue;
+      // skip the line begin with '#'
+      if(line.find('#')==0) continue;
+
+      std::stringstream ss;
+      ss << line;
+
       switch(axes)
       {
       case AXES_X:
-        in >> p[0]; break; // read the only coordinate
+        ss >> p[0]; break; // read the only coordinate
       case AXES_Y:
-        in >> p[1]; break;
+        ss >> p[1]; break;
       case AXES_Z:
-        in >> p[2]; break;
+        ss >> p[2]; break;
       case AXES_XY:
-        in >> p[0] >> p[1]; break; // read two coordinates
+        ss >> p[0] >> p[1]; break; // read two coordinates
       case AXES_XZ:
-        in >> p[0] >> p[2]; break; // read two coordinates
+        ss >> p[0] >> p[2]; break; // read two coordinates
         break;
       case AXES_YZ:
-        in >> p[1] >> p[2]; break; // read two coordinates
+        ss >> p[1] >> p[2]; break; // read two coordinates
       case AXES_XYZ:
-        in >> p[0] >> p[1] >> p[2]; break; // read three coordinates
+        ss >> p[0] >> p[1] >> p[2]; break; // read three coordinates
       }
 
       p *= PhysicalUnit::m*LUnit;     // scale to length unit
@@ -324,10 +338,10 @@ void DopingAnalytic::set_doping_function_file(const Parser::Card & c)
         p1[0] = p[0]; p1[1] = p[1]; p1[2] = p[2]; break;
       }
 
-      in >> doping;
+      ss >> doping;
       doping *= ion;
 
-      if(!in.fail())
+      if(!ss.fail())
       {
         interpolator->add_scatter_data(p1, 0, doping);
       }
@@ -344,8 +358,40 @@ void DopingAnalytic::set_doping_function_file(const Parser::Card & c)
 
   interpolator->broadcast(0);
   interpolator->setup(0);
-  _doping_data.push_back(std::pair<int, InterpolationBase * >(axes, interpolator));
+  
+  
+  if(c.is_enum_value("ion","donor") || c.is_enum_value("ion","acceptor"))
+  {
+    DopingData_t doping_data;
+    doping_data.label = ion_type;
+    doping_data.df = std::make_pair(axes, interpolator);
+    doping_data.region = c.get_string("region", "");
+    _custom_profile_data.push_back(doping_data);
+  }
+  else if(c.is_enum_value("ion","custom"))
+  {
+    if(!c.is_parameter_exist("id"))
+    {
+      MESSAGE<<"ERROR at " << c.get_fileline() <<" PROFILE: custom profile should have an id."<<std::endl; RECORD();
+      genius_error();
+    }
+    
+    DopingData_t doping_data;
+    doping_data.label = c.get_string("id", "custom_profile");
+    doping_data.df = std::make_pair(axes, interpolator);
+    doping_data.region = c.get_string("region", "");
+    _custom_profile_data.push_back(doping_data);
+  }
+  else 
+  {
+    DopingData_t doping_data;
+    doping_data.label = c.get_string("ion", "custom_profile");
+    doping_data.df = std::make_pair(axes, interpolator);
+    doping_data.region = c.get_string("region", "");
+    _custom_profile_data.push_back(doping_data);
+  }
 }
+
 
 void DopingAnalytic::set_doping_function_uniform(const Parser::Card & c)
 {
@@ -366,36 +412,182 @@ void DopingAnalytic::set_doping_function_uniform(const Parser::Card & c)
 
   // the peak value of doping profile
   double peak = c.get_real("n.peak",0.0)/pow(cm,3);
-  genius_assert(peak>=0.0);
+  if(peak<0.0)
+  {
+     MESSAGE<<"ERROR at " << c.get_fileline() <<" PROFILE: n.peak should great than zero."<<std::endl; RECORD();
+     genius_error();
+  }
 
   // the ion type
-  genius_assert(c.is_parameter_exist("ion"));
+  if(!c.is_parameter_exist("ion"))
+  {
+     MESSAGE<<"ERROR at " << c.get_fileline() <<" PROFILE: should give ion type."<<std::endl; RECORD();
+     genius_error();
+  }
 
   // explicit specified ion
   if(c.is_enum_value("ion","donor") || c.is_enum_value("ion","acceptor"))
   {
     double ion  = 0;
+    std::string ion_type;
     if(c.is_enum_value("ion","donor"))
+    {  
       ion = 1.0;
+      ion_type = "Na";
+    }
     else if(c.is_enum_value("ion","acceptor"))
+    {
       ion = -1.0;
+      ion_type = "Nd";
+    }
 
     //build uniform doping function
-    DopingFunction * df = new UniformDopingFunction(ion,xmin,xmax,ymin,ymax,zmin,zmax,peak);
-
-    //push it into _doping_funs vector
-    _doping_funs.push_back(df);
+    DopingFunction_t doping_fun;
+    doping_fun.label = ion_type;
+    doping_fun.df = new UniformDopingFunction(ion,xmin,xmax,ymin,ymax,zmin,zmax,peak);
+    doping_fun.region = c.get_string("region", "");
+  
+    _custom_profile_funs.push_back(doping_fun);
   }
 
   // custom specified, the N or P ion will be determined by region material vai PMI
-  if(c.is_enum_value("ion","custom"))
+  else if(c.is_enum_value("ion","custom"))
   {
-    genius_assert(c.is_parameter_exist("id"));
-    std::string name = c.get_string("id", "custom_profile");
-    //build uniform doping function
-    DopingFunction * df = new UniformDopingFunction(1.0,xmin,xmax,ymin,ymax,zmin,zmax,peak);
-    _custom_profile_funs.insert(std::pair<std::string,DopingFunction*>(name,df));
+    if(!c.is_parameter_exist("id"))
+    {
+      MESSAGE<<"ERROR at " << c.get_fileline() <<" PROFILE: custom profile should have an id."<<std::endl; RECORD();
+      genius_error();
+    }
+    
+    DopingFunction_t doping_fun;
+    doping_fun.label = c.get_string("id", "custom_profile");
+    doping_fun.df = new UniformDopingFunction(1.0,xmin,xmax,ymin,ymax,zmin,zmax,peak);
+    doping_fun.region = c.get_string("region", "");
+  
+    _custom_profile_funs.push_back(doping_fun);
   }
+  else 
+  {
+    DopingFunction_t doping_fun;
+    doping_fun.label = c.get_string("ion", "custom_profile");
+    doping_fun.df = new UniformDopingFunction(1.0,xmin,xmax,ymin,ymax,zmin,zmax,peak);
+    doping_fun.region = c.get_string("region", "");
+  
+    _custom_profile_funs.push_back(doping_fun);
+  }
+}
+
+
+void DopingAnalytic::set_doping_function_linear(const Parser::Card & c)
+{
+
+  // get the doping profile bond box
+  double xmin = c.get_real("x.min", 0.0, "x.left")*um;
+  double xmax = c.get_real("x.max", 0.0, "x.right")*um;
+  double ymin = c.get_real("y.min", 0.0, "y.top")*um;
+  double ymax = c.get_real("y.max", 0.0, "y.bottom")*um;
+  double zmin = c.get_real("z.min", 0.0, "z.front")*um;
+  double zmax = c.get_real("z.max", 0.0, "z.back")*um;
+
+  if(xmin>xmax || ymin>ymax || zmin>zmax)
+  {
+    MESSAGE<<"ERROR at " << c.get_fileline() <<" PROFILE: Profile has incorrect XYZ bound."<<std::endl; RECORD();
+    genius_error();
+  }
+  
+
+  // the ion type
+  if(!c.is_parameter_exist("ion"))
+  {
+     MESSAGE<<"ERROR at " << c.get_fileline() <<" PROFILE: should give ion type."<<std::endl; RECORD();
+     genius_error();
+  }
+
+  double ion  = 0;
+  std::string ion_type;
+  if(c.is_enum_value("ion","donor"))
+  {  
+    ion = 1.0;
+    ion_type = "Na";
+  }
+  else if(c.is_enum_value("ion","acceptor"))
+  {
+    ion = -1.0;
+    ion_type = "Nd";
+  }
+
+  // the begin and end location of doping fraction
+  double x_base, x_end;
+
+  // read the mole fraction and its slope from user's input
+  double doping       =  c.get_real("n", 0.0)/pow(cm,3);
+  double doping_slope =  c.get_real("n.slope", 0.0)/um;
+
+  // read the slope direction
+  Direction x_dir     =  Y_Direction;
+  if( c.is_enum_value("n.grad", "x.linear") )
+    x_dir = X_Direction;
+  if( c.is_enum_value("n.grad", "z.linear") )
+    x_dir = Z_Direction;
+
+  // determine the begin and end location
+  switch(x_dir)
+  {
+  case X_Direction: x_base = xmin; x_end = xmax; break;
+  case Y_Direction: x_base = ymin; x_end = ymax; break;
+  case Z_Direction: x_base = zmin; x_end = zmax; break;
+  default : genius_error();
+  }
+
+  // if user input doping.end instead of doping.slope, convert it
+  if(c.is_parameter_exist("n.end") && !c.is_parameter_exist("n.slope"))
+  {
+    double doping_end   =  c.get_real("n.end", 0.0)/pow(cm,3);
+    doping_slope = (doping_end - doping)/(x_end - x_base);
+  }
+  
+
+  // explicit specified ion
+  if(c.is_enum_value("ion","donor") || c.is_enum_value("ion","acceptor"))
+  {
+    //build uniform doping function
+    DopingFunction_t doping_fun;
+    doping_fun.label =ion_type;
+    doping_fun.df = new LinearDopingFunction(ion,xmin,xmax,ymin,ymax,zmin,zmax,doping,doping_slope,x_base,x_end,x_dir);
+    doping_fun.region = c.get_string("region", "");
+  
+    _custom_profile_funs.push_back(doping_fun);
+    
+  }
+
+  // custom specified, the N or P ion will be determined by region material vai PMI
+  else if(c.is_enum_value("ion","custom"))
+  {
+    if(!c.is_parameter_exist("id"))
+    {
+      MESSAGE<<"ERROR at " << c.get_fileline() <<" PROFILE: custom profile should have an id."<<std::endl; RECORD();
+      genius_error();
+    }
+    
+    DopingFunction_t doping_fun;
+    doping_fun.label = c.get_string("id", "custom_profile");
+    doping_fun.df = new LinearDopingFunction(1.0,xmin,xmax,ymin,ymax,zmin,zmax,doping,doping_slope,x_base,x_end,x_dir);
+    doping_fun.region = c.get_string("region", "");
+  
+    _custom_profile_funs.push_back(doping_fun);
+    
+  }
+  else 
+  {
+    DopingFunction_t doping_fun;
+    doping_fun.label = c.get_string("ion", "custom_profile");
+    doping_fun.df = new LinearDopingFunction(1.0,xmin,xmax,ymin,ymax,zmin,zmax,doping,doping_slope,x_base,x_end,x_dir);
+    doping_fun.region = c.get_string("region", "");
+  
+    _custom_profile_funs.push_back(doping_fun);
+  }
+
+
 }
 
 
@@ -419,15 +611,31 @@ void DopingAnalytic::set_doping_function_analytic(const Parser::Card & c)
 
   // the peak value of doping profile
   double peak = c.get_real("n.peak",0.0)/pow(cm,3);
-  genius_assert(peak>=0.0);
+  if(peak<0.0)
+  {
+     MESSAGE<<"ERROR at " << c.get_fileline() <<" PROFILE: n.peak should great than zero."<<std::endl; RECORD();
+     genius_error();
+  }
 
   // the ion type
-  genius_assert(c.is_parameter_exist("ion"));
+  if(!c.is_parameter_exist("ion"))
+  {
+     MESSAGE<<"ERROR at " << c.get_fileline() <<" PROFILE: should give ion type."<<std::endl; RECORD();
+     genius_error();
+  }
+
   double ion  = 0;
+  std::string ion_type;
   if(c.is_enum_value("ion","donor"))
+  {  
     ion = 1.0;
+    ion_type = "Na";
+  }
   else if(c.is_enum_value("ion","acceptor"))
+  {
     ion = -1.0;
+    ion_type = "Nd";
+  }
 
   // we should get characteristic length in every direction
   double YCHAR, XCHAR, ZCHAR;
@@ -449,12 +657,15 @@ void DopingAnalytic::set_doping_function_analytic(const Parser::Card & c)
     YJUNC = c.get_real("y.junction",0.0)*um;
 
     //get concentration of background doping profile
-    for(size_t i=0;i<_doping_funs.size();i++)
-      dop += _doping_funs[i]->profile(slice_x,YJUNC,slice_z);
+    for(size_t i=0;i<_custom_profile_funs.size();i++)
+      dop += _custom_profile_funs[i].df->profile(slice_x,YJUNC,slice_z);
 
     //Can we even find a junction?
-    genius_assert(dop*ion<0.0);
-    genius_assert(peak>0.0);
+    if(dop*ion > 0.0)
+    {
+      MESSAGE<<"ERROR at " << c.get_fileline() <<" PROFILE: can not find a junction."<<std::endl; RECORD();
+      genius_error();
+    }
 
     //Now convert junction depth into char. length
     YCHAR = (YJUNC-ymin)/sqrt(log(fabs(peak/dop)));
@@ -476,13 +687,21 @@ void DopingAnalytic::set_doping_function_analytic(const Parser::Card & c)
   else
     ZCHAR = YCHAR;
 
-  genius_assert(XCHAR>=0 && YCHAR>=0 && ZCHAR>=0);
+  if(XCHAR<0 || YCHAR<0 || ZCHAR<0)
+  {
+    MESSAGE<<"ERROR at " << c.get_fileline() <<" PROFILE: x.char y.char and z.char should great than zero."<<std::endl; RECORD();
+    genius_error();
+  }
 
   // we can get peak value by dose, when YCHAR is known
   if(c.is_parameter_exist("dose"))
   {
     double dose = c.get_real("dose",0.0)/pow(cm,2);
-    genius_assert(dose>0.0);
+    if(dose<0.0)
+    {
+      MESSAGE<<"ERROR at " << c.get_fileline() <<" PROFILE: dose should great than zero."<<std::endl; RECORD();
+      genius_error();
+    }
     peak=dose/(YCHAR*sqrt(M_PI));
   }
 
@@ -494,21 +713,41 @@ void DopingAnalytic::set_doping_function_analytic(const Parser::Card & c)
   // explicit specified ion
   if(c.is_enum_value("ion","donor") || c.is_enum_value("ion","acceptor"))
   {
-    //build analytic doping function
-    DopingFunction * df = new AnalyticDopingFunction(ion,xmin,xmax,ymin,ymax,zmin,zmax,peak,XCHAR,YCHAR,ZCHAR,erfcx,erfcy,erfcz);
-
-    //push it into _doping_funs vector
-    _doping_funs.push_back(df);
+    //build uniform doping function
+    DopingFunction_t doping_fun;
+    doping_fun.label =ion_type;
+    doping_fun.df = new AnalyticDopingFunction(ion,xmin,xmax,ymin,ymax,zmin,zmax,peak,XCHAR,YCHAR,ZCHAR,erfcx,erfcy,erfcz);
+    doping_fun.region = c.get_string("region", "");
+  
+    _custom_profile_funs.push_back(doping_fun);
+    
   }
 
   // custom specified, the N or P ion will be determined by region material vai PMI
-  if(c.is_enum_value("ion","custom"))
+  else if(c.is_enum_value("ion","custom"))
   {
-    genius_assert(c.is_parameter_exist("id"));
-    std::string name = c.get_string("id", "custom_profile");
-    //build analytic doping function
-    DopingFunction * df = new AnalyticDopingFunction(1.0,xmin,xmax,ymin,ymax,zmin,zmax,peak,XCHAR,YCHAR,ZCHAR,erfcx,erfcy,erfcz);
-    _custom_profile_funs.insert(std::pair<std::string,DopingFunction*>(name,df));
+    if(!c.is_parameter_exist("id"))
+    {
+      MESSAGE<<"ERROR at " << c.get_fileline() <<" PROFILE: custom profile should have an id."<<std::endl; RECORD();
+      genius_error();
+    }
+    
+    DopingFunction_t doping_fun;
+    doping_fun.label = c.get_string("id", "custom_profile");
+    doping_fun.df = new AnalyticDopingFunction(1.0,xmin,xmax,ymin,ymax,zmin,zmax,peak,XCHAR,YCHAR,ZCHAR,erfcx,erfcy,erfcz);
+    doping_fun.region = c.get_string("region", "");
+  
+    _custom_profile_funs.push_back(doping_fun);
+    
+  }
+  else 
+  {
+    DopingFunction_t doping_fun;
+    doping_fun.label = c.get_string("ion", "custom_profile");
+    doping_fun.df = new AnalyticDopingFunction(1.0,xmin,xmax,ymin,ymax,zmin,zmax,peak,XCHAR,YCHAR,ZCHAR,erfcx,erfcy,erfcz);
+    doping_fun.region = c.get_string("region", "");
+  
+    _custom_profile_funs.push_back(doping_fun);
   }
 
 }
@@ -547,15 +786,31 @@ void DopingAnalytic::set_doping_function_analytic2_poly_mask(const Parser::Card 
 
   // the peak value of doping profile
   double peak = c.get_real("n.peak",0.0)/pow(cm,3);
-  genius_assert(peak>=0.0);
+  if(peak<0.0)
+  {
+     MESSAGE<<"ERROR at " << c.get_fileline() <<" PROFILE: n.peak should great than zero."<<std::endl; RECORD();
+     genius_error();
+  }
 
   // the ion type
-  genius_assert(c.is_parameter_exist("ion"));
+  if(!c.is_parameter_exist("ion"))
+  {
+     MESSAGE<<"ERROR at " << c.get_fileline() <<" PROFILE: should give ion type."<<std::endl; RECORD();
+     genius_error();
+  }
+
   double ion  = 0;
+  std::string ion_type;
   if(c.is_enum_value("ion","donor"))
+  {  
     ion = 1.0;
+    ion_type = "Na";
+  }
   else if(c.is_enum_value("ion","acceptor"))
+  {
     ion = -1.0;
+    ion_type = "Nd";
+  }
 
   double rmin = c.get_real("implant.rmin", 0.0)*um;
   double rmax = c.get_real("implant.rmax", 0.0)*um;
@@ -571,24 +826,104 @@ void DopingAnalytic::set_doping_function_analytic2_poly_mask(const Parser::Card 
   // explicit specified ion
   if(c.is_enum_value("ion","donor") || c.is_enum_value("ion","acceptor"))
   {
-    //build analytic doping function
-    DopingFunction * df = new PolyMaskDopingFunction(ion,poly,theta,phi,rmin,rmax,peak,char_depth,char_lateral,resolution_factor);
-
-    //push it into _doping_funs vector
-    _doping_funs.push_back(df);
+    //build uniform doping function
+    DopingFunction_t doping_fun;
+    doping_fun.label = ion_type;
+    doping_fun.df = new PolyMaskDopingFunction(ion,poly,theta,phi,rmin,rmax,peak,char_depth,char_lateral,resolution_factor);
+    doping_fun.region = c.get_string("region", "");
+  
+    _custom_profile_funs.push_back(doping_fun);
   }
 
   // custom specified, the N or P ion will be determined by region material vai PMI
-  if(c.is_enum_value("ion","custom"))
+  else if(c.is_enum_value("ion","custom"))
   {
-    genius_assert(c.is_parameter_exist("id"));
-    std::string name = c.get_string("id", "custom_profile");
-    //build analytic doping function
-    DopingFunction * df = new PolyMaskDopingFunction(1.0,poly,theta,phi,rmin,rmax,peak,char_depth,char_lateral,resolution_factor);
-    _custom_profile_funs.insert(std::pair<std::string,DopingFunction*>(name,df));
+    if(!c.is_parameter_exist("id"))
+    {
+      MESSAGE<<"ERROR at " << c.get_fileline() <<" PROFILE: custom profile should have an id."<<std::endl; RECORD();
+      genius_error();
+    }
+    
+    DopingFunction_t doping_fun;
+    doping_fun.label = c.get_string("id", "custom_profile");
+    doping_fun.df = new PolyMaskDopingFunction(1.0,poly,theta,phi,rmin,rmax,peak,char_depth,char_lateral,resolution_factor);
+    doping_fun.region = c.get_string("region", "");
+  
+    _custom_profile_funs.push_back(doping_fun);
+    
   }
+  else 
+  {
+    DopingFunction_t doping_fun;
+    doping_fun.label = c.get_string("ion", "custom_profile");
+    doping_fun.df = new PolyMaskDopingFunction(1.0,poly,theta,phi,rmin,rmax,peak,char_depth,char_lateral,resolution_factor);
+    doping_fun.region = c.get_string("region", "");
+  
+    _custom_profile_funs.push_back(doping_fun);
+  }  
 
 }
+
+
+void DopingAnalytic::_doping_function_apply(DopingFunction * df, const std::string &region_app)
+{
+  for(unsigned int n=0; n<_system.n_regions(); n++)
+  {
+    SimulationRegion * region = _system.region(n);
+    if(region->type() != SemiconductorRegion) continue;
+    if( !region_app.empty() && region->name()!=region_app) continue;
+        
+    SimulationRegion::local_node_iterator node_it = region->on_local_nodes_begin();
+    SimulationRegion::local_node_iterator node_it_end = region->on_local_nodes_end();
+    for(; node_it!=node_it_end; ++node_it)
+    {
+      FVM_Node * fvm_node = *node_it;
+      FVM_NodeData * node_data = fvm_node->node_data();
+      genius_assert(node_data!=NULL);
+
+      const Node * node = fvm_node->root_node();
+      double d = df->profile((*node)(0),(*node)(1),(*node)(2));
+      double dop_Na = std::abs(d < 0.0 ? d: 0.0);  
+      double dop_Nd = std::abs(d > 0.0 ? d: 0.0);  
+
+      node_data->Na() += dop_Na;
+      node_data->Nd() += dop_Nd;
+    }  
+  }
+}
+
+
+void DopingAnalytic::_custom_profile_function_apply(const std::string &ion, DopingFunction * df, const std::string &region_app)
+{
+  for(unsigned int n=0; n<_system.n_regions(); n++)
+  {
+    SimulationRegion * region = _system.region(n);
+    if( !region_app.empty() && region->name()!=region_app) continue;
+
+    SemiconductorSimulationRegion * semiconductor_region = dynamic_cast<SemiconductorSimulationRegion *>(region);
+    unsigned int ion_index = region->add_variable(SimulationVariable(ion, SCALAR, POINT_CENTER, "cm^-3", invalid_uint, true, true));
+    int ion_type = semiconductor_region ? semiconductor_region->material()->band->IonType(ion) : 0;
+    
+    SimulationRegion::local_node_iterator node_it = region->on_local_nodes_begin();
+    SimulationRegion::local_node_iterator node_it_end = region->on_local_nodes_end();
+    for(; node_it!=node_it_end; ++node_it)
+    {
+      FVM_Node * fvm_node = *node_it;
+      FVM_NodeData * node_data = fvm_node->node_data();
+      genius_assert(node_data!=NULL);
+
+      const Node * node = fvm_node->root_node();
+      double d = df->profile((*node)(0),(*node)(1),(*node)(2));
+      
+      node_data->data<PetscScalar>(ion_index) = d;
+      if(ion_type < 0 ) node_data->Na() += d;
+      if(ion_type > 0 ) node_data->Nd() += d;
+    }  
+  }
+  
+}
+
+
 
 
 void DopingAnalytic::set_doping_function_analytic2_rec_mask(const Parser::Card & c)
@@ -617,15 +952,31 @@ void DopingAnalytic::set_doping_function_analytic2_rec_mask(const Parser::Card &
 
   // the peak value of doping profile
   double peak = c.get_real("n.peak",0.0)/pow(cm,3);
-  genius_assert(peak>=0.0);
+  if(peak<0.0)
+  {
+     MESSAGE<<"ERROR at " << c.get_fileline() <<" PROFILE: n.peak should great than zero."<<std::endl; RECORD();
+     genius_error();
+  }
 
   // the ion type
-  genius_assert(c.is_parameter_exist("ion"));
+  if(!c.is_parameter_exist("ion"))
+  {
+     MESSAGE<<"ERROR at " << c.get_fileline() <<" PROFILE: should give ion type."<<std::endl; RECORD();
+     genius_error();
+  }
+
   double ion  = 0;
+  std::string ion_type;
   if(c.is_enum_value("ion","donor"))
+  {  
     ion = 1.0;
+    ion_type = "Na";
+  }
   else if(c.is_enum_value("ion","acceptor"))
+  {
     ion = -1.0;
+    ion_type = "Nd";
+  }
 
   double rmin = c.get_real("implant.rmin", 0.0)*um;
   double rmax = c.get_real("implant.rmax", 0.0)*um;
@@ -641,30 +992,97 @@ void DopingAnalytic::set_doping_function_analytic2_rec_mask(const Parser::Card &
   // explicit specified ion
   if(c.is_enum_value("ion","donor") || c.is_enum_value("ion","acceptor"))
   {
-    //build analytic doping function
-    DopingFunction * df = new RecMaskDopingFunction(ion,xmin,xmax,ymin,ymax,zmin,zmax,theta,phi,rmin,rmax,peak,char_depth,char_lateral,resolution_factor);
-
-    //push it into _doping_funs vector
-    _doping_funs.push_back(df);
+    //build uniform doping function
+    DopingFunction_t doping_fun;
+    doping_fun.label = ion_type;
+    doping_fun.df = new RecMaskDopingFunction(ion,xmin,xmax,ymin,ymax,zmin,zmax,theta,phi,rmin,rmax,peak,char_depth,char_lateral,resolution_factor);
+    doping_fun.region = c.get_string("region", "");
+  
+    _custom_profile_funs.push_back(doping_fun);
   }
 
   // custom specified, the N or P ion will be determined by region material vai PMI
   if(c.is_enum_value("ion","custom"))
   {
-    genius_assert(c.is_parameter_exist("id"));
-    std::string name = c.get_string("id", "custom_profile");
-    //build analytic doping function
-    DopingFunction * df = new RecMaskDopingFunction(1.0,xmin,xmax,ymin,ymax,zmin,zmax,theta,phi,rmin,rmax,peak,char_depth,char_lateral,resolution_factor);
-    _custom_profile_funs.insert(std::pair<std::string,DopingFunction*>(name,df));
+    if(!c.is_parameter_exist("id"))
+    {
+      MESSAGE<<"ERROR at " << c.get_fileline() <<" PROFILE: custom profile should have an id."<<std::endl; RECORD();
+      genius_error();
+    }
+    
+    DopingFunction_t doping_fun;
+    doping_fun.label = c.get_string("id", "custom_profile");
+    doping_fun.df = new RecMaskDopingFunction(1.0,xmin,xmax,ymin,ymax,zmin,zmax,theta,phi,rmin,rmax,peak,char_depth,char_lateral,resolution_factor);
+    doping_fun.region = c.get_string("region", "");
+  
+    _custom_profile_funs.push_back(doping_fun);
   }
 
 }
 
-
-double DopingAnalytic::_do_doping_interp(int i, const Node *node, const std::string &msg)
+void DopingAnalytic::_doping_data_apply(std::pair<int, InterpolationBase * > df, const std::string &region_app)
 {
-  int axes = _doping_data[i].first;
-  InterpolationBase * interp = _doping_data[i].second;
+  for(unsigned int n=0; n<_system.n_regions(); n++)
+  {
+    SimulationRegion * region = _system.region(n);
+    if(region->type() != SemiconductorRegion) continue;
+    if( !region_app.empty() && region->name()!=region_app) continue;
+        
+    SimulationRegion::local_node_iterator node_it = region->on_local_nodes_begin();
+    SimulationRegion::local_node_iterator node_it_end = region->on_local_nodes_end();
+    for(; node_it!=node_it_end; ++node_it)
+    {
+      FVM_Node * fvm_node = *node_it;
+      FVM_NodeData * node_data = fvm_node->node_data();
+      genius_assert(node_data!=NULL);
+
+      const Node * node = fvm_node->root_node();
+      double d = _do_data_interp(df, node);
+      double dop_Na = std::abs(d < 0.0 ? d: 0.0);  
+      double dop_Nd = std::abs(d > 0.0 ? d: 0.0);  
+
+      node_data->Na() += dop_Na;
+      node_data->Nd() += dop_Nd;
+    }  
+  }
+}
+
+
+void DopingAnalytic::_custom_profile_data_apply(const std::string &ion, std::pair<int, InterpolationBase * > df, const std::string &region_app)
+{
+  for(unsigned int n=0; n<_system.n_regions(); n++)
+  {
+    SimulationRegion * region = _system.region(n);
+    if( !region_app.empty() && region->name()!=region_app) continue;
+
+    SemiconductorSimulationRegion * semiconductor_region = dynamic_cast<SemiconductorSimulationRegion *>(region);
+    unsigned int ion_index = region->add_variable(SimulationVariable(ion, SCALAR, POINT_CENTER, "cm^-3", invalid_uint, true, true));
+    int ion_type = semiconductor_region ? semiconductor_region->material()->band->IonType(ion) : 0;
+    
+    SimulationRegion::local_node_iterator node_it = region->on_local_nodes_begin();
+    SimulationRegion::local_node_iterator node_it_end = region->on_local_nodes_end();
+    for(; node_it!=node_it_end; ++node_it)
+    {
+      FVM_Node * fvm_node = *node_it;
+      FVM_NodeData * node_data = fvm_node->node_data();
+      genius_assert(node_data!=NULL);
+
+      const Node * node = fvm_node->root_node();
+      double d = _do_data_interp(df, node);
+      
+      node_data->data<PetscScalar>(ion_index) = d;
+      if(ion_type < 0 ) node_data->Na() += d;
+      if(ion_type > 0 ) node_data->Nd() += d;
+    }  
+  }
+  
+}
+
+
+double DopingAnalytic::_do_data_interp(std::pair<int, InterpolationBase * > df, const Node *node, const std::string &msg)
+{
+  int axes = df.first;
+  InterpolationBase * interp = df.second;
 
   Point p;
   switch(axes)
@@ -696,6 +1114,7 @@ double DopingAnalytic::_do_doping_interp(int i, const Node *node, const std::str
       p[2]=(*node)(2);
       break;
   }
+
   double d = interp->get_interpolated_value(p, 0);
 #if defined(HAVE_FENV_H) && defined(DEBUG)
   if(fetestexcept(FE_INVALID|FE_DIVBYZERO|FE_OVERFLOW))
@@ -708,47 +1127,8 @@ double DopingAnalytic::_do_doping_interp(int i, const Node *node, const std::str
     feclearexcept(FE_ALL_EXCEPT);
   }
 #endif
-  return d;
-}
-
-double DopingAnalytic::doping_Na(const Node * node)
-{
-  double dop = 0.0;
-
-  //only add negative value
-  for(size_t i=0; i<_doping_funs.size(); i++)
-  {
-    double d = _doping_funs[i]->profile((*node)(0),(*node)(1),(*node)(2));
-    dop += d < 0.0 ? d: 0.0;
-  }
   double unit = 1.0/std::pow(PhysicalUnit::cm,3.0);
-  for(size_t i=0; i<_doping_data.size(); i++)
-  {
-    double d = unit * _do_doping_interp(i, node, "Na");
-    dop += d < 0.0 ? d: 0.0;
-  }
-
-  return std::abs(dop);
+  return unit*d;
 }
 
 
-
-double DopingAnalytic::doping_Nd(const Node * node)
-{
-  double dop = 0.0;
-
-  //only add positive value
-  for(size_t i=0; i<_doping_funs.size(); i++)
-  {
-    double d = _doping_funs[i]->profile((*node)(0),(*node)(1),(*node)(2));
-    dop += d > 0.0 ? d: 0.0;
-  }
-  double unit = 1.0/std::pow(PhysicalUnit::cm,3.0);
-  for(size_t i=0; i<_doping_data.size(); i++)
-  {
-    double d = unit * _do_doping_interp(i, node, "Nd");
-    dop += d > 0.0 ? d: 0.0;
-  }
-
-  return std::abs(dop);
-}

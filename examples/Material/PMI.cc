@@ -117,6 +117,9 @@ int PMI_Server::calibrate_real_parameter(const std::string & var_name, PetscScal
     *((PetscScalar*)it->second.value) = var_value*(it->second.unit_in_real);
     return 0;
   }
+
+  _calibrate_error_info += "  unrecognized parameter " + var_name + "\n";
+
   return 1;
 }
 
@@ -132,6 +135,9 @@ int PMI_Server::calibrate_string_parameter(const std::string & var_name, const s
     *((std::string*)it->second.value) = var_value;
     return 0;
   }
+
+  _calibrate_error_info += "  unrecognized parameter " + var_name + "\n";
+
   return 1;
 }
 
@@ -247,6 +253,7 @@ PMI_Server::PMI_Server(const PMI_Environment &env)
 
   cm = 1e-2*m;
   um = 1e-4*cm;
+  nm = 1e-3*um;
   J  = C*V;
   W  = J/s;
   kg = J/(m*m)*s*s;
@@ -264,6 +271,8 @@ PMI_Server::PMI_Server(const PMI_Environment &env)
   mu0  = 12.56637061e-7*std::pow(s,2)/C*V/m;
   h    = 6.62606876e-34*J*s;
   hbar = 1.054571596e-34*J*s;
+
+  pi   = 3.14159265358979323846;
 }
 
 
@@ -281,6 +290,16 @@ void PMIS_Server::SetFakeMoleEnvironment(PetscScalar mole_x, PetscScalar mole_y)
 {
   _mole_x = mole_x;
   _mole_y = mole_y;
+}
+
+void PMIS_Server::SetFakeDminEnvironment(PetscScalar dmin)
+{
+  _dmin = dmin;
+}
+
+void PMIS_Server::SetFakeStrainEnvironment(const TensorValue<PetscScalar> &T)
+{
+  _strain = T;
 }
 
 
@@ -350,10 +369,154 @@ PetscScalar PMIS_Server::ReadDopingNd () const
   return _Nd;
 }
 
+/**
+ * aux function return minimal distance to surface
+ */
+PetscScalar PMIS_Server::ReadDmin () const
+{
+  if(pp_node_data) return (*pp_node_data)->dmin();
+  return _dmin;
+}
+
+
+/**
+ * aux function return strain tensor
+ */
+TensorValue<PetscScalar> PMIS_Server::ReadStrain() const
+{
+  if(pp_node_data) return (*pp_node_data)->strain();
+  return _strain;
+}
+
+
+
 
 /*****************************************************************************
  *               Physical Model Interface for Optical
  ****************************************************************************/
+
+
+void RefractionSplineInterp::_build(const std::vector<PetscScalar> &t,
+                                    const std::vector<PetscScalar> &y, std::vector<PetscScalar> &ypp)
+{
+  int size = t.size();
+
+  std::vector<PetscScalar> a(3*size);
+  std::vector<PetscScalar> b(size);
+
+  //
+  //  Set up the first equation. the second derivative at the left endpoint should be 0.0
+  //
+  {
+    b[0] = 0.0; //second derivative
+    a[1+0*3] = 1.0;
+    a[0+1*3] = 0.0;
+  }
+
+  //
+  //  Set up the intermediate equations.
+  //
+  for (int i = 1; i < size-1; i++ )
+  {
+    b[i] = ( y[i+1] - y[i] ) / ( t[i+1] - t[i] ) - ( y[i] - y[i-1] ) / ( t[i] - t[i-1] );
+    a[2+(i-1)*3] = ( t[i] - t[i-1] ) / 6.0;
+    a[1+ i   *3] = ( t[i+1] - t[i-1] ) / 3.0;
+    a[0+(i+1)*3] = ( t[i+1] - t[i] ) / 6.0;
+  }
+  //
+  //  Set up the last equation. the second derivative at the right endpoint should be 0.0
+  //
+  {
+    b[size-1] = 0.0; //second derivative
+    a[2+(size-2)*3] = 0.0;
+    a[1+(size-1)*3] = 1.0;
+  }
+
+  //
+  //  Solve the linear system.
+  //
+  if ( size == 2 )
+  {
+    ypp.resize(size);
+
+    ypp[0] = 0.0;
+    ypp[1] = 0.0;
+  }
+  else
+  {
+    ypp.resize(size);
+
+    for (int i = 0; i < size; i++ )
+    {
+      ypp[i] = b[i];
+    }
+
+    for (int  i = 1; i < size; i++ )
+    {
+      double xmult = a[2+(i-1)*3] / a[1+(i-1)*3];
+      a[1+i*3] = a[1+i*3] - xmult * a[0+i*3];
+      ypp[i] = ypp[i] - xmult * ypp[i-1];
+    }
+
+    ypp[size-1] = ypp[size-1] / a[1+(size-1)*3];
+    for (int  i = size-2; 0 <= i; i-- )
+    {
+      ypp[i] = ( ypp[i] - a[0+(i+1)*3] * ypp[i+1] ) / a[1+i*3];
+    }
+  }
+}
+
+
+PetscScalar RefractionSplineInterp::_eval(PetscScalar tval,
+                                         const std::vector<PetscScalar> &t, const std::vector<PetscScalar> &y, const std::vector<PetscScalar> &ypp) const
+{
+  if(tval < t.front() ) return y.front();
+  if(tval > t.back() )  return y.back();
+
+
+  int size = t.size();
+  double yval = 0.0;
+  //
+  //  Determine the interval [ double(I), double(I+1) ] that contains TVAL.
+  //  Values below double[0] or above double[N-1] use extrapolation.
+  //
+  int begin=0, end=size-1;
+  while(end-begin>2)
+  {
+    int mid = (begin+end)/2;
+    if( tval < t[mid] )
+      end = mid;
+    else
+      begin = mid;
+  }
+
+  int ival = size - 2;
+  for (int i = begin; i < end; i++ )
+  {
+    if ( tval < t[i+1] )
+    {
+      ival = i;
+      break;
+    }
+  }
+
+  //
+  //  In the interval I, the polynomial is in terms of a normalized
+  //  coordinate between 0 and 1.
+  //
+  double dt = tval - t[ival];
+  double h = t[ival+1] - t[ival];
+
+  yval = y[ival]+ dt * ( ( y[ival+1] - y[ival] ) / h
+      - ( ypp[ival+1] / 6.0 + ypp[ival] / 3.0 ) * h
+      + dt * ( 0.5 * ypp[ival] + dt * ( ( ypp[ival+1] - ypp[ival] ) / ( 6.0 * h ) ) ) );
+
+
+
+  return  yval;
+}
+
+
 
 /**
  * when refraction_data_file is not empty, read from it

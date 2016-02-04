@@ -29,6 +29,9 @@
 class SupremTIF : public StanfordTIF
 {
 public:
+  
+  SupremTIF();
+  
   /**
    * constructor
    */
@@ -41,7 +44,11 @@ public:
 
   /// read suprem file into meta data structure
   virtual bool read(std::string &err);
-
+  
+  /**
+   * export to suprem4 sup file
+   */ 
+  void export_sup(const std::string & file) const;
 
 private:
 
@@ -71,12 +78,6 @@ private:
 
   void _init_index_string_map();
 
-
-  /// index of acceptor in sol_data
-  unsigned int _acceptor_index;
-
-  /// index of donor in sol_data
-  unsigned int _donor_index;
 
 };
 

@@ -31,11 +31,13 @@
 #include "interpolation_base.h"
 #include "vector_value.h"
 #include "tensor_value.h"
+#include "waveform.h"
 
 namespace Parser{
   class InputParser;
 }
 class SimulationSystem;
+class FVM_Node;
 class Waveform;
 
 class Light_Source
@@ -46,7 +48,7 @@ public:
    * constructor
    */
   Light_Source(SimulationSystem & system)
-  : _system(system)
+  : _system(system), _waveform(0), _global_waveform(0)
   {}
 
   /**
@@ -59,11 +61,29 @@ public:
    */
   virtual std::string light_source_type() = 0;
 
+  /**
+   * calculate carrier generation at time t and update PatG
+   */
+  virtual void carrier_generation(double t);
 
   /**
    * virtual function to update OptG
    */
-  virtual void update_system() {}
+  virtual void update_source() {}
+
+  /**
+   * virtual function for limit the time step
+   */
+  virtual double limit_dt(double time, double dt, double dt_min) const;
+
+
+  void set_waveform(Waveform * waveform) { _waveform = waveform; }
+
+
+  void set_global_waveform(Waveform * waveform) { _global_waveform = waveform; }
+
+
+  Waveform * waveform() { return _waveform; }
 
 
 protected:
@@ -72,6 +92,24 @@ protected:
    * I should know something about simulation system
    */
   SimulationSystem &_system;
+
+
+  /**
+   * wavefrom
+   */
+  Waveform * _waveform;
+
+
+  /**
+   * wavefrom
+   */
+  Waveform * _global_waveform;
+
+
+  /**
+   * light energy deposit for on processor FVM node
+   */
+  std::map<const FVM_Node *, double> _fvm_node_particle_deposit;
 
 };
 
@@ -106,7 +144,7 @@ public:
   /**
    * update OptG
    */
-  virtual void update_system();
+  virtual void update_source();
 
 
   std::string fname() const { return _fname; }
@@ -123,7 +161,8 @@ public:
 
 private:
 
-  int load_light_profile_fromfile(InterpolationBase * interpolator, const std::string &fname, const int skip_line=0);
+  int load_light_elec_profile_fromfile(InterpolationBase * interpolator, const std::string &fname, const int skip_line=0);
+  int load_light_pow_profile_fromfile(InterpolationBase * interpolator, const std::string &fname, const int skip_line=0);
 
   std::string _fname;
   double _wave_length;
@@ -136,6 +175,8 @@ private:
 
   double _LUnit;
   double _FUnit;
+
+  std::string _field_type;
 
   VectorValue<double> _translate;
   TensorValue<double> _transform;
@@ -168,7 +209,7 @@ class Light_Source_RayTracing : public Light_Source
     /**
      * update OptG
      */
-    virtual void update_system();
+    virtual void update_source();
 
   private:
 
@@ -201,7 +242,7 @@ class Light_Source_EMFEM2D : public Light_Source
     /**
      * update OptG
      */
-    virtual void update_system();
+    virtual void update_source();
 
   private:
 
@@ -234,13 +275,48 @@ class Light_Source_Uniform : public Light_Source
     /**
      * update OptG
      */
-    virtual void update_system();
+    virtual void update_source();
 
   private:
 
     const Parser::Card _card;
 
 };
+
+
+
+/**
+ * set the carrier generation due to xray pulse
+ */
+class Light_Source_Xray : public Light_Source
+{
+  public:
+
+    Light_Source_Xray(SimulationSystem &system, double doserate)
+    :Light_Source(system), _doserate(doserate)
+    {}
+
+    /**
+     * virtual destructor
+     */
+    virtual ~Light_Source_Xray() {}
+
+    /**
+     * @return the type if light source
+     */
+    virtual std::string light_source_type() { return "light_source_xray"; }
+
+    /**
+     * update OptG
+     */
+    virtual void update_source();
+
+  private:
+
+    const double _doserate;
+
+};
+
 
 
 #endif

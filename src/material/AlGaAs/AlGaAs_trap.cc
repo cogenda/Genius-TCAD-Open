@@ -210,7 +210,7 @@ public:
    */
   void AddTrap (const Point &point, const unsigned int &spec, const PetscScalar &Ntt)
   {
-    genius_assert(spec<TrapSpecs.size());
+    assert(spec<TrapSpecs.size());
 
     // trap location is used as the key in TrapStore
     TrapLocation tloc = TrapLocation(point.x(), point.y(), point.z(), TrapSpecs[spec].type);
@@ -838,8 +838,8 @@ public:
 
     // for interface trap, we must have interface name
     // for bulk trap, we must have profile name
-    genius_assert( (type == Interface && has_interface_name) || (type == Bulk && has_profile_name) );
-    genius_assert(has_charge_type);
+    assert( (type == Interface && has_interface_name) || (type == Bulk && has_profile_name) );
+    assert(has_charge_type);
 
     // then numerical parameters
     for (it=pmi_parameter.begin(); it!=pmi_parameter.end(); it++)
@@ -873,7 +873,7 @@ public:
     if (type==Interface)
     {
       // for interface traps, we must have interface density
-      genius_assert( has_interface_density );
+      assert( has_interface_density );
 
       // append a new class of interface traps,
       // actual traps are created later on

@@ -44,6 +44,9 @@ private:
   PetscScalar HoleTauw;
   PetscScalar T300    ;
 
+  PetscScalar cut_low;
+  PetscScalar cut_end;
+
   void 	Avalanche_Init()
   {
     AN_II_LO  =  4.200000E+05/cm;
@@ -64,6 +67,9 @@ private:
     HoleTauw  = 2e-13*s;
     T300      = 300.0*K;
 
+    cut_low   = 0.1;
+    cut_end   = 0.2;
+
 #ifdef __CALIBRATE__
     parameter_map.insert(para_item("AN.II.LO",    PARA("AN.II.LO", "", "cm^-1", 1.0/cm, &AN_II_LO)) );
     parameter_map.insert(para_item("BN.II.LO",    PARA("BN.II.LO", "", "V/cm", V/cm, &BN_II_LO)) );
@@ -78,6 +84,8 @@ private:
     parameter_map.insert(para_item("BP.II.HI",    PARA("BP.II.HI", "", "V/cm", V/cm, &BP_II_HI)) );
     parameter_map.insert(para_item("E0P.II",      PARA("E0P.II", "", "V/cm", V/cm, &E0P_II)) );
     parameter_map.insert(para_item("EP.OP.PH",    PARA("EP.OP.PH", "", "eV", eV, &EP_OP_PH)) );
+    parameter_map.insert(para_item("CutLow",  PARA("CutLow",  "Disable impact ionization when E field lower than CutLow*Ecrit", "-", 1.0, &cut_low)) );
+    parameter_map.insert(para_item("CutEnd",  PARA("CutEnd",  "Damp impact ionization when E field between CutLow*Ecrit and CutEnd*Ecrit", "-", 1.0, &cut_end)) );
 #endif
   }
 public:
@@ -85,66 +93,54 @@ public:
   // Electron Impact Ionization rate for DDM
   PetscScalar ElecGenRate (const PetscScalar &Tl,const PetscScalar &Ep,const PetscScalar &Eg) const
   {
-    if (Ep < 1e3*V/cm)
-    {
-      return 0;
-    }
-    else
-    {
-      PetscScalar gamma = tanh(EN_OP_PH/(2*kb*T300))/tanh(EN_OP_PH/(2*kb*Tl));
-      if (Ep < E0N_II)
-        return gamma * AN_II_LO * exp (-BN_II_LO * gamma /Ep);
-      else
-        return gamma * AN_II_HI * exp (-BN_II_HI * gamma /Ep);
-    }
+     PetscScalar gamma = tanh(EN_OP_PH/(2*kb*T300))/tanh(EN_OP_PH/(2*kb*Tl));
+     if (Ep < cut_low * BN_II_LO * gamma) return 0.0;
+     if (Ep < cut_end * BN_II_LO * gamma)
+     {
+       PetscScalar smooth_rate = 1/(cut_end-cut_low)*(Ep/(BN_II_LO * gamma)-cut_low);
+       return smooth_rate * gamma * AN_II_LO * exp (-BN_II_LO * gamma /Ep);
+     }
+
+     return gamma * AN_II_LO * exp (-BN_II_LO * gamma /Ep);
   }
   AutoDScalar ElecGenRate (const AutoDScalar &Tl,const AutoDScalar &Ep,const AutoDScalar &Eg) const
   {
-    if (Ep < 1e3*V/cm)
-    {
-      return 0;
-    }
-    else
-    {
-      AutoDScalar gamma = tanh(EN_OP_PH/(2*kb*T300))/tanh(EN_OP_PH/(2*kb*Tl));
-      if (Ep < E0N_II)
-        return gamma * AN_II_LO * exp (-BN_II_LO * gamma /Ep);
-      else
-        return gamma * AN_II_HI * exp (-BN_II_HI * gamma /Ep);
-    }
+     AutoDScalar gamma = tanh(EN_OP_PH/(2*kb*T300))/tanh(EN_OP_PH/(2*kb*Tl));
+     if (Ep < cut_low * BN_II_LO * gamma) return 0.0;
+     if (Ep < cut_end * BN_II_LO * gamma)
+     {
+       AutoDScalar smooth_rate = 1/(cut_end-cut_low)*(Ep/(BN_II_LO * gamma)-cut_low);
+       return smooth_rate * gamma * AN_II_LO * exp (-BN_II_LO * gamma /Ep);
+     }
+
+     return gamma * AN_II_LO * exp (-BN_II_LO * gamma /Ep);
   }
 
   //---------------------------------------------------------------------------
   // Hole Impact Ionization rate for DDM
   PetscScalar HoleGenRate (const PetscScalar &Tl,const PetscScalar &Ep,const PetscScalar &Eg) const
   {
-    if (Ep < 1e3*V/cm)
-    {
-      return 0;
-    }
-    else
-    {
       PetscScalar gamma = tanh(EP_OP_PH/(2*kb*T300))/tanh(EP_OP_PH/(2*kb*Tl));
-      if (Ep < E0P_II)
-        return gamma * AP_II_LO * exp (-BP_II_LO * gamma /Ep);
-      else
-        return gamma * AP_II_HI * exp (-BP_II_HI * gamma /Ep);
-    }
+      if (Ep < cut_low * BP_II_LO * gamma) return 0.0;
+      if (Ep < cut_end * BP_II_LO * gamma)
+      {
+        PetscScalar smooth_rate = 1/(cut_end-cut_low)*(Ep/(BP_II_LO * gamma)-cut_low);
+        return smooth_rate * gamma * AP_II_LO * exp (-BP_II_LO * gamma /Ep);
+      }
+
+      return gamma * AP_II_LO * exp (-BP_II_LO * gamma /Ep);
   }
   AutoDScalar HoleGenRate (const AutoDScalar &Tl,const AutoDScalar &Ep,const AutoDScalar &Eg) const
   {
-    if (Ep < 1e3*V/cm)
-    {
-      return 0;
-    }
-    else
-    {
       AutoDScalar gamma = tanh(EP_OP_PH/(2*kb*T300))/tanh(EP_OP_PH/(2*kb*Tl));
-      if (Ep < E0P_II)
-        return gamma * AP_II_LO * exp (-BP_II_LO * gamma /Ep);
-      else
-        return gamma * AP_II_HI * exp (-BP_II_HI * gamma /Ep);
-    }
+      if (Ep < cut_low * BP_II_LO * gamma) return 0.0;
+      if (Ep < cut_end * BP_II_LO * gamma)
+      {
+        AutoDScalar smooth_rate = 1/(cut_end-cut_low)*(Ep/(BP_II_LO * gamma)-cut_low);
+        return smooth_rate * gamma * AP_II_LO * exp (-BP_II_LO * gamma /Ep);
+      }
+
+      return gamma * AP_II_LO * exp (-BP_II_LO * gamma /Ep);
   }
 
 

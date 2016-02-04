@@ -100,24 +100,22 @@ private:
   /**
    * contains refractive_index of each region for a special lamda
    */
-  std::map<unsigned int, std::pair<double, double> > _region_refractive_index;
+  std::vector<Complex> _elem_refractive_index;
 
   /**
-   * build _region_refractive_index
+   * build _elem_refractive_index
    */
-  void build_region_refractive_index(double lamda);
+  void build_elem_refractive_index(double lamda);
 
   /**
-   * after build the _region_refractive_index map, we can access refractive index
+   * access refractive index
    */
-  double get_refractive_index_re(unsigned int sub_id) const
-  { return _region_refractive_index.find(sub_id)->second.first; }
+  double get_refractive_index_re(const Elem *) const;
 
   /**
-   * after build the _region_refractive_index map, we can access refractive index
+   * access refractive index
    */
-  double get_refractive_index_im(unsigned int sub_id) const
-  {return _region_refractive_index.find(sub_id)->second.second;}
+  double get_refractive_index_im(const Elem *) const;
 
 
   /**
@@ -291,6 +289,11 @@ private:
   WavePlane _wave_plane;
 
   /**
+   * math expression for optical grating
+   */
+  std::string _grating_expr;
+
+  /**
    * total ray number for each wave length
    */
   unsigned int _total_rays;
@@ -353,7 +356,19 @@ private:
    * calculate total optical carrier generation
    * incident optical energy and total deposite energy
    */
-  void statistic() const;
+  void statistic() ;
+
+  /// total incident power
+  double _incident_power;
+
+  /// pass away light
+  double _pass_power;
+
+  /// escape light from device surface
+  double _escape_power;
+
+  /// absorbed power
+  double _absorb_power;
 };
 
 #endif

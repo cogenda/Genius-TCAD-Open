@@ -108,6 +108,12 @@ public:
    */
   AutoPtr<BoundaryInfo> boundary_info;
 
+
+  /**
+   * generate all boundary elem-side pair with given boundary id
+   */
+  virtual void generate_boundary_info(short int id)=0;
+
   /**
    * Deletes all the data that are currently stored.
    */
@@ -206,7 +212,7 @@ public:
    * @Returns the logical dimension of the mesh.
    */
   unsigned int mesh_dimension () const
-  { genius_assert(_is_prepared); return _mesh_dim;}
+  { return _mesh_dim;}
 
   /**
    * @Returns the spatial dimension of the mesh.  Note that this is
@@ -331,6 +337,12 @@ public:
    */
   virtual Elem* elem (const unsigned int i) const = 0;
 
+  /**
+   * @Return the clone of \f$ i^{th} \f$ node, even it is not local
+   * must be executed in parallel
+   * use AutoPtr to prevent memory lost.
+   */
+  virtual AutoPtr<Node> node_clone (const unsigned int i) const= 0;
 
   /**
    * @Return the clone of \f$ i^{th} \f$ element, even it is not local
@@ -383,14 +395,14 @@ public:
    * reorder the elems index by Reverse Cuthill-McKee Algorithm
    * which can reduce filling in LU (ILU) Factorization
    */
-  virtual void reorder_elems () {}
+  virtual bool reorder_elems (std::string &) { return true; }
 
 
   /**
    * reorder the node index by Reverse Cuthill-McKee Algorithm
    * which can reduce filling in LU (ILU) Factorization
    */
-  virtual void reorder_nodes () {}
+  virtual bool reorder_nodes (std::string &) { return true; }
 
 
   /**
@@ -439,7 +451,7 @@ public:
   /**
    * build the partition cluster, the elems belongs to the same cluster will be partitioned into the same block
    */
-  virtual void partition_cluster(std::vector<std::vector<unsigned int> > &) {}
+  virtual bool partition_cluster(std::vector<std::vector<unsigned int> > &) {}
 
   /**
    * Returns the number of subdomains in the global mesh. Note that it is
@@ -518,7 +530,7 @@ public:
   virtual void subdomain_graph(std::vector<std::vector<unsigned int> >&) const=0;
 
   /**
-   * mesh bounding box 
+   * mesh bounding box
    */
   const std::pair<Point, Point> bounding_box() const { return _bounding_box; }
 

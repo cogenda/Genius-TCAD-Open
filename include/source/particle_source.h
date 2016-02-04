@@ -33,6 +33,8 @@ namespace Parser{
   class Card;
 }
 class SimulationSystem;
+class SimulationRegion;
+class FVM_Node;
 
 /**
  * set the carrier generation of Particle
@@ -51,19 +53,19 @@ public:
   virtual ~Particle_Source()  {}
 
   /**
-   * calculate carrier generation at time t
+   * calculate carrier generation at time t and update PatG
    */
-  virtual double carrier_generation(double t) const;
+  virtual void carrier_generation(double t);
 
   /**
-   * assign PatG to mesh node
+   * calculate the PatG for each mesh node
    */
-  virtual void update_system()=0;
+  virtual void update_source()=0;
 
   /**
    * virtual function for limit the time step
    */
-  virtual double limit_dt(double time, double dt) const;
+  virtual double limit_dt(double time, double dt, double dt_min) const;
 
 protected:
 
@@ -89,9 +91,21 @@ protected:
  double _t_char;
 
  /**
-  * how much energy can generate electron-hole pair
+  * @return particle quantum effect
   */
- double _quan_eff;
+ double   quan_eff(const SimulationRegion * region) const;
+
+
+ /**
+  * calculate carrier generation at time t
+  */
+  virtual double carrier_generation_t(double t) const;
+
+ /**
+  * particle energy deposit for on processor FVM node
+  */
+ std::map<const FVM_Node *, double> _fvm_node_particle_deposit;
+
 };
 
 
@@ -115,7 +129,7 @@ public:
   /**
    * assign PatG to mesh node
    */
-  virtual void update_system();
+  virtual void update_source();
 
 private:
 
@@ -148,7 +162,7 @@ public:
   /**
    * assign PatG to mesh node
    */
-  virtual void update_system();
+  virtual void update_source();
 
 private:
 
@@ -175,7 +189,7 @@ private:
   /**
    * linear energy transfer
    */
-  double _LET;
+  double _dEdx;
 
 };
 
@@ -200,7 +214,7 @@ public:
   /**
    * assign PatG to mesh node
    */
-  virtual void update_system();
+  virtual void update_source();
 
 private:
 
@@ -218,7 +232,10 @@ private:
 
   std::vector<track_t> _tracks;
 
-  void _read_particle_profile_track(const std::string &, Real );
+  void _read_particle_profile_track_evt(const std::string &, Real );
+#ifdef HAVE_HDF5
+  void _read_particle_profile_track_hdf5(const std::string &, const std::string & path, Real );
+#endif
 };
 
 

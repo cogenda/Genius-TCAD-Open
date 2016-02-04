@@ -43,12 +43,21 @@ using PhysicalUnit::mu0;
 
 
 
-InsulatorSimulationRegion::InsulatorSimulationRegion(const std::string &name, const std::string &material, const double T, const double z)
-:SimulationRegion(name, material, T, z)
+InsulatorSimulationRegion::InsulatorSimulationRegion(const std::string &name, const std::string &material, const double T, const unsigned int dim, const double z)
+  :SimulationRegion(name, material, T, dim, z)
 {
   // material should be initializted after region variables
   this->set_region_variables();
   mt = new Material::MaterialInsulator(this);
+}
+
+
+void InsulatorSimulationRegion::clear()
+{
+  SimulationRegion::clear();
+
+  // clear previous value
+  _elem_touch_boundary.clear();
 }
 
 
@@ -89,15 +98,20 @@ void InsulatorSimulationRegion::set_region_variables()
   _cell_data_storage.allocate_tensor_variable( std::vector<bool>(FVM_Insulator_CellData::n_tensor(),false));
 
   // define _region_point_variables
+  _region_point_variables["dmin"            ] = SimulationVariable("dmin", SCALAR, POINT_CENTER, "1", FVM_Insulator_NodeData::_dmin_, true);
   _region_point_variables["electron"        ] = SimulationVariable("electron", SCALAR, POINT_CENTER, "cm^-3", FVM_Insulator_NodeData::_n_, true);
   _region_point_variables["hole"            ] = SimulationVariable("hole", SCALAR, POINT_CENTER, "cm^-3", FVM_Insulator_NodeData::_p_, true);
+  _region_point_variables["hion"            ] = SimulationVariable("hion", SCALAR, POINT_CENTER, "cm^-3", FVM_Insulator_NodeData::_HIon_, true);
+  _region_point_variables["trap.a"          ] = SimulationVariable("trap.a", SCALAR, POINT_CENTER, "cm^-3", FVM_Insulator_NodeData::_trap_a_, true);
+  _region_point_variables["trap.b"          ] = SimulationVariable("trap.b", SCALAR, POINT_CENTER, "cm^-3", FVM_Insulator_NodeData::_trap_b_, true);
+  _region_point_variables["trap.bn"         ] = SimulationVariable("trap.bn", SCALAR, POINT_CENTER, "cm^-3", FVM_Insulator_NodeData::_trap_bn_, true);
   _region_point_variables["potential"       ] = SimulationVariable("potential", SCALAR, POINT_CENTER, "V", FVM_Insulator_NodeData::_psi_, true);
   _region_point_variables["temperature"     ] = SimulationVariable("temperature", SCALAR, POINT_CENTER, "K", FVM_Insulator_NodeData::_T_, true);
   _region_point_variables["density"         ] = SimulationVariable("density", SCALAR, POINT_CENTER, "g/cm^3", FVM_Insulator_NodeData::_density_, true);
   _region_point_variables["affinity"        ] = SimulationVariable("affinity", SCALAR, POINT_CENTER, "eV", FVM_Insulator_NodeData::_affinity_, true);
-  _region_point_variables["ec"              ] = SimulationVariable("ec", SCALAR, POINT_CENTER, "eV", FVM_Insulator_NodeData::_Ec_, true);
-  _region_point_variables["ev"              ] = SimulationVariable("ev", SCALAR, POINT_CENTER, "eV", FVM_Insulator_NodeData::_Ev_, true);
-  _region_point_variables["eg"              ] = SimulationVariable("eg", SCALAR, POINT_CENTER, "eV", FVM_Insulator_NodeData::_Eg_, true);
+  _region_point_variables["Ec"              ] = SimulationVariable("Ec", SCALAR, POINT_CENTER, "eV", FVM_Insulator_NodeData::_Ec_, true);
+  _region_point_variables["Ev"              ] = SimulationVariable("Ev", SCALAR, POINT_CENTER, "eV", FVM_Insulator_NodeData::_Ev_, true);
+  _region_point_variables["Eg"              ] = SimulationVariable("Eg", SCALAR, POINT_CENTER, "eV", FVM_Insulator_NodeData::_Eg_, true);
   _region_point_variables["eps"             ] = SimulationVariable("eps", SCALAR, POINT_CENTER, "C/V/m", FVM_Insulator_NodeData::_eps_, true);
   _region_point_variables["mu"              ] = SimulationVariable("mu", SCALAR, POINT_CENTER, "s^2*V/C/m", FVM_Insulator_NodeData::_mu_, true);
 
@@ -157,10 +171,11 @@ void InsulatorSimulationRegion::init(PetscScalar T_external)
 
     // the initial vacuum potential is equal to electron affinity potential
     node_data->psi() = -node_data->affinity();
-    node_data->n() = 0.0;//1.0*pow(cm, -3);
-    node_data->p() = 0.0;//1.0*pow(cm, -3);
+    node_data->n() = 0.0;
+    node_data->p() = 0.0;
   }
 
+  find_elem_touch_boundary();
 }
 
 
@@ -191,6 +206,36 @@ void InsulatorSimulationRegion::reinit_after_import()
   }
 
   //NOTE T and psi are read from data file!
+
+  find_elem_touch_boundary();
+}
+
+
+void InsulatorSimulationRegion::find_elem_touch_boundary()
+{
+  std::set<const Node *> boundary_node;
+
+  const_element_iterator it = elements_begin();
+  const_element_iterator it_end = elements_end();
+  for(; it!=it_end; ++it)
+  {
+    const Elem * elem = (*it);
+    if(elem->on_boundary() || elem->on_interface())
+    {
+      for(unsigned int n=0; n<elem->n_nodes(); ++n)
+        boundary_node.insert(elem->get_node(n));
+    }
+  }
+
+  _elem_touch_boundary.clear();
+  for(it = elements_begin(); it!=it_end; ++it)
+  {
+    const Elem * elem = (*it);
+    for(unsigned int n=0; n<elem->n_nodes(); ++n)
+      if( boundary_node.find(elem->get_node(n)) != boundary_node.end())
+        _elem_touch_boundary.insert(elem);
+  }
+
 }
 
 

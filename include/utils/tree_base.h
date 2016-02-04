@@ -48,6 +48,7 @@ namespace Trees
     NODES=0,
     ELEMENTS,             // all the element
     ELEMENTS_ON_BOUNDARY, // elements on outside boundary
+    ELEMENTS_ON_SURFACE,  // elements on boundary or surface
     SURFACE_ELEMENTS,     // surface element (on boundary or on interface), dim-1
     INVALID_BUILD_TYPE };
 }
@@ -105,6 +106,11 @@ public:
    * @return true if the ray hit the mesh bounding_box
    */
   virtual bool hit_boundbox(const Point & p, const Point & dir) const=0;
+
+  /**
+   * @return true when ray(p,d) hit mesh domain, also get parameter for hit point
+   */
+  virtual bool hit_domain(const Point & p, const Point & d, std::pair<double, double> &t) const=0;
 
   /**
    * @return how many leaf per level

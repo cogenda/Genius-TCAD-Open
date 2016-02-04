@@ -27,12 +27,14 @@
 #include <vector>
 #include <string>
 
+#include "atom.h"
 #include "variable_define.h"
 #include "fvm_node_info.h"
 #include "fvm_node_data.h"
 #include "fvm_cell_data.h"
 #include "petscvec.h"
 #include "petscmat.h"
+#include "sparse_matrix.h"
 #include "advanced_model.h"
 #include "enum_region.h"
 
@@ -75,7 +77,7 @@ public:
   /**
    * constructor
    */
-  SimulationRegion(const std::string &name, const std::string &material, const double T, const double z);
+  SimulationRegion(const std::string &name, const std::string &material, const double T, const unsigned int dim, const double z);
 
   /**
    * destructor
@@ -209,6 +211,13 @@ public:
    */
   void region_node(std::vector<unsigned int> & nodes) const;
 
+
+  /**
+   * get all the region node's control volume by order,
+   * must executed in parallel.
+   */
+  void region_node_vol(std::vector<double> & vols) const;
+
   /**
    * @return the fvm_node pointer by Node *
    * if no find, NULL is returned
@@ -272,7 +281,7 @@ public:
 
 
   /**
-   * @return const reference of element in this region
+   * @return const reference of local element in this region
    */
   const std::vector<const Elem *> & cells() const
     { return _region_cell; }
@@ -285,6 +294,12 @@ public:
    * clear stored data
    */
   virtual void clear();
+
+  /**
+   * convert a point(vector) from simulation coordinate system to crystal coordinate system
+   */
+  virtual TensorValue<PetscScalar> crystal_coord_matrix() const
+  { return TensorValue<PetscScalar>(1,0,0,0,1,0,0,0,1); }
 
   /**
    * @return the quality if each fvm cell in (0-poor, 1-fine]
@@ -585,6 +600,15 @@ public:
   template <typename T>
   bool set_variable_data(const std::string &v, DataLocation, const T d) ;
 
+   /**
+   * set all the variables v to value d
+   * must executed in parallel.
+   * @return true for success
+    */
+  template <typename T>
+  bool set_variable_data(const std::string &v, DataLocation, const T d, const double unit) ;
+
+
   /**
    * @return the region node based variables
    */
@@ -614,22 +638,39 @@ public:
   /**
    * @return the optical refraction index of the region
    */
-  virtual Complex get_optical_refraction(double lamda)
+  virtual Complex get_optical_refraction(double) const
   { return Complex(0.0, 0.0); }
 
   /**
    * @return the energy bandgap for optical simulation
-   * energy requited for generate (n-p) electron pair from vacuum
-   * 0.510998902MeV*2
+   * default value is energy requited for generate (n-p) electron pair from vacuum:  0.510998902MeV*2
    */
-  virtual double get_optical_Eg(double)
+  virtual double get_optical_Eg() const
   { return 0.510998902*1e6*2; }
+
+
+
+
+  /**
+   * @return the optical refraction index of the region
+   */
+  virtual Complex get_optical_refraction(const FVM_Node * , double lamda) const
+  { return get_optical_refraction(lamda); }
+
+  /**
+   * @return the energy bandgap for optical simulation
+   * default value is energy requited for generate (n-p) electron pair from vacuum:  0.510998902MeV*2
+   */
+  virtual double get_optical_Eg(const FVM_Node *) const
+  { return get_optical_Eg(); }
+
+
+
 
   /**
    * @return relative permittivity of material
    */
-  virtual double get_eps() const
-  { return 1.0; }
+  virtual double get_eps() const   { return 1.0; }
 
   /**
    * set material conductance [A/V/cm]
@@ -639,25 +680,22 @@ public:
   /**
    * @return material conductance [A/V/cm]
    */
-  virtual double get_conductance() const
-  { return 0.0; }
+  virtual double get_conductance() const  { return 0.0; }
 
   /**
    * @return material density [g cm^-3]
    */
-  virtual double get_density(PetscScalar ) const
-  { return 0.0; }
+  virtual double get_density() const  { return 0.0; }
 
   /**
    * @return affinity of material
    */
-  virtual double get_affinity(PetscScalar T) const
-  { return 0.0; }
+  virtual double get_affinity() const  { return 0.0; }
 
   /**
    * get atom fraction of region material
    */
-  virtual void atom_fraction(std::vector<std::string> &atoms, std::vector<double> & fraction)const=0;
+  virtual void atom_fraction(std::vector<Atom> &atoms, std::vector<double> & fraction)const=0;
 
   /**
    * virtual function for set different model, calibrate parameters to PMI
@@ -765,6 +803,11 @@ protected:
    * region's default temperature
    */
   double                        _T_external;
+
+  /**
+   * mesh dim
+   */
+  unsigned int                  _mesh_dim;
 
 
   /**
@@ -911,6 +954,7 @@ protected:
 
 public:
 
+#ifdef TCAD_SOLVERS
 
   //////////////////////////////////////////////////////////////////////////////////////////////
   //----------------Function and Jacobian evaluate for Poisson's Equation---------------------//
@@ -949,7 +993,7 @@ public:
    *
    * @note each derived region should override it
    */
-  virtual void Poissin_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_value_flag)=0;
+  virtual void Poissin_Jacobian(PetscScalar * x, SparseMatrix<PetscScalar> *jac, InsertMode &add_value_flag)=0;
 
   /**
    * @brief virtual function for evaluating hanging node for poisson's equation.
@@ -971,7 +1015,7 @@ public:
    *
    * @note each derived region should override it
    */
-  virtual void Poissin_Jacobian_Hanging_Node(PetscScalar * x, Mat *jac, InsertMode &add_value_flag)=0;
+  virtual void Poissin_Jacobian_Hanging_Node(PetscScalar * x, SparseMatrix<PetscScalar> *jac, InsertMode &add_value_flag)=0;
 
   /**
    * @brief virtual function for update solution value of poisson's equation.
@@ -1026,7 +1070,7 @@ public:
    *
    * @note each derived region should override it
    */
-  virtual void DDM1_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_value_flag)=0;
+  virtual void DDM1_Jacobian(PetscScalar * x, SparseMatrix<PetscScalar> *jac, InsertMode &add_value_flag)=0;
 
   /**
    * @brief virtual function for evaluating time derivative term of level 1 DDM equation.
@@ -1048,7 +1092,7 @@ public:
    *
    * @note each derived region should override it
    */
-  virtual void DDM1_Time_Dependent_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_value_flag)=0;
+  virtual void DDM1_Time_Dependent_Jacobian(PetscScalar * x, SparseMatrix<PetscScalar> *jac, InsertMode &add_value_flag)=0;
 
 
   /**
@@ -1071,7 +1115,7 @@ public:
    *
    * @note each derived region can override it
    */
-  virtual void DDM1_Pseudo_Time_Step_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_value_flag) {}
+  virtual void DDM1_Pseudo_Time_Step_Jacobian(PetscScalar * x, SparseMatrix<PetscScalar> *jac, InsertMode &add_value_flag) {}
 
   /**
    * @brief virtual function for convergence test of pseudo time step of level 1 DDM equation.
@@ -1082,28 +1126,6 @@ public:
    * @note each derived region can override it
    */
   virtual int DDM1_Pseudo_Time_Step_Convergence_Test(PetscScalar * x) { return 0; }
-
-  /**
-   * @brief virtual function for evaluating hanging node for level 1 DDM equation.
-   *
-   * @param x                local unknown vector
-   * @param f                petsc global function vector
-   * @param add_value_flag   flag for last operator is ADD_VALUES
-   *
-   * @note each derived region should override it
-   */
-  virtual void DDM1_Function_Hanging_Node(PetscScalar * x, Vec f, InsertMode &add_value_flag)=0;
-
-  /**
-   * @brief virtual function for evaluating Jacobian of hanging node for level 1 DDM equation.
-   *
-   * @param x                local unknown vector
-   * @param jac              petsc global jacobian matrix
-   * @param add_value_flag   flag for last operator is ADD_VALUES
-   *
-   * @note each derived region should override it
-   */
-  virtual void DDM1_Jacobian_Hanging_Node(PetscScalar * x, Mat *jac, InsertMode &add_value_flag)=0;
 
 
   /**
@@ -1117,147 +1139,6 @@ public:
    */
   virtual void DDM1_Update_Solution(PetscScalar *lxx)=0;
 
-
-
-
-  //////////////////////////////////////////////////////////////////////////////////
-  //---------------Function and Jacobian evaluate for new L1 DDM------------------//
-  //////////////////////////////////////////////////////////////////////////////////
-
-
-
-  /**
-   * @brief virtual function for fill vector of level 1 DDM equation.
-   *
-   * filling solution data from FVM_NodeData into petsc vector of level 1 DDM equation.
-   * can be used as initial data of nonlinear equation or diverged recovery.
-   *
-   * @param x                global solution vector
-   * @param L                the left scaling vector, usually contains the cell volume
-   * @note fill items of global solution vector with belongs to local processor
-   * each derived region should override it
-   */
-  virtual void DDM1R_Fill_Value(Vec x, Vec L)
-  { this->DDM1_Fill_Value(x, L); }
-
-  /**
-   * @brief virtual function for evaluating level 1 DDM equation.
-   *
-   * @param x                local unknown vector
-   * @param f                petsc global function vector
-   * @param add_value_flag   flag for last operator is ADD_VALUES
-   *
-   * @note each derived region should override it
-   */
-  virtual void DDM1R_Function(PetscScalar * x, Vec f, InsertMode &add_value_flag)
-  { this->DDM1_Function(x, f, add_value_flag); }
-
-  /**
-   * @brief virtual function for evaluating Jacobian of level 1 DDM equation.
-   *
-   * @param x                local unknown vector
-   * @param jac              petsc global jacobian matrix
-   * @param add_value_flag   flag for last operator is ADD_VALUES
-   *
-   * @note each derived region should override it
-   */
-  virtual void DDM1R_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_value_flag)
-  { this->DDM1_Jacobian(x, jac, add_value_flag); }
-
-  /**
-   * @brief virtual function for evaluating time derivative term of level 1 DDM equation.
-   *
-   * @param x                local unknown vector
-   * @param f                petsc global function vector
-   * @param add_value_flag   flag for last operator is ADD_VALUES
-   *
-   * @note each derived region should override it
-   */
-  virtual void DDM1R_Time_Dependent_Function(PetscScalar * x, Vec f, InsertMode &add_value_flag)
-  { this->DDM1_Time_Dependent_Function(x, f, add_value_flag); }
-
-  /**
-   * @brief virtual function for evaluating Jacobian of time derivative term of level 1 DDM equation.
-   *
-   * @param x                local unknown vector
-   * @param jac              petsc global jacobian matrix
-   * @param add_value_flag   flag for last operator is ADD_VALUES
-   *
-   * @note each derived region should override it
-   */
-  virtual void DDM1R_Time_Dependent_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_value_flag)
-  { this->DDM1_Time_Dependent_Jacobian(x, jac, add_value_flag); }
-
-  /**
-   * @brief virtual function for evaluating pseudo time step of level 1 DDM equation.
-   *
-   * @param x                local unknown vector
-   * @param f                petsc global function vector
-   * @param add_value_flag   flag for last operator is ADD_VALUES
-   *
-   * @note each derived region can override it
-   */
-  virtual void DDM1R_Pseudo_Time_Step_Function(PetscScalar * x, Vec f, InsertMode &add_value_flag)
-  { this->DDM1_Pseudo_Time_Step_Function(x, f, add_value_flag);}
-
-  /**
-   * @brief virtual function for evaluating Jacobian of pseudo time step of level 1 DDM equation.
-   *
-   * @param x                local unknown vector
-   * @param jac              petsc global jacobian matrix
-   * @param add_value_flag   flag for last operator is ADD_VALUES
-   *
-   * @note each derived region can override it
-   */
-  virtual void DDM1R_Pseudo_Time_Step_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_value_flag)
-  { this->DDM1_Pseudo_Time_Step_Jacobian(x, jac, add_value_flag);}
-
-  /**
-   * @brief virtual function for convergence test of pseudo time step of level 1 DDM equation.
-   *
-   * @param x                local unknown vector
-   * @return                 the number of nodes not convergenced yet
-   *
-   * @note each derived region can override it
-   */
-  virtual int DDM1R_Pseudo_Time_Step_Convergence_Test(PetscScalar * x)
-  { return DDM1_Pseudo_Time_Step_Convergence_Test(x); }
-
-  /**
-   * @brief virtual function for evaluating hanging node for level 1 DDM equation.
-   *
-   * @param x                local unknown vector
-   * @param f                petsc global function vector
-   * @param add_value_flag   flag for last operator is ADD_VALUES
-   *
-   * @note each derived region should override it
-   */
-  virtual void DDM1R_Function_Hanging_Node(PetscScalar * x, Vec f, InsertMode &add_value_flag)
-  {this->DDM1_Function_Hanging_Node(x, f, add_value_flag);}
-
-  /**
-   * @brief virtual function for evaluating Jacobian of hanging node for level 1 DDM equation.
-   *
-   * @param x                local unknown vector
-   * @param jac              petsc global jacobian matrix
-   * @param add_value_flag   flag for last operator is ADD_VALUES
-   *
-   * @note each derived region should override it
-   */
-  virtual void DDM1R_Jacobian_Hanging_Node(PetscScalar * x, Mat *jac, InsertMode &add_value_flag)
-  { this->DDM1_Jacobian_Hanging_Node(x, jac, add_value_flag);}
-
-  /**
-   * @brief virtual function for update solution value of level 1 DDM equation.
-   *
-   * update solution data of FVM_NodeData by petsc vector of level 1 DDM equation.
-   *
-   * @param x                global solution vector
-   *
-   * @note each derived region should override it
-   */
-  virtual void DDM1R_Update_Solution(PetscScalar *lxx)
-  { this->DDM1_Update_Solution(lxx); }
 
 
 
@@ -1288,7 +1169,7 @@ public:
    *
    * @note each derived region should override it
    */
-  virtual void HALL_Function(const VectorValue<double> & B, PetscScalar * x, Vec f, InsertMode &add_value_flag)=0;
+  virtual void HALL_Function(const VectorValue<PetscScalar> & B, PetscScalar * x, Vec f, InsertMode &add_value_flag)=0;
 
   /**
    * @brief virtual function for evaluating Jacobian of level 1 DDM equation with hall correction.
@@ -1300,7 +1181,7 @@ public:
    *
    * @note each derived region should override it
    */
-  virtual void HALL_Jacobian(const VectorValue<double> & B, PetscScalar * x, Mat *jac, InsertMode &add_value_flag)=0;
+  virtual void HALL_Jacobian(const VectorValue<PetscScalar> & B, PetscScalar * x, SparseMatrix<PetscScalar> *jac, InsertMode &add_value_flag)=0;
 
   /**
    * @brief virtual function for evaluating time derivative term of level 1 DDM equation with hall correction.
@@ -1322,29 +1203,7 @@ public:
    *
    * @note each derived region should override it
    */
-  virtual void HALL_Time_Dependent_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_value_flag)=0;
-
-  /**
-   * @brief virtual function for evaluating hanging node for level 1 DDM equation with hall correction.
-   *
-   * @param x                local unknown vector
-   * @param f                petsc global function vector
-   * @param add_value_flag   flag for last operator is ADD_VALUES
-   *
-   * @note each derived region should override it
-   */
-  virtual void HALL_Function_Hanging_Node(PetscScalar * x, Vec f, InsertMode &add_value_flag)=0;
-
-  /**
-   * @brief virtual function for evaluating Jacobian of hanging node for level 1 DDM equation with hall correction.
-   *
-   * @param x                local unknown vector
-   * @param jac              petsc global jacobian matrix
-   * @param add_value_flag   flag for last operator is ADD_VALUES
-   *
-   * @note each derived region should override it
-   */
-  virtual void HALL_Jacobian_Hanging_Node(PetscScalar * x, Mat *jac, InsertMode &add_value_flag)=0;
+  virtual void HALL_Time_Dependent_Jacobian(PetscScalar * x, SparseMatrix<PetscScalar> *jac, InsertMode &add_value_flag)=0;
 
 
   /**
@@ -1416,7 +1275,7 @@ public:
    *
    * @note each derived region should override it
    */
-  virtual void DG_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_value_flag)=0;
+  virtual void DG_Jacobian(PetscScalar * x, SparseMatrix<PetscScalar> *jac, InsertMode &add_value_flag)=0;
 
   /**
    * @brief virtual function for evaluating time derivative term of Density Gradient equation.
@@ -1438,7 +1297,7 @@ public:
    *
    * @note each derived region should override it
    */
-  virtual void DG_Time_Dependent_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_value_flag)=0;
+  virtual void DG_Time_Dependent_Jacobian(PetscScalar * x, SparseMatrix<PetscScalar> *jac, InsertMode &add_value_flag)=0;
 
 
   /**
@@ -1492,7 +1351,7 @@ public:
    *
    * @note each derived region should override it
    */
-  virtual void DDM2_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_value_flag)=0;
+  virtual void DDM2_Jacobian(PetscScalar * x, SparseMatrix<PetscScalar> *jac, InsertMode &add_value_flag)=0;
 
   /**
    * @brief virtual function for evaluating time derivative term of level 2 DDM equation.
@@ -1514,7 +1373,7 @@ public:
    *
    * @note each derived region should override it
    */
-  virtual void DDM2_Time_Dependent_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_value_flag)=0;
+  virtual void DDM2_Time_Dependent_Jacobian(PetscScalar * x, SparseMatrix<PetscScalar> *jac, InsertMode &add_value_flag)=0;
 
 
   /**
@@ -1537,7 +1396,7 @@ public:
    *
    * @note each derived region can override it
    */
-  virtual void DDM2_Pseudo_Time_Step_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_value_flag) {}
+  virtual void DDM2_Pseudo_Time_Step_Jacobian(PetscScalar * x, SparseMatrix<PetscScalar> *jac, InsertMode &add_value_flag) {}
 
   /**
    * @brief virtual function for convergence test of pseudo time step of level 2 DDM equation.
@@ -1549,27 +1408,6 @@ public:
    */
   virtual int DDM2_Pseudo_Time_Step_Convergence_Test(PetscScalar * x) { return 0; }
 
-  /**
-   * @brief virtual function for evaluating hanging node for level 2 DDM equation.
-   *
-   * @param x                local unknown vector
-   * @param f                petsc global function vector
-   * @param add_value_flag   flag for last operator is ADD_VALUES
-   *
-   * @note each derived region should override it
-   */
-  virtual void DDM2_Function_Hanging_Node(PetscScalar * x, Vec f, InsertMode &add_value_flag)=0;
-
-  /**
-   * @brief virtual function for evaluating Jacobian of hanging node for level 2 DDM equation.
-   *
-   * @param x                local unknown vector
-   * @param jac              petsc global jacobian matrix
-   * @param add_value_flag   flag for last operator is ADD_VALUES
-   *
-   * @note each derived region should override it
-   */
-  virtual void DDM2_Jacobian_Hanging_Node(PetscScalar * x, Mat *jac, InsertMode &add_value_flag)=0;
 
   /**
    * @brief virtual function for update solution value of level 2 DDM equation.
@@ -1638,30 +1476,7 @@ public:
    *
    * @note each derived region should override it
    */
-  virtual void EBM3_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_value_flag)=0;
-
-
-  /**
-   * @brief virtual function for evaluating hanging node for level 3 EBM equation.
-   *
-   * @param x                local unknown vector
-   * @param f                petsc global function vector
-   * @param add_value_flag   flag for last operator is ADD_VALUES
-   *
-   * @note each derived region should override it
-   */
-  virtual void EBM3_Function_Hanging_Node(PetscScalar * x, Vec f, InsertMode &add_value_flag)=0;
-
-  /**
-   * @brief virtual function for evaluating Jacobian of hanging node for level 3 EBM equation.
-   *
-   * @param x                local unknown vector
-   * @param jac              petsc global jacobian matrix
-   * @param add_value_flag   flag for last operator is ADD_VALUES
-   *
-   * @note each derived region should override it
-   */
-  virtual void EBM3_Jacobian_Hanging_Node(PetscScalar * x, Mat *jac, InsertMode &add_value_flag)=0;
+  virtual void EBM3_Jacobian(PetscScalar * x, SparseMatrix<PetscScalar> *jac, InsertMode &add_value_flag)=0;
 
 
   /**
@@ -1684,7 +1499,7 @@ public:
    *
    * @note each derived region should override it
    */
-  virtual void EBM3_Time_Dependent_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_value_flag)=0;
+  virtual void EBM3_Time_Dependent_Jacobian(PetscScalar * x, SparseMatrix<PetscScalar> *jac, InsertMode &add_value_flag)=0;
 
   /**
    * @brief virtual function for update solution value of level 3 EBM equation.
@@ -1729,7 +1544,7 @@ public:
    * @note fill entry of AC matrix A with Jacobian matrix J at frequency omega
    * each derived region should override it
    */
-  virtual void DDMAC_Fill_Matrix_Vector(Mat A, Vec b, const Mat J, const double omega, InsertMode & add_value_flag) const=0;
+  virtual void DDMAC_Fill_Matrix_Vector(Mat A, Vec b, const Mat J, const PetscScalar omega, InsertMode & add_value_flag) const=0;
 
   /**
    * @brief virtual function for fill transport matrix of DDMAC equation.
@@ -1744,7 +1559,7 @@ public:
    * @note fill entry of AC transpose matrix T with Jacobian matrix J at frequency omega
    * each derived region should override it
    */
-  virtual void DDMAC_Fill_Transformation_Matrix(Mat T, const Mat J, const double omega, InsertMode & add_value_flag) const=0;
+  virtual void DDMAC_Fill_Transformation_Matrix(Mat T, const Mat J, const PetscScalar omega, InsertMode & add_value_flag) const=0;
 
   /**
    * @brief virtual function for fill matrix of DDMAC equation.
@@ -1761,7 +1576,7 @@ public:
    * @note fill entry of AC matrix A with Jacobian matrix J at frequency omega
    * each derived region should override it
    */
-  virtual void DDMAC_Fill_Nodal_Matrix_Vector(const FVM_Node *fvm_node, Mat A, Vec b, const Mat J, const double omega, InsertMode & add_value_flag,
+  virtual void DDMAC_Fill_Nodal_Matrix_Vector(const FVM_Node *fvm_node, Mat A, Vec b, const Mat J, const PetscScalar omega, InsertMode & add_value_flag,
                                               const SimulationRegion * adjacent_region=NULL,
                                               const FVM_Node * adjacent_fvm_node=NULL) const=0;
 
@@ -1782,7 +1597,7 @@ public:
    * each derived region should override it
    */
   virtual void DDMAC_Fill_Nodal_Matrix_Vector(const FVM_Node *fvm_node, const SolutionVariable var,
-                                              Mat A, Vec b, const Mat J, const double omega, InsertMode & add_value_flag,
+                                              Mat A, Vec b, const Mat J, const PetscScalar omega, InsertMode & add_value_flag,
                                               const SimulationRegion * adjacent_region=NULL,
                                               const FVM_Node * adjacent_fvm_node=NULL) const=0;
 
@@ -1912,107 +1727,12 @@ public:
 
 #endif
 
-  //////////////////////////////////////////////////////////////////////////////////
-  //----------------- functions for Fast Hydrodynamic solver  --------------------//
-  //////////////////////////////////////////////////////////////////////////////////
-
-  /**
-   * @brief virtual function for fill vector of Hydrodynamic equation.
-   *
-   * @param x                global solution vector
-   * @param vol              the 1.0/volume of each CV
-   * @note fill items of global solution vector with belongs to local processor
-   * only semiconductor region need to override it
-   */
-  virtual void HDM_Fill_Value(Vec /*x*/, Vec /*vol*/) {}
-
-  /**
-   * @brief virtual function for evaluating flux of Hydrodynamic equation.
-   *
-   * @param lx               local solution array
-   * @param flux             flux vector
-   * @param t                local time step vector
-   *
-   * @note only semiconductor region need to override it
-   */
-  virtual void HDM_Flux(const PetscScalar * /*lx*/, Vec /*flux*/, Vec /*t*/) {}
 
 
-  /**
-   * @brief virtual function for evaluating flux of Hydrodynamic equation.
-   *
-   * @param lx               local solution array
-   * @param lt               local time step vector
-   * @param x                solution vector
-   *
-   * @note only semiconductor region need to override it
-   */
-  virtual void HDM_Source(const PetscScalar * /*lx*/, const PetscScalar * /*lt*/, Vec /*x*/) {}
+#endif
 
 
-  /**
-   * @brief virtual function for update solution value of Hydrodynamic equation.
-   *
-   *
-   * @param x                local solution vector
-   *
-   * @note only semiconductor region need to override it
-   */
-  virtual void HDM_Update_Solution(const PetscScalar * /*x*/) {}
-
-
-  //////////////////////////////////////////////////////////////////////////////////
-  //-----------------  functions for Linear Poissin solver   ---------------------//
-  //////////////////////////////////////////////////////////////////////////////////
-
-  /**
-   * @brief virtual function for build matrix of linear poisson's equation.
-   *
-   * @param A                matrix
-   *
-   * @note each derived region should override it
-   */
-  virtual void LinearPoissin_Matrix(Mat A, InsertMode &add_value_flag) = 0;
-
-
-  /**
-   * @brief virtual function for build RHS vector of linear poisson's equation.
-   *
-   * @param b                RHS vector
-   *
-   * @note each derived region should override it
-   */
-  virtual void LinearPoissin_RHS(Vec b, InsertMode &add_value_flag) = 0;
-
-
-  /**
-   * @brief virtual function for update solution value of linear poisson's equation.
-   *
-   * @param x                local solution vector
-   *
-   * @note each derived region should override it
-   */
-  virtual void LinearPoissin_Update_Solution(const PetscScalar * x) = 0;
-
-
-  //////////////////////////////////////////////////////////////////////////////////
-  //-----------------  functions for mobility evaluation     ---------------------//
-  //////////////////////////////////////////////////////////////////////////////////
-
-  /**
-   * @brief virtual function for evaluating mobility of edge.
-   *
-   * the moblity is ordered as region's edge, and weighted by partial area of the edge
-   *
-   * @note only semiconductor region should override it
-   */
-  virtual void Mob_Evaluation( std::vector< std::pair<unsigned int, unsigned int> > &edge,
-                               std::vector< std::pair<double, double> > & mob,
-                               std::vector< double > & weight) const {}
-
-
-
-
+#ifdef IDC_SOLVERS
 #ifdef COGENDA_COMMERCIAL_PRODUCT
 
 
@@ -2055,7 +1775,7 @@ public:
    *
    * @note each derived region should override it
    */
-  virtual void RIC_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_value_flag)=0;
+  virtual void RIC_Jacobian(PetscScalar * x, SparseMatrix<PetscScalar> *jac, InsertMode &add_value_flag)=0;
 
   /**
    * @brief virtual function for evaluating time derivative term of RIC equation.
@@ -2077,7 +1797,7 @@ public:
    *
    * @note each derived region should override it
    */
-  virtual void RIC_Time_Dependent_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_value_flag)=0;
+  virtual void RIC_Time_Dependent_Jacobian(PetscScalar * x, SparseMatrix<PetscScalar> *jac, InsertMode &add_value_flag)=0;
 
   /**
    * @brief virtual function for update solution value of RIC equation.
@@ -2090,6 +1810,193 @@ public:
    */
   virtual void RIC_Update_Solution(PetscScalar *lxx)=0;
 
+
+  //////////////////////////////////////////////////////////////////////////////////
+  //----------------Function and Jacobian evaluate for DICTAT ---------------------//
+  //////////////////////////////////////////////////////////////////////////////////
+
+
+
+  /**
+   * @brief virtual function for fill vector of DICTAT equation.
+   *
+   * filling solution data from FVM_NodeData into petsc vector of DICTAT equation.
+   * can be used as initial data of nonlinear equation or diverged recovery.
+   *
+   * @param x                global solution vector
+   * @param L                the left scaling vector, usually contains the cell volume
+   * @note fill items of global solution vector with belongs to local processor
+   * each derived region should override it
+   */
+  virtual void DICTAT_Fill_Value(Vec x, Vec L)=0;
+
+  /**
+   * @brief virtual function for evaluating DICTAT equation.
+   *
+   * @param x                local unknown vector
+   * @param f                petsc global function vector
+   * @param add_value_flag   flag for last operator is ADD_VALUES
+   *
+   * @note each derived region should override it
+   */
+  virtual void DICTAT_Function(PetscScalar * x, Vec f, InsertMode &add_value_flag)=0;
+
+  /**
+   * @brief virtual function for evaluating Jacobian of DICTAT equation.
+   *
+   * @param x                local unknown vector
+   * @param jac              petsc global jacobian matrix
+   * @param add_value_flag   flag for last operator is ADD_VALUES
+   *
+   * @note each derived region should override it
+   */
+  virtual void DICTAT_Jacobian(PetscScalar * x, SparseMatrix<PetscScalar> * jac, InsertMode &add_value_flag)=0;
+
+  /**
+   * @brief virtual function for evaluating time derivative term of DICTAT equation.
+   *
+   * @param x                local unknown vector
+   * @param f                petsc global function vector
+   * @param add_value_flag   flag for last operator is ADD_VALUES
+   *
+   * @note each derived region should override it
+   */
+  virtual void DICTAT_Time_Dependent_Function(PetscScalar * x, Vec f, InsertMode &add_value_flag)=0;
+
+  /**
+   * @brief virtual function for evaluating Jacobian of time derivative term of DICTAT equation.
+   *
+   * @param x                local unknown vector
+   * @param jac              petsc global jacobian matrix
+   * @param add_value_flag   flag for last operator is ADD_VALUES
+   *
+   * @note each derived region should override it
+   */
+  virtual void DICTAT_Time_Dependent_Jacobian(PetscScalar * x, SparseMatrix<PetscScalar> * jac, InsertMode &add_value_flag)=0;
+
+  /**
+   * @brief virtual function for update solution value of DICTAT equation.
+   *
+   * update solution data of FVM_NodeData by petsc vector of DICTAT equation.
+   *
+   * @param x                global solution vector
+   *
+   * @note each derived region should override it
+   */
+  virtual void DICTAT_Update_Solution(PetscScalar *lxx)=0;
+
+#endif
+#endif
+
+#ifdef COGENDA_COMMERCIAL_PRODUCT
+
+  //////////////////////////////////////////////////////////////////////////////////
+  //----------------Function and Jacobian evaluate for TID drift Solver-----------//
+  //////////////////////////////////////////////////////////////////////////////////
+
+
+
+  /**
+   * @brief virtual function for fill vector of TID drift equation.
+   *
+   * filling solution data from FVM_NodeData into petsc vector of TID equation.
+   * can be used as initial data of nonlinear equation or diverged recovery.
+   *
+   * @param x                global solution vector
+   * @param L                the left scaling vector, usually contains the cell volume
+   * @note fill items of global solution vector with belongs to local processor
+   * only insulator region should override it
+   */
+  virtual void TID_Drift_Fill_Value(Vec x, Vec L) {}
+
+  /**
+   * @brief virtual function for evaluating TID drift equation.
+   *
+   * @param x                local unknown vector
+   * @param f                petsc global function vector
+   * @param add_value_flag   flag for last operator is ADD_VALUES
+   *
+   * @note only insulator region should override it
+   */
+  virtual void TID_Drift_Function(PetscScalar * x, Vec f, InsertMode &add_value_flag) {}
+
+  /**
+   * @brief virtual function for evaluating Jacobian of TID drift equation.
+   *
+   * @param x                local unknown vector
+   * @param jac              petsc global jacobian matrix
+   * @param add_value_flag   flag for last operator is ADD_VALUES
+   *
+   * @note only insulator region should override it
+   */
+  virtual void TID_Drift_Jacobian(PetscScalar * x, SparseMatrix<PetscScalar> *jac, InsertMode &add_value_flag) {}
+
+
+  /**
+   * @brief virtual function for update solution value of TID drift equation.
+   *
+   * update solution data of FVM_NodeData by petsc vector of TID equation.
+   *
+   * @param x                global solution vector
+   *
+   * @note only insulator region should override it
+   */
+  virtual void TID_Drift_Update_Solution(PetscScalar *lxx) {}
+  
+  
+  
+  //////////////////////////////////////////////////////////////////////////////////
+  //----------Function and Jacobian evaluate for TID drift-reaction Solver--------//
+  //////////////////////////////////////////////////////////////////////////////////
+
+
+
+  /**
+   * @brief virtual function for fill vector of TID drift-reaction equation.
+   *
+   * filling solution data from FVM_NodeData into petsc vector of TID equation.
+   * can be used as initial data of nonlinear equation or diverged recovery.
+   *
+   * @param x                global solution vector
+   * @param L                the left scaling vector, usually contains the cell volume
+   * @note fill items of global solution vector with belongs to local processor
+   * only insulator region should override it
+   */
+  virtual void TID_DriftReaction_Fill_Value(Vec x, Vec L) {}
+
+  /**
+   * @brief virtual function for evaluating TID drift-reaction equation.
+   *
+   * @param x                local unknown vector
+   * @param f                petsc global function vector
+   * @param add_value_flag   flag for last operator is ADD_VALUES
+   *
+   * @note only insulator region should override it
+   */
+  virtual void TID_DriftReaction_Function(PetscScalar * x, Vec f, InsertMode &add_value_flag) {}
+
+  /**
+   * @brief virtual function for evaluating Jacobian of TID drift-reaction equation.
+   *
+   * @param x                local unknown vector
+   * @param jac              petsc global jacobian matrix
+   * @param add_value_flag   flag for last operator is ADD_VALUES
+   *
+   * @note only insulator region should override it
+   */
+  virtual void TID_DriftReaction_Jacobian(PetscScalar * x, SparseMatrix<PetscScalar> *jac, InsertMode &add_value_flag) {}
+
+
+  /**
+   * @brief virtual function for update solution value of TID drift-reaction equation.
+   *
+   * update solution data of FVM_NodeData by petsc vector of TID equation.
+   *
+   * @param x                global solution vector
+   *
+   * @note only insulator region should override it
+   */
+  virtual void TID_DriftReaction_Update_Solution(PetscScalar *lxx) {}
 #endif
 
 };

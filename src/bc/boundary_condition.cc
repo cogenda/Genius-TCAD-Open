@@ -65,6 +65,7 @@ void init_bc_name_to_bc_type_map()
     bc_name_to_bc_type["schottkycontact"          ]  = SchottkyContact;
     bc_name_to_bc_type["metalschottkyinterface"   ]  = IF_Metal_Schottky;
     bc_name_to_bc_type["gatecontact"              ]  = GateContact;
+    bc_name_to_bc_type["polygatecontact"          ]  = PolyGateContact;
     bc_name_to_bc_type["simplegatecontact"        ]  = SimpleGateContact;
     bc_name_to_bc_type["solderpad"                ]  = SolderPad;
     bc_name_to_bc_type["insulatorinterface"       ]  = IF_Insulator_Semiconductor;
@@ -74,7 +75,7 @@ void init_bc_name_to_bc_type_map()
     bc_name_to_bc_type["sourceboundary"           ]  = SourceBoundary;
     bc_name_to_bc_type["floatmetal"               ]  = ChargedContact;
     bc_name_to_bc_type["fixedpotential"           ]  = FixedPotential;
-    bc_name_to_bc_type["emit"                     ]  = Emit;
+    bc_name_to_bc_type["chargeemit"               ]  = ChargeEmit;
   }
 }
 
@@ -125,6 +126,7 @@ void init_bc_type_to_bc_name_map()
     bc_type_to_bc_name[GateContact                     ]  = std::string("GateContact");
     bc_type_to_bc_name[ChargedContact                  ]  = std::string("ChargedContact");
     bc_type_to_bc_name[ChargeIntegral                  ]  = std::string("ChargeIntegral");
+    bc_type_to_bc_name[ChargeEmit                      ]  = std::string("ChargeEmit");
     bc_type_to_bc_name[SolderPad                       ]  = std::string("SolderPad");
     bc_type_to_bc_name[InterConnect                    ]  = std::string("InterConnect");
     bc_type_to_bc_name[AbsorbingBoundary               ]  = std::string("AbsorbingBoundary");
@@ -298,9 +300,13 @@ bool consistent_bc_by_subdomain(const std::string &mat1, const std::string &mat2
     }
     case GateContact:
     {
+      if(IsSemiconductor(material1) && material2.empty() ) return true;
+      if(IsConductor(material1) && material2.empty() ) return true;
+      if(IsResistance(material1) && material2.empty() ) return true;
       if(IsInsulator(material1) && material2.empty() ) return true;
       if(IsInsulator(material1) && IsConductor(material2) ) return true;
       if(IsInsulator(material1) && IsResistance(material2) ) return true;
+      if(IsSemiconductor(material1) && IsInsulator(material2) ) return true;
       return false;
     }
     case SimpleGateContact:
@@ -323,6 +329,11 @@ bool consistent_bc_by_subdomain(const std::string &mat1, const std::string &mat2
     case HeteroInterface:
     {
       if(IsSemiconductor(material1) && IsSemiconductor(material2) ) return true;
+      return false;
+    }
+    case ChargeEmit:
+    {
+      if(IsSemiconductor(material1) && material2.empty() ) return true;
       return false;
     }
   }
@@ -398,7 +409,7 @@ FVM_Node * BoundaryCondition::get_region_fvm_node(const Node * n, unsigned int s
 std::vector<SimulationRegion *>  BoundaryCondition::extra_regions(const Node * n) const
 {
   std::vector<SimulationRegion *> regions;
-      
+
   typedef std::multimap<SimulationRegionType, std::pair<SimulationRegion *, FVM_Node *> > RegionNodeMap;
   const RegionNodeMap & region_map = _bd_fvm_nodes.find(n)->second;
   for(RegionNodeMap::const_iterator it = region_map.begin(); it != region_map.end(); it++)
@@ -555,6 +566,7 @@ bool BoundaryCondition::has_flag(const std::string & name) const
 #include "boundary_condition_ei.h"
 #include "boundary_condition_neumann.h"
 #include "boundary_condition_gate.h"
+#include "boundary_condition_poly_gate.h"
 #include "boundary_condition_ohmic.h"
 #include "boundary_condition_resistance_ohmic.h"
 #include "boundary_condition_rr.h"
@@ -567,6 +579,7 @@ bool BoundaryCondition::has_flag(const std::string & name) const
 #include "boundary_condition_iv.h"
 #include "boundary_condition_ev.h"
 #include "boundary_condition_ee.h"
+#include "boundary_condition_charge_emit.h"
 
 #include "boundary_condition_electrode_interconnect.h"
 #include "boundary_condition_charge_integral.h"
@@ -582,6 +595,8 @@ ChargeIntegralBC::ChargeIntegralBC(SimulationSystem  & system, const std::string
   //std::cout<<"  Initializing \""<< label <<"\" as Charge Integral..."<<std::endl;
   MESSAGE<<"  Initializing \""<< label <<"\" as Charge Integral..."<<std::endl; RECORD();
   scalar("qf")  = 0*C;
+  scalar("qf.gen")  = 0*C/s;
+  flag("leakage") = false;
 }
 
 
@@ -590,6 +605,7 @@ NeumannBC::NeumannBC(SimulationSystem  & system, const std::string & label): Bou
   MESSAGE<<"  Initializing \""<< label <<"\" as Neumann BC..."<<std::endl; RECORD();
   scalar("heat.transfer") = 0.0*J/s/pow(cm,2)/K;
   flag("reflection") = false;
+  flag("surface.recombination") = false;
 }
 
 
@@ -646,6 +662,13 @@ GateContactBC::GateContactBC(SimulationSystem  & system, const std::string & lab
 }
 
 
+PolyGateContactBC::PolyGateContactBC(SimulationSystem  & system, const std::string & label): BoundaryCondition(system,label)
+{
+  MESSAGE<<"  Initializing \""<< label <<"\" as PolyGate BC..."<<std::endl; RECORD();
+  scalar("heat.transfer") = 1e3*J/s/pow(cm,2)/K;
+  scalar("workfunction") = 0.0;
+}
+
 
 SimpleGateContactBC::SimpleGateContactBC(SimulationSystem  & system, const std::string & label): BoundaryCondition(system,label)
 {
@@ -682,6 +705,10 @@ InsulatorSemiconductorInterfaceBC::InsulatorSemiconductorInterfaceBC(SimulationS
 {
   MESSAGE<<"  Initializing \""<< label <<"\" as Insulator Semiconductor Interface..."<<std::endl; RECORD();
   scalar("qf")  = 1e10/pow(cm,2);
+  scalar("J_CBET") = 0.0;
+  scalar("J_VBHT") = 0.0;
+  scalar("J_VBET") = 0.0;
+  flag("surface.recombination") = true;
   _current_flow = 0.0;
 }
 
@@ -722,6 +749,13 @@ ChargedContactBC::ChargedContactBC(SimulationSystem  & system, const std::string
 }
 
 
+ChargeEmitBC::ChargeEmitBC(SimulationSystem  & system, const std::string & label): BoundaryCondition(system,label)
+{
+  MESSAGE<<"  Initializing \""<< label <<"\" as Charge Emit boundary..."<<std::endl; RECORD();
+  _current_flow = 0.0;
+}
+
+
 AbsorbingBC::AbsorbingBC(SimulationSystem  & system, const std::string & label): BoundaryCondition(system,label)
 {
   MESSAGE<<"  Initializing \""<< label <<"\" as Absorbing boundary..."<<std::endl; RECORD();
@@ -756,7 +790,8 @@ std::string NeumannBC::boundary_condition_in_string() const
      <<"enum<type>=Neumann "
      <<"real<ext.temp>="<<T_external()/K<<" "
      <<"real<heat.transfer>="<<scalar("heat.transfer")/(J/s/pow(cm,2)/K)<<" "
-     <<"bool<reflection>="<<( flag("reflection") ? "true" : "false" )<<" ";
+     <<"bool<reflection>="<<( flag("reflection") ? "true" : "false" )<<" "
+     <<"bool<surface.recombination>="<<( flag("surface.recombination") ? "true" : "false" )<<" ";
 
   if(system().mesh().mesh_dimension () == 2)
     ss<<"real<z.width>="<<z_width()/um;
@@ -911,6 +946,42 @@ std::string GateContactBC::boundary_condition_in_string() const
   return ss.str();
 }
 
+
+std::string PolyGateContactBC::boundary_condition_in_string() const
+{
+  std::stringstream ss;
+
+  ss <<"BOUNDARY "
+      <<"string<id>="<<this->label()<<" "
+      <<"enum<type>=PolyGateContact "
+      <<"real<workfunction>="<<scalar("workfunction")/V<<" ";
+
+  if(this->ext_circuit())
+  {
+    ss << this->ext_circuit()->format() <<" ";
+  }
+
+  if(_bd_type == BOUNDARY)
+  {
+    ss <<"real<ext.temp>="<<T_external()/K<<" "
+        <<"real<heat.transfer>="<<scalar("heat.transfer")/(J/s/pow(cm,2)/K)<<" ";
+  }
+  else
+  {
+    if(!this->electrode_label().empty())
+    {
+      ss << "string<electrode_id>=" << this->electrode_label() << " ";
+    }
+  }
+
+  if(system().mesh().mesh_dimension () == 2)
+    ss<<"real<z.width>="<<z_width()/um;
+  ss<<std::endl;
+
+  return ss.str();
+}
+
+
 std::string SimpleGateContactBC::boundary_condition_in_string() const
 {
   std::stringstream ss;
@@ -999,6 +1070,7 @@ std::string InsulatorSemiconductorInterfaceBC::boundary_condition_in_string() co
   <<"string<id>="<<this->label()<<" "
   <<"enum<type>=InsulatorInterface "
   <<"real<qf>="<<scalar("qf")*pow(cm,2)<<" "
+  <<"bool<surface.recombination>="<<( flag("surface.recombination") ? "true" : "false" )
   <<std::endl;
 
   return ss.str();
@@ -1113,6 +1185,19 @@ std::string ChargeIntegralBC::boundary_condition_in_string() const
     ss<<"string<chargeboundary>="<<inter_connect_bcs[n]->label()<<" ";
 
   ss<<std::endl;
+
+  return ss.str();
+}
+
+
+std::string ChargeEmitBC::boundary_condition_in_string() const
+{
+  std::stringstream ss;
+
+  ss <<"BOUNDARY "
+      <<"string<id>="<<this->label()<<" "
+      <<"enum<type>=ChargeEmit "
+      <<std::endl;
 
   return ss.str();
 }

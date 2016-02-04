@@ -64,7 +64,7 @@ private:
     NV_F      = 1.85;
 
     N0_BGN    = 1.300000e+17*std::pow(cm,-3);
-    V0_BGN    = 6.920000e-03*V;
+    V0_BGN    = 6.920000e-03*eV;
     CON_BGN   = 5.000000e-01;
 
 #ifdef __CALIBRATE__
@@ -167,25 +167,19 @@ public:
   PetscScalar ni (const PetscScalar &Tl)
   {
     PetscScalar bandgap = Eg(Tl);
-    PetscScalar Nc = NC300*std::pow(Tl/T300,NC_F);
-    PetscScalar Nv = NV300*std::pow(Tl/T300,NV_F);
-    return sqrt(Nc*Nv)*exp(-bandgap/(2*kb*Tl));
+    return sqrt(Nc(Tl)*Nv(Tl))*exp(-bandgap/(2*kb*Tl));
   }
 
   // nie, Eg narrow should be considered
   PetscScalar nie (const PetscScalar &p, const PetscScalar &n, const PetscScalar &Tl)
   {
     PetscScalar bandgap = Eg(Tl);
-    PetscScalar Nc = NC300*std::pow(Tl/T300,NC_F);
-    PetscScalar Nv = NV300*std::pow(Tl/T300,NV_F);
-    return sqrt(Nc*Nv)*exp(-bandgap/(2*kb*Tl))*exp(EgNarrow(p, n, Tl));
+    return sqrt(Nc(Tl)*Nv(Tl))*exp(-bandgap/(2*kb*Tl))*exp(EgNarrow(p, n, Tl)/(2*kb*Tl));
   }
   AutoDScalar nie (const AutoDScalar &p, const AutoDScalar &n, const AutoDScalar &Tl)
   {
     AutoDScalar bandgap = Eg(Tl);
-    AutoDScalar Nc = NC300*adtl::pow(Tl/T300,NC_F);
-    AutoDScalar Nv = NV300*adtl::pow(Tl/T300,NV_F);
-    return sqrt(Nc*Nv)*exp(-bandgap/(2*kb*Tl))*exp(EgNarrow(p, n, Tl));
+    return sqrt(Nc(Tl)*Nv(Tl))*exp(-bandgap/(2*kb*Tl))*exp(EgNarrow(p, n, Tl)/(2*kb*Tl));
   }
 
   //end of Bandgap
@@ -331,6 +325,22 @@ private:
   }
 
 public:
+
+  /**
+   * @return direct Recombination rate
+   */
+  PetscScalar CDIR           (const PetscScalar &Tl)  { return C_DIRECT; }
+
+  /**
+   * @return electron Auger Recombination rate
+   */
+  PetscScalar AUGERN           (const PetscScalar &p, const PetscScalar &n, const PetscScalar &Tl) { return AUGN; }
+
+  /**
+   * @return hole Auger Recombination rate
+   */
+  PetscScalar AUGERP           (const PetscScalar &p, const PetscScalar &n, const PetscScalar &Tl)  { return AUGP; }
+
   //---------------------------------------------------------------------------
   // Direct Recombination
   PetscScalar R_Direct     (const PetscScalar &p, const PetscScalar &n, const PetscScalar &Tl)
@@ -667,8 +677,8 @@ private:
     HCI_LAMHN = 9.200000E-07*cm;
     HCI_LAMHP = 1.000000E-07*cm;
 
-    HCI_Fiegna_A = 4.87E+02*m/s/pow(eV, 2.5);
-    HCI_Fiegna_X = 1.30E+08*pow(V/(cm*eV*eV), 1.5);
+    HCI_Fiegna_A = 4.87E+02*m/s/std::pow(eV, 2.5);
+    HCI_Fiegna_X = 1.30E+08*std::pow(V/(cm*eV*eV), 1.5);
 
     HCI_Classical_Lsem_n = 8.9E-07*cm;
     HCI_Classical_Lsemr_n = 6.2E-06*cm;
@@ -721,14 +731,14 @@ public:
   PetscScalar HCI_Integral_Fiegna_n(const PetscScalar &phin, const PetscScalar &Eeff)
   {
     if( HCI_Fiegna_X > 30*Eeff  ) return 0;
-    return HCI_Fiegna_A/(3*HCI_Fiegna_X)*pow(Eeff, 1.5)/sqrt(phin)*exp(-HCI_Fiegna_X*pow(phin, 3.0)/pow(Eeff, 1.5));
+    return HCI_Fiegna_A/(3*HCI_Fiegna_X)*std::pow(Eeff, 1.5)/sqrt(phin)*exp(-HCI_Fiegna_X*std::pow(phin, 3.0)/std::pow(Eeff, 1.5));
   }
 
 
   PetscScalar HCI_Integral_Fiegna_p(const PetscScalar &phip, const PetscScalar &Eeff)
   {
     if( HCI_Fiegna_X > 30*Eeff  ) return 0;
-    return HCI_Fiegna_A/(3*HCI_Fiegna_X)*pow(Eeff, 1.5)/sqrt(phip)*exp(-HCI_Fiegna_X*pow(phip, 3.0)/pow(Eeff, 1.5));
+    return HCI_Fiegna_A/(3*HCI_Fiegna_X)*std::pow(Eeff, 1.5)/sqrt(phip)*exp(-HCI_Fiegna_X*std::pow(phip, 3.0)/std::pow(Eeff, 1.5));
   }
 
 

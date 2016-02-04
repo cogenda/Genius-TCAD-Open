@@ -441,170 +441,13 @@ void SchottkyContactBC::EBM3_Function(PetscScalar * x, Vec f, InsertMode &add_va
 
 
 
-/*---------------------------------------------------------------------
- * reserve non zero pattern in jacobian matrix for EBM3 solver
- */
-void SchottkyContactBC::EBM3_Jacobian_Reserve(Mat *jac, InsertMode &add_value_flag)
-{
-
-  // ADD 0 to some position of Jacobian matrix to prevent MatAssembly expurgation these position.
-
-  // since we will use ADD_VALUES operat, check the matrix state.
-  if( (add_value_flag != ADD_VALUES) && (add_value_flag != NOT_SET_VALUES) )
-  {
-    MatAssemblyBegin(*jac, MAT_FLUSH_ASSEMBLY);
-    MatAssemblyEnd(*jac, MAT_FLUSH_ASSEMBLY);
-  }
-
-  BoundaryCondition::const_node_iterator node_it = nodes_begin();
-  BoundaryCondition::const_node_iterator end_it = nodes_end();
-  for(; node_it!=end_it; ++node_it )
-  {
-    // skip node not belongs to this processor
-    if( (*node_it)->processor_id()!=Genius::processor_id() ) continue;
-
-    std::vector<const SimulationRegion *> regions;
-    std::vector<const FVM_Node *> fvm_nodes;
-
-    // search all the fvm_node which has *node_it as root node, these nodes are the same in geometry,
-    // but in different region.
-    BoundaryCondition::region_node_iterator  rnode_it     = region_node_begin(*node_it);
-    BoundaryCondition::region_node_iterator  end_rnode_it = region_node_end(*node_it);
-    for(unsigned int i=0 ; rnode_it!=end_rnode_it; ++i, ++rnode_it  )
-    {
-      regions.push_back( (*rnode_it).second.first );
-      fvm_nodes.push_back( (*rnode_it).second.second );
-
-      switch ( regions[i]->type() )
-      {
-
-          case SemiconductorRegion:
-          {
-            // insert none zero pattern
-            // none zero pattern includes bd node and their neighbors!
-            unsigned int n_node_var  = regions[i]->ebm_n_variables();
-            unsigned int global_offset   = fvm_nodes[i]->global_offset();
-            unsigned int node_Tl_offset  = regions[i]->ebm_variable_offset(TEMPERATURE);
-
-            for(unsigned int nv=0; nv<n_node_var; ++nv)
-              MatSetValue(*jac, fvm_nodes[i]->global_offset()+nv, this->global_offset(), 0, ADD_VALUES);
-
-            // reserve for heat transport equation
-            if(regions[i]->get_advanced_model()->enable_Tl())
-            {
-              FVM_Node::fvm_ghost_node_iterator gn_it = fvm_nodes[i]->ghost_node_begin();
-              FVM_Node::fvm_ghost_node_iterator gn_it_end = fvm_nodes[i]->ghost_node_end();
-              for(; gn_it != gn_it_end; ++gn_it)
-              {
-                const FVM_Node * ghost_fvm_node = (*gn_it).first;
-                // skip NULL neighbor which means the node is on Neumann boundary
-                if(ghost_fvm_node==NULL) continue;
-
-                const SimulationRegion * ghost_region = this->system().region((*gn_it).second.first);
-                genius_assert(ghost_region!=NULL);
-                unsigned int ghostregion_node_Tl_offset  = ghost_region->ebm_variable_offset(TEMPERATURE);
-
-                MatSetValue(*jac, global_offset+node_Tl_offset, ghost_fvm_node->global_offset()+ghostregion_node_Tl_offset, 0,ADD_VALUES);
-
-                FVM_Node::fvm_neighbor_node_iterator  gnb_it = ghost_fvm_node->neighbor_node_begin();
-                for(; gnb_it != ghost_fvm_node->neighbor_node_end(); ++gnb_it)
-                  MatSetValue(*jac, global_offset+node_Tl_offset, (*gnb_it).first->global_offset()+ghostregion_node_Tl_offset, 0, ADD_VALUES);
-              }
-            }
-
-            break;
-          }
-          case ElectrodeRegion:
-          case InsulatorRegion:
-          {
-            unsigned int global_offset   = fvm_nodes[i]->global_offset();
-            unsigned int node_psi_offset = regions[i]->ebm_variable_offset(POTENTIAL);
-            unsigned int node_Tl_offset  = regions[i]->ebm_variable_offset(TEMPERATURE);
-
-            unsigned int semiregion_node_psi_offset = regions[0]->ebm_variable_offset(POTENTIAL);
-            unsigned int semiregion_node_Tl_offset  = regions[0]->ebm_variable_offset(TEMPERATURE);
-
-            // insert none zero pattern
-            MatSetValue(*jac, global_offset+node_psi_offset, fvm_nodes[0]->global_offset()+semiregion_node_psi_offset, 0, ADD_VALUES);
-
-            if(regions[i]->get_advanced_model()->enable_Tl())
-              MatSetValue(*jac, global_offset+node_Tl_offset,  fvm_nodes[0]->global_offset()+semiregion_node_Tl_offset, 0, ADD_VALUES);
-
-            break;
-          }
-          case VacuumRegion:
-          break;
-          default: genius_error(); //we should never reach here
-      }
-    }
-  }
-
-  // reserve jacobian entries for the circuit equation of schottky electrode
-  {
-    std::vector<PetscInt> bc_node_reserve;
-    for(node_it = nodes_begin(); node_it!=end_it; ++node_it )
-    {
-      // get the derivative of electrode current to ohmic node
-      // skip node not belongs to this processor
-      if( (*node_it)->processor_id()!=Genius::processor_id() ) continue;
-
-      // search all the fvm_node which has *node_it as root node, these fvm_nodes have the same location in geometry,
-      // but belong to different regions in logic.
-      BoundaryCondition::region_node_iterator  rnode_it     = region_node_begin(*node_it);
-      BoundaryCondition::region_node_iterator  end_rnode_it = region_node_end(*node_it);
-      for(; rnode_it!=end_rnode_it; ++rnode_it  )
-      {
-        const SimulationRegion * region = (*rnode_it).second.first;
-        const FVM_Node *  fvm_node = (*rnode_it).second.second;
-
-        if ( region->type() == SemiconductorRegion)
-        {
-          for(unsigned int nv=0; nv<region->ebm_n_variables(); ++nv)
-            bc_node_reserve.push_back(fvm_node->global_offset()+nv);
-
-          FVM_Node::fvm_neighbor_node_iterator nb_it     =  fvm_node->neighbor_node_begin();
-          FVM_Node::fvm_neighbor_node_iterator nb_it_end =  fvm_node->neighbor_node_end();
-          for(; nb_it!=nb_it_end; ++nb_it)
-          {
-            const FVM_Node *  fvm_nb_node = (*nb_it).first;
-            for(unsigned int nv=0; nv<region->ebm_n_variables(); ++nv)
-              bc_node_reserve.push_back(fvm_nb_node->global_offset()+nv);
-          }
-        }
-      }
-    }
-    Parallel::allgather(bc_node_reserve);
-
-    if(Genius::processor_id() == Genius::n_processors()-1)
-    {
-      PetscInt bc_global_offset = this->global_offset();
-
-      MatSetValue(*jac, bc_global_offset, bc_global_offset, 0, ADD_VALUES);
-
-      if(this->is_inter_connect_bc())
-        MatSetValue(*jac, bc_global_offset, this->inter_connect_hub()->global_offset(), 0, ADD_VALUES);
-
-      if(bc_node_reserve.size())
-      {
-        std::vector<PetscScalar> bc_node_reserve_zero(bc_node_reserve.size(), 0.0);
-        MatSetValues(*jac, 1, &bc_global_offset, bc_node_reserve.size(), &bc_node_reserve[0], &bc_node_reserve_zero[0], ADD_VALUES);
-      }
-    }
-
-  }
-
-  // the last operator is ADD_VALUES
-  add_value_flag = ADD_VALUES;
-
-}
-
 
 
 
 /*---------------------------------------------------------------------
  * do pre-process to jacobian matrix for EBM3 solver
  */
-void SchottkyContactBC::EBM3_Jacobian_Preprocess(PetscScalar * ,Mat *jac, std::vector<PetscInt> &src_row,
+void SchottkyContactBC::EBM3_Jacobian_Preprocess(PetscScalar * ,SparseMatrix<PetscScalar> *jac, std::vector<PetscInt> &src_row,
     std::vector<PetscInt> &dst_row, std::vector<PetscInt> &clear_row)
 {
   BoundaryCondition::const_node_iterator node_it = nodes_begin();
@@ -664,17 +507,10 @@ void SchottkyContactBC::EBM3_Jacobian_Preprocess(PetscScalar * ,Mat *jac, std::v
 /*---------------------------------------------------------------------
  * build function and its jacobian for EBM3 solver
  */
-void SchottkyContactBC::EBM3_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_value_flag)
+void SchottkyContactBC::EBM3_Jacobian(PetscScalar * x, SparseMatrix<PetscScalar> *jac, InsertMode &add_value_flag)
 {
   // the Jacobian of Schottky boundary condition is processed here
   // we use AD again. no matter it is overkill here.
-
-  // since we will use ADD_VALUES operat, check the matrix state.
-  if( (add_value_flag != ADD_VALUES) && (add_value_flag != NOT_SET_VALUES) )
-  {
-    MatAssemblyBegin(*jac, MAT_FLUSH_ASSEMBLY);
-    MatAssemblyEnd(*jac, MAT_FLUSH_ASSEMBLY);
-  }
 
   const PetscInt bc_global_offset = this->global_offset();
 
@@ -786,33 +622,33 @@ void SchottkyContactBC::EBM3_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add
             col.push_back(this->global_offset()); // the position of electrode equation
 
             // set Jacobian of governing equation ff
-            MatSetValues(*jac, 1, &row[node_psi_offset], col.size(), &col[0], ff.getADValue(), ADD_VALUES);
+            jac->add_row(  row[node_psi_offset],  col.size(),  &col[0],  ff.getADValue() );
 
             // process the Jacobian of Schottky current
             // process the Jacobian of Schottky current
-            MatSetValues(*jac, 1, &row[node_n_offset], col.size(), &col[0],  Fn.getADValue(), ADD_VALUES);
-            MatSetValues(*jac, 1, &row[node_p_offset], col.size(), &col[0], (-Fp).getADValue(), ADD_VALUES);
+            jac->add_row(  row[node_n_offset],  col.size(),  &col[0],   Fn.getADValue() );
+            jac->add_row(  row[node_p_offset],  col.size(),  &col[0],  (-Fp).getADValue() );
 
             //process the Jacobian of equation of T, if this schottky bc is external boundary, set heat flux here
             if( regions[i]->get_advanced_model()->enable_Tl() && (node_on_boundary(*node_it) || has_associated_region(*node_it, VacuumRegion)) )
             {
               //also buffer this operator
               AutoDScalar fT = Heat_Transfer*(T_external()-T)*S;
-              MatSetValues(*jac, 1, &row[node_Tl_offset], col.size(), &col[0], fT.getADValue(), ADD_VALUES);
+              jac->add_row(  row[node_Tl_offset],  col.size(),  &col[0],  fT.getADValue() );
             }
 
             // electron temperature if required
             if(regions[i]->get_advanced_model()->enable_Tn())
             {
               AutoDScalar fTn = (n*(Tn - T));
-              MatSetValues(*jac, 1, &row[node_Tn_offset], col.size(), &col[0], fTn.getADValue(),  ADD_VALUES);
+              jac->add_row(  row[node_Tn_offset],  col.size(),  &col[0],  fTn.getADValue() );
             }
 
             // hole temperature if required
             if(regions[i]->get_advanced_model()->enable_Tp())
             {
               AutoDScalar fTp = (p*(Tp - T));
-              MatSetValues(*jac, 1, &row[node_Tp_offset], col.size(), &col[0], fTp.getADValue(),  ADD_VALUES);
+              jac->add_row(  row[node_Tp_offset],  col.size(),  &col[0],  fTp.getADValue() );
             }
 
             // process the Jacobian of current flow out of schottky electrode
@@ -844,13 +680,13 @@ void SchottkyContactBC::EBM3_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add
             if(this->is_inter_connect_bc())
             {
               PetscScalar R = ext_circuit()->inter_connect_resistance();
-              MatSetValues(*jac, 1, &bc_global_offset, 4, &(col[0]), (R*current_emit*current_scale).getADValue(), ADD_VALUES);
+              jac->add_row(  bc_global_offset,  4,  &(col[0]),  (R*current_emit*current_scale).getADValue() );
             }
             //for stand alone electrode
             else
             {
               PetscScalar mna_scaling = ext_circuit()->mna_scaling(SolverSpecify::dt);
-              MatSetValues(*jac, 1, &bc_global_offset, 4, &(col[0]), (mna_scaling*current_emit*current_scale).getADValue(), ADD_VALUES);
+              jac->add_row(  bc_global_offset,  4,  &(col[0]),  (mna_scaling*current_emit*current_scale).getADValue() );
             }
 
             // displacement current
@@ -896,8 +732,8 @@ void SchottkyContactBC::EBM3_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add
                   current_disp = mna_scaling*current_disp;
                 }
 
-                MatSetValue(*jac, bc_global_offset, fvm_nodes[i]->global_offset()+0, current_disp.getADValue(0), ADD_VALUES);
-                MatSetValue(*jac, bc_global_offset, nb_node->global_offset()+0, current_disp.getADValue(1), ADD_VALUES);
+                jac->add( bc_global_offset,  fvm_nodes[i]->global_offset()+0,  current_disp.getADValue(0) );
+                jac->add( bc_global_offset,  nb_node->global_offset()+0,  current_disp.getADValue(1) );
               }
             }
 
@@ -927,7 +763,7 @@ void SchottkyContactBC::EBM3_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add
               AutoDScalar  ff1 = V - V_semi;
               PetscInt row = fvm_nodes[i]->global_offset()+node_psi_offset;
               PetscInt col[2] = {fvm_nodes[i]->global_offset()+node_psi_offset, fvm_nodes[0]->global_offset()+semiregion_node_psi_offset};
-              MatSetValues(*jac, 1, &row, 2, &col[0], ff1.getADValue(), ADD_VALUES);
+              jac->add_row(  row,  2,  &col[0],  ff1.getADValue() );
             }
 
             if(regions[i]->get_advanced_model()->enable_Tl())
@@ -938,7 +774,7 @@ void SchottkyContactBC::EBM3_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add
               AutoDScalar  ff2 = T - T_semi;
               PetscInt row = fvm_nodes[i]->global_offset()+node_Tl_offset;
               PetscInt col[2] = {fvm_nodes[i]->global_offset()+node_Tl_offset, fvm_nodes[0]->global_offset()+semiregion_node_Tl_offset};
-              MatSetValues(*jac, 1, &row, 2, &col[0], ff2.getADValue(), ADD_VALUES);
+              jac->add_row(  row,  2,  &col[0],  ff2.getADValue() );
             }
             break;
           }
@@ -990,15 +826,15 @@ void SchottkyContactBC::EBM3_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add
       // f_ext = Ve - V_ic + R*current;
 
       // d(f_ext)/d(Ve)
-      MatSetValue(*jac, bc_global_offset, bc_global_offset, 1.0, ADD_VALUES);
+      jac->add( bc_global_offset,  bc_global_offset,  1.0 );
       // d(f_ext)/d(V_ic)
-      MatSetValue(*jac, bc_global_offset, this->inter_connect_hub()->global_offset(), -1.0, ADD_VALUES);
+      jac->add( bc_global_offset,  this->inter_connect_hub()->global_offset(),  -1.0 );
     }
     //for stand alone electrode
     else
     {
       ext_circuit()->potential() = x[this->local_offset()];
-      MatSetValue(*jac, bc_global_offset, bc_global_offset, ext_circuit()->mna_jacobian(SolverSpecify::dt), ADD_VALUES);
+      jac->add( bc_global_offset,  bc_global_offset,  ext_circuit()->mna_jacobian(SolverSpecify::dt) );
     }
   }
 
@@ -1008,7 +844,7 @@ void SchottkyContactBC::EBM3_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add
 }
 
 
-void SchottkyContactBC::EBM3_Electrode_Trace(Vec lx, Mat *jac, Vec pdI_pdx, Vec pdF_pdV)
+void SchottkyContactBC::EBM3_Electrode_Trace(Vec lx, SparseMatrix<PetscScalar> *jac, Vec pdI_pdx, Vec pdF_pdV)
 {
 
   VecZeroEntries(pdI_pdx);
@@ -1087,7 +923,7 @@ void SchottkyContactBC::EBM3_Electrode_Trace(Vec lx, Mat *jac, Vec pdI_pdx, Vec 
 
   //delete electrode current equation, omit the effect of external resistance
   PetscInt bc_global_offset = this->global_offset();
-  PetscUtils::MatZeroRows(*jac, 1, &bc_global_offset, 1.0);
+  jac->clear_row(bc_global_offset, 1.0);
 }
 
 
@@ -1100,3 +936,4 @@ void SchottkyContactBC::EBM3_Update_Solution(PetscScalar *)
   Parallel::sum(ext_circuit()->current());
   this->ext_circuit()->update();
 }
+

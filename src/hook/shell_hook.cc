@@ -35,7 +35,7 @@ void ShellHook::on_init()
   if ( !Genius::processor_id() )
   {
     std::string exec_cmd = _command + " -init ";
-    system(exec_cmd.c_str());
+    int res = system(exec_cmd.c_str());
   }
 }
 
@@ -50,7 +50,7 @@ void ShellHook::pre_solve()
   if ( !Genius::processor_id() )
   {
     std::string exec_cmd = _command + " -pre ";
-    system(exec_cmd.c_str());
+    int res = system(exec_cmd.c_str());
   }
 
 }
@@ -66,7 +66,7 @@ void ShellHook::post_solve()
   if ( !Genius::processor_id() )
   {
     std::string exec_cmd = _command + " -post ";
-    system(exec_cmd.c_str());
+    int res = system(exec_cmd.c_str());
   }
 }
 
@@ -81,7 +81,7 @@ void ShellHook::post_iteration()
   if ( !Genius::processor_id() )
   {
     std::string exec_cmd = _command + " -postit ";
-    system(exec_cmd.c_str());
+    int res = system(exec_cmd.c_str());
   }
 }
 
@@ -96,7 +96,7 @@ void ShellHook::on_close()
   if ( !Genius::processor_id() )
   {
     std::string exec_cmd = _command + " -close ";
-    system(exec_cmd.c_str());
+    int res = system(exec_cmd.c_str());
   }
 }
 

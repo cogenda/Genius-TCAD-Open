@@ -137,7 +137,7 @@ namespace PetscUtils
 
     if( src_rows.size() )
     {
-      genius_assert(src_rows.size() == dst_rows.size());
+      assert(src_rows.size() == dst_rows.size());
 
       std::vector<PetscScalar> y(src_rows.size());
       VecGetValues(vec, src_rows.size(), &src_rows[0], &y[0]);
@@ -176,7 +176,7 @@ namespace PetscUtils
 
     if( src_rows.size() )
     {
-      genius_assert(src_rows.size() == dst_rows.size() && src_rows.size() == alpha.size() );
+      assert(src_rows.size() == dst_rows.size() && src_rows.size() == alpha.size() );
 
       std::vector<PetscScalar> y(src_rows.size());
       VecGetValues(vec, src_rows.size(), &src_rows[0], &y[0]);
@@ -213,7 +213,7 @@ namespace PetscUtils
     VecAssemblyBegin(vec);
     VecAssemblyEnd(vec);
 
-    genius_assert(src_rows.size() == dst_rows.size());
+    assert(src_rows.size() == dst_rows.size());
     if( src_rows.size() )
     {
       // get source value from vec
@@ -411,7 +411,7 @@ namespace PetscUtils
 
     if( src_rows.size() )
     {
-      genius_assert(src_rows.size() == dst_rows.size());
+      assert(src_rows.size() == dst_rows.size());
 
       std::multimap< PetscInt, std::pair<std::vector<PetscInt>, std::vector<PetscScalar> > > row_add_to_buffer;
 
@@ -487,7 +487,7 @@ namespace PetscUtils
 
     if( src_rows.size() )
     {
-      genius_assert(src_rows.size() == dst_rows.size() && src_rows.size() == alpha.size());
+      assert(src_rows.size() == dst_rows.size() && src_rows.size() == alpha.size());
 
       std::multimap< PetscInt, std::pair<std::vector<PetscInt>, std::vector<PetscScalar> > > row_add_to_buffer;
 
@@ -544,9 +544,9 @@ namespace PetscUtils
    * @param  dof_indices location for add
    *
    */
-  PetscErrorCode  VecAdd(Vec vec, const DenseVector<Real> &real_vec, const std::vector<PetscInt> & dof_indices)
+  PetscErrorCode  VecAdd(Vec vec, const DenseVector<PetscScalar> &real_vec, const std::vector<PetscInt> & dof_indices)
   {
-    genius_assert(real_vec.size()==dof_indices.size());
+    assert(real_vec.size()==dof_indices.size());
     VecSetValues(vec, dof_indices.size(), &dof_indices[0], &((real_vec.get_values())[0]), ADD_VALUES);
     return 0;
   }
@@ -561,19 +561,19 @@ namespace PetscUtils
    * @param  dof_indices location for add
    *
    */
-  PetscErrorCode  VecAdd(Vec vec, const DenseVector<Complex> &complex_vec, const std::vector<PetscInt> & dof_indices)
-  {
-    genius_assert(complex_vec.size()*2==dof_indices.size());
-    //convert complex indices to real indices?
-    std::vector<Real> real_vec(complex_vec.size()*2);
-    for(unsigned int n=0; n<complex_vec.size(); ++n)
-    {
-      real_vec[2*n]   = complex_vec(n).real();
-      real_vec[2*n+1] = complex_vec(n).imag();
-    }
-    VecSetValues(vec, dof_indices.size(), &dof_indices[0], &(real_vec[0]), ADD_VALUES);
-    return 0;
-  }
+//   PetscErrorCode  VecAdd(Vec vec, const DenseVector<Complex> &complex_vec, const std::vector<PetscInt> & dof_indices)
+//   {
+//     assert(complex_vec.size()*2==dof_indices.size());
+//     //convert complex indices to real indices?
+//     std::vector<Real> real_vec(complex_vec.size()*2);
+//     for(unsigned int n=0; n<complex_vec.size(); ++n)
+//     {
+//       real_vec[2*n]   = complex_vec(n).real();
+//       real_vec[2*n+1] = complex_vec(n).imag();
+//     }
+//     VecSetValues(vec, dof_indices.size(), &dof_indices[0], &(real_vec[0]), ADD_VALUES);
+//     return 0;
+//   }
 
 
 
@@ -587,8 +587,8 @@ namespace PetscUtils
    */
   PetscErrorCode  MatAdd(Mat mat, const DenseMatrix<PetscScalar> &real_mat, const std::vector<PetscInt> & dof_indices)
   {
-    genius_assert(real_mat.m()==dof_indices.size());
-    genius_assert(real_mat.n()==dof_indices.size());
+    assert(real_mat.m()==dof_indices.size());
+    assert(real_mat.n()==dof_indices.size());
     MatSetValues(mat, dof_indices.size(), &dof_indices[0], dof_indices.size(), &dof_indices[0], &((real_mat.get_values())[0]), ADD_VALUES);
     return 0;
   }
@@ -603,27 +603,27 @@ namespace PetscUtils
    * @param  dof_indices location for add
    *
    */
-  PetscErrorCode  MatAdd(Mat mat, const DenseMatrix<Complex> &complex_mat, const std::vector<PetscInt> & dof_indices)
-  {
-    genius_assert(complex_mat.m()*2==dof_indices.size());
-    genius_assert(complex_mat.n()*2==dof_indices.size());
-
-    //convert complex indices to real indices?
-    DenseMatrix<Real> real_mat(complex_mat.m()*2, complex_mat.n()*2);
-    for(unsigned int m=0; m<complex_mat.m(); ++m)
-    {
-      for(unsigned int n=0; n<complex_mat.n(); ++n)
-      {
-        real_mat.el(2*m,  2*n)   =   complex_mat.el(m,n).real();
-        real_mat.el(2*m,  2*n+1) = - complex_mat.el(m,n).imag();
-        real_mat.el(2*m+1,2*n)   =   complex_mat.el(m,n).imag();
-        real_mat.el(2*m+1,2*n+1) =   complex_mat.el(m,n).real();
-      }
-    }
-
-    MatSetValues(mat, dof_indices.size(), &dof_indices[0], dof_indices.size(), &dof_indices[0], &((real_mat.get_values())[0]), ADD_VALUES);
-    return 0;
-  }
+//   PetscErrorCode  MatAdd(Mat mat, const DenseMatrix<Complex> &complex_mat, const std::vector<PetscInt> & dof_indices)
+//   {
+//     assert(complex_mat.m()*2==dof_indices.size());
+//     assert(complex_mat.n()*2==dof_indices.size());
+//
+//     //convert complex indices to real indices?
+//     DenseMatrix<Real> real_mat(complex_mat.m()*2, complex_mat.n()*2);
+//     for(unsigned int m=0; m<complex_mat.m(); ++m)
+//     {
+//       for(unsigned int n=0; n<complex_mat.n(); ++n)
+//       {
+//         real_mat.el(2*m,  2*n)   =   complex_mat.el(m,n).real();
+//         real_mat.el(2*m,  2*n+1) = - complex_mat.el(m,n).imag();
+//         real_mat.el(2*m+1,2*n)   =   complex_mat.el(m,n).imag();
+//         real_mat.el(2*m+1,2*n+1) =   complex_mat.el(m,n).real();
+//       }
+//     }
+//
+//     MatSetValues(mat, dof_indices.size(), &dof_indices[0], dof_indices.size(), &dof_indices[0], &((real_mat.get_values())[0]), ADD_VALUES);
+//     return 0;
+//   }
 
 }
 

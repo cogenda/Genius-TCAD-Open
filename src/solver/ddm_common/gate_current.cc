@@ -51,6 +51,8 @@ void InsulatorSemiconductorInterfaceBC::_gate_current()
   const SemiconductorSimulationRegion * semiconductor_region = dynamic_cast<const SemiconductorSimulationRegion *> ( _r1 );
   const InsulatorSimulationRegion * insulator_region = dynamic_cast<const InsulatorSimulationRegion *> ( _r2 );
 
+  if(semiconductor_region->advanced_model().TunnelingSelfConsistently) return;
+
     // do nothing when HotCarrierInjection/FNTunneling flag is false
   if( !semiconductor_region->advanced_model().HotCarrierInjection &&
       !semiconductor_region->advanced_model().DIRTunneling &&
@@ -178,14 +180,16 @@ void InsulatorSemiconductorInterfaceBC::_gate_current()
     PetscScalar In = 0.0, Ip=0.0;
     if( semiconductor_region->advanced_model().HotCarrierInjection )
     {
-      const VectorValue<Real> & norm = semiconductor_node->norm(); // norm to insulator interface
-      VectorValue<Real> E = -semiconductor_node->gradient(POTENTIAL, false);
+      const VectorValue<Real> & _norm = semiconductor_node->norm(); // norm to insulator interface
+      // stupid code... we can not dot point with VectorValue<PetscScalar> yet.
+      VectorValue<PetscScalar> norm(_norm(0), _norm(1), _norm(2));
+      VectorValue<PetscScalar> E = -semiconductor_node->gradient(POTENTIAL, false);
 
       PetscScalar   E_eff_n = (E - (E*norm)*norm).size();//
       PetscScalar   E_eff_p = (E - (E*norm)*norm).size();//
 
-      PetscScalar phi_barrier_n = insulator_region->material()->band->HCI_Barrier_n(Affinity_semi, Eg_semi, t, E_insulator);
-      PetscScalar phi_barrier_p = insulator_region->material()->band->HCI_Barrier_p(Affinity_semi, Eg_semi, t, E_insulator);
+      PetscScalar phi_barrier_n = insulator_region->material()->band->HCI_Barrier_n(Affinity_semi, Eg_semi, Affinity_ins, t, E_insulator);
+      PetscScalar phi_barrier_p = insulator_region->material()->band->HCI_Barrier_p(Affinity_semi, Eg_semi, Affinity_ins, t, E_insulator);
 
       // possibility in insulator
       PetscScalar P_insulator_n = insulator_region->material()->band->HCI_Probability_Insulator_n( t, E_insulator);
@@ -468,8 +472,8 @@ void InsulatorSemiconductorInterfaceBC::_gate_current_function(PetscScalar * x, 
       }
       else
       {
-        // current in meral region has a negative sign
-        VecSetValue(f, global_offset, -(Ip_DIR+In_DIR)/n_piece, ADD_VALUES);
+        // current in metal region
+        VecSetValue(f, global_offset, (Ip_DIR-In_DIR)/n_piece, ADD_VALUES);
       }
     }
 
@@ -495,7 +499,6 @@ void InsulatorSemiconductorInterfaceBC::_gate_current_function(PetscScalar * x, 
   else
     scalar("J_VBET") = std::accumulate(J_VBET_Buffer.begin(), J_VBET_Buffer.end(), 0.0)/(J_VBET_Buffer.size());
 
-
   // the last operator is ADD_VALUES
   add_value_flag = ADD_VALUES;
 
@@ -503,67 +506,11 @@ void InsulatorSemiconductorInterfaceBC::_gate_current_function(PetscScalar * x, 
 
 
 
-void InsulatorSemiconductorInterfaceBC::_gate_current_jacobian_reserve(Mat *jac, InsertMode &add_value_flag)
-{
-  const SimulationRegion * _r1 = bc_regions().first;
-  const SimulationRegion * _r2 = bc_regions().second;
-
-  const SemiconductorSimulationRegion * semiconductor_region = dynamic_cast<const SemiconductorSimulationRegion *> ( _r1 );
-  const InsulatorSimulationRegion * insulator_region = dynamic_cast<const InsulatorSimulationRegion *> ( _r2 );
-
-  if(!semiconductor_region->advanced_model().TunnelingSelfConsistently) return;
-
-  // since we will use ADD_VALUES operat, check the matrix state.
-  if( (add_value_flag != ADD_VALUES) && (add_value_flag != NOT_SET_VALUES) )
-  {
-    MatAssemblyBegin(*jac, MAT_FLUSH_ASSEMBLY);
-    MatAssemblyEnd(*jac, MAT_FLUSH_ASSEMBLY);
-  }
-
-
-  std::multimap<const Node *, NearestPoint>::const_iterator node_it = _node_nearest_point_map.begin();
-  for(; node_it != _node_nearest_point_map.end(); ++node_it)
-  {
-    // injection begin
-    FVM_Node * semiconductor_node = get_region_fvm_node(node_it->first, semiconductor_region);
-
-    // injection end
-    SimulationRegion * region = node_it->second.region;
-    BoundaryCondition * bc = node_it->second.bc;
-    const Elem * bc_elem = node_it->second.elem;
-    const unsigned int bc_elem_face_index = node_it->second.side;
-    const unsigned int nv = region->type() == SemiconductorRegion ? 3 : 1;
-
-    AutoPtr<Elem> bc_elem_face = bc_elem->build_side(bc_elem_face_index, false);
-    for(unsigned int n=0; n<bc_elem_face->n_nodes(); ++n)
-    {
-      Node * node = bc_elem_face->get_node(n); assert(node->on_local());
-      FVM_Node * fvm_node = region->region_fvm_node(node);
-
-      for(unsigned int v=0; v<nv; v++)
-      {
-        MatSetValue(*jac, semiconductor_node->global_offset()+0, fvm_node->global_offset()+v, 0, ADD_VALUES);
-        MatSetValue(*jac, semiconductor_node->global_offset()+1, fvm_node->global_offset()+v, 0, ADD_VALUES);
-        MatSetValue(*jac, semiconductor_node->global_offset()+2, fvm_node->global_offset()+v, 0, ADD_VALUES);
-
-        MatSetValue(*jac, fvm_node->global_offset()+v, semiconductor_node->global_offset()+0, 0, ADD_VALUES);
-        MatSetValue(*jac, fvm_node->global_offset()+v, semiconductor_node->global_offset()+1, 0, ADD_VALUES);
-        MatSetValue(*jac, fvm_node->global_offset()+v, semiconductor_node->global_offset()+2, 0, ADD_VALUES);
-      }
-    }
-  }
-
-
-  
-  // the last operator is ADD_VALUES
-  add_value_flag = ADD_VALUES;
-
-}
 
 
 #define __J_SELF_CONSISTANCE__
 
-void InsulatorSemiconductorInterfaceBC::_gate_current_jacobian(PetscScalar * x, Mat *jac, InsertMode &add_value_flag)
+void InsulatorSemiconductorInterfaceBC::_gate_current_jacobian(PetscScalar * x, SparseMatrix<PetscScalar> *jac, InsertMode &add_value_flag)
 {
   const PetscScalar T   = T_external();
 
@@ -574,14 +521,6 @@ void InsulatorSemiconductorInterfaceBC::_gate_current_jacobian(PetscScalar * x, 
   const InsulatorSimulationRegion * insulator_region = dynamic_cast<const InsulatorSimulationRegion *> ( _r2 );
 
   if(!semiconductor_region->advanced_model().TunnelingSelfConsistently) return;
-
-  // since we will use ADD_VALUES operat, check the matrix state.
-  if( (add_value_flag != ADD_VALUES) && (add_value_flag != NOT_SET_VALUES) )
-  {
-    MatAssemblyBegin(*jac, MAT_FLUSH_ASSEMBLY);
-    MatAssemblyEnd(*jac, MAT_FLUSH_ASSEMBLY);
-  }
-
 
   std::multimap<const Node *, NearestPoint>::const_iterator node_it = _node_nearest_point_map.begin();
   for(; node_it != _node_nearest_point_map.end(); ++node_it)
@@ -712,10 +651,10 @@ void InsulatorSemiconductorInterfaceBC::_gate_current_jacobian(PetscScalar * x, 
     //std::cout<<"Ip_DIR " << Ip_DIR << std::endl;
 
     PetscInt fn_index = global_offset + 1;
-    MatSetValues(*jac, 1, &fn_index, adtl::AutoDScalar::numdir, &col_index[0], (-In_DIR).getADValue(), ADD_VALUES);
+    jac->add_row(fn_index, adtl::AutoDScalar::numdir, &col_index[0], (-In_DIR).getADValue());
 
     PetscInt fp_index = global_offset + 2;
-    MatSetValues(*jac, 1, &fp_index, adtl::AutoDScalar::numdir, &col_index[0], (-Ip_DIR).getADValue(), ADD_VALUES);
+    jac->add_row(fp_index, adtl::AutoDScalar::numdir, &col_index[0], (-Ip_DIR).getADValue());
 
     unsigned int n_piece = bc_elem_face->n_nodes();
     for(unsigned int v=0; v<bc_elem_face->n_nodes(); ++v)
@@ -727,17 +666,17 @@ void InsulatorSemiconductorInterfaceBC::_gate_current_jacobian(PetscScalar * x, 
       if(region->type() == SemiconductorRegion)
       {
         PetscInt fn_index = global_offset + 1;
-        MatSetValues(*jac, 1, &fn_index, adtl::AutoDScalar::numdir, &col_index[0], (In_DIR/n_piece).getADValue(), ADD_VALUES);
+        jac->add_row(fn_index, adtl::AutoDScalar::numdir, &col_index[0], (In_DIR/n_piece).getADValue());
 
         PetscInt fp_index = global_offset + 2;
-        MatSetValues(*jac, 1, &fp_index, adtl::AutoDScalar::numdir, &col_index[0], (Ip_DIR/n_piece).getADValue(), ADD_VALUES);
+        jac->add_row(fp_index, adtl::AutoDScalar::numdir, &col_index[0], (Ip_DIR/n_piece).getADValue());
       }
       else
       {
-        // current in meral region has a negative sign
+        // current in metal region
         PetscInt f_index = global_offset;
-        AutoDScalar I = -(In_DIR+Ip_DIR)/n_piece;
-        MatSetValues(*jac, 1, &f_index, adtl::AutoDScalar::numdir, &col_index[0], I.getADValue(), ADD_VALUES);
+        AutoDScalar I = (Ip_DIR-In_DIR)/n_piece;
+        jac->add_row(f_index, adtl::AutoDScalar::numdir, &col_index[0], I.getADValue());
       }
     }
 

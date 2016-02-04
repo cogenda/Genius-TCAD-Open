@@ -42,6 +42,10 @@ CGNSHook::CGNSHook ( SolverBase & solver, const std::string & name, void * param
   this->_v_last=0;
   this->_i_last=0;
 
+
+  this->_t_start=0;
+  this->_t_stop =std::numeric_limits<double>::infinity();
+
   const std::vector<Parser::Parameter> & parm_list = *((std::vector<Parser::Parameter> *)param);
   for ( std::vector<Parser::Parameter>::const_iterator parm_it = parm_list.begin();
         parm_it != parm_list.end(); parm_it++ )
@@ -52,6 +56,11 @@ CGNSHook::CGNSHook ( SolverBase & solver, const std::string & name, void * param
       _v_step=parm_it->get_real() * PhysicalUnit::V;
     if ( parm_it->name() == "istep" && parm_it->type() == Parser::REAL )
       _i_step=parm_it->get_real() * PhysicalUnit::A;
+
+    if ( parm_it->name() == "tstart" && parm_it->type() == Parser::REAL )
+      _t_start=parm_it->get_real() * PhysicalUnit::s;
+    if ( parm_it->name() == "tstop" && parm_it->type() == Parser::REAL )
+      _t_stop=parm_it->get_real() * PhysicalUnit::s;
   }
 
 
@@ -112,22 +121,7 @@ void CGNSHook::post_solve()
   std::ostringstream cgns_filename;
   if ( SolverSpecify::Type==SolverSpecify::DCSWEEP && SolverSpecify::Electrode_VScan.size() )
   {
-    double Vscan = 0;
-
-    // DDM solver
-    if ( _ddm )
-    {
-      const BoundaryConditionCollector * bcs = _solver.get_system().get_bcs();
-      const BoundaryCondition * bc = bcs->get_bc ( SolverSpecify::Electrode_VScan[0] );
-      Vscan = bc->ext_circuit()->Vapp();
-    }
-    // MIXA solver
-    if ( _mixA )
-    {
-      SPICE_CKT * spice_ckt = _solver.get_system().get_circuit();
-      Vscan = spice_ckt->get_voltage_from_sync ( SolverSpecify::Electrode_VScan[0] );
-    }
-
+    double Vscan = SolverSpecify::Electrode_VScan_Voltage;
 
     if ( std::fabs ( Vscan - this->_v_last ) >= this->_v_step )
     {
@@ -142,22 +136,7 @@ void CGNSHook::post_solve()
 
   if ( SolverSpecify::Type==SolverSpecify::DCSWEEP && SolverSpecify::Electrode_IScan.size() )
   {
-    double Iscan = 0;
-
-    // DDM solver
-    if ( _ddm )
-    {
-      const BoundaryConditionCollector * bcs = _solver.get_system().get_bcs();
-      const BoundaryCondition * bc = bcs->get_bc ( SolverSpecify::Electrode_IScan[0] );
-      Iscan = bc->ext_circuit()->Iapp();
-    }
-
-    // MIXA solver
-    if ( _mixA )
-    {
-      SPICE_CKT * spice_ckt = _solver.get_system().get_circuit();
-      Iscan = spice_ckt->get_current_from_sync ( SolverSpecify::Electrode_IScan[0] );
-    }
+    double Iscan = SolverSpecify::Electrode_IScan_Current;
 
     if ( std::fabs ( Iscan - this->_i_last ) >= this->_i_step )
     {
@@ -173,15 +152,18 @@ void CGNSHook::post_solve()
 
   if ( SolverSpecify::Type==SolverSpecify::TRANSIENT )
   {
-    if ( SolverSpecify::clock - this->_t_last >= this->_t_step )
+    if(SolverSpecify::clock >= _t_start && SolverSpecify::clock <= _t_stop )
     {
-      const SimulationSystem &system = get_solver().get_system();
+      if ( SolverSpecify::clock - this->_t_last >= this->_t_step )
+      {
+        const SimulationSystem &system = get_solver().get_system();
 
-      cgns_filename << _cgns_prefix << '.' << ( this->count++ ) << ".cgns";
-      system.export_cgns ( cgns_filename.str() );
+        cgns_filename << _cgns_prefix << '.' << ( this->count++ ) << ".cgns";
+        system.export_cgns ( cgns_filename.str() );
 
-      _t_last = SolverSpecify::clock;
+        _t_last = SolverSpecify::clock;
 
+      }
     }
   }
 

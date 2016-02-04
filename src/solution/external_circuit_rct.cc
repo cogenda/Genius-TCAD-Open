@@ -36,7 +36,7 @@ ExternalCircuitRCTLine::ExternalCircuitRCTLine(Real r, Real Rl, Real Cl, Real le
 std::string ExternalCircuitRCTLine::format() const
 {
   std::stringstream ss;
-  ss  <<"string<ext.circuit>=tl"<<" "
+  ss  <<"string<ext.circuit>=tline"<<" "
       <<"real<res.load>="<<_r_app/(PhysicalUnit::V/PhysicalUnit::A)<<" "
       <<"real<res.um>="<<_r_per_um/(PhysicalUnit::V/PhysicalUnit::A/PhysicalUnit::um)<<" "
       <<"real<cap.um>="<<_c_per_um/(PhysicalUnit::C/PhysicalUnit::V/PhysicalUnit::um)<<" "
@@ -68,9 +68,9 @@ Real ExternalCircuitRCTLine::mna_function(Real dt)
   {
     if(i==0)
     {
-      B[i] = 1.0/res + 1.0/res;
+      B[i] = 1.0/res + 1.0/res + cap/dt;
       C[i] = -1.0/res;
-      r[i] = _V0/res;
+      r[i] = _V0/res+cap*_v_last[i]/dt;
     }
     else if(i==N-1)
     {

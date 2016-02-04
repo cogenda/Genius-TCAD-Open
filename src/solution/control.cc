@@ -40,6 +40,8 @@
   #include "mesh_generation_hex8.h"
   #include "mesh_generation_prism6.h"
   #include "mesh_generation_tet4.h"
+  #include "mesh_generation_cy2d.h"
+  #include "mesh_generation_cy3d.h"
 #endif
 
 #include "control.h"
@@ -51,6 +53,10 @@
 #include "electrical_source.h"
 #include "field_source.h"
 #include "enum_solution.h"
+#include "spice_ckt.h"
+
+
+#ifdef TCAD_SOLVERS
 #include "doping_analytic/doping_analytic.h"
 #include "mole_analytic/mole_analytic.h"
 #include "poisson/poisson.h"
@@ -59,27 +65,28 @@
 #include "ebm3/ebm3.h"
 #include "dg/dg.h"
 #include "ddm_ac/ddm_ac.h"
-
-#include "ddm1r/ddm1r.h"
-
-#include "spice_ckt.h"
 #include "mixA1/mixA1.h"
 #include "mixA2/mixA2.h"
 #include "mixA3/mixA3.h"
-
-
 #include "mix1/mix1.h"
-
 #include "hall/hall.h"
-
-
-
 // only commercial product support half implicit method
 #ifdef COGENDA_COMMERCIAL_PRODUCT
-  #include "ric/ric.h"
-  #include "gummel/ddm1_half_implicit.h"
+  #include "halfimplicit/ddm1_half_implicit.h"
+#endif
 #endif
 
+#ifdef IDC_SOLVERS
+#ifdef COGENDA_COMMERCIAL_PRODUCT
+  #include "ric/ric.h"
+  #include "dictat/dictat.h"
+#endif
+#endif
+
+#ifdef COGENDA_COMMERCIAL_PRODUCT
+  #include "tid/tid_op.h"
+  #include "tid/tid_trap.h"
+#endif
 
 #include "stress_solver/stress_solver.h"
 
@@ -99,11 +106,15 @@
  #include "gnuplot_hook.h"
  #include "probe_hook.h"
  #include "vtk_hook.h"
-#include "cgns_hook.h"
+ #include "threshold_hook.h"
+ #include "tunneling_hook.h"
+ #include "data_hook.h"
+ #include "cgns_hook.h"
 #endif
 
 
 #include "extend_to_3d.h"
+#include "rotate_to_3d.h"
 #ifdef HAVE_X11
  #include "show_mesh_2d.h"
 #endif
@@ -119,7 +130,7 @@ using PhysicalUnit::C;
 using PhysicalUnit::s;
 using PhysicalUnit::um;
 using PhysicalUnit::cm;
-
+using PhysicalUnit::rad;
 
 //------------------------------------------------------------------------------
 
@@ -236,8 +247,14 @@ int SolverControl::mainloop()
     if(c.key() == "REGIONSET")
       this->do_region_set( c );
 
+    if(c.key() == "BOUNDARYSET")
+      this->do_boundary_set( c );
+
     if(c.key() == "PMI")
       this->set_physical_model ( c );
+
+    if(c.key() == "TID")
+      this->do_tid ( c );
 
     if(c.key() == "SOURCEAPPLY")
       this->apply_field_source ( c );
@@ -247,6 +264,9 @@ int SolverControl::mainloop()
 
     if(c.key() == "EXTEND")
       this->extend_to_3d( c );
+
+    if(c.key() == "ROTATE")
+      this->rotate_to_3d( c );
 
     if(c.key() == "PLOTMESH")
       this->plot_mesh( c );
@@ -295,6 +315,14 @@ int  SolverControl::do_mesh()
           {
             meshgen = AutoPtr<MeshGeneratorBase>(new MeshGeneratorHex8(mesh(),decks()));
           }
+          else if( c.is_enum_value("type","c_2d"))
+          {
+            meshgen = AutoPtr<MeshGeneratorBase>(new MeshGeneratorCylinder2D(mesh(),decks()));
+          }
+          else if( c.is_enum_value("type","c_3d"))
+          {
+            meshgen = AutoPtr<MeshGeneratorBase>(new MeshGeneratorCylinder3D(mesh(),decks()));
+          }
 #else
           else
           {
@@ -336,6 +364,7 @@ int  SolverControl::do_mesh()
 
 int SolverControl::do_process()
 {
+#ifdef TCAD_SOLVERS
   // if doping profile card exist
   if ( decks().is_card_exist("DOPING") )
   {
@@ -357,6 +386,7 @@ int SolverControl::do_process()
     MoleSolver->solve();
     // we will not destroy the mole solver here
   }
+#endif
 
   // after doping profile and mole is set, we can init system data.
   // i.e. electron and hole initital concentration of semiconductor region
@@ -388,7 +418,7 @@ int SolverControl::set_method ( const Parser::Card & c )
   SolverSpecify::PC = SolverSpecify::preconditioner_type(c.get_string("pc", "lu"));
 
   // set preconditioner lag
-  SolverSpecify::NSLagPCLU                  = c.get_int("pclu.lag", 10);
+  SolverSpecify::NSLagPCLU                  = c.get_int("pclu.lag", 5);
   // set jacobian lag
   SolverSpecify::NSLagJacobian              = c.get_int("jacobian.lag", 1);
 
@@ -400,6 +430,8 @@ int SolverControl::set_method ( const Parser::Card & c )
     if (c.is_enum_value("damping", "superpotential")) SolverSpecify::Damping = SolverSpecify::DampingSuperPotential;
     if (c.is_enum_value("damping", "bankrose"))       SolverSpecify::Damping = SolverSpecify::DampingBankRose;
   }
+
+  SolverSpecify::damping_spice             = c.get_bool("damping.spice", false);
 
    // set voronoi truncation flag
   if(c.is_parameter_exist("truncation"))
@@ -419,12 +451,16 @@ int SolverControl::set_method ( const Parser::Card & c )
   SolverSpecify::PC_CURRENT = SolverSpecify::preconditioner_type(c.get_string("pc.current", c.get_string("pc", "asm")));
   SolverSpecify::PC_POISSON = SolverSpecify::preconditioner_type(c.get_string("pc.poisson", "asm"));
 
+  SolverSpecify::DumpMatrixVector =  c.get_bool("halfimplicit.dumpsystem", false);
+
   // linearize error
   SolverSpecify::LinearizeErrorThreshold    = c.get_real("halfimplicit.let", 1.0);
   SolverSpecify::ArtificialCarrier          = c.get_bool("halfimplicit.artificialcarrier", true);
   SolverSpecify::ReSolveCarrier             = c.get_bool("halfimplicit.resolvecarrier", false);
   SolverSpecify::PoissonCorrectionParameter = c.get_real("halfimplicit.carrierweight", 0.0);
 
+  // snes convergence test
+  SolverSpecify::snes_rtol                  = c.get_real("snes.rtol", 1e-5);
 
   // ksp convergence test
   SolverSpecify::ksp_rtol                  = c.get_real("ksp.rtol", 1e-8);
@@ -440,16 +476,18 @@ int SolverControl::set_method ( const Parser::Card & c )
   SolverSpecify::relative_toler            = c.get_real("relative.tol", 1e-5);
   SolverSpecify::toler_relax               = c.get_real("toler.relax", 1e5, "tol.relax");
   SolverSpecify::poisson_abs_toler         = c.get_real("poisson.tol", 1e-26)*C;
-  SolverSpecify::elec_continuity_abs_toler = c.get_real("elec.continuity.tol", 5e-18)*A;
-  SolverSpecify::hole_continuity_abs_toler = c.get_real("hole.continuity.tol", 5e-18)*A;
+  SolverSpecify::elec_continuity_abs_toler = c.get_real("elec.continuity.tol", 5e-18, "elec.c.tol")*A;
+  SolverSpecify::hole_continuity_abs_toler = c.get_real("hole.continuity.tol", 5e-18, "hole.c.tol")*A;
   SolverSpecify::heat_equation_abs_toler   = c.get_real("latt.temp.tol", 1e-11)*W;
-  SolverSpecify::elec_energy_abs_toler     = c.get_real("elec.energy.tol", 1e-18)*W;
-  SolverSpecify::hole_energy_abs_toler     = c.get_real("hole.energy.tol", 1e-18)*W;
+  SolverSpecify::elec_energy_abs_toler     = c.get_real("elec.energy.tol", 1e-18,"elec.e.tol")*W;
+  SolverSpecify::hole_energy_abs_toler     = c.get_real("hole.energy.tol", 1e-18,"hole.e.tol")*W;
   SolverSpecify::electrode_abs_toler       = c.get_real("electrode.tol", 1e-14)*A;
-  SolverSpecify::spice_abs_toler           = c.get_real("spice.tol", 1e-14)*A;
+  SolverSpecify::spice_abs_toler           = c.get_real("spice.tol", 1e-12)*A;
 
-  SolverSpecify::elec_quantum_abs_toler    = c.get_real("elec.quantum.tol", 1e-26)*C;
-  SolverSpecify::hole_quantum_abs_toler    = c.get_real("hole.quantum.tol", 1e-26)*C;
+  SolverSpecify::elec_quantum_abs_toler    = c.get_real("elec.quantum.tol", 1e-26, "elec.q.tol")*C;
+  SolverSpecify::hole_quantum_abs_toler    = c.get_real("hole.quantum.tol", 1e-26, "hole.q.tol")*C;
+
+  SolverSpecify::divergence_factor         = c.get_real("divergence.factor", 1e20);
 
   // set which solver will be used
   if(c.is_parameter_exist("type"))
@@ -670,7 +708,7 @@ int SolverControl::do_solve( const Parser::Card & c )
         {
           std::string electrode = c.get_string("electrode", "");
 
-          if( system().get_bcs()->get_bc(electrode) == NULL || system().get_bcs()->get_bc(electrode)->is_electrode() == false )
+          if( !system().get_bcs()->is_electrode(electrode) )
           {
             MESSAGE<<"ERROR at " <<c.get_fileline()<< " SOLVE OP: Electrode " << electrode << " can't be found in device structure." << std::endl; RECORD();
             genius_error();
@@ -696,7 +734,7 @@ int SolverControl::do_solve( const Parser::Card & c )
         SolverSpecify::OptG        = c.get_bool("optical.gen", false);
         SolverSpecify::PatG        = c.get_bool("particle.gen", false);
         SolverSpecify::NodeSet     = c.get_bool("nodeset", true);
-        SolverSpecify::RampUpSteps = c.get_int("rampup.steps", 1);
+        SolverSpecify::RampUpSteps = c.get_int("rampup.steps", 0);
 
         if(c.is_parameter_exist("rampup.vstep"))
           SolverSpecify::RampUpVStep = c.get_real("rampup.vstep", 0.25)*V;
@@ -756,7 +794,7 @@ int SolverControl::do_solve( const Parser::Card & c )
             for(unsigned int n=0; n<elec_num; n++)
             {
               std::string electrode = c.get_n_string("vscan", "", n, 0);
-              if( system().get_bcs()->get_bc(electrode) == NULL || system().get_bcs()->get_bc(electrode)->is_electrode() == false )
+              if( !system().get_bcs()->is_electrode(electrode) )
               {
                 MESSAGE<<"ERROR at " <<c.get_fileline()<< " SOLVE: Electrode " << electrode << " can't be found in device structure." << std::endl; RECORD();
                 genius_error();
@@ -806,7 +844,7 @@ int SolverControl::do_solve( const Parser::Card & c )
             for(unsigned int n=0; n<elec_num; n++)
             {
               std::string electrode = c.get_n_string("iscan", "", n, 0);
-              if( system().get_bcs()->get_bc(electrode) == NULL || system().get_bcs()->get_bc(electrode)->is_electrode() == false )
+              if( !system().get_bcs()->is_electrode(electrode) )
               {
                 MESSAGE<<"ERROR at " <<c.get_fileline()<< " SOLVE: Electrode " << electrode << " can't be found in device structure." << std::endl; RECORD();
                 genius_error();
@@ -865,6 +903,11 @@ int SolverControl::do_solve( const Parser::Card & c )
             genius_error();
           }
         }
+        else
+        {
+          FieldSource * field_source = system().get_field_source();
+          field_source->clear_effect_waveform();
+        }
         break;
       }
       case SolverSpecify::TRACE       :
@@ -873,18 +916,26 @@ int SolverControl::do_solve( const Parser::Card & c )
         SolverSpecify::Electrode_VScan.clear();
         SolverSpecify::Electrode_IScan.clear();
 
-        // user should specify vscan here
+        // user should specify trace electrode here
         {
           unsigned int elec_num = c.parameter_count("vscan");
           for(unsigned int n=0; n<elec_num; n++)
           {
             std::string electrode = c.get_n_string("vscan", "", n, 0);
-            if( system().get_bcs()->get_bc(electrode) == NULL || system().get_bcs()->get_bc(electrode)->is_electrode() == false )
+            if( !system().get_bcs()->is_electrode(electrode) )
             {
               MESSAGE<<"ERROR at " <<c.get_fileline()<< " SOLVE: Electrode " << electrode << " can't be found in device structure." << std::endl; RECORD();
               genius_error();
             }
-            SolverSpecify::Electrode_VScan.push_back(electrode);
+            std::vector<BoundaryCondition *> bcs = system().get_bcs()->get_bcs_by_electrode_label(electrode);
+            if( bcs.size() != 1 )
+            {
+              MESSAGE<<"ERROR at " <<c.get_fileline()
+                     << " SOLVE: Electrode region "<< electrode
+                     << " has more than one electrical boundary, please define a SolderPad boundary and do trace on it." << std::endl; RECORD();
+              genius_error();
+            }
+            SolverSpecify::Electrode_VScan.push_back(bcs[0]->label());
           }
 
           if( SolverSpecify::Electrode_VScan.size() != 1)
@@ -915,6 +966,11 @@ int SolverControl::do_solve( const Parser::Card & c )
             genius_error();
           }
         }
+        else
+        {
+          FieldSource * field_source = system().get_field_source();
+          field_source->clear_effect_waveform();
+        }
 
         break;
       }
@@ -932,7 +988,7 @@ int SolverControl::do_solve( const Parser::Card & c )
         for(unsigned int n=0; n<elec_num; n++)
         {
           std::string electrode = c.get_n_string("acscan", "", n, 0);
-          if( system().get_bcs()->get_bc(electrode) == NULL || system().get_bcs()->get_bc(electrode)->is_electrode() == false )
+          if( !system().get_bcs()->is_electrode(electrode) )
           {
             MESSAGE<<"ERROR at " <<c.get_fileline()<< " SOLVE: Electrode " << electrode << " can't be found in device structure." << std::endl; RECORD();
             genius_error();
@@ -963,21 +1019,25 @@ int SolverControl::do_solve( const Parser::Card & c )
         SolverSpecify::TStart    = c.get_real("tstart", 0.0)*s;
         SolverSpecify::TStep     = c.get_real("tstep", 1e-9)*s;
         SolverSpecify::TStepMin  = c.get_real("tstepmin", 1e-14)*s;
-        SolverSpecify::TStepMax  = c.get_real("tstepmax", 10.0*SolverSpecify::TStep/s)*s;
+        SolverSpecify::TStepMax  = c.get_real("tstepmax", 0.0)*s;
         SolverSpecify::dt        = SolverSpecify::TStep;
         SolverSpecify::TStop     = c.get_real("tstop", 1e-6)*s;
 
         SolverSpecify::TS_rtol   = c.get_real("ts.rtol", 1e-3);
-        SolverSpecify::TS_atol   = c.get_real("ts.atol", 1e-4);
+        SolverSpecify::TS_atol   = c.get_real("ts.atol", 1e-7);
 
         SolverSpecify::VStepMax  = c.get_real("vstepmax", 1.0)*V;
         SolverSpecify::IStepMax  = c.get_real("istepmax", 1.0)*A;
 
-        SolverSpecify::RampUpSteps = c.get_int("rampup.steps", 1);
-        SolverSpecify::RampUpVStep = c.get_real("rampup.vstep", 0.25)*V;
-        SolverSpecify::RampUpIStep = c.get_real("rampup.istep", 0.1)*A;
-        SolverSpecify::GminInit    = c.get_real("gmin.init", 1e-6);
-        SolverSpecify::Gmin        = c.get_real("gmin", 1e-12);
+        SolverSpecify::RampUpSteps = c.get_int("rampup.steps", 0);
+        if(c.is_parameter_exist("rampup.vstep"))
+          SolverSpecify::RampUpVStep = c.get_real("rampup.vstep", 0.25)*V;
+        if(c.is_parameter_exist("rampup.istep"))
+          SolverSpecify::RampUpIStep = c.get_real("rampup.istep", 0.1)*A;
+        if(c.is_parameter_exist("gmin.init"))
+          SolverSpecify::GminInit    = c.get_real("gmin.init", 1e-12);
+        if(c.is_parameter_exist("gmin"))
+          SolverSpecify::Gmin        = c.get_real("gmin", 1e-12);
 
         if(SolverSpecify::TStop <= SolverSpecify::TStart)
         {
@@ -991,9 +1051,9 @@ int SolverControl::do_solve( const Parser::Card & c )
           genius_error();
         }
 
-        if(SolverSpecify::TStepMax <=0 )
+        if(SolverSpecify::TStepMax <0 )
         {
-          MESSAGE<<"ERROR at " <<c.get_fileline()<< " SOLVE: tstepmax should be positive."<<std::endl; RECORD();
+          MESSAGE<<"ERROR at " <<c.get_fileline()<< " SOLVE: tstepmax should not be negative."<<std::endl; RECORD();
           genius_error();
         }
 
@@ -1019,6 +1079,11 @@ int SolverControl::do_solve( const Parser::Card & c )
             genius_error();
           }
         }
+        else
+        {
+          FieldSource * field_source = system().get_field_source();
+          field_source->clear_effect_waveform();
+        }
 
         if(c.is_parameter_exist("tran.histroy"))
           SolverSpecify::tran_histroy   = c.get_bool("tran.histroy", false);
@@ -1038,6 +1103,7 @@ int SolverControl::do_solve( const Parser::Card & c )
   // call each solver here
   switch (SolverSpecify::Solver)
   {
+#ifdef TCAD_SOLVERS
       case SolverSpecify::POISSON :
       {
         solver = new PoissonSolver(system());
@@ -1046,11 +1112,6 @@ int SolverControl::do_solve( const Parser::Card & c )
       case SolverSpecify::DDML1 :
       {
         solver = new DDM1Solver(system());
-        break;
-      }
-      case SolverSpecify::DDML1R :
-      {
-        solver = new DDM1RSolver(system());
         break;
       }
       case SolverSpecify::DDML1MIXA :
@@ -1104,14 +1165,25 @@ int SolverControl::do_solve( const Parser::Card & c )
         solver = new DDM1HalfImplicitSolver(system());
         break;
       }
+#endif
+#endif
 
+#ifdef IDC_SOLVERS
+#ifdef COGENDA_COMMERCIAL_PRODUCT
       case SolverSpecify::RIC :
       {
         solver = new RICSolver(system());
         break;
       }
+
+      case SolverSpecify::DICTAT :
+      {
+        solver = new DICTATSolver(system());
+        break;
+      }
 #endif
-      default: break;
+#endif
+      default:
       MESSAGE<<"ERROR: Selected solver is not supported at present." << std::endl; RECORD();
       break;
   }
@@ -1133,10 +1205,11 @@ int SolverControl::do_solve( const Parser::Card & c )
 
     // init (user defined) hook functions here
 
-    if( SolverSpecify::Type == SolverSpecify::DCSWEEP   ||
-        SolverSpecify::Type == SolverSpecify::OP        ||
-        SolverSpecify::Type == SolverSpecify::TRANSIENT ||
-        SolverSpecify::Type == SolverSpecify::TRACE     ||
+    if( SolverSpecify::Type == SolverSpecify::DCSWEEP     ||
+        SolverSpecify::Type == SolverSpecify::STEADYSTATE ||
+        SolverSpecify::Type == SolverSpecify::OP          ||
+        SolverSpecify::Type == SolverSpecify::TRANSIENT   ||
+        SolverSpecify::Type == SolverSpecify::TRACE       ||
         SolverSpecify::Solver == SolverSpecify::DDMAC
       )
     {
@@ -1177,6 +1250,12 @@ int SolverControl::do_solve( const Parser::Card & c )
         hook = new CVHook (*solver, "cv_hook",  (void *)(&(it->second.second)));
       if((*it).second.first=="probe")
         hook = new ProbeHook (*solver, "probe_hook",  (void *)(&(it->second.second)));
+      if((*it).second.first=="threshold")
+        hook = new ThresholdHook (*solver, "threshold_hook",  (void *)(&(it->second.second)));
+      if((*it).second.first=="data")
+        hook = new DataHook (*solver, "data_hook",  (void *)(&(it->second.second)));
+      if((*it).second.first=="tunneling")
+        hook = new TunnelingHook (*solver, "tunneling_hook",  (void *)(&(it->second.second)));
 
       if(hook) solver->add_hook(hook);
     }
@@ -1230,7 +1309,7 @@ int  SolverControl::set_electrode_source  ( const Parser::Card & c )
   for(unsigned int n=0; n<electrodes.size(); ++n)
   {
     const std::string & electrode = electrodes[n];
-    if( system().get_bcs()->get_bc(electrode) == NULL || system().get_bcs()->get_bc(electrode)->is_electrode() == false )
+    if( !system().get_bcs()->is_electrode(electrode) )
     {
       MESSAGE<<"ERROR at " <<c.get_fileline()<< " ATTACH: Electrode " << electrode << " can't be found in device structure." << std::endl; RECORD();
       genius_error();
@@ -1367,6 +1446,10 @@ int  SolverControl::set_physical_model  ( const Parser::Card & c )
     MESSAGE<<"ERROR at " << c.get_fileline()<< " PMI: Region " << rgn_pattern << " can't be found in mesh regions." << std::endl; RECORD();
     genius_error();
   }
+  else
+  {
+    MESSAGE<<"PMI: Region " << rgn_pattern << " model " << model << " for " << type << " updated." << std::endl; RECORD();
+  }
 
   return 0;
 
@@ -1375,7 +1458,80 @@ int  SolverControl::set_physical_model  ( const Parser::Card & c )
 
 int SolverControl::apply_field_source  ( const Parser::Card & c )
 {
-  _system->get_field_source()->update_system();
+  _system->get_field_source()->update_source();
+  return 0;
+}
+
+
+
+int  SolverControl::do_tid ( const Parser::Card & c )
+{
+#ifdef COGENDA_COMMERCIAL_PRODUCT
+  // reset to default solver parameters
+  //SolverSpecify::set_default_parameter();
+
+  SolverSpecify::TID_TotalDose  = c.get_real("totaldose", 0.0)*rad;
+  SolverSpecify::TID_DoseRate   = c.get_real("doserate", 1.0)*rad/s;
+  SolverSpecify::TID_DoseStep   = c.get_real("dosestep", 500)*rad;
+  SolverSpecify::TID_OPStep     = c.get_real("opstep", 3e3)*rad;
+  SolverSpecify::TID_FixedCharge= c.get_bool("fixedcharge", true);
+
+  SolverSpecify::out_prefix = c.get_string("out.prefix", "result");
+
+  if( SolverSpecify::TID_TotalDose <= 0.0 )
+  {
+    MESSAGE<<"ERROR at " <<c.get_fileline()<< " TID: total dose should be positive." << std::endl; RECORD();
+    genius_error();
+  }
+
+  if( SolverSpecify::TID_DoseRate <= 0.0 )
+  {
+    MESSAGE<<"ERROR at " <<c.get_fileline()<< " TID: dose rate should be positive." << std::endl; RECORD();
+    genius_error();
+  }
+
+  if( SolverSpecify::TID_DoseStep <= 0.0 )
+  {
+    MESSAGE<<"ERROR at " <<c.get_fileline()<< " TID: dose step should be positive." << std::endl; RECORD();
+    genius_error();
+  }
+
+  // set nonlinear solver type
+  //SolverSpecify::NS = SolverSpecify::nonlinear_solver_type("basic");
+  // set linear solver type
+  //SolverSpecify::LS = SolverSpecify::linear_solver_type("lu");
+  // set transient parameter
+  SolverSpecify::TS_type             = SolverSpecify::BDF1;
+
+  if(c.is_parameter_exist("type"))
+  {
+    SolverBase * solver = 0;
+
+    if (c.is_enum_value("type", "drift"))
+    {
+      solver = new TIDOP(system(), "drift");
+    }
+    else if (c.is_enum_value("type", "full"))
+    {
+      solver = new TIDOP(system(), "full");
+    }
+    else if (c.is_enum_value("type", "trap"))
+    {
+      solver = new TIDTrap(system());
+    }
+    else
+    {
+      MESSAGE<<"ERROR at " <<c.get_fileline()<< " TID: TID solver type not supported." << std::endl; RECORD();
+      genius_error();
+    }
+
+    solver->create_solver();
+    solver->solve();
+    solver->destroy_solver();
+
+    delete solver;
+  }
+#endif
   return 0;
 }
 
@@ -1389,6 +1545,14 @@ int SolverControl::do_export( const Parser::Card & c )
     std::string vtk_filename = c.get_string("vtkfile", "");
     bool ascii = c.get_bool("ascii", false);
     system().export_vtk(vtk_filename, ascii);
+  }
+
+  // if export to VTK format is required
+  if(c.is_parameter_exist("vtufile"))
+  {
+    std::string vtu_filename = c.get_string("vtufile", "");
+    std::vector<std::string> variables = c.get_array<std::string>("vtu.variables");
+    system().export_vtk2(vtu_filename, variables);
   }
 
   // if export to CGNS format is required
@@ -1405,12 +1569,20 @@ int SolverControl::do_export( const Parser::Card & c )
     system().export_ise(ise_filename);
   }
 
+
+  // if export to tif format is required
+  if(c.is_parameter_exist("tiffile"))
+  {
+    std::string tif_filename = c.get_string("tiffile", "");
+    system().export_tif(tif_filename);
+  }
+
   // if export GDML surface file is required
-  if(c.is_parameter_exist("gdml.surface"))
+  if(c.is_parameter_exist("gdml") || c.is_parameter_exist("gdml.surface"))
   {
     if( mesh().mesh_dimension()==3 )
     {
-      std::string gdml_filename = c.get_string("gdml.surface", "");
+      std::string gdml_filename = c.get_string("gdml", "", "gdml.surface");
       system().export_gdml_surface(gdml_filename);
     }
     else
@@ -1419,18 +1591,6 @@ int SolverControl::do_export( const Parser::Card & c )
     }
   }
 
-  if(c.is_parameter_exist("gdml.body"))
-  {
-    if( mesh().mesh_dimension()==3 )
-    {
-      std::string gdml_filename = c.get_string("gdml.body", "");
-      system().export_gdml_body(gdml_filename);
-    }
-    else
-    {
-      MESSAGE<<"WARNING at " <<c.get_fileline()<< " EXPORT: Only 3D device structure have GDML support" << std::endl; RECORD();
-    }
-  }
 
   // if export boundary condition is required
   if(c.is_parameter_exist("bcinfo"))
@@ -1457,6 +1617,14 @@ int SolverControl::do_export( const Parser::Card & c )
       system().export_node_location(node_filename, 1e-6, numbering );
   }
 
+  // if export spice nodel solution to file is required
+  if(c.is_parameter_exist("spice.nodeset"))
+  {
+    std::string spice_filename = c.get_string("spice.nodeset", "");
+    system().get_circuit()->export_solution(spice_filename);
+  }
+
+
   return 0;
 }
 
@@ -1473,7 +1641,7 @@ int SolverControl::do_import( const Parser::Card & c )
     if (  access( (char *)cgns_filename.c_str(),  R_OK ) == -1 )
 #endif
     {
-      MESSAGE<<"ERROR at " <<c.get_fileline()<< " IMPORT: CGNSFile " << cgns_filename << " doesn't exist." << std::endl; RECORD();
+      MESSAGE<<"ERROR at " <<c.get_fileline()<< " IMPORT: CGNS File " << cgns_filename << " doesn't exist." << std::endl; RECORD();
       genius_error();
     }
     system().import_cgns(cgns_filename);
@@ -1488,15 +1656,15 @@ int SolverControl::do_import( const Parser::Card & c )
     if (  access( (char *)vtk_filename.c_str(),  R_OK ) == -1 )
 #endif
     {
-      MESSAGE<<"ERROR at " <<c.get_fileline()<< " IMPORT: VTKFile " << vtk_filename << " doesn't exist." << std::endl; RECORD();
+      MESSAGE<<"ERROR at " <<c.get_fileline()<< " IMPORT: VTK File " << vtk_filename << " doesn't exist." << std::endl; RECORD();
       genius_error();
     }
     system().import_vtk(vtk_filename);
   }
 
-  if(c.is_parameter_exist("silvacofile"))
+  if(c.is_parameter_exist("silvacofile") || c.is_parameter_exist("strfile"))
   {
-    std::string silvaco_filename = c.get_string("silvacofile", "");
+    std::string silvaco_filename = c.get_string("silvacofile", "", "strfile");
 #ifdef WINDOWS
     if ( _access( (char *)silvaco_filename.c_str(),  04 ) == -1 )
 #else
@@ -1509,6 +1677,11 @@ int SolverControl::do_import( const Parser::Card & c )
     system().import_silvaco(silvaco_filename);
   }
 
+  if(c.is_parameter_exist("silvacolist"))
+  {
+    std::vector<std::string> silvaco_filenames = c.get_array<std::string>("silvacolist");
+    system().import_silvaco_list(silvaco_filenames);
+  }
 
   if(c.is_parameter_exist("tiffile"))
   {
@@ -1519,10 +1692,17 @@ int SolverControl::do_import( const Parser::Card & c )
     if (  access( (char *)tif_filename.c_str(),  R_OK ) == -1 )
 #endif
     {
-      MESSAGE<<"ERROR at " <<c.get_fileline()<< " IMPORT: TIFFile " << tif_filename << " doesn't exist." << std::endl; RECORD();
+      MESSAGE<<"ERROR at " <<c.get_fileline()<< " IMPORT: TIF File " << tif_filename << " doesn't exist." << std::endl; RECORD();
       genius_error();
     }
     system().import_tif(tif_filename);
+  }
+
+
+  if(c.is_parameter_exist("tiflist"))
+  {
+    std::vector<std::string> tif_filenames = c.get_array<std::string>("tiflist");
+    system().import_tif_list(tif_filenames);
   }
 
   if(c.is_parameter_exist("tif3dfile"))
@@ -1534,10 +1714,25 @@ int SolverControl::do_import( const Parser::Card & c )
     if (  access( (char *)tif3d_filename.c_str(),  R_OK ) == -1 )
 #endif
     {
-      MESSAGE<<"ERROR at " <<c.get_fileline()<< " IMPORT: TIF3DFile " << tif3d_filename << " doesn't exist." << std::endl; RECORD();
+      MESSAGE<<"ERROR at " <<c.get_fileline()<< " IMPORT: TIF3D File " << tif3d_filename << " doesn't exist." << std::endl; RECORD();
       genius_error();
     }
     system().import_tif3d(tif3d_filename);
+  }
+  
+  if(c.is_parameter_exist("supremfile"))
+  {
+    std::string sup_filename = c.get_string("supremfile", "");
+#ifdef WINDOWS
+    if ( _access( (char *)sup_filename.c_str(),  04 ) == -1 )
+#else
+    if (  access( (char *)sup_filename.c_str(),  R_OK ) == -1 )
+#endif
+    {
+      MESSAGE<<"ERROR at " <<c.get_fileline()<< " IMPORT: Suprem File " << sup_filename << " doesn't exist." << std::endl; RECORD();
+      genius_error();
+    }
+    system().import_suprem(sup_filename);
   }
 
 
@@ -1547,6 +1742,18 @@ int SolverControl::do_import( const Parser::Card & c )
     system().import_ise(ise_filename);
   }
 
+  if(c.is_parameter_exist("gmshfile"))
+  {
+    std::string gmsh_filename = c.get_string("gmshfile", "");
+    system().import_gmsh(gmsh_filename);
+  }
+
+
+  if(c.is_parameter_exist("unvfile"))
+  {
+    std::string unv_filename = c.get_string("unvfile", "");
+    system().import_unv(unv_filename);
+  }
 
   //std::cout<<"Final Mesh " << _mesh->memory_size()/(1024*1024)<<std::endl;
   //std::cout<<"Final System " << _system->memory_size()/(1024*1024)<<std::endl;
@@ -1639,7 +1846,7 @@ int SolverControl::do_refine_conform(const Parser::Card & c)
       // for 2D, we call triangle
       if( mesh().mesh_dimension() == 2 )
       {
-        MeshGenerator *meshgen = new MeshGeneratorTri3(mesh(), decks());
+        MeshGeneratorBase *meshgen = new MeshGeneratorTri3(mesh(), decks());
         meshgen->do_refine(mesh_refinement);
         delete meshgen;
       }
@@ -1856,41 +2063,59 @@ int SolverControl::do_region_set ( const Parser::Card & c)
     genius_error();
   }
 
-  if(c.is_parameter_exist("x.mole"))
+  std::string variable = c.get_string("variable", "");
+
+  if( region->has_variable(variable, POINT_CENTER))
   {
-    double mole_x = c.get_real("x.mole", 0.0);
-    region->set_variable_data<double>("mole_x", POINT_CENTER, mole_x);
+    if(c.is_parameter_exist("unit"))
+    {
+      std::string unit_string = c.get_string("unit", "");
+      ConstanteExprEvalute expr_eva(unit_string);
+      double unit = expr_eva.eval();
+      region->set_variable_data<PetscScalar>(variable, POINT_CENTER, c.get_real("value", 0.0), unit);
+    }
+    else
+      region->set_variable_data<PetscScalar>(variable, POINT_CENTER, c.get_real("value", 0.0));
+  }
+  else
+  {
+    MESSAGE<<"ERROR at " <<c.get_fileline()<< " REGIONSET: region variable "<< variable << " does not exist." << std::endl; RECORD();
+    genius_error();
   }
 
-  if(c.is_parameter_exist("y.mole"))
-  {
-    double mole_y = c.get_real("y.mole", 0.0);
-    region->set_variable_data<double>("mole_y", POINT_CENTER, mole_y);
-  }
 
-  if(c.is_parameter_exist("doping.na"))
-  {
-    double na = c.get_real("doping.na", 0.0)*pow(cm, -3);
-    region->set_variable_data<double>("na", POINT_CENTER, na);
-  }
-
-  if(c.is_parameter_exist("doping.nd"))
-  {
-    double nd = c.get_real("doping.nd", 0.0)*pow(cm, -3);
-    region->set_variable_data<double>("nd", POINT_CENTER, nd);
-  }
-
-  if(c.is_parameter_exist("opt.gen"))
-  {
-    double g = c.get_real("opt.gen", 0.0)*pow(cm, -3)/s;
-    region->set_variable_data<double>("optical_generation", POINT_CENTER, g);
-  }
-
-  region->reinit_after_import();
+  if(c.is_parameter_exist("reinit") && c.get_bool("reinit", false))
+    region->reinit_after_import();
 
   return 0;
 }
 
+
+int SolverControl::do_boundary_set ( const Parser::Card & c)
+{
+  std::string boundary_name = c.get_string("boundary", "");
+  BoundaryCondition * bc = system().get_bcs()->get_bc(boundary_name);
+
+  if( bc == NULL )
+  {
+    MESSAGE<<"ERROR at " <<c.get_fileline()<< " BOUNDARYSET: boundary "<< boundary_name << " does not exist." << std::endl; RECORD();
+    genius_error();
+  }
+
+  std::string variable = c.get_string("variable", "");
+  double value = c.get_real("value", 0.0);
+  double unit=1.0;
+  if(c.is_parameter_exist("unit"))
+  {
+    std::string unit_string = c.get_string("unit", "");
+    ConstanteExprEvalute expr_eva(unit_string);
+    unit = expr_eva.eval();
+  }
+
+  bc->scalar(variable) =  value*unit;
+
+  return 0;
+}
 
 
 
@@ -1900,6 +2125,16 @@ int SolverControl::extend_to_3d ( const Parser::Card & c )
   ExtendTo3D(system(), c)();
   return 0;
 }
+
+
+int  SolverControl::rotate_to_3d ( const Parser::Card & c )
+{
+  MESSAGE<<"Rotate mesh to 3D...\n"<<std::endl; RECORD();
+  RotateTo3D(system(), c)();
+  return 0;
+}
+
+
 
 
 int SolverControl::plot_mesh(const Parser::Card & c)

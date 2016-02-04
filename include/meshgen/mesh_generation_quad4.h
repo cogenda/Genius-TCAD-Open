@@ -24,19 +24,19 @@
 #ifndef __mesh_generation_quad4_h__
 #define __mesh_generation_quad4_h__
 
-#include "mesh_generation.h"
+#include "mesh_generation_struct.h"
 
 /**
  * the simple quad4 mesh generator
  */
-class MeshGeneratorQuad4 : public MeshGenerator
+class MeshGeneratorQuad4 : public MeshGeneratorStruct
 {
 public:
   /**
    * constructor
    */
   MeshGeneratorQuad4(MeshBase& mesh, Parser::InputParser & decks):
-  MeshGenerator(mesh),_decks(decks)  {}
+  MeshGeneratorStruct(mesh),_decks(decks)  {}
 
 
   /**

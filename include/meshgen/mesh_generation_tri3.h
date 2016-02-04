@@ -24,23 +24,24 @@
 #ifndef __mesh_generation_tri3_h__
 #define __mesh_generation_tri3_h__
 
-#include "mesh_generation.h"
+#include "mesh_generation_struct.h"
 
 #include "triangle.h"
 //#include "c_tri_io.h"
 
+class Elem;
 
 /**
  * the Tri3 mesh generator. it build 2d triangle mesh in XY plane
  */
-class MeshGeneratorTri3 : public MeshGenerator
+class MeshGeneratorTri3 : public MeshGeneratorStruct
 {
 public:
   /**
    * constructor
    */
   MeshGeneratorTri3(MeshBase& mesh, Parser::InputParser & decks):
-      MeshGenerator(mesh),_decks(decks),tri_cmd("pzADq30Q")
+      MeshGeneratorStruct(mesh),_decks(decks),tri_cmd("pzADq30Q")
   {};
 
 
@@ -151,8 +152,8 @@ private:
   /**
    * disturb the regtangle mesh in y direction
    */
-  int  make_spread(const std::string &location, double width,unsigned int upperline,unsigned int lowerline,
-                   double yuploc,double yloloc,double encroach,double grading);
+  int  make_spread(double center, double width,unsigned int upperline,unsigned int lowerline,
+                   double yuploc,double yloloc, double y_undisturbed, double encroach,double grading);
   /**
    * renumber the nodes
    */

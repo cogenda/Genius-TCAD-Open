@@ -95,7 +95,7 @@ void IF_Metal_OhmicBC::DDM1_Function( PetscScalar * x, Vec f, InsertMode &add_va
 }
 
 
-void IF_Metal_OhmicBC::DDM1_Jacobian( PetscScalar * x, Mat *jac, InsertMode &add_value_flag )
+void IF_Metal_OhmicBC::DDM1_Jacobian( PetscScalar * x, SparseMatrix<PetscScalar> *jac, InsertMode &add_value_flag )
 {
   if( this->_infinity_recombination() )
     return _DDM1_Jacobian_Infinite_Recombination(x, jac, add_value_flag);
@@ -317,7 +317,7 @@ void IF_Metal_OhmicBC::_DDM1_Function_Limited_Recombination ( PetscScalar * x, V
     }
 
     //governing equation for psi
-    PetscScalar f_psi =  V_semiconductor - kb*T/e*boost::math::asinh(semiconductor_node_data->Net_doping()/(2*nie))
+    PetscScalar f_psi =  V_semiconductor - kb*T/e*asinh(semiconductor_node_data->Net_doping()/(2*nie))
                          + Eg/(2*e)
                          + kb*T*log(Nc/Nv)/(2*e)
                          + semiconductor_node_data->affinity()/e
@@ -534,7 +534,7 @@ void IF_Metal_OhmicBC::_DDM1_Function_Infinite_Recombination ( PetscScalar * x, 
     else     //Boltzmann
     {
       //governing equation for psi
-      PetscScalar f_psi =  V_semiconductor - kb*T/e*boost::math::asinh(semiconductor_node_data->Net_doping()/(2*nie))
+      PetscScalar f_psi =  V_semiconductor - kb*T/e*asinh(semiconductor_node_data->Net_doping()/(2*nie))
                            + Eg/(2*e)
                            + kb*T*log(Nc/Nv)/(2*e)
                            + semiconductor_node_data->affinity()/e
@@ -602,7 +602,7 @@ void IF_Metal_OhmicBC::_DDM1_Function_Infinite_Recombination ( PetscScalar * x, 
 /*---------------------------------------------------------------------
  * do pre-process to jacobian matrix for DDML1 solver
  */
-void IF_Metal_OhmicBC::DDM1_Jacobian_Preprocess(PetscScalar *x, Mat *jac, std::vector<PetscInt> &src_row,
+void IF_Metal_OhmicBC::DDM1_Jacobian_Preprocess(PetscScalar *x, SparseMatrix<PetscScalar> *jac, std::vector<PetscInt> &src_row,
     std::vector<PetscInt> &dst_row, std::vector<PetscInt> &clear_row)
 {
   const SimulationRegion * _r1 = bc_regions().first;
@@ -665,9 +665,9 @@ void IF_Metal_OhmicBC::DDM1_Jacobian_Preprocess(PetscScalar *x, Mat *jac, std::v
       row[1] = semiconductor_node->global_offset()+1;
       row[2] = semiconductor_node->global_offset()+2;
 
-      //NOTE MatGetValues only get value from local block!
-      MatGetValues(*jac, 1, &row[1], 3, &row[0], &A1[0]);
-      MatGetValues(*jac, 1, &row[2], 3, &row[0], &A2[0]);
+      //NOTE only get value from local block!
+      jac->get_row(  row[1],  3,  &row[0],  &A1[0]);
+      jac->get_row(  row[2],  3,  &row[0],  &A2[0]);
 
       J_col[row[0]] += (-(A1[0]-A2[0]));
       J_col[row[1]] += (-(A1[1]-A2[1]));
@@ -689,8 +689,8 @@ void IF_Metal_OhmicBC::DDM1_Jacobian_Preprocess(PetscScalar *x, Mat *jac, std::v
         col[1] = semiconductor_nb_node->global_offset()+1;
         col[2] = semiconductor_nb_node->global_offset()+2;
 
-        MatGetValues(*jac, 1, &row[1], 3, &col[0], &A1[0]);
-        MatGetValues(*jac, 1, &row[2], 3, &col[0], &A2[0]);
+        jac->get_row(  row[1],  3,  &col[0],  &A1[0]);
+        jac->get_row(  row[2],  3,  &col[0],  &A2[0]);
 
         J_col[col[0]] += (-(A1[0]-A2[0]));
         J_col[col[1]] += (-(A1[1]-A2[1]));
@@ -782,16 +782,8 @@ void IF_Metal_OhmicBC::DDM1_Jacobian_Preprocess(PetscScalar *x, Mat *jac, std::v
 /*---------------------------------------------------------------------
  * build function and its jacobian for DDML1 solver
  */
-void IF_Metal_OhmicBC::_DDM1_Jacobian_Limited_Recombination ( PetscScalar * x, Mat *jac, InsertMode &add_value_flag )
+void IF_Metal_OhmicBC::_DDM1_Jacobian_Limited_Recombination ( PetscScalar * x, SparseMatrix<PetscScalar> *jac, InsertMode &add_value_flag )
 {
-
-  // since we will use ADD_VALUES operat, check the matrix state.
-  if( (add_value_flag != ADD_VALUES) && (add_value_flag != NOT_SET_VALUES) )
-  {
-    MatAssemblyBegin(*jac, MAT_FLUSH_ASSEMBLY);
-    MatAssemblyEnd(*jac, MAT_FLUSH_ASSEMBLY);
-  }
-
   const PetscScalar T = T_external();
   const PetscScalar eRecombVelocity = scalar("elec.recomb.velocity");
   const PetscScalar hRecombVelocity = scalar("hole.recomb.velocity");
@@ -856,22 +848,22 @@ void IF_Metal_OhmicBC::_DDM1_Jacobian_Limited_Recombination ( PetscScalar * x, M
                          + kb*T*log(Nc/Nv)/(2*e)
                          + semiconductor_node_data->affinity()/e
                          - (V_resistance + resistance_node_data->affinity()/e) ;
-    MatSetValue ( *jac, semiconductor_node->global_offset(), resistance_node->global_offset(), f_phi.getADValue ( 0 ), ADD_VALUES );
-    MatSetValue ( *jac, semiconductor_node->global_offset(), semiconductor_node->global_offset(), f_phi.getADValue ( 1 ), ADD_VALUES );
+      jac->add( semiconductor_node->global_offset(),  resistance_node->global_offset(),  f_phi.getADValue ( 0 ) );
+      jac->add( semiconductor_node->global_offset(),  semiconductor_node->global_offset(),  f_phi.getADValue ( 1 ) );
 
 
     // conservation equation of electron/hole
     PetscScalar S  = semiconductor_node->outside_boundary_surface_area();
     AutoDScalar In = -eRecombVelocity * ( n-electron_density ) *S; // electron emit to resistance region
     AutoDScalar Ip =  hRecombVelocity * ( p-hole_density ) *S; // hole emit to resistance region
-    MatSetValue ( *jac, semiconductor_node->global_offset() +1, semiconductor_node->global_offset() +1, In.getADValue ( 2 ), ADD_VALUES );
-    MatSetValue ( *jac, semiconductor_node->global_offset() +2, semiconductor_node->global_offset() +2, -Ip.getADValue ( 3 ), ADD_VALUES );
+      jac->add( semiconductor_node->global_offset() +1,  semiconductor_node->global_offset() +1,  In.getADValue ( 2 ) );
+      jac->add( semiconductor_node->global_offset() +2,  semiconductor_node->global_offset() +2,  -Ip.getADValue ( 3 ) );
 
     // process resistance region
 
     // electron/hole emit current
-    MatSetValue ( *jac, resistance_node->global_offset(), semiconductor_node->global_offset() +1, In.getADValue ( 2 ), ADD_VALUES );
-    MatSetValue ( *jac, resistance_node->global_offset(), semiconductor_node->global_offset() +2, Ip.getADValue ( 3 ), ADD_VALUES );
+      jac->add( resistance_node->global_offset(),  semiconductor_node->global_offset() +1,  In.getADValue ( 2 ) );
+      jac->add( resistance_node->global_offset(),  semiconductor_node->global_offset() +2,  Ip.getADValue ( 3 ) );
 
     if(SolverSpecify::TimeDependent == true)
     {
@@ -884,16 +876,16 @@ void IF_Metal_OhmicBC::_DDM1_Jacobian_Limited_Recombination ( PetscScalar * x, M
         AutoDScalar Tp = -((2-r)/(1-r)*p - 1.0/(r*(1-r))*semiconductor_node_data->p() + (1-r)/r*semiconductor_node_data->p_last())
                          / (SolverSpecify::dt_last+SolverSpecify::dt)*semiconductor_node->volume();
         // ADD to Jacobian matrix
-        MatSetValue(*jac, resistance_node->global_offset(), semiconductor_node->global_offset() +1, Tn.getADValue(2), ADD_VALUES);
-        MatSetValue(*jac, resistance_node->global_offset(), semiconductor_node->global_offset() +2, Tp.getADValue(3), ADD_VALUES);
+        jac->add( resistance_node->global_offset(),  semiconductor_node->global_offset() +1,  Tn.getADValue(2) );
+        jac->add( resistance_node->global_offset(),  semiconductor_node->global_offset() +2,  Tp.getADValue(3) );
       }
       else //first order
       {
         AutoDScalar Tn = -(n - semiconductor_node_data->n())/SolverSpecify::dt*semiconductor_node->volume();
         AutoDScalar Tp = -(p - semiconductor_node_data->p())/SolverSpecify::dt*semiconductor_node->volume();
         // ADD to Jacobian matrix
-        MatSetValue(*jac, resistance_node->global_offset(), semiconductor_node->global_offset() +1, Tn.getADValue(2), ADD_VALUES);
-        MatSetValue(*jac, resistance_node->global_offset(), semiconductor_node->global_offset() +2, Tp.getADValue(3), ADD_VALUES);
+        jac->add( resistance_node->global_offset(),  semiconductor_node->global_offset() +1,  Tn.getADValue(2) );
+        jac->add( resistance_node->global_offset(),  semiconductor_node->global_offset() +2,  Tp.getADValue(3) );
       }
     }
 
@@ -925,8 +917,8 @@ void IF_Metal_OhmicBC::_DDM1_Jacobian_Limited_Recombination ( PetscScalar * x, M
         }
 
         AutoDScalar I_displacement = cv_boundary*semiconductor_node_data->eps() *dEdt;
-        MatSetValue ( *jac, resistance_node->global_offset(), semiconductor_node->global_offset(), -I_displacement.getADValue ( 1 ), ADD_VALUES );
-        MatSetValue ( *jac, resistance_node->global_offset(), nb_node->global_offset(), -I_displacement.getADValue ( 2 ), ADD_VALUES );
+          jac->add( resistance_node->global_offset(),  semiconductor_node->global_offset(),  -I_displacement.getADValue ( 1 ) );
+          jac->add( resistance_node->global_offset(),  nb_node->global_offset(),  -I_displacement.getADValue ( 2 ) );
       }
     }
 
@@ -943,8 +935,8 @@ void IF_Metal_OhmicBC::_DDM1_Jacobian_Limited_Recombination ( PetscScalar * x, M
         const FVM_Node * insulator_node  = ( *rnode_it ).second.second;
         AutoDScalar V_insulator  = x[insulator_node->local_offset() ]; V_insulator.setADValue ( 1, 1.0 );
         AutoDScalar f_phi =  V_insulator - V_resistance;
-        MatSetValue ( *jac, insulator_node->global_offset(), resistance_node->global_offset(), f_phi.getADValue ( 0 ), ADD_VALUES );
-        MatSetValue ( *jac, insulator_node->global_offset(), insulator_node->global_offset(), f_phi.getADValue ( 1 ), ADD_VALUES );
+          jac->add( insulator_node->global_offset(),  resistance_node->global_offset(),  f_phi.getADValue ( 0 ) );
+          jac->add( insulator_node->global_offset(),  insulator_node->global_offset(),  f_phi.getADValue ( 1 ) );
       }
     }
   }
@@ -957,15 +949,8 @@ void IF_Metal_OhmicBC::_DDM1_Jacobian_Limited_Recombination ( PetscScalar * x, M
 
 
 
-void IF_Metal_OhmicBC::_DDM1_Jacobian_Infinite_Recombination ( PetscScalar * x, Mat *jac, InsertMode &add_value_flag )
+void IF_Metal_OhmicBC::_DDM1_Jacobian_Infinite_Recombination ( PetscScalar * x, SparseMatrix<PetscScalar> *jac, InsertMode &add_value_flag )
 {
-
-  // since we will use ADD_VALUES operat, check the matrix state.
-  if( (add_value_flag != ADD_VALUES) && (add_value_flag != NOT_SET_VALUES) )
-  {
-    MatAssemblyBegin(*jac, MAT_FLUSH_ASSEMBLY);
-    MatAssemblyEnd(*jac, MAT_FLUSH_ASSEMBLY);
-  }
 
   const PetscScalar T = T_external();
   const PetscScalar distributed_res = this->scalar("contact.resistance");
@@ -1051,13 +1036,13 @@ void IF_Metal_OhmicBC::_DDM1_Jacobian_Infinite_Recombination ( PetscScalar * x, 
       AsmtDScalar f_hole =  p - Nv*fermi_half(etap);
 
       // set Jacobian of governing equations
-      MatSetValues(*jac, 1, &row[1], f_phi.getADSize(), f_phi.getADIndex(), f_phi.getADValue(), ADD_VALUES);
-      MatSetValues(*jac, 1, &row[2], f_elec.getADSize(), f_elec.getADIndex(), f_elec.getADValue(), ADD_VALUES);
-      MatSetValues(*jac, 1, &row[3], f_hole.getADSize(), f_hole.getADIndex(), f_hole.getADValue(), ADD_VALUES);
+      jac->add_row(  row[1],  f_phi.getADSize(),  f_phi.getADIndex(),  f_phi.getADValue() );
+      jac->add_row(  row[2],  f_elec.getADSize(),  f_elec.getADIndex(),  f_elec.getADValue() );
+      jac->add_row(  row[3],  f_hole.getADSize(),  f_hole.getADIndex(),  f_hole.getADValue() );
     }
     else //Boltzmann
     {
-      AsmtDScalar f_phi = V_semiconductor - kb*T/e*boost::math::asinh(semiconductor_node_data->Net_doping()/(2*nie))
+      AsmtDScalar f_phi = V_semiconductor - kb*T/e*asinh(semiconductor_node_data->Net_doping()/(2*nie))
                          + Eg/(2*e)
                          + kb*T*log(Nc/Nv)/(2*e)
                          + semiconductor_node_data->affinity()/e
@@ -1081,13 +1066,13 @@ void IF_Metal_OhmicBC::_DDM1_Jacobian_Infinite_Recombination ( PetscScalar * x, 
       AsmtDScalar f_hole =  p - hole_density;      //governing equation for hole density
 
       // set Jacobian of governing equations
-      MatSetValues(*jac, 1, &row[1], f_phi.getADSize(),  f_phi.getADIndex(),  f_phi.getADValue(),  ADD_VALUES);
-      MatSetValues(*jac, 1, &row[2], f_elec.getADSize(), f_elec.getADIndex(), f_elec.getADValue(), ADD_VALUES);
-      MatSetValues(*jac, 1, &row[3], f_hole.getADSize(), f_hole.getADIndex(), f_hole.getADValue(), ADD_VALUES);
+      jac->add_row(  row[1],  f_phi.getADSize(),   f_phi.getADIndex(),   f_phi.getADValue() );
+      jac->add_row(  row[2],  f_elec.getADSize(),  f_elec.getADIndex(),  f_elec.getADValue() );
+      jac->add_row(  row[3],  f_hole.getADSize(),  f_hole.getADIndex(),  f_hole.getADValue() );
     }
 
 
-    MatSetValues(*jac, 1, &row[0], inject_current.getADSize(), inject_current.getADIndex(), inject_current.getADValue(), ADD_VALUES);
+    jac->add_row(  row[0],  inject_current.getADSize(),  inject_current.getADIndex(),  inject_current.getADValue() );
     //MatSetValue(*jac, semiconductor_node->global_offset(), semiconductor_node->global_offset(), 1.0e-12, ADD_VALUES);
 
     // if we have insulator node?
@@ -1100,8 +1085,8 @@ void IF_Metal_OhmicBC::_DDM1_Jacobian_Infinite_Recombination ( PetscScalar * x, 
         const SimulationRegion * region = ( *rnode_it ).second.first;
         if ( region->type() != InsulatorRegion ) continue;
         const FVM_Node * insulator_node  = ( *rnode_it ).second.second;
-        MatSetValue ( *jac, insulator_node->global_offset(), resistance_node->global_offset(), -1.0, ADD_VALUES );
-        MatSetValue ( *jac, insulator_node->global_offset(), insulator_node->global_offset(), 1.0, ADD_VALUES );
+          jac->add( insulator_node->global_offset(),  resistance_node->global_offset(),  -1.0 );
+          jac->add( insulator_node->global_offset(),  insulator_node->global_offset(),  1.0 );
       }
     }
   }
@@ -1112,71 +1097,7 @@ void IF_Metal_OhmicBC::_DDM1_Jacobian_Infinite_Recombination ( PetscScalar * x, 
 }
 
 
-/*---------------------------------------------------------------------
- * reserve non zero pattern in jacobian matrix for DDML1 solver
- */
-void IF_Metal_OhmicBC::DDM1_Jacobian_Reserve ( Mat *jac, InsertMode &add_value_flag )
-{
 
-  // ADD 0 to some position of Jacobian matrix to prevent MatAssembly expurgation these position.
-
-
-  // since we will use ADD_VALUES operat, check the matrix state.
-  if ( ( add_value_flag != ADD_VALUES ) && ( add_value_flag != NOT_SET_VALUES ) )
-  {
-    MatAssemblyBegin ( *jac, MAT_FLUSH_ASSEMBLY );
-    MatAssemblyEnd ( *jac, MAT_FLUSH_ASSEMBLY );
-  }
-
-  const SimulationRegion * _r1 = bc_regions().first;
-  const SimulationRegion * _r2 = bc_regions().second;
-
-  BoundaryCondition::const_node_iterator node_it = nodes_begin();
-  BoundaryCondition::const_node_iterator end_it = nodes_end();
-  for ( ; node_it!=end_it; ++node_it )
-  {
-    // skip node not belongs to this processor
-    if ( ( *node_it )->processor_id() !=Genius::processor_id() ) continue;
-
-    const FVM_Node * semiconductor_node  = get_region_fvm_node ( ( *node_it ), _r1 );
-    const FVM_Node * resistance_node = get_region_fvm_node ( ( *node_it ), _r2 );
-
-    MatSetValue ( *jac, semiconductor_node->global_offset(), resistance_node->global_offset(), 0, ADD_VALUES );
-
-    // process resistance region
-    MatSetValue ( *jac, resistance_node->global_offset(), semiconductor_node->global_offset() +0, 0, ADD_VALUES );
-    MatSetValue ( *jac, resistance_node->global_offset(), semiconductor_node->global_offset() +1, 0, ADD_VALUES );
-    MatSetValue ( *jac, resistance_node->global_offset(), semiconductor_node->global_offset() +2, 0, ADD_VALUES );
-
-    FVM_Node::fvm_neighbor_node_iterator nb_it = semiconductor_node->neighbor_node_begin();
-    for ( ; nb_it != semiconductor_node->neighbor_node_end(); ++nb_it )
-    {
-      const FVM_Node *nb_node = (*nb_it).first;
-      MatSetValue ( *jac, resistance_node->global_offset(), nb_node->global_offset()+0, 0, ADD_VALUES );
-      MatSetValue ( *jac, resistance_node->global_offset(), nb_node->global_offset()+1, 0, ADD_VALUES );
-      MatSetValue ( *jac, resistance_node->global_offset(), nb_node->global_offset()+2, 0, ADD_VALUES );
-    }
-
-    // process insulator region when necessary
-    if ( has_associated_region ( ( *node_it ), InsulatorRegion ) )
-    {
-      BoundaryCondition::region_node_iterator  rnode_it     = region_node_begin ( *node_it );
-      BoundaryCondition::region_node_iterator  end_rnode_it = region_node_end ( *node_it );
-      for ( ; rnode_it!=end_rnode_it; ++rnode_it )
-      {
-        const SimulationRegion * region = ( *rnode_it ).second.first;
-        if ( region->type() != InsulatorRegion ) continue;
-        const FVM_Node * insulator_node  = ( *rnode_it ).second.second;
-        MatSetValue ( *jac, insulator_node->global_offset(), resistance_node->global_offset(), 0, ADD_VALUES );
-      }
-    }
-  }
-
-
-  // the last operator is ADD_VALUES
-  add_value_flag = ADD_VALUES;
-
-}
 
 
 /*---------------------------------------------------------------------
@@ -1205,3 +1126,4 @@ void IF_Metal_OhmicBC::DDM1_Update_Solution(PetscScalar *x)
   Parallel::allgather(psi_buffer);
   this->psi() = psi_buffer.size() ? std::accumulate(psi_buffer.begin(), psi_buffer.end(), 0.0 )/psi_buffer.size() : 0.0;
 }
+

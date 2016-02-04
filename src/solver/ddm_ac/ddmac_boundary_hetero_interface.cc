@@ -30,7 +30,7 @@
 using PhysicalUnit::kb;
 using PhysicalUnit::e;
 
-void HeteroInterfaceBC::DDMAC_Fill_Matrix_Vector( Mat A, Vec b, const Mat J, const double omega, InsertMode & add_value_flag )
+void HeteroInterfaceBC::DDMAC_Fill_Matrix_Vector( Mat A, Vec b, const Mat J, const PetscScalar omega, InsertMode & add_value_flag )
 {
   //the indepedent variable number, we need max 12 here.
   adtl::AutoDScalar::numdir=12;

@@ -29,7 +29,6 @@
 
 
 
-
 // ------------------------------------------------------------
 // TypeTensor<T> class member funcions
 
@@ -131,6 +130,9 @@ bool TypeTensor<T>::operator < (const TypeTensor<T>& rhs) const
 template class TypeTensor<float>;
 template class TypeTensor<double>;
 template class TypeTensor<long double>;
+#if (WITH_PETSCSCALAR_FLOAT128 && __GNUC__ >= 4 && __GNUC_MINOR__ >=6) 
+template class TypeTensor<__float128>;
+#endif
 template class TypeTensor<AutoDScalar>;
 
 

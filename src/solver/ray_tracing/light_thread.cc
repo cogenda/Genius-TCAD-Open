@@ -197,7 +197,8 @@ std::pair<LightThread *, LightThread *> LightThread::_interface_light_gen_linear
   }
 
   // build reflect_light and refract_light
-  if (in_angle>=1e-9) //if not perpendicular incidence
+  //if (in_angle>=1e-9) //if not perpendicular incidence
+  if (std::abs(cos_in_angle) < 1 - 1e-6) //if not perpendicular incidence
   {
     Plane incident_plane(in_p, norm.cross(_dir));
     // project electrical vector to the plane consisted by norm.cross(_dir)
@@ -210,15 +211,28 @@ std::pair<LightThread *, LightThread *> LightThread::_interface_light_gen_linear
     {
       double _polarization_angle = asin(E_perpendicular.size()*(1-1e-10)); //prevent asin(1.0) crash. is it a bug of icc?
 
+      // FIXME
       //for reflection efficiency
-      double reflect_parallel = tan(refract_angle-in_angle)/tan(in_angle+refract_angle);//Rp
-      double reflect_perpendicular = sin(refract_angle-in_angle)/sin(in_angle+refract_angle);//Rs
-      double reflect_eff = pow(reflect_parallel*cos(_polarization_angle),2)+pow(reflect_perpendicular*sin(_polarization_angle),2);
+      //double reflect_parallel = tan(refract_angle-in_angle)/tan(in_angle+refract_angle);//Rp
+      //double reflect_perpendicular = sin(refract_angle-in_angle)/sin(in_angle+refract_angle);//Rs
+      //double reflect_eff = pow(reflect_parallel*cos(_polarization_angle),2)+pow(reflect_perpendicular*sin(_polarization_angle),2);
 
       //for refraction efficiency
-      double refract_parallel = 2*sin(refract_angle)*cos(in_angle)/(sin(in_angle+refract_angle)*cos(in_angle-refract_angle));//Tp
-      double refract_perpendicular = 2*sin(refract_angle)*cos(in_angle)/sin(in_angle+refract_angle);//Ts
-      double refract_eff = pow(refract_parallel*cos(_polarization_angle),2)+pow(refract_perpendicular*sin(_polarization_angle),2);
+      //double refract_parallel = 2*sin(refract_angle)*cos(in_angle)/(sin(in_angle+refract_angle)*cos(in_angle-refract_angle));//Tp
+      //double refract_perpendicular = 2*sin(refract_angle)*cos(in_angle)/sin(in_angle+refract_angle);//Ts
+      //double refract_eff = pow(refract_parallel*cos(_polarization_angle),2)+pow(refract_perpendicular*sin(_polarization_angle),2);
+
+      //for reflection efficiency
+      double reflect_parallel = pow(tan(in_angle-refract_angle),2)/pow(tan(in_angle+refract_angle),2);
+      double reflect_perpendicular = pow(sin(in_angle-refract_angle),2)/pow(sin(in_angle+refract_angle),2);
+      double reflect_eff = reflect_parallel*pow(cos(_polarization_angle),2)+reflect_perpendicular*pow(sin(_polarization_angle),2);
+
+      //for refraction efficiency
+      double refract_parallel = sin(2*in_angle)*sin(2*refract_angle)/pow(sin(in_angle+refract_angle)*cos(in_angle-refract_angle),2);
+      double refract_perpendicular = sin(2*in_angle)*sin(2*refract_angle)/pow(sin(in_angle+refract_angle),2);
+      double refract_eff = refract_parallel*pow(cos(_polarization_angle),2)+refract_perpendicular*pow(sin(_polarization_angle),2);
+
+      //genius_assert(std::abs(reflect_eff+refract_eff-1.0)<1e-3);
 
       LightThread * reflect_light = 0;
       LightThread * refract_light = 0;
@@ -239,6 +253,7 @@ std::pair<LightThread *, LightThread *> LightThread::_interface_light_gen_linear
         Point _E_dir_refract = (refract_parallel*E_parallel_refract + refract_perpendicular*E_perpendicular).unit(true);
         refract_light = new LightThread(in_p, refract_dir, _E_dir_refract, _wavelength, _init_power, refract_eff*_power);
       }
+
 
       return std::make_pair(reflect_light, refract_light);
     }
@@ -397,11 +412,14 @@ std::pair<LightThread *, LightThread *> LightThread::_interface_light_gen_linear
 std::pair<LightThread *, LightThread *> LightThread::interface_light_gen_linear_polarized(const Point & in_p, const Point & norm,
     double n1, double n2, const ARCoatings *arc, bool inv) const
 {
-  if(norm.dot(_dir) == 0.0 ) return std::make_pair((LightThread *)0, (LightThread *)0);
+  std::pair<LightThread *, LightThread *> res((LightThread *)0, (LightThread *)0);
+  if(norm.dot(_dir) == 0.0 ) return res;
 
   if(arc)
-    return _interface_light_gen_linear_polarized_stack(in_p, norm, n1, n2, arc, inv);
+    res = _interface_light_gen_linear_polarized_stack(in_p, norm, n1, n2, arc, inv);
   else
-    return _interface_light_gen_linear_polarized_simple(in_p, norm, n1, n2);
+    res =  _interface_light_gen_linear_polarized_simple(in_p, norm, n1, n2);
+
+  return res;
 }
 

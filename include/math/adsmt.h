@@ -8,15 +8,20 @@
 #include <cstring>
 #include <limits>
 
-#include "asinh.hpp" // for asinh
-#include "acosh.hpp" // for acosh
-#include "atanh.hpp" // for atanh
+
+#include "genius_dll.h"
+#include "std_ext.h"
 
 #define ADSMT_NUMBER_DIRECTIONS 32
 
 
 
-typedef double PetscScalar;
+#if (WITH_PETSCSCALAR_FLOAT128 && __GNUC__ >= 4 && __GNUC_MINOR__ >=6)    
+  typedef __float128 PetscScalar;
+#else
+  typedef double PetscScalar;
+#endif  
+
 typedef int    PetscInt;
 
 #if 0
@@ -72,8 +77,9 @@ public:
   inline void setADValue(const PetscInt p, const PetscScalar v);
   inline void setADValue(const std::vector<PetscInt> & ad_index, const PetscInt p, const PetscScalar v);
   inline PetscInt getADSize() const { return (PetscInt)_occupied; }
-  inline const PetscInt * getADIndex() const { return _deriv_index; }
+  inline PetscInt * getADIndex() const { return _deriv_index; }
   inline const PetscScalar * getADValue() const { return _deriv_value; }
+  inline PetscInt getADIndex(PetscInt n) const { return _deriv_index[n]; }
 
   /*******************  temporary results  ******************************/
   // sign
@@ -122,9 +128,9 @@ public:
   inline friend const AsmtDScalar cosh (const AsmtDScalar &a);
   inline friend const AsmtDScalar tanh (const AsmtDScalar &a);
 
-  inline friend const AsmtDScalar asinh (const AsmtDScalar &a);
-  inline friend const AsmtDScalar acosh (const AsmtDScalar &a);
-  inline friend const AsmtDScalar atanh (const AsmtDScalar &a);
+  //inline friend const AsmtDScalar asinh (const AsmtDScalar &a);
+  //inline friend const AsmtDScalar acosh (const AsmtDScalar &a);
+  //inline friend const AsmtDScalar atanh (const AsmtDScalar &a);
 
   inline friend const AsmtDScalar fabs (const AsmtDScalar &a);
   inline friend const AsmtDScalar ceil (const AsmtDScalar &a);
@@ -445,7 +451,7 @@ const AsmtDScalar operator / (const PetscScalar v, const AsmtDScalar& a)
 const AsmtDScalar exp(const AsmtDScalar &a)
 {
   AsmtDScalar tmp(a);
-  tmp._val=std::exp(a._val);
+  tmp._val=::exp(a._val);
   for (size_t _i=0; _i<tmp._occupied; ++_i)
     tmp._deriv_value[_i]=tmp._val*a._deriv_value[_i];
   return tmp;
@@ -454,7 +460,7 @@ const AsmtDScalar exp(const AsmtDScalar &a)
 const AsmtDScalar log(const AsmtDScalar &a)
 {
   AsmtDScalar tmp(a);
-  tmp._val=std::log(a._val);
+  tmp._val=::log(a._val);
   for (size_t _i=0; _i<tmp._occupied; ++_i)
     if (a._val>0 || (a._val==0 && a._deriv_value[_i]>=0))
       tmp._deriv_value[_i] = a._deriv_value[_i]/a._val;
@@ -466,7 +472,7 @@ const AsmtDScalar log(const AsmtDScalar &a)
 const AsmtDScalar sqrt(const AsmtDScalar &a)
 {
   AsmtDScalar tmp(a);
-  tmp._val=std::sqrt(a._val);
+  tmp._val=::sqrt(a._val);
   for (size_t _i=0; _i<tmp._occupied; ++_i)
   {
     if (a._val>0)
@@ -483,8 +489,8 @@ const AsmtDScalar sin(const AsmtDScalar &a)
 {
   AsmtDScalar tmp(a);
   PetscScalar tmp2;
-  tmp._val=std::sin(a._val);
-  tmp2=std::cos(a._val);
+  tmp._val=::sin(a._val);
+  tmp2=::cos(a._val);
   for (size_t _i=0; _i<tmp._occupied; ++_i)
     tmp._deriv_value[_i] = tmp2*a._deriv_value[_i];
   return tmp;
@@ -494,8 +500,8 @@ const AsmtDScalar cos(const AsmtDScalar &a)
 {
   AsmtDScalar tmp(a);
   PetscScalar tmp2;
-  tmp._val=std::cos(a._val);
-  tmp2=-std::sin(a._val);
+  tmp._val=::cos(a._val);
+  tmp2=-::sin(a._val);
   for (size_t _i=0; _i<tmp._occupied; ++_i)
     tmp._deriv_value[_i]=tmp2*a._deriv_value[_i];
   return tmp;
@@ -505,7 +511,7 @@ const AsmtDScalar tan(const AsmtDScalar& a)
 {
   AsmtDScalar tmp(a);
   PetscScalar tmp2;
-  tmp._val=std::tan(a._val);
+  tmp._val=::tan(a._val);
   tmp2=cos(a._val);
   tmp2*=tmp2;
   for (size_t _i=0; _i<tmp._occupied; ++_i)
@@ -516,8 +522,8 @@ const AsmtDScalar tan(const AsmtDScalar& a)
 const AsmtDScalar asin(const AsmtDScalar &a)
 {
   AsmtDScalar tmp(a);
-  tmp._val=std::asin(a._val);
-  PetscScalar tmp2=std::sqrt(1-a._val*a._val);
+  tmp._val=::asin(a._val);
+  PetscScalar tmp2=::sqrt(1-a._val*a._val);
   for (size_t _i=0; _i<tmp._occupied; ++_i)
     tmp._deriv_value[_i]=a._deriv_value[_i]/tmp2;
   return tmp;
@@ -526,8 +532,8 @@ const AsmtDScalar asin(const AsmtDScalar &a)
 const AsmtDScalar acos(const AsmtDScalar &a)
 {
   AsmtDScalar tmp(a);
-  tmp._val=std::acos(a._val);
-  PetscScalar tmp2=-std::sqrt(1-a._val*a._val);
+  tmp._val=::acos(a._val);
+  PetscScalar tmp2=-::sqrt(1-a._val*a._val);
   for (size_t _i=0; _i<tmp._occupied; ++_i)
     tmp._deriv_value[_i]=a._deriv_value[_i]/tmp2;
   return tmp;
@@ -536,7 +542,7 @@ const AsmtDScalar acos(const AsmtDScalar &a)
 const AsmtDScalar atan(const AsmtDScalar &a)
 {
   AsmtDScalar tmp(a);
-  tmp._val=std::atan(a._val);
+  tmp._val=::atan(a._val);
   PetscScalar tmp2=1+a._val*a._val;
   tmp2=1/tmp2;
   if (tmp2!=0)
@@ -564,8 +570,8 @@ const AsmtDScalar pow(const AsmtDScalar &a, const AsmtDScalar &b)
   {
     AsmtDScalar tmp(a);
     tmp._val=std::pow(a._val, b._val);
-    PetscScalar tmp2=b._val*::pow(a._val, b._val-1);
-    PetscScalar tmp3=std::log(a._val)*tmp._val;
+    PetscScalar tmp2=b._val*std::pow(a._val, b._val-1);
+    PetscScalar tmp3=::log(a._val)*tmp._val;
     for (size_t _i=0; _i<tmp._occupied; ++_i)
       tmp._deriv_value[_i]=tmp2*a._deriv_value[_i]+tmp3*b._deriv_value[_i];
     return tmp;
@@ -576,8 +582,8 @@ const AsmtDScalar pow(const AsmtDScalar &a, const AsmtDScalar &b)
     AsmtDScalar pb;
     tmp._padPattern(b, pb);
     tmp._val=std::pow(a._val, b._val);
-    PetscScalar tmp2=b._val*::pow(a._val, b._val-1);
-    PetscScalar tmp3=std::log(a._val)*tmp._val;
+    PetscScalar tmp2=b._val*std::pow(a._val, b._val-1);
+    PetscScalar tmp3=::log(a._val)*tmp._val;
     for (size_t _i=0; _i<tmp._occupied; ++_i)
       tmp._deriv_value[_i]=tmp2*tmp._deriv_value[_i]+tmp3*pb._deriv_value[_i];
     return tmp;
@@ -597,8 +603,8 @@ const AsmtDScalar pow(PetscScalar v, const AsmtDScalar &a)
 const AsmtDScalar log10(const AsmtDScalar &a)
 {
   AsmtDScalar tmp(a);
-  tmp._val=std::log10(a._val);
-  PetscScalar tmp2=std::log((PetscScalar)10)*a._val;
+  tmp._val=::log10(a._val);
+  PetscScalar tmp2=::log((PetscScalar)10)*a._val;
   for (size_t _i=0; _i<tmp._occupied; ++_i)
     tmp._deriv_value[_i]=a._deriv_value[_i]/tmp2;
   return tmp;
@@ -608,8 +614,8 @@ const AsmtDScalar log10(const AsmtDScalar &a)
 const AsmtDScalar sinh (const AsmtDScalar &a)
 {
   AsmtDScalar tmp(a);
-  tmp._val=std::sinh(a._val);
-  PetscScalar tmp2=std::cosh(a._val);
+  tmp._val=::sinh(a._val);
+  PetscScalar tmp2=::cosh(a._val);
   for (size_t _i=0; _i<tmp._occupied; ++_i)
     tmp._deriv_value[_i]=a._deriv_value[_i]*tmp2;
   return tmp;
@@ -618,8 +624,8 @@ const AsmtDScalar sinh (const AsmtDScalar &a)
 const AsmtDScalar cosh (const AsmtDScalar &a)
 {
   AsmtDScalar tmp(a);
-  tmp._val=std::cosh(a._val);
-  PetscScalar tmp2=std::sinh(a._val);
+  tmp._val=::cosh(a._val);
+  PetscScalar tmp2=::sinh(a._val);
   for (size_t _i=0; _i<tmp._occupied; ++_i)
     tmp._deriv_value[_i]=a._deriv_value[_i]*tmp2;
   return tmp;
@@ -628,19 +634,20 @@ const AsmtDScalar cosh (const AsmtDScalar &a)
 const AsmtDScalar tanh (const AsmtDScalar &a)
 {
   AsmtDScalar tmp(a);
-  tmp._val=std::tanh(a._val);
-  PetscScalar tmp2=std::cosh(a._val);
+  tmp._val=::tanh(a._val);
+  PetscScalar tmp2=::cosh(a._val);
   tmp2*=tmp2;
   for (size_t _i=0; _i<tmp._occupied; ++_i)
     tmp._deriv_value[_i]=a._deriv_value[_i]/tmp2;
   return tmp;
 }
 
+#if 0
 const AsmtDScalar asinh (const AsmtDScalar &a)
 {
   AsmtDScalar tmp(a);
-  tmp._val=boost::math::asinh(a._val);
-  PetscScalar tmp2=std::sqrt(a._val*a._val+1);
+  tmp._val=::asinh(a._val);
+  PetscScalar tmp2=::sqrt(a._val*a._val+1);
   for (size_t _i=0; _i<tmp._occupied; ++_i)
     tmp._deriv_value[_i]=a._deriv_value[_i]/tmp2;
   return tmp;
@@ -649,8 +656,8 @@ const AsmtDScalar asinh (const AsmtDScalar &a)
 const AsmtDScalar acosh (const AsmtDScalar &a)
 {
   AsmtDScalar tmp(a);
-  tmp._val=boost::math::acosh(a._val);
-  PetscScalar tmp2=std::sqrt(a._val*a._val-1);
+  tmp._val=::acosh(a._val);
+  PetscScalar tmp2=::sqrt(a._val*a._val-1);
   for (size_t _i=0; _i<tmp._occupied; ++_i)
     tmp._deriv_value[_i]=a._deriv_value[_i]/tmp2;
   return tmp;
@@ -659,13 +666,13 @@ const AsmtDScalar acosh (const AsmtDScalar &a)
 const AsmtDScalar atanh (const AsmtDScalar &a)
 {
   AsmtDScalar tmp;
-  tmp._val=boost::math::atanh(a._val);
+  tmp._val=::atanh(a._val);
   PetscScalar tmp2=1-a._val*a._val;
   for (size_t _i=0; _i<tmp._occupied; ++_i)
     tmp._deriv_value[_i]=a._deriv_value[_i]/tmp2;
   return tmp;
 }
-
+#endif
 
 const AsmtDScalar fabs (const AsmtDScalar &a)
 {

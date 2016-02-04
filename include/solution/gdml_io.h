@@ -31,6 +31,7 @@
 #include "field_input.h"
 #include "field_output.h"
 #include "simulation_system.h"
+#include "atom.h"
 
 
 // Forward declarations
@@ -57,7 +58,7 @@ public:
    * Constructor.  Takes a read-only reference to a mesh object.
    * This is the constructor required to write a mesh.
    */
-  GDMLIO (const SimulationSystem& system, bool surface=true);
+  GDMLIO (const SimulationSystem& system);
 
   /**
    * This method implements reading a geometry from GDML
@@ -70,64 +71,19 @@ public:
    */
   virtual void write (const std::string& file)
   {
-    if(_surface)
-      write_gdml_surface(file);
-    else
-      write_gdml_body(file);
+    write_gdml_surface(file);
   }
 
 private:
 
   std::ofstream _out;
 
-  bool _surface;
 
   void write_gdml_surface(const std::string &file);
 
-  void write_gdml_body(const std::string &file);
-
-  std::map<unsigned int, double> Na, Nd;
-
-  double Na_max, Nd_max;
-
-  void cell_average_doping(const Elem *elem, double &, double &);
 
 private:
-  struct Atom
-  {
-    std::string name;
-    std::string formula;
-    int         Z;
-    /// avarage atom value
-    double      atom_value;
 
-    /// isotope
-    struct Isotope
-    {
-      std::string isotope_name;
-      int         nucleons;
-      double      atom_value;
-      double      fraction;
-    };
-
-    std::vector<Isotope>  isotope_info;
-
-    Atom() {}
-
-    Atom(const std::string & _name, const std::string & _formula, int _Z, double _atom_value)
-    : name(_name), formula(_formula), Z(_Z), atom_value(_atom_value)
-    {}
-
-    void add_isotope(const std::string &name, int n, double v, double f)
-    {
-       Isotope isotope;
-       isotope.isotope_name = name;
-       isotope.nucleons     = n;
-       isotope.atom_value   = v;
-       isotope.fraction     = f;
-       isotope_info.push_back(isotope);
-    }
-  };
 
   std::map<std::string, Atom> _atoms;
 
@@ -154,8 +110,8 @@ GDMLIO::GDMLIO (SimulationSystem& system) :
 
 
 inline
-GDMLIO::GDMLIO (const SimulationSystem& system, bool surface) :
-    FieldOutput<SimulationSystem>(system), _surface(surface)
+GDMLIO::GDMLIO (const SimulationSystem& system) :
+    FieldOutput<SimulationSystem>(system)
 {
 }
 

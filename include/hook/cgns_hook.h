@@ -78,6 +78,12 @@ private:
   unsigned int count;
 
   /**
+   * only save cgns in this interval
+   */
+  double _t_start;
+  double _t_stop;
+
+  /**
    * last value
    */
   double _t_last;

@@ -31,6 +31,8 @@
 #include "MXMLUtil.h"
 #include "parallel.h"
 
+#include "jflux1.h"
+
 #ifdef HAVE_VTK
 
 #include "vtkXMLUnstructuredGridReader.h"
@@ -53,6 +55,8 @@ using PhysicalUnit::um;
 using PhysicalUnit::V;
 using PhysicalUnit::A;
 using PhysicalUnit::K;
+using PhysicalUnit::kb;
+using PhysicalUnit::e;
 
 /*----------------------------------------------------------------------
  * constructor, open the file for writing
@@ -265,39 +269,87 @@ void MobMonitorHook::node_id_to_vtk()
 
 void MobMonitorHook::solution_to_vtk()
 {
-  std::vector<float> elec_mob(edges.size(), 0.0);
-  std::vector<float> hole_mob(edges.size(), 0.0);
-  std::vector<float> surface(edges.size(), 0.0);
-
   const SimulationSystem & system = _solver.get_system();
+
+  double z_width = system.z_width();
+  double T = system.T_external();
+  double Vt = kb*T/e;
+  double cmc = std::pow(cm,-3);
+
+  std::vector<float> elec_mob_array(edges.size(), 0.0);
+  std::vector<float> hole_mob_array(edges.size(), 0.0);
+  std::vector<float> In_array(edges.size(), 0.0);
+  std::vector<float> Ip_array(edges.size(), 0.0);
+  std::vector<float> I_array(edges.size(), 0.0);
+  std::vector<float> surface_array(edges.size(), 0.0);
+
+
   for(unsigned int r=0; r<system.n_regions(); r++)
   {
     // only consider semiconductor region
     const SimulationRegion * region = system.region(r);
     if(region->type() != SemiconductorRegion) continue;
+    const SemiconductorSimulationRegion * semi_region = dynamic_cast<const SemiconductorSimulationRegion *>(region);
+    Material::MaterialSemiconductor * mt = semi_region->material();
 
     std::vector< std::pair<unsigned int, unsigned int> > edge;
     std::vector< std::pair<double, double> > mob;
     std::vector< double > weight;
-    region->Mob_Evaluation(edge, mob, weight);
+    semi_region->Mob_Evaluation(edge, mob, weight);
 
     for(unsigned int n=0; n<edge.size(); ++n)
     {
       if(edges.find(edge[n]) == edges.end()) continue;
 
       unsigned int index = edges.find(edge[n])->second;
-      elec_mob[index] = mob[n].first/(cm*cm/V/s);
-      hole_mob[index] = mob[n].second/(cm*cm/V/s);
+      double mun = mob[n].first;
+      double mup = mob[n].second;
+      elec_mob_array[index] = mun/(cm*cm/V/s);
+      hole_mob_array[index] = mup/(cm*cm/V/s);
 
       const FVM_Node * f1 = region->region_fvm_node(edge[n].first);
       const FVM_Node * f2 = region->region_fvm_node(edge[n].second);
-      surface[index] = f1->cv_surface_area(f2)/(um*um);
+
+      const FVM_NodeData * n1_data = f1->node_data();
+      const FVM_NodeData * n2_data = f2->node_data();
+
+      double length = f1->distance(f2);
+
+      mt->mapping(f1->root_node(), n1_data, SolverSpecify::clock);
+      double V1 = n1_data->psi();
+      double n1 = n1_data->n();
+      double p1 = n1_data->p();
+      double Ec1 =  -(e*V1 + n1_data->affinity() + mt->band->EgNarrowToEc(p1, n1, T) + kb*T*log(n1_data->Nc()));
+      double Ev1 =  -(e*V1 + n1_data->affinity() - mt->band->EgNarrowToEv(p1, n1, T) - kb*T*log(n1_data->Nv()) + mt->band->Eg(T));
+
+      mt->mapping(f2->root_node(), n2_data, SolverSpecify::clock);
+      double V2 = n2_data->psi();
+      double n2 = n2_data->n();
+      double p2 = n2_data->p();
+      double Ec2 =  -(e*V2 + n2_data->affinity() + mt->band->EgNarrowToEc(p2, n2, T) + kb*T*log(n2_data->Nc()));
+      double Ev2 =  -(e*V2 + n2_data->affinity() - mt->band->EgNarrowToEv(p2, n2, T) - kb*T*log(n2_data->Nv()) + mt->band->Eg(T));
+
+      double area = f1->cv_surface_area(f2)*z_width;
+      double In = mun*In_dd(Vt,(Ec2-Ec1)/e,n1,n2,length)*area;
+      double Ip = mup*Ip_dd(Vt,(Ev2-Ev1)/e,p1,p2,length)*area;
+
+      double I  = In+Ip;
+
+      surface_array[index] = area/(um*um);
+
+
+      In_array[index] = In/(A);
+      Ip_array[index] = Ip/(A);
+      I_array[index] = I/(A);
     }
   }
 
-  write_cell_scaler_solution(elec_mob, "elec_mob");
-  write_cell_scaler_solution(hole_mob, "hole_mob");
-  write_cell_scaler_solution(surface, "cv_area");
+  write_cell_scaler_solution(elec_mob_array, "elec_mob");
+  write_cell_scaler_solution(hole_mob_array, "hole_mob");
+  write_cell_scaler_solution(In_array, "In");
+  write_cell_scaler_solution(Ip_array, "Ip");
+  write_cell_scaler_solution(I_array, "current");
+  write_cell_scaler_solution(surface_array, "cv_area");
 }
 
 

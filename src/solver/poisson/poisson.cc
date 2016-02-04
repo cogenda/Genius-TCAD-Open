@@ -29,6 +29,8 @@
 #include "parallel.h"
 #include "petsc_utils.h"
 
+#define DEBUG
+
 
 using PhysicalUnit::kb;
 using PhysicalUnit::e;
@@ -49,6 +51,9 @@ int PoissonSolver::create_solver()
 
   // must set nonlinear matrix/vector here!
   setup_nonlinear_data();
+  //distable lag pc/jacobian
+  SNESSetLagPreconditioner(snes, 1);
+  SNESSetLagJacobian(snes, 1);
 
   //abstol = 1e-12*n_global_dofs        - absolute convergence tolerance
   //rtol   = 1e-14                      - relative convergence tolerance
@@ -65,7 +70,7 @@ int PoissonSolver::create_solver()
   // init (user defined) hook functions here
 
 
-  return FVM_NonlinearSolver::create_solver();
+  return FVM_FlexNonlinearSolver::create_solver();
 
 }
 
@@ -74,7 +79,7 @@ int PoissonSolver::create_solver()
 /*------------------------------------------------------------------
  * set initial value to solution vector and scaling vector
  */
-int PoissonSolver::pre_solve_process(bool /*load_solution*/)
+int PoissonSolver::pre_solve_process(bool load_solution)
 {
 
   // search for all the regions, call corresponding function
@@ -97,7 +102,7 @@ int PoissonSolver::pre_solve_process(bool /*load_solution*/)
   VecAssemblyEnd(x);
   VecAssemblyEnd(L);
 
-  return FVM_NonlinearSolver::post_solve_process();
+  return FVM_FlexNonlinearSolver::pre_solve_process(load_solution);
 }
 
 
@@ -118,7 +123,7 @@ int PoissonSolver::solve()
   pre_solve_process();
 
   // here call Petsc to solve the nonlinear Poisson's equation
-  sens_solve();
+  snes_solve();
 
   // get the converged reason
   SNESConvergedReason reason;
@@ -162,6 +167,23 @@ int PoissonSolver::post_solve_process()
     region->Poissin_Update_Solution(lxx);
   }
 
+
+  // extra work, calculate the electric field
+  for(unsigned int n=0; n<_system.n_regions(); n++)
+  {
+    SimulationRegion * region = _system.region(n);
+
+    SimulationRegion::processor_node_iterator it = region->on_processor_nodes_begin();
+    SimulationRegion::processor_node_iterator it_end = region->on_processor_nodes_end();
+    for(; it!=it_end; ++it)
+    {
+      FVM_Node * fvm_node = *it;
+      FVM_NodeData * node_data = fvm_node->node_data();
+      node_data->E() = -fvm_node->gradient(POTENTIAL, true);
+    }
+  }
+
+
   // update bcs, set electrode potential equal to its vapp
   for(unsigned int b=0; b<_system.get_bcs()->n_bcs(); ++b)
   {
@@ -173,7 +195,7 @@ int PoissonSolver::post_solve_process()
 
   // call (user defined) hook function hook_post_solve_process
 
-  return FVM_NonlinearSolver::post_solve_process();
+  return FVM_FlexNonlinearSolver::post_solve_process();
 }
 
 
@@ -187,11 +209,79 @@ int PoissonSolver::destroy_solver()
   // clear nonlinear contex
   clear_nonlinear_data();
 
-  return FVM_NonlinearSolver::destroy_solver();
+  return FVM_FlexNonlinearSolver::destroy_solver();
 }
 
 
+void PoissonSolver::potential_damping(Vec x, Vec y, Vec w, PetscBool *changed_y, PetscBool *changed_w)
+{
 
+  PetscScalar    *xx;
+  PetscScalar    *yy;
+  PetscScalar    *ww;
+
+  VecGetArray(x, &xx);  // previous iterate value
+  VecGetArray(y, &yy);  // new search direction and length
+  VecGetArray(w, &ww);  // current candidate iterate
+
+  const PetscScalar T = this->get_system().T_external();
+  PetscScalar dV_max = 0.0; // the max changes of psi
+
+  // we should find dV_max;
+  // first, we find in local
+  for(unsigned int n=0; n<_system.n_regions(); n++)
+  {
+    // only consider semiconductor region
+    const SimulationRegion * region = _system.region(n);
+    if( region->type() != SemiconductorRegion ) continue;
+
+    SimulationRegion::const_processor_node_iterator it = region->on_processor_nodes_begin();
+    SimulationRegion::const_processor_node_iterator it_end = region->on_processor_nodes_end();
+    for(; it!=it_end; ++it)
+    {
+      const FVM_Node * fvm_node = *it;
+      // we konw the fvm_node->local_offset() is psi in semiconductor region
+      unsigned int local_offset = fvm_node->local_offset();
+      dV_max = std::max(dV_max, std::abs(yy[local_offset]));
+    }
+  }
+
+  // for parallel situation, we should find the dv_max in global.
+  Parallel::max( dV_max );
+
+  if( dV_max > 1e-6*kb*T/e )
+  {
+    // compute logarithmic potential damping factor f;
+    PetscScalar Vut = kb*T/e * SolverSpecify::potential_update;
+    PetscScalar f = log(1+dV_max/Vut)/(dV_max/Vut);
+
+    // do newton damping here
+    for(unsigned int n=0; n<_system.n_regions(); n++)
+    {
+      const SimulationRegion * region = _system.region(n);
+      // only consider semiconductor region
+      //if( region->type() != SemiconductorRegion ) continue;
+
+      SimulationRegion::const_processor_node_iterator it = region->on_processor_nodes_begin();
+      SimulationRegion::const_processor_node_iterator it_end = region->on_processor_nodes_end();
+      for(; it!=it_end; ++it)
+      {
+        const FVM_Node * fvm_node = *it;
+        unsigned int local_offset = fvm_node->local_offset();
+        ww[local_offset] = xx[local_offset] - f*yy[local_offset];
+      }
+    }
+  }
+
+  VecRestoreArray(x, &xx);
+  VecRestoreArray(y, &yy);
+  VecRestoreArray(w, &ww);
+
+  *changed_y = PETSC_FALSE;
+  *changed_w = PETSC_TRUE;
+
+  return;
+}
 
 
 /////////////////////////////////////////////////////////////////////////
@@ -224,6 +314,9 @@ void PoissonSolver::build_petsc_sens_residual(Vec x, Vec r)
   // flag for indicate ADD_VALUES operator.
   InsertMode add_value_flag = NOT_SET_VALUES;
 
+#if defined(HAVE_FENV_H) && defined(DEBUG)
+  genius_assert( !fetestexcept(FE_INVALID) );
+#endif
 
   // evaluate Poisson's equation in all the regions
   for(unsigned int n=0; n<_system.n_regions(); ++n)
@@ -303,7 +396,7 @@ void PoissonSolver::build_petsc_sens_jacobian(Vec x, Mat *, Mat *)
   // get PetscScalar array contains solution from local solution vector lx
   VecGetArray(lx, &lxx);
 
-  MatZeroEntries(J);
+  Jac->zero();
 
   // flag for indicate ADD_VALUES operator.
   InsertMode add_value_flag = NOT_SET_VALUES;
@@ -312,14 +405,14 @@ void PoissonSolver::build_petsc_sens_jacobian(Vec x, Mat *, Mat *)
   for(unsigned int n=0; n<_system.n_regions(); ++n)
   {
     SimulationRegion * region = _system.region(n);
-    region->Poissin_Jacobian(lxx, &J, add_value_flag);
+    region->Poissin_Jacobian(lxx, Jac, add_value_flag);
   }
 
   // process hanging node here
   for(unsigned int n=0; n<_system.n_regions(); n++)
   {
     SimulationRegion * region = _system.region(n);
-    region->Poissin_Jacobian_Hanging_Node(lxx, &J, add_value_flag);
+    region->Poissin_Jacobian_Hanging_Node(lxx, Jac, add_value_flag);
   }
 
 
@@ -327,43 +420,32 @@ void PoissonSolver::build_petsc_sens_jacobian(Vec x, Mat *, Mat *)
   genius_assert( !fetestexcept(FE_INVALID) );
 #endif
 
-  // before first assemble, resereve none zero pattern for each boundary
-  if( !jacobian_matrix_first_assemble )
-  {
-    for(unsigned int b=0; b<_system.get_bcs()->n_bcs(); ++b)
-    {
-      BoundaryCondition * bc = _system.get_bcs()->get_bc(b);
-      bc->Poissin_Jacobian_Reserve(&J, add_value_flag);
-    }
-  }
 
   // assembly matrix
-  MatAssemblyBegin(J, MAT_FINAL_ASSEMBLY);
-  MatAssemblyEnd(J, MAT_FINAL_ASSEMBLY);
+  Jac->close(false);
 
-  // we do not allow zero insert/add to matrix
-  if( !jacobian_matrix_first_assemble )
-    genius_assert(!MatSetOption(J, MAT_IGNORE_ZERO_ENTRIES, PETSC_TRUE));
 
   // evaluate Jacobian matrix of governing equations of DDML1 for all the boundaries
   std::vector<PetscInt> src_row,  dst_row,  clear_row;
   for(unsigned int b=0; b<_system.get_bcs()->n_bcs(); b++)
   {
     BoundaryCondition * bc = _system.get_bcs()->get_bc(b);
-    bc->Poissin_Jacobian_Preprocess(lxx, &J, src_row, dst_row, clear_row);
+    bc->Poissin_Jacobian_Preprocess(lxx, Jac, src_row, dst_row, clear_row);
   }
+
   //add source rows to destination rows
-  PetscUtils::MatAddRowToRow(J, src_row, dst_row);
+  Jac->add_row_to_row(src_row, dst_row);
   // clear row
-  PetscUtils::MatZeroRows(J, clear_row.size(), clear_row.empty() ? NULL : &clear_row[0], 0.0);
+  Jac->clear_row(clear_row);
 
   add_value_flag = NOT_SET_VALUES;
   for(unsigned int b=0; b<_system.get_bcs()->n_bcs(); b++)
   {
     BoundaryCondition * bc = _system.get_bcs()->get_bc(b);
-    bc->Poissin_Jacobian(lxx, &J, add_value_flag);
+    bc->Poissin_Jacobian(lxx, Jac, add_value_flag);
   }
 
+  Jac->close(true);
 
 #if defined(HAVE_FENV_H) && defined(DEBUG)
   genius_assert( !fetestexcept(FE_INVALID) );
@@ -372,22 +454,10 @@ void PoissonSolver::build_petsc_sens_jacobian(Vec x, Mat *, Mat *)
   // restore array back to Vec
   VecRestoreArray(lx, &lxx);
 
-  // assembly the matrix
-  MatAssemblyBegin(J, MAT_FINAL_ASSEMBLY);
-  MatAssemblyEnd  (J, MAT_FINAL_ASSEMBLY);
-
   //scaling the matrix
   MatDiagonalScale(J, L, PETSC_NULL);
 
   STOP_LOG("Poissin_Jacobian()", "PoissonSolver");
-
-  //MatView(J,PETSC_VIEWER_STDOUT_WORLD);
-  //getchar();
-  //genius_assert(0);
-
-  if(!jacobian_matrix_first_assemble)
-    jacobian_matrix_first_assemble = true;
-
 
 #if defined(HAVE_FENV_H) && defined(DEBUG)
   genius_assert( !fetestexcept(FE_INVALID) );
@@ -395,72 +465,4 @@ void PoissonSolver::build_petsc_sens_jacobian(Vec x, Mat *, Mat *)
 
 }
 
-void PoissonSolver::potential_damping(Vec x, Vec y, Vec w, PetscBool *changed_y, PetscBool *changed_w)
-{
 
-  PetscScalar    *xx;
-  PetscScalar    *yy;
-  PetscScalar    *ww;
-
-  VecGetArray(x, &xx);  // previous iterate value
-  VecGetArray(y, &yy);  // new search direction and length
-  VecGetArray(w, &ww);  // current candidate iterate
-
-  const PetscScalar T = this->get_system().T_external();
-  PetscScalar dV_max = 0.0; // the max changes of psi
-
-  // we should find dV_max;
-  // first, we find in local
-  for(unsigned int n=0; n<_system.n_regions(); n++)
-  {
-    // only consider semiconductor region
-    const SimulationRegion * region = _system.region(n);
-    if( region->type() != SemiconductorRegion ) continue;
-
-    SimulationRegion::const_processor_node_iterator it = region->on_processor_nodes_begin();
-    SimulationRegion::const_processor_node_iterator it_end = region->on_processor_nodes_end();
-    for(; it!=it_end; ++it)
-    {
-      const FVM_Node * fvm_node = *it;
-      // we konw the fvm_node->local_offset() is psi in semiconductor region
-      unsigned int local_offset = fvm_node->local_offset();
-      dV_max = std::max(dV_max, std::abs(yy[local_offset]));
-    }
-  }
-
-  // for parallel situation, we should find the dv_max in global.
-  Parallel::max( dV_max );
-
-  if( dV_max > 1e-6*kb*T/e )
-  {
-    // compute logarithmic potential damping factor f;
-    PetscScalar Vut = kb*T/e * SolverSpecify::potential_update;
-    PetscScalar f = log(1+dV_max/Vut)/(dV_max/Vut);
-
-    // do newton damping here
-    for(unsigned int n=0; n<_system.n_regions(); n++)
-    {
-      const SimulationRegion * region = _system.region(n);
-      // only consider semiconductor region
-      //if( region->type() != SemiconductorRegion ) continue;
-
-      SimulationRegion::const_processor_node_iterator it = region->on_processor_nodes_begin();
-      SimulationRegion::const_processor_node_iterator it_end = region->on_processor_nodes_end();
-      for(; it!=it_end; ++it)
-      {
-        const FVM_Node * fvm_node = *it;
-        unsigned int local_offset = fvm_node->local_offset();
-        ww[local_offset] = xx[local_offset] - f*yy[local_offset];
-      }
-    }
-  }
-
-  VecRestoreArray(x, &xx);
-  VecRestoreArray(y, &yy);
-  VecRestoreArray(w, &ww);
-
-  *changed_y = PETSC_FALSE;
-  *changed_w = PETSC_TRUE;
-
-  return;
-}

@@ -79,6 +79,19 @@ public:
 
 
   /**
+   * @return the current flow of this boundary.
+   */
+  virtual PetscScalar current() const
+  {return _current_flow;}
+
+  /**
+   * @return writable reference to current flow of this boundary
+   */
+  virtual PetscScalar & current()
+  { return _current_flow;}
+
+
+  /**
    * @return the string which indicates the boundary condition
    */
   virtual std::string boundary_condition_in_string() const;
@@ -90,7 +103,16 @@ private:
    */
   BoundaryType  _bd_type;
 
+
+  /**
+   * current flow in/out
+   */
+  PetscScalar   _current_flow;
+
+
 public:
+
+#ifdef TCAD_SOLVERS
 
   //////////////////////////////////////////////////////////////////////////////////////////////
   //----------------Function and Jacobian evaluate for Poisson's Equation---------------------//
@@ -112,19 +134,14 @@ public:
   virtual void Poissin_Function(PetscScalar * , Vec , InsertMode &);
 
   /**
-   * reserve none zero pattern in petsc matrix.
-   */
-  virtual void Poissin_Jacobian_Reserve(Mat *jac, InsertMode &add_value_flag);
-
-  /**
    * preprocess Jacobian Matrix for poisson solver
    */
-  virtual void Poissin_Jacobian_Preprocess(PetscScalar *, Mat *, std::vector<PetscInt>&, std::vector<PetscInt>&, std::vector<PetscInt>&);
+  virtual void Poissin_Jacobian_Preprocess(PetscScalar *, SparseMatrix<PetscScalar> *, std::vector<PetscInt>&, std::vector<PetscInt>&, std::vector<PetscInt>&);
 
   /**
    * build function and its jacobian for poisson solver, nothing to do
    */
-  virtual void Poissin_Jacobian(PetscScalar * , Mat *, InsertMode &);
+  virtual void Poissin_Jacobian(PetscScalar * , SparseMatrix<PetscScalar> *, InsertMode &);
 
   /**
    * update solution value of poisson's equation
@@ -146,11 +163,6 @@ public:
   virtual void DDM1_Function_Preprocess(PetscScalar *, Vec, std::vector<PetscInt>&, std::vector<PetscInt>&, std::vector<PetscInt>&);
 
   /**
-   * reserve none zero pattern in petsc matrix.
-   */
-  virtual void DDM1_Jacobian_Reserve(Mat *jac, InsertMode &add_value_flag);
-
-  /**
    * build function and its jacobian for DDML1 solver
    */
   virtual void DDM1_Function(PetscScalar * , Vec , InsertMode &);
@@ -158,17 +170,17 @@ public:
   /**
    * preprocess Jacobian Matrix of level 1 DDM equation.
    */
-  virtual void DDM1_Jacobian_Preprocess(PetscScalar *, Mat *, std::vector<PetscInt>&, std::vector<PetscInt>&, std::vector<PetscInt>&);
+  virtual void DDM1_Jacobian_Preprocess(PetscScalar *, SparseMatrix<PetscScalar> *, std::vector<PetscInt>&, std::vector<PetscInt>&, std::vector<PetscInt>&);
 
   /**
    * build function and its jacobian for DDML1 solver
    */
-  virtual void DDM1_Jacobian(PetscScalar * , Mat *, InsertMode &);
+  virtual void DDM1_Jacobian(PetscScalar * , SparseMatrix<PetscScalar> *, InsertMode &);
 
   /**
    * build trace parameter for DDML1 solver
    */
-  virtual void DDM1_Electrode_Trace(Vec, Mat *, Vec , Vec);
+  virtual void DDM1_Electrode_Trace(Vec, SparseMatrix<PetscScalar> *, Vec , Vec);
 
   /**
    * update solution data of DDML1 solver.
@@ -191,20 +203,19 @@ public:
   virtual void Mix_DDM1_Function(PetscScalar * , Vec , InsertMode &);
 
   /**
-   * reserve none zero pattern in petsc matrix.
-   */
-  virtual void Mix_DDM1_Jacobian_Reserve(Mat *, InsertMode &);
-
-  /**
    * preprocess Jacobian Matrix for Mixed type level 1 DDM equation.
    */
-  virtual void Mix_DDM1_Jacobian_Preprocess(PetscScalar *, Mat *, std::vector<PetscInt> &,  std::vector<PetscInt> &, std::vector<PetscInt> &);
+  virtual void Mix_DDM1_Jacobian_Preprocess(PetscScalar *, SparseMatrix<PetscScalar> *, std::vector<PetscInt> &,  std::vector<PetscInt> &, std::vector<PetscInt> &);
 
   /**
    * build function and its jacobian for Mixed DDML1 solver
    */
-  virtual void Mix_DDM1_Jacobian(PetscScalar * , Mat *, InsertMode &);
+  virtual void Mix_DDM1_Jacobian(PetscScalar * , SparseMatrix<PetscScalar> *, InsertMode &);
 
+  /**
+   * virtual function for update solution value of Mixed type of level 1 DDM equation.
+   */
+  virtual void Mix_DDM1_Update_Solution(PetscScalar *);
 
   //////////////////////////////////////////////////////////////////////////////////
   //----------Function and Jacobian evaluate for Advanced Mixed DDML1-------------//
@@ -221,20 +232,19 @@ public:
   virtual void MixA_DDM1_Function(PetscScalar * , Vec , InsertMode &);
 
   /**
-   * reserve none zero pattern in petsc matrix.
-   */
-  virtual void MixA_DDM1_Jacobian_Reserve(Mat *, InsertMode &);
-
-  /**
    * preprocess Jacobian Matrix for Advanced Mixed type level 1 DDM equation.
    */
-  virtual void MixA_DDM1_Jacobian_Preprocess(PetscScalar *, Mat *, std::vector<PetscInt> &,  std::vector<PetscInt> &, std::vector<PetscInt> &);
+  virtual void MixA_DDM1_Jacobian_Preprocess(PetscScalar *, SparseMatrix<PetscScalar> *, std::vector<PetscInt> &,  std::vector<PetscInt> &, std::vector<PetscInt> &);
 
   /**
    * build function and its jacobian for Advanced Mixed DDML1 solver
    */
-  virtual void MixA_DDM1_Jacobian(PetscScalar * , Mat *, InsertMode &);
+  virtual void MixA_DDM1_Jacobian(PetscScalar * , SparseMatrix<PetscScalar> *, InsertMode &);
 
+  /**
+   * virtual function for update solution value of Advanced Mixed type of level 1 DDM equation.
+   */
+  virtual void MixA_DDM1_Update_Solution(PetscScalar *);
 
   //////////////////////////////////////////////////////////////////////////////////
   //----------------Function and Jacobian evaluate for L2 DDM---------------------//
@@ -256,24 +266,19 @@ public:
   virtual void DDM2_Function(PetscScalar * , Vec , InsertMode &);
 
   /**
-   * reserve none zero pattern in petsc matrix.
-   */
-  virtual void DDM2_Jacobian_Reserve(Mat *, InsertMode &);
-
-  /**
    * preprocess Jacobian Matrix of level 2 DDM equation.
    */
-  virtual void DDM2_Jacobian_Preprocess(PetscScalar *,Mat *, std::vector<PetscInt>&, std::vector<PetscInt>&, std::vector<PetscInt>&);
+  virtual void DDM2_Jacobian_Preprocess(PetscScalar *,SparseMatrix<PetscScalar> *, std::vector<PetscInt>&, std::vector<PetscInt>&, std::vector<PetscInt>&);
 
   /**
    * build function and its jacobian for DDML2 solver
    */
-  virtual void DDM2_Jacobian(PetscScalar * , Mat *, InsertMode &);
+  virtual void DDM2_Jacobian(PetscScalar * , SparseMatrix<PetscScalar> *, InsertMode &);
 
   /**
    * build trace parameter for DDML2 solver
    */
-  virtual void DDM2_Electrode_Trace(Vec, Mat *, Vec , Vec);
+  virtual void DDM2_Electrode_Trace(Vec, SparseMatrix<PetscScalar> *, Vec , Vec);
 
   /**
    * update solution data of DDML2 solver.
@@ -296,20 +301,19 @@ public:
   virtual void MixA_DDM2_Function(PetscScalar * , Vec , InsertMode &);
 
   /**
-   * reserve none zero pattern in petsc matrix.
-   */
-  virtual void MixA_DDM2_Jacobian_Reserve(Mat *, InsertMode &);
-
-  /**
    * preprocess Jacobian Matrix for Advanced Mixed type level 2 DDM equation.
    */
-  virtual void MixA_DDM2_Jacobian_Preprocess(PetscScalar *,Mat *, std::vector<PetscInt> &,  std::vector<PetscInt> &, std::vector<PetscInt> &);
+  virtual void MixA_DDM2_Jacobian_Preprocess(PetscScalar *,SparseMatrix<PetscScalar> *, std::vector<PetscInt> &,  std::vector<PetscInt> &, std::vector<PetscInt> &);
 
   /**
    * build function and its jacobian for Advanced Mixed DDML2 solver
    */
-  virtual void MixA_DDM2_Jacobian(PetscScalar * , Mat *, InsertMode &);
+  virtual void MixA_DDM2_Jacobian(PetscScalar * , SparseMatrix<PetscScalar> *, InsertMode &);
 
+  /**
+   * virtual function for update solution value of Advanced Mixed type of level 2 DDM equation.
+   */
+  virtual void MixA_DDM2_Update_Solution(PetscScalar *);
 
   //////////////////////////////////////////////////////////////////////////////////
   //----------------Function and Jacobian evaluate for L3 EBM---------------------//
@@ -331,24 +335,19 @@ public:
   virtual void EBM3_Function(PetscScalar * , Vec , InsertMode &);
 
   /**
-   * reserve none zero pattern in petsc matrix.
-   */
-  virtual void EBM3_Jacobian_Reserve(Mat *jac, InsertMode &add_value_flag);
-
-  /**
    * preprocess Jacobian Matrix of level 3 EBM equation.
    */
-  virtual void EBM3_Jacobian_Preprocess(PetscScalar * ,Mat *, std::vector<PetscInt>&, std::vector<PetscInt>&, std::vector<PetscInt>&);
+  virtual void EBM3_Jacobian_Preprocess(PetscScalar * ,SparseMatrix<PetscScalar> *, std::vector<PetscInt>&, std::vector<PetscInt>&, std::vector<PetscInt>&);
 
   /**
    * build function and its jacobian for level 3 EBM solver
    */
-  virtual void EBM3_Jacobian(PetscScalar * , Mat *, InsertMode &);
+  virtual void EBM3_Jacobian(PetscScalar * , SparseMatrix<PetscScalar> *, InsertMode &);
 
   /**
    * build trace parameter for level 3 EBM solver
    */
-  virtual void EBM3_Electrode_Trace(Vec, Mat *, Vec , Vec);
+  virtual void EBM3_Electrode_Trace(Vec, SparseMatrix<PetscScalar> *, Vec , Vec);
 
   /**
    * update solution data of level 3 EBM solver.
@@ -371,19 +370,19 @@ public:
   virtual void MixA_EBM3_Function(PetscScalar * , Vec , InsertMode &);
 
   /**
-   * reserve none zero pattern in petsc matrix.
-   */
-  virtual void MixA_EBM3_Jacobian_Reserve(Mat *, InsertMode &);
-
-  /**
    * preprocess Jacobian Matrix for Advanced Mixed type EBM3 equation.
    */
-  virtual void MixA_EBM3_Jacobian_Preprocess(PetscScalar * ,Mat *, std::vector<PetscInt> &,  std::vector<PetscInt> &, std::vector<PetscInt> &);
+  virtual void MixA_EBM3_Jacobian_Preprocess(PetscScalar * ,SparseMatrix<PetscScalar> *, std::vector<PetscInt> &,  std::vector<PetscInt> &, std::vector<PetscInt> &);
 
   /**
    * build function and its jacobian for Advanced Mixed EBM3 solver
    */
-  virtual void MixA_EBM3_Jacobian(PetscScalar * , Mat *, InsertMode &);
+  virtual void MixA_EBM3_Jacobian(PetscScalar * , SparseMatrix<PetscScalar> *, InsertMode &);
+
+  /**
+   * virtual function for update solution value of Advanced Mixed type of level 3 EBM equation.
+   */
+  virtual void MixA_EBM3_Update_Solution(PetscScalar *);
 
 
   //////////////////////////////////////////////////////////////////////////////////
@@ -393,12 +392,16 @@ public:
   /**
    *  evaluating matrix and rhs vector for ddm ac solver
    */
-  virtual void DDMAC_Fill_Matrix_Vector( Mat A, Vec b, const Mat J, const double omega, InsertMode & add_value_flag );
+  virtual void DDMAC_Fill_Matrix_Vector( Mat A, Vec b, const Mat J, const PetscScalar omega, InsertMode & add_value_flag );
 
   /**
    * update solution value for ddm ac solver
    */
-  virtual void DDMAC_Update_Solution(const PetscScalar * lxx , const Mat, const double omega);
+  virtual void DDMAC_Update_Solution(const PetscScalar * lxx , const Mat, const PetscScalar omega);
+
+#endif
+
+#ifdef IDC_SOLVERS
 
 #ifdef COGENDA_COMMERCIAL_PRODUCT
   //////////////////////////////////////////////////////////////////////////////////
@@ -422,25 +425,23 @@ public:
   virtual void RIC_Function(PetscScalar * , Vec , InsertMode &);
 
   /**
-   * reserve none zero pattern in petsc matrix.
-   */
-  virtual void RIC_Jacobian_Reserve(Mat *jac, InsertMode &add_value_flag);
-
-  /**
    * preprocess Jacobian Matrix of RIC equation.
    */
-  virtual void RIC_Jacobian_Preprocess(PetscScalar *, Mat *, std::vector<PetscInt>&, std::vector<PetscInt>&, std::vector<PetscInt>&);
+  virtual void RIC_Jacobian_Preprocess(PetscScalar *, SparseMatrix<PetscScalar> *,std::vector<PetscInt>&, std::vector<PetscInt>&, std::vector<PetscInt>&);
 
   /**
    * build function and its jacobian for RIC solver
    */
-  virtual void RIC_Jacobian(PetscScalar * , Mat *, InsertMode &);
+  virtual void RIC_Jacobian(PetscScalar * , SparseMatrix<PetscScalar> *, InsertMode &);
 
   /**
    * update solution data of RIC solver.
    */
   virtual void RIC_Update_Solution(PetscScalar *);
 #endif
+
+#endif
+
 };
 
 

@@ -229,6 +229,25 @@ void InsulatorSimulationRegion::EBM3_Function(PetscScalar * x, Vec f, InsertMode
     }
   }
 
+
+  // process node related terms
+  // including \rho of poisson's equation
+  const_processor_node_iterator node_it = on_processor_nodes_begin();
+  const_processor_node_iterator node_it_end = on_processor_nodes_end();
+  for(; node_it!=node_it_end; ++node_it)
+  {
+    const FVM_Node * fvm_node = *node_it;
+    const FVM_NodeData * node_data = fvm_node->node_data();
+
+    const unsigned int global_offset = fvm_node->global_offset();
+
+    PetscScalar rho = e*( node_data->trap_a() + node_data->trap_b() + node_data->p() - node_data->n())*fvm_node->volume(); // the charge density
+
+    iy.push_back(global_offset);                                // save index in the buffer
+    y.push_back( rho );                                                       // save value in the buffer
+
+  }
+
   if(iy.size()) VecSetValues(f, iy.size(), &iy[0], &y[0], ADD_VALUES);
 
   // after the first scan, every nodes are updated.
@@ -247,7 +266,7 @@ void InsulatorSimulationRegion::EBM3_Function(PetscScalar * x, Vec f, InsertMode
 /*---------------------------------------------------------------------
  * build function and its jacobian for EBM3 solver
  */
-void InsulatorSimulationRegion::EBM3_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_value_flag)
+void InsulatorSimulationRegion::EBM3_Jacobian(PetscScalar * x, SparseMatrix<PetscScalar> *jac, InsertMode &add_value_flag)
 {
 
   // find the node variable offset
@@ -259,14 +278,6 @@ void InsulatorSimulationRegion::EBM3_Jacobian(PetscScalar * x, Mat *jac, InsertM
 
   //synchronize with material database
   mt->set_ad_num(adtl::AutoDScalar::numdir);
-
-  // note, we will use ADD_VALUES to set values of matrix J
-  // if the previous operator is not ADD_VALUES, we should flush the matrix
-  if( add_value_flag != ADD_VALUES && add_value_flag != NOT_SET_VALUES)
-  {
-    MatAssemblyBegin(*jac, MAT_FLUSH_ASSEMBLY);
-    MatAssemblyEnd(*jac, MAT_FLUSH_ASSEMBLY);
-  }
 
 
   // search all the edges of this region, do integral over control volume...
@@ -311,14 +322,14 @@ void InsulatorSimulationRegion::EBM3_Jacobian(PetscScalar * x, Mat *jac, InsertM
       // ignore thoese ghost nodes
       if( fvm_n1->on_processor() )
       {
-        MatSetValue(*jac, n1_global_offset+node_psi_offset, n1_global_offset+node_psi_offset, f_psi.getADValue(0), ADD_VALUES);
-        MatSetValue(*jac, n1_global_offset+node_psi_offset, n2_global_offset+node_psi_offset, f_psi.getADValue(1), ADD_VALUES);
+        jac->add( n1_global_offset+node_psi_offset,  n1_global_offset+node_psi_offset,  f_psi.getADValue(0) );
+        jac->add( n1_global_offset+node_psi_offset,  n2_global_offset+node_psi_offset,  f_psi.getADValue(1) );
       }
 
       if( fvm_n2->on_processor() )
       {
-        MatSetValue(*jac, n2_global_offset+node_psi_offset, n1_global_offset+node_psi_offset, -f_psi.getADValue(0), ADD_VALUES);
-        MatSetValue(*jac, n2_global_offset+node_psi_offset, n2_global_offset+node_psi_offset, -f_psi.getADValue(1), ADD_VALUES);
+        jac->add( n2_global_offset+node_psi_offset,  n1_global_offset+node_psi_offset,  -f_psi.getADValue(0) );
+        jac->add( n2_global_offset+node_psi_offset,  n2_global_offset+node_psi_offset,  -f_psi.getADValue(1) );
       }
 
       /*
@@ -340,14 +351,14 @@ void InsulatorSimulationRegion::EBM3_Jacobian(PetscScalar * x, Mat *jac, InsertM
         // ignore thoese ghost nodes
         if( fvm_n1->on_processor() )
         {
-          MatSetValue(*jac, n1_global_offset+node_Tl_offset, n1_global_offset+node_Tl_offset, f_q.getADValue(0), ADD_VALUES);
-          MatSetValue(*jac, n1_global_offset+node_Tl_offset, n2_global_offset+node_Tl_offset, f_q.getADValue(1), ADD_VALUES);
+          jac->add( n1_global_offset+node_Tl_offset,  n1_global_offset+node_Tl_offset,  f_q.getADValue(0) );
+          jac->add( n1_global_offset+node_Tl_offset,  n2_global_offset+node_Tl_offset,  f_q.getADValue(1) );
         }
 
         if( fvm_n2->on_processor() )
         {
-          MatSetValue(*jac, n2_global_offset+node_Tl_offset, n1_global_offset+node_Tl_offset, -f_q.getADValue(0), ADD_VALUES);
-          MatSetValue(*jac, n2_global_offset+node_Tl_offset, n2_global_offset+node_Tl_offset, -f_q.getADValue(1), ADD_VALUES);
+          jac->add( n2_global_offset+node_Tl_offset,  n1_global_offset+node_Tl_offset,  -f_q.getADValue(0) );
+          jac->add( n2_global_offset+node_Tl_offset,  n2_global_offset+node_Tl_offset,  -f_q.getADValue(1) );
         }
       }
     }
@@ -430,19 +441,11 @@ void InsulatorSimulationRegion::EBM3_Time_Dependent_Function(PetscScalar * x, Ve
 
 
 
-void InsulatorSimulationRegion::EBM3_Time_Dependent_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_value_flag)
+void InsulatorSimulationRegion::EBM3_Time_Dependent_Jacobian(PetscScalar * x, SparseMatrix<PetscScalar> *jac, InsertMode &add_value_flag)
 {
  // do time depedent calculation only heating equation required
   if(!get_advanced_model()->enable_Tl()) return;
 
-
-  // note, we will use ADD_VALUES to set values of matrix J
-  // if the previous operator is not ADD_VALUES, we should flush the matrix
-  if( (add_value_flag != ADD_VALUES) && (add_value_flag != NOT_SET_VALUES) )
-  {
-    MatAssemblyBegin(*jac, MAT_FLUSH_ASSEMBLY);
-    MatAssemblyEnd(*jac, MAT_FLUSH_ASSEMBLY);
-  }
 
   // find the node variable offset
   unsigned int node_Tl_offset  = ebm_variable_offset(TEMPERATURE);
@@ -473,13 +476,13 @@ void InsulatorSimulationRegion::EBM3_Time_Dependent_Jacobian(PetscScalar * x, Ma
       AutoDScalar dTldt = -((2-r)/(1-r)*T - 1.0/(r*(1-r))*node_data->T() + (1-r)/r*node_data->T_last())*node_data->density()*HeatCapacity
                           / (SolverSpecify::dt_last+SolverSpecify::dt)*fvm_node->volume();
       // ADD to Jacobian matrix,
-      MatSetValue(*jac, fvm_node->global_offset()+node_Tl_offset, fvm_node->global_offset()+node_Tl_offset, dTldt.getADValue(0), ADD_VALUES);
+      jac->add( fvm_node->global_offset()+node_Tl_offset,  fvm_node->global_offset()+node_Tl_offset,  dTldt.getADValue(0) );
     }
     else //first order
     {
       AutoDScalar dTldt = -(T - node_data->T())*node_data->density()*HeatCapacity/SolverSpecify::dt*fvm_node->volume();
       // ADD to Jacobian matrix,
-      MatSetValue(*jac, fvm_node->global_offset()+node_Tl_offset, fvm_node->global_offset()+node_Tl_offset, dTldt.getADValue(0), ADD_VALUES);
+      jac->add( fvm_node->global_offset()+node_Tl_offset,  fvm_node->global_offset()+node_Tl_offset,  dTldt.getADValue(0) );
     }
   }
 
@@ -508,6 +511,7 @@ void InsulatorSimulationRegion::EBM3_Update_Solution(PetscScalar *lxx)
     FVM_NodeData * node_data = fvm_node->node_data();
 
     //update psi
+    node_data->psi_old()  =  node_data->psi_last();
     node_data->psi_last() =  node_data->psi();
     node_data->psi() = lxx[fvm_node->local_offset()+node_psi_offset];
 
@@ -541,5 +545,6 @@ void InsulatorSimulationRegion::EBM3_Update_Solution(PetscScalar *lxx)
   }
 
 }
+
 
 

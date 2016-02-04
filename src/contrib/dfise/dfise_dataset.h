@@ -161,7 +161,7 @@ namespace DFISE
     /**
      * convert validity string to region index
      */
-    std::vector<unsigned int> Regions;
+    std::vector<int> Regions;
 
     /**
      * map the node id to value.
@@ -170,6 +170,11 @@ namespace DFISE
      * the point on interface of adjacent regions will only count once
      */
     std::map<unsigned int, unsigned int> node_to_value_index_map;
+
+    /**
+     * map the elem id to value.
+     */
+    std::map<unsigned int, unsigned int> elem_to_value_index_map;
 
     /**
      * scaler value

@@ -99,7 +99,7 @@ void InsulatorSimulationRegion::DDMAC_Fill_Value(Vec x, Vec L) const
 
 
 
-void InsulatorSimulationRegion::DDMAC_Fill_Matrix_Vector(Mat A, Vec b, const Mat J, const double omega, InsertMode &add_value_flag) const
+void InsulatorSimulationRegion::DDMAC_Fill_Matrix_Vector(Mat A, Vec b, const Mat J, const PetscScalar omega, InsertMode &add_value_flag) const
 {
 
   // note, we will use ADD_VALUES to set values of matrix A
@@ -127,7 +127,7 @@ void InsulatorSimulationRegion::DDMAC_Fill_Matrix_Vector(Mat A, Vec b, const Mat
 
 
 
-void InsulatorSimulationRegion::DDMAC_Fill_Transformation_Matrix ( Mat T, const Mat J, const double omega,  InsertMode &add_value_flag ) const
+void InsulatorSimulationRegion::DDMAC_Fill_Transformation_Matrix ( Mat T, const Mat J, const PetscScalar omega,  InsertMode &add_value_flag ) const
 {
 
   // note, we will use ADD_VALUES to set values of matrix A
@@ -179,7 +179,7 @@ void InsulatorSimulationRegion::DDMAC_Fill_Transformation_Matrix ( Mat T, const 
 
 
 void InsulatorSimulationRegion::DDMAC_Fill_Nodal_Matrix_Vector(
-  const FVM_Node *fvm_node, Mat A, Vec, const Mat J, const double omega,
+  const FVM_Node *fvm_node, Mat A, Vec, const Mat J, const PetscScalar omega,
   InsertMode & add_value_flag,
   const SimulationRegion * adjacent_region,
   const FVM_Node * adjacent_fvm_node) const
@@ -264,7 +264,7 @@ void InsulatorSimulationRegion::DDMAC_Fill_Nodal_Matrix_Vector(
 
 void InsulatorSimulationRegion::DDMAC_Fill_Nodal_Matrix_Vector(
   const FVM_Node *fvm_node, const SolutionVariable var,
-  Mat A, Vec , const Mat J, const double omega, InsertMode & add_value_flag,
+  Mat A, Vec , const Mat J, const PetscScalar omega, InsertMode & add_value_flag,
   const SimulationRegion * adjacent_region,
   const FVM_Node * adjacent_fvm_node) const
 {
@@ -285,6 +285,11 @@ void InsulatorSimulationRegion::DDMAC_Fill_Nodal_Matrix_Vector(
 
   PetscInt ac_real = fvm_node->global_offset() + this->ebm_variable_offset(var);
   PetscInt ac_imag = fvm_node->global_offset() + this->ebm_n_variables() + this->ebm_variable_offset(var);
+  if(adjacent_region!=NULL && adjacent_fvm_node!=NULL)
+  {
+    ac_real = adjacent_fvm_node->global_offset() + adjacent_region->ebm_variable_offset(var);
+    ac_imag = adjacent_fvm_node->global_offset() + adjacent_region->ebm_n_variables() + adjacent_region->ebm_variable_offset(var);
+  }
 
   std::vector<PetscInt> real_row_entry, imag_row_entry;
   for(int n=0; n<ncols; ++n)

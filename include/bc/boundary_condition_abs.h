@@ -78,6 +78,8 @@ public:
 
 public:
 
+#ifdef TCAD_SOLVERS
+
   //////////////////////////////////////////////////////////////////////////////////////////////
   //----------------Function and Jacobian evaluate for Poisson's Equation---------------------//
   //////////////////////////////////////////////////////////////////////////////////////////////
@@ -91,7 +93,7 @@ public:
   /**
    * build function and its jacobian for poisson solver, nothing to do
    */
-  virtual void Poissin_Jacobian(PetscScalar * , Mat *, InsertMode &)
+  virtual void Poissin_Jacobian(PetscScalar * , SparseMatrix<PetscScalar> *, InsertMode &)
   { /* no thing to do for AbsorbingBC boundary */ }
 
 
@@ -108,7 +110,7 @@ public:
   /**
    * build function and its jacobian for level 1 DDM solver, nothing to do
    */
-  virtual void DDM1_Jacobian(PetscScalar * , Mat *, InsertMode &)
+  virtual void DDM1_Jacobian(PetscScalar * , SparseMatrix<PetscScalar> *, InsertMode &)
   { /* no thing to do for AbsorbingBC boundary */ }
 
 
@@ -125,7 +127,7 @@ public:
   /**
    * build function and its jacobian for level 2 DDM solver
    */
-  virtual void DDM2_Jacobian(PetscScalar * , Mat *, InsertMode &)
+  virtual void DDM2_Jacobian(PetscScalar * , SparseMatrix<PetscScalar> *, InsertMode &)
   { /* no thing to do for AbsorbingBC boundary */ }
 
 
@@ -142,7 +144,7 @@ public:
   /**
    * build function and its jacobian for level 3 EBM solver
    */
-  virtual void EBM3_Jacobian(PetscScalar * , Mat *, InsertMode &)
+  virtual void EBM3_Jacobian(PetscScalar * , SparseMatrix<PetscScalar> *, InsertMode &)
   { /* no thing to do for AbsorbingBC boundary */ }
 
 
@@ -156,6 +158,7 @@ public:
   virtual void DDMAC_Fill_Matrix_Vector( Mat , Vec , const Mat , const double , InsertMode & )
   { /* no thing to do for AbsorbingBC boundary */ }
 
+#endif
 
 };
 

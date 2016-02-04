@@ -27,7 +27,6 @@
 class GSS_SiO2_BandStructure : public PMII_BandStructure
 {
 private:
-  PetscScalar AFFINITY;  // The electron affinity for the material.
   PetscScalar BANDGAP;   // The bandgap for the material.
 
   PetscScalar HCI_ECN;   // critical electric field for electron scattering in the insulator
@@ -46,17 +45,32 @@ private:
   PetscScalar VBHT_alpha; // Coefficient of the Valence band hole tunneling
   PetscScalar VBET_alpha; // Coefficient of the Valence band electron tunneling
 
+
+  PetscScalar GN_DG;   // Fit parameter for Density Gradient model
+  PetscScalar GP_DG;   // Fit parameter for Density Gradient model
+
+  PetscScalar TrapA;         // trapA density
+  PetscScalar TrapAElecCS;   // trapA cross section of electron
+  PetscScalar TrapAHoleCS;   // trapA cross section of hole
+
+  PetscScalar TrapB;         // trapB density
+  PetscScalar TrapBElecCS;   // trapB cross section of electron
+  PetscScalar TrapBHoleCS;   // trapB cross section of hole
+  PetscScalar TrapBHIonR;    // trapB H+ release rate
+
+  PetscScalar InterfaceState;    // interface state density
+  PetscScalar HIonInterfaceCS;   // H+ reaction cross section with Si-H at interface
+
   void   Band_Init()
   {
-    AFFINITY = 1.070000e+00*eV;
     BANDGAP  = 9.0*eV;
 
     HCI_ECN  = 1.650000e+05*V/cm;
     HCI_ECP  = 1.650000e+05*V/cm;
-    HCI_BARLN = 2.590000E-04*pow(V*cm, 0.5);
-    HCI_TUNLN = 3.000000E-05*pow(V*cm*cm, 1.0/3.0);
-    HCI_BARLP = 2.590000E-04*pow(V*cm, 0.5);
-    HCI_TUNLP = 3.000000E-05*pow(V*cm*cm, 1.0/3.0);
+    HCI_BARLN = 2.590000E-04*std::pow(V*cm, 0.5);
+    HCI_TUNLN = 3.000000E-05*std::pow(V*cm*cm, 1.0/3.0);
+    HCI_BARLP = 2.590000E-04*std::pow(V*cm, 0.5);
+    HCI_TUNLP = 3.000000E-05*std::pow(V*cm*cm, 1.0/3.0);
     HCI_MFP   = 3.200000E-07*cm;
 
     FN_A      = 6.320000E-07*A/(V*V);
@@ -66,13 +80,47 @@ private:
     CBET_alpha = 1.0;
     VBHT_alpha = 1.0;
     VBET_alpha = 1.0;
+
+    GN_DG      = 5.0;
+    GP_DG      = 20.0;
+
+    TrapA       = 5e18*std::pow(cm, -3);
+    TrapAElecCS = 1e-13*cm*cm;
+    TrapAHoleCS = 1e-14*cm*cm;
+
+    TrapB       = 1e16*std::pow(cm, -3);
+    TrapBElecCS = 1e-12*cm*cm;
+    TrapBHoleCS = 1e-14*cm*cm;
+    TrapBHIonR  = 1e-5/s;
+
+    InterfaceState  = 1e13*std::pow(cm, -2);
+    HIonInterfaceCS = 1e-11*cm*cm;
+
 #ifdef __CALIBRATE__
-    parameter_map.insert(para_item("AFFINITY",  PARA("AFFINITY", "The electron affinity for the material", "eV", eV, &AFFINITY)) );
     parameter_map.insert(para_item("BANDGAP",   PARA("BANDGAP",  "The bandgap for the material", "eV", eV, &BANDGAP)) );
     parameter_map.insert(para_item("ELECMASS",  PARA("ELECMASS", "The relative effective mass of electron", "electron mass", me, &ELECMASS)) );
+
+    parameter_map.insert(para_item("FN.A",PARA("FN.A", "Coefficient of the pre-exponential term for the Fowler-Nordheim  tunneling model", "A/V^2", A/(V*V), &FN_A)) );
+    parameter_map.insert(para_item("FN.B",PARA("FN.B", "Coefficient of the exponential term for the Fowler-Nordheim tunneling model", "V/cm", V/cm, &FN_B)) );
+
     parameter_map.insert(para_item("CBET.alpha",PARA("CBET.alpha", "Coefficient of the Conduction band electron tunneling", "-", 1.0, &CBET_alpha)) );
     parameter_map.insert(para_item("VBHT.alpha",PARA("VBHT.alpha", "Coefficient of the Valence band hole tunneling", "-", 1.0, &VBHT_alpha)) );
     parameter_map.insert(para_item("VBET.alpha",PARA("VBET.alpha", "Coefficient of the Valence band electron tunneling", "-", 1.0, &VBET_alpha)) );
+    parameter_map.insert(para_item("Gamman",    PARA("Gamman",    "Electron fit parameter for Density Gradient model", "-", 1.0, &GN_DG)) );
+    parameter_map.insert(para_item("Gammap",    PARA("Gammap",    "Hole fit parameter for Density Gradient model", "-", 1.0, &GP_DG)) );
+
+    parameter_map.insert(para_item("TrapADensity",PARA("TrapADensity","Trap A density", "cm^-3", 1.0/(cm*cm*cm), &TrapA)) );
+    parameter_map.insert(para_item("TrapAElecCS",PARA("TrapAElecCS","Positive trap A capture cross section of electron", "cm^2", cm*cm, &TrapAElecCS)) );
+    parameter_map.insert(para_item("TrapAHoleCS",PARA("TrapAHoleCS","Trap A capture cross section of hole", "cm^2", cm*cm, &TrapAHoleCS)) );
+
+    parameter_map.insert(para_item("TrapBDensity",PARA("TrapBDensity","Trap B density", "cm^-3", 1.0/(cm*cm*cm), &TrapB)) );
+    parameter_map.insert(para_item("TrapBElecCS",PARA("TrapBElecCS","Positive trap B capture cross section of electron", "cm^2", cm*cm, &TrapBElecCS)) );
+    parameter_map.insert(para_item("TrapBHoleCS",PARA("TrapBHoleCS","Trap B capture cross section of hole", "cm^2", cm*cm, &TrapBHoleCS)) );
+    parameter_map.insert(para_item("TrapBHIonRelease",PARA("TrapBHIonRelease","Trap B H+ release rate", "1/s", 1.0/s, &TrapBHIonR)) );
+
+    parameter_map.insert(para_item("InterfaceState",PARA("InterfaceState","Interface state density", "cm^-2", 1.0/(cm*cm), &InterfaceState)) );
+    parameter_map.insert(para_item("HIonInterfaceCS",PARA("HIonInterfaceCS","H+ reaction cross section with Si-H at interface", "cm^2", cm*cm, &HIonInterfaceCS)) );
+
 #endif
   }
 
@@ -80,6 +128,33 @@ private:
 public:
 
   PetscScalar Eg            (const PetscScalar &Tl) const { return BANDGAP;  }
+  PetscScalar EffecElecMass (const PetscScalar &Tl) const { return ELECMASS; }
+  PetscScalar EffecHoleMass  (const PetscScalar &Tl) const { return ELECMASS; }
+
+  PetscScalar TrapADensity() const { return TrapA; }
+  PetscScalar TrapACaptureElecCS(const PetscScalar &Tl) const { return TrapAElecCS; }
+  PetscScalar TrapACaptureHoleCS(const PetscScalar &Tl) const { return TrapAHoleCS; }
+
+  PetscScalar TrapBDensity() const { return TrapB; }
+  PetscScalar TrapBCaptureElecCS(const PetscScalar &Tl) const { return TrapBElecCS; }
+  PetscScalar TrapBCaptureHoleCS(const PetscScalar &Tl) const { return TrapBHoleCS; }
+  PetscScalar TrapBReleaseHIonRate(const PetscScalar &Tl) const { return TrapBHIonR; }
+
+  PetscScalar InterfaceStateDensity() const { return InterfaceState; }
+  PetscScalar HIonInterfaceTrapCS(const PetscScalar &Tl) const { return HIonInterfaceCS; }
+
+  PetscScalar ARichardson() const { return 1.100000e+02*A/(K*cm)/(K*cm); }
+
+  /**
+   * @return electron fit parameter of Density Gradient solver
+   */
+  PetscScalar Gamman         () const {return GN_DG;}
+
+  /**
+   * @return hole fit parameter of Density Gradient solver
+   */
+  PetscScalar Gammap         () const {return GP_DG;}
+
 
   PetscScalar HCI_Probability_Insulator_n(const PetscScalar &t_ins, const PetscScalar &E_ins) const
   {
@@ -103,20 +178,20 @@ public:
     return exp( -t_ins/HCI_MFP  );
   }
 
-  PetscScalar HCI_Barrier_n(const PetscScalar &affinity_semi, const PetscScalar &,
+  PetscScalar HCI_Barrier_n(const PetscScalar &affinity_semi, const PetscScalar &, const PetscScalar &affinity_ins,
                             const PetscScalar &t_ins, const PetscScalar &E_ins) const
   {
     if(E_ins > 0)
-      return (affinity_semi - AFFINITY) - HCI_BARLN*pow(E_ins, 0.5) - HCI_TUNLN*pow(E_ins, 2.0/3.0) ;
-    return (affinity_semi - AFFINITY) - E_ins*t_ins;
+      return (affinity_semi - affinity_ins) - HCI_BARLN*std::pow(E_ins, 0.5) - HCI_TUNLN*std::pow(E_ins, 2.0/3.0) ;
+    return (affinity_semi - affinity_ins) - E_ins*t_ins;
   }
 
-  PetscScalar HCI_Barrier_p(const PetscScalar &affinity_semi, const PetscScalar & Eg_semi,
+  PetscScalar HCI_Barrier_p(const PetscScalar &affinity_semi, const PetscScalar & Eg_semi, const PetscScalar &affinity_ins,
                             const PetscScalar &t_ins, const PetscScalar &E_ins) const
   {
     if(E_ins < 0)
-      return (AFFINITY + BANDGAP - affinity_semi -  Eg_semi) - HCI_BARLP*pow(fabs(E_ins), 0.5) - HCI_TUNLP*pow(fabs(E_ins), 2.0/3.0) ;
-    return (AFFINITY + BANDGAP - affinity_semi -  Eg_semi) + E_ins*t_ins;
+      return (affinity_ins + BANDGAP - affinity_semi -  Eg_semi) - HCI_BARLP*std::pow(fabs(E_ins), 0.5) - HCI_TUNLP*std::pow(fabs(E_ins), 2.0/3.0) ;
+    return (affinity_ins + BANDGAP - affinity_semi -  Eg_semi) + E_ins*t_ins;
   }
 
 

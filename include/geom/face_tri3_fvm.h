@@ -88,6 +88,11 @@ public:
   { _fvm_node[i] = pn; }
 
   /**
+   * @return true for fvm element
+   */
+  virtual bool is_fvm_elem() const {return true;}
+
+  /**
    * @returns a proxy element coincident with side \p i.
    */
   virtual AutoPtr<Elem> build_fvm_side (const unsigned int i, bool proxy=true) const;
@@ -205,13 +210,13 @@ private:
   Real l[3]; // 3- side index
 
   /**
-   * partial volumn of each region seperated by segment made up of
+   * partial volume of each region seperated by segment made up of
    * circumcircle center and edge center
    */
   Real v[3]; // 3- node index
 
   /**
-   * truncated partial volumn of each region seperated by segment made up of
+   * truncated partial volume of each region seperated by segment made up of
    * circumcircle center and edge center
    */
   Real vt[3]; // 3- node index

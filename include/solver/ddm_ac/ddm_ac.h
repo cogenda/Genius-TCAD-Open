@@ -138,6 +138,7 @@ public:
     case SchottkyContact   :
     case SimpleGateContact :
     case GateContact       :
+    case PolyGateContact   :
     case SolderPad         :
     case ChargedContact    :
       // the above bcs has one extra equation
@@ -159,6 +160,7 @@ public:
     case SchottkyContact   : return 2;  // displacement current
     case SimpleGateContact : return 2;  // displacement current
     case GateContact       : return 2;  // displacement current
+    case PolyGateContact   : return 2;  // displacement current
     case SolderPad         : return 2;  // conductance current
     case ChargedContact    : return 2;
     default: return 0;
@@ -236,7 +238,7 @@ private:
   /**
    * building the Matrix A, RHS vector b under certain freq omega
    */
-  void build_ddm_ac(double omega);
+  void build_ddm_ac(PetscScalar omega);
 };
 
 

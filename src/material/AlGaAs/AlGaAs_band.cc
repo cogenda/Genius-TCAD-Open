@@ -129,7 +129,7 @@ private:
     ML0_X1    = 6.300000E-02*me;
 
     N0_BGN    = 1.000000e+17*std::pow(cm,-3);
-    V0_BGN    = 0.000000e+00*V;
+    V0_BGN    = 0.000000e+00*eV;
     CON_BGN   = 0.000000e+00;
 
 #ifdef __CALIBRATE__
@@ -232,7 +232,7 @@ public:
   {
     PetscScalar Eg1 = E_Gamma(Tl);
     PetscScalar Eg2 = E_X(Tl);
-    return Eg1 < Eg2 ? Eg1 : Eg2;
+    return std::min(Eg1 , Eg2);
   }
   AutoDScalar Eg (const AutoDScalar &Tl)
   {
@@ -311,7 +311,7 @@ public:
   }
   AutoDScalar Nc (const AutoDScalar &Tl)
   {
-    //return NC300*std::pow(Tl/T300,NC_F);
+    //return NC300*adtl::pow(Tl/T300,NC_F);
     return 2*adtl::pow(2*3.14159265359*EffecElecMass(Tl)*kb*Tl/(h*h),pm);
   }
 
@@ -322,7 +322,7 @@ public:
   }
   AutoDScalar Nv (const AutoDScalar &Tl)
   {
-    //return NV300*std::pow(Tl/T300,NV_F);
+    //return NV300*adtl::pow(Tl/T300,NV_F);
     return 2*adtl::pow(2*3.14159265359*EffecHoleMass(Tl)*kb*Tl/(h*h),pm);
   }
 
@@ -330,25 +330,19 @@ public:
   PetscScalar ni (const PetscScalar &Tl)
   {
     PetscScalar bandgap = Eg(Tl);
-    PetscScalar Nc = NC300*std::pow(Tl/T300,NC_F);
-    PetscScalar Nv = NV300*std::pow(Tl/T300,NV_F);
-    return sqrt(Nc*Nv)*exp(-bandgap/(2*kb*Tl));
+    return sqrt(Nc(Tl)*Nv(Tl))*exp(-bandgap/(2*kb*Tl));
   }
 
   // nie, Eg narrow should be considered
   PetscScalar nie (const PetscScalar &p, const PetscScalar &n, const PetscScalar &Tl)
   {
     PetscScalar bandgap = Eg(Tl);
-    PetscScalar Nc = NC300*std::pow(Tl/T300,NC_F);
-    PetscScalar Nv = NV300*std::pow(Tl/T300,NV_F);
-    return sqrt(Nc*Nv)*exp(-bandgap/(2*kb*Tl))*exp(EgNarrow(p, n, Tl));
+    return sqrt(Nc(Tl)*Nv(Tl))*exp(-bandgap/(2*kb*Tl))*exp(EgNarrow(p, n, Tl)/(2*kb*Tl));
   }
   AutoDScalar nie (const AutoDScalar &p, const AutoDScalar &n, const AutoDScalar &Tl)
   {
     AutoDScalar bandgap = Eg(Tl);
-    AutoDScalar Nc = NC300*adtl::pow(Tl/T300,NC_F);
-    AutoDScalar Nv = NV300*adtl::pow(Tl/T300,NV_F);
-    return sqrt(Nc*Nv)*exp(-bandgap/(2*kb*Tl))*exp(EgNarrow(p, n, Tl));
+    return sqrt(Nc(Tl)*Nv(Tl))*exp(-bandgap/(2*kb*Tl))*exp(EgNarrow(p, n, Tl)/(2*kb*Tl));
   }
   //end of Bandgap
 
@@ -487,6 +481,22 @@ private:
   }
 
 public:
+
+  /**
+   * @return direct Recombination rate
+   */
+  PetscScalar CDIR           (const PetscScalar &Tl)  { return C_DIRECT; }
+
+  /**
+   * @return electron Auger Recombination rate
+   */
+  PetscScalar AUGERN           (const PetscScalar &p, const PetscScalar &n, const PetscScalar &Tl) { return AUGN; }
+
+  /**
+   * @return hole Auger Recombination rate
+   */
+  PetscScalar AUGERP           (const PetscScalar &p, const PetscScalar &n, const PetscScalar &Tl)  { return AUGP; }
+
   //---------------------------------------------------------------------------
   // Direct Recombination
   PetscScalar R_Direct     (const PetscScalar &p, const PetscScalar &n, const PetscScalar &Tl)

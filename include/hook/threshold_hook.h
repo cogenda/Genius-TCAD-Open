@@ -96,9 +96,27 @@ private:
    */
   std::map<SolutionVariable, double>     _vector_variable_threshold_map;
 
+  /**
+   * find the _extreme_node with max T
+   */
   void _check_T_threshold();
 
+  /**
+   * find the _extreme_cell with max E
+   */
   void _check_E_threshold();
+
+  /**
+   * record the extreme node in current solution
+   */
+  unsigned int _extreme_node;
+
+  /**
+   * record the extreme cell in current solution
+   */
+  unsigned int _extreme_cell;
+
+  void _output_hotpoint_variable();
 
   bool _violate_threshold;
 
@@ -109,6 +127,12 @@ private:
    * the output file name
    */
   std::string     _threshold_prefix;
+
+
+  /**
+   * file stream
+   */
+  std::ofstream   _out;
 
 };
 

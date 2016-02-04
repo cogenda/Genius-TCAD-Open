@@ -75,7 +75,7 @@ void CGNSIO::read (const std::string& filename)
     genius_assert(B==1);
 
     int  cell_dim, physical_dim;
-    char base_name[32];
+    char base_name[33];
     //read base information
     genius_assert(!cg_base_read(fn, B, base_name, &cell_dim, &physical_dim));
     genius_assert(physical_dim==3);
@@ -99,7 +99,7 @@ void CGNSIO::read (const std::string& filename)
       genius_assert(!cg_ndescriptors(&nd));
       for(int d=1; d<=nd; ++d)
       {
-        char descriptor_name[32];
+        char descriptor_name[33];
         char *_description;
         genius_assert(!cg_descriptor_read(d, descriptor_name, &_description));
 
@@ -128,7 +128,7 @@ void CGNSIO::read (const std::string& filename)
       }
 
       // zone basic information
-      char           zone_name[32];
+      char           zone_name[33];
       {
         genius_assert(!cg_zone_read(fn, B, z_id, zone_name, isize));
         mesh.set_subdomain_label(z_id -1, zone_name );
@@ -141,7 +141,7 @@ void CGNSIO::read (const std::string& filename)
         genius_assert(!cg_ndescriptors(&ndescriptor));
         if(ndescriptor)
         {
-          char descriptorname[32];
+          char descriptorname[33];
           char *material;
           genius_assert(!cg_descriptor_read(ndescriptor, descriptorname, &material));
           mesh.set_subdomain_material(z_id -1, material);
@@ -170,7 +170,7 @@ void CGNSIO::read (const std::string& filename)
         int A;
         genius_assert(!cg_narrays( &A ));
         genius_assert(A==1);
-        char       ArrayName[32];
+        char       ArrayName[33];
         DataType_t DataType;
         int        DataDimension;
         int        DimensionVector;
@@ -199,7 +199,7 @@ void CGNSIO::read (const std::string& filename)
 
       //read section information
       {
-        char           sectionname[32];
+        char           sectionname[33];
         ElementType_t  elemtype;
         int            range_min = 1;
         int            nbndry;
@@ -230,7 +230,7 @@ void CGNSIO::read (const std::string& filename)
 
           for(int a=1; a<=A; a++)
           {
-            char       ArrayName[32];
+            char       ArrayName[33];
             DataType_t DataType;
             int        DataDimension;
             int        DimensionVector;
@@ -407,7 +407,7 @@ void CGNSIO::read (const std::string& filename)
       genius_assert(!cg_nbocos(fn, B, z_id, &BC));
       for(int bc_id=1; bc_id<=BC; bc_id++)
       {
-        char           boco_name[32];
+        char           boco_name[33];
         BCType_t       boco_type ;
         PointSetType_t ptset_type ;
         int            npnts ;
@@ -429,7 +429,7 @@ void CGNSIO::read (const std::string& filename)
           int ndescriptor;
           genius_assert(!cg_ndescriptors(&ndescriptor));
 
-          char descriptorname[32];
+          char descriptorname[33];
           for(int nd=1; nd<=ndescriptor; ++nd)
           {
             char *_text;
@@ -465,7 +465,7 @@ void CGNSIO::read (const std::string& filename)
 
           for(int a=1; a<=A; a++)
           {
-            char       ArrayName[32];
+            char       ArrayName[33];
             DataType_t DataType;
             int        DataDimension;
             int        DimensionVector;
@@ -510,7 +510,7 @@ void CGNSIO::read (const std::string& filename)
             genius_assert(!cg_narrays(&narray));
             for(int a=1; a<=narray; a++)
             {
-              char array[32];
+              char array[33];
               DataType_t type;
               int dimension;
               int vector;
@@ -541,14 +541,14 @@ void CGNSIO::read (const std::string& filename)
       for(int sol_id=1; sol_id<=SOL; sol_id++)
       {
         genius_assert(!cg_nfields(fn, B, z_id, sol_id, &F));
-        char           solutionname[32];
+        char           solutionname[33];
         GridLocation_t locationtype;
         genius_assert(!cg_sol_info(fn,B,z_id,sol_id,solutionname, &locationtype));
         for(int f_id=1; f_id<=F; f_id++)
         {
           int        imin=1;
           DataType_t datatype;
-          char       fieldname[32];
+          char       fieldname[33];
           cg_field_info(fn, B, z_id, sol_id, f_id, &datatype, fieldname);
           genius_assert(datatype==RealDouble);
 
@@ -564,7 +564,7 @@ void CGNSIO::read (const std::string& filename)
         genius_assert(!cg_ndescriptors(&ndescriptors));
         for(int d_it=1; d_it<=ndescriptors; d_it++)
         {
-          char descriptorname[32];
+          char descriptorname[33];
           char *_description;
           genius_assert(!cg_descriptor_read(d_it, descriptorname, &_description));
           region_solution_units.insert( std::make_pair( std::string(descriptorname),  std::string(_description)) );
@@ -583,7 +583,7 @@ void CGNSIO::read (const std::string& filename)
       int nuserdata; genius_assert(!cg_nuser_data(&nuserdata));
       for(int u=1; u<=nuserdata; ++u)
       {
-        char userdataname[32];
+        char userdataname[33];
         genius_assert(!cg_user_data_read(u, userdataname));
         if( std::string(userdataname) != "ExtraBoundaryInfo" ) continue;
 
@@ -593,7 +593,7 @@ void CGNSIO::read (const std::string& filename)
         for(int i=1; i<=ndescriptor; ++i)
         {
           // read first descriptor -- bc label
-          char descriptorname[32];
+          char descriptorname[33];
           char *_description;
           assert(!cg_descriptor_read(i, descriptorname, &_description));
           mesh.boundary_info->add_extra_description(std::string(_description));
@@ -753,6 +753,21 @@ void CGNSIO::read (const std::string& filename)
                   node_data->Tp() = var_it->second[n] * K;
                   continue;
                 }
+                if(var_it->first.second == "eqc" || var_it->first.second == "Eqc")
+                {
+                  node_data->Eqc() = var_it->second[n] * eV;
+                  continue;
+                }
+                if(var_it->first.second == "eqv" || var_it->first.second == "Eqv")
+                {
+                  node_data->Eqv() = var_it->second[n] * eV;
+                  continue;
+                }
+                if(var_it->first.second == "interface_charge")
+                {
+                  node_data->interface_charge() = var_it->second[n] * pow(cm,-2);
+                  continue;
+                }
               }
               if(var_it->first.first == "Doping")
               {
@@ -788,7 +803,7 @@ void CGNSIO::read (const std::string& filename)
               if(var_it->first.first == "Custom")
               {
                 const SimulationVariable & variable = region->get_variable(var_it->first.second, POINT_CENTER);
-                node_data->data<Real>(variable.variable_index) = var_it->second[n]*variable.variable_unit;
+                node_data->data<PetscScalar>(variable.variable_index) = var_it->second[n]*variable.variable_unit;
               }
 
             }
@@ -847,12 +862,22 @@ void CGNSIO::read (const std::string& filename)
                   node_data->T() = var_it->second[n] * K;
                   continue;
                 }
+                if(var_it->first.second == "trap.a")
+                {
+                  node_data->trap_a() = var_it->second[n] * pow(cm,-3);
+                  continue;
+                }
+                if(var_it->first.second == "trap.b")
+                {
+                  node_data->trap_b() = var_it->second[n] * pow(cm,-3);
+                  continue;
+                }
               }
 
               if(var_it->first.first == "Custom")
               {
                 const SimulationVariable & variable = region->get_variable(var_it->first.second, POINT_CENTER);
-                node_data->data<Real>(variable.variable_index) = var_it->second[n]*variable.variable_unit;
+                node_data->data<PetscScalar>(variable.variable_index) = var_it->second[n]*variable.variable_unit;
               }
             }
           }
@@ -911,7 +936,7 @@ void CGNSIO::read (const std::string& filename)
               if(var_it->first.first == "Custom")
               {
                 const SimulationVariable & variable = region->get_variable(var_it->first.second, POINT_CENTER);
-                node_data->data<Real>(variable.variable_index) = var_it->second[n]*variable.variable_unit;
+                node_data->data<PetscScalar>(variable.variable_index) = var_it->second[n]*variable.variable_unit;
               }
             }
           }
@@ -1306,7 +1331,7 @@ void CGNSIO::write (const std::string& filename)
         // now write down boundary information
 
         // write a dummy bc label
-        char bc_label[32];
+        char bc_label[33];
         sprintf( bc_label, "boundary_%d", bd_id );
 
         // boundary as point list
@@ -1361,33 +1386,36 @@ void CGNSIO::write (const std::string& filename)
 
           std::vector<unsigned int> region_node_id;
 
-          std::multimap< std::string, std::pair<SimulationVariable, std::vector<double> > >  region_data;
-          typedef std::multimap< std::string, std::pair<SimulationVariable, std::vector<double> > > region_data_map;
+          std::multimap< std::string, std::pair<SimulationVariable, std::vector<PetscScalar> > >  region_data;
+          typedef std::multimap< std::string, std::pair<SimulationVariable, std::vector<PetscScalar> > > region_data_map;
           region_data_map::iterator region_data_it;
 
-          region_data.insert( std::make_pair("Doping", std::make_pair(region->get_variable("na", POINT_CENTER), std::vector<double>())) );
-          region_data.insert( std::make_pair("Doping", std::make_pair(region->get_variable("nd", POINT_CENTER), std::vector<double>())) );
+          region_data.insert( std::make_pair("Doping", std::make_pair(region->get_variable("Na", POINT_CENTER), std::vector<PetscScalar>())) );
+          region_data.insert( std::make_pair("Doping", std::make_pair(region->get_variable("Nd", POINT_CENTER), std::vector<PetscScalar>())) );
 
-          region_data.insert( std::make_pair("Solution", std::make_pair(region->get_variable("electron", POINT_CENTER), std::vector<double>())) );
-          region_data.insert( std::make_pair("Solution", std::make_pair(region->get_variable("hole", POINT_CENTER), std::vector<double>())) );
-          region_data.insert( std::make_pair("Solution", std::make_pair(region->get_variable("potential", POINT_CENTER), std::vector<double>())) );
-          region_data.insert( std::make_pair("Solution", std::make_pair(region->get_variable("temperature", POINT_CENTER), std::vector<double>())) );
-          region_data.insert( std::make_pair("Solution", std::make_pair(region->get_variable("elec_temperature", POINT_CENTER), std::vector<double>())) );
-          region_data.insert( std::make_pair("Solution", std::make_pair(region->get_variable("hole_temperature", POINT_CENTER), std::vector<double>())) );
+          region_data.insert( std::make_pair("Solution", std::make_pair(region->get_variable("electron", POINT_CENTER), std::vector<PetscScalar>())) );
+          region_data.insert( std::make_pair("Solution", std::make_pair(region->get_variable("hole", POINT_CENTER), std::vector<PetscScalar>())) );
+          region_data.insert( std::make_pair("Solution", std::make_pair(region->get_variable("potential", POINT_CENTER), std::vector<PetscScalar>())) );
+          region_data.insert( std::make_pair("Solution", std::make_pair(region->get_variable("temperature", POINT_CENTER), std::vector<PetscScalar>())) );
+          region_data.insert( std::make_pair("Solution", std::make_pair(region->get_variable("elec_temperature", POINT_CENTER), std::vector<PetscScalar>())) );
+          region_data.insert( std::make_pair("Solution", std::make_pair(region->get_variable("hole_temperature", POINT_CENTER), std::vector<PetscScalar>())) );
+          region_data.insert( std::make_pair("Solution", std::make_pair(region->get_variable("Eqc", POINT_CENTER), std::vector<PetscScalar>())) );
+          region_data.insert( std::make_pair("Solution", std::make_pair(region->get_variable("Eqv", POINT_CENTER), std::vector<PetscScalar>())) );
+          region_data.insert( std::make_pair("Solution", std::make_pair(region->get_variable("interface_charge", POINT_CENTER), std::vector<PetscScalar>())) );
 
           if(sigle)
-            region_data.insert( std::make_pair("Mole", std::make_pair(region->get_variable("mole_x", POINT_CENTER), std::vector<double>())) );
+            region_data.insert( std::make_pair("Mole", std::make_pair(region->get_variable("mole_x", POINT_CENTER), std::vector<PetscScalar>())) );
 
           if(complex)
           {
-            region_data.insert( std::make_pair("Mole", std::make_pair(region->get_variable("mole_x", POINT_CENTER), std::vector<double>())) );
-            region_data.insert( std::make_pair("Mole", std::make_pair(region->get_variable("mole_y", POINT_CENTER), std::vector<double>())) );
+            region_data.insert( std::make_pair("Mole", std::make_pair(region->get_variable("mole_x", POINT_CENTER), std::vector<PetscScalar>())) );
+            region_data.insert( std::make_pair("Mole", std::make_pair(region->get_variable("mole_y", POINT_CENTER), std::vector<PetscScalar>())) );
           }
 
           std::vector<SimulationVariable> custom_variable;
           region->get_user_defined_variable(POINT_CENTER, SCALAR, custom_variable);
           for(unsigned int n=0; n<custom_variable.size(); ++n)
-            region_data.insert( std::make_pair("Custom", std::make_pair(custom_variable[n], std::vector<double>())) );
+            region_data.insert( std::make_pair("Custom", std::make_pair(custom_variable[n], std::vector<PetscScalar>())) );
 
 
           SimulationRegion::const_processor_node_iterator node_it = region->on_processor_nodes_begin();
@@ -1403,7 +1431,7 @@ void CGNSIO::write (const std::string& filename)
             for( region_data_it = region_data.begin(); region_data_it != region_data.end(); ++region_data_it)
             {
               const SimulationVariable & variable = region_data_it->second.first;
-              region_data_it->second.second.push_back( node_data->data<double>( variable.variable_index ) / variable.variable_unit );
+              region_data_it->second.second.push_back( node_data->data<PetscScalar>( variable.variable_index ) / variable.variable_unit );
             }
           }
 
@@ -1447,20 +1475,24 @@ void CGNSIO::write (const std::string& filename)
         {
           std::vector<unsigned int> region_node_id;
 
-          std::multimap< std::string, std::pair<SimulationVariable, std::vector<double> > >  region_data;
-          typedef std::multimap< std::string, std::pair<SimulationVariable, std::vector<double> > > region_data_map;
+          std::multimap< std::string, std::pair<SimulationVariable, std::vector<PetscScalar> > >  region_data;
+          typedef std::multimap< std::string, std::pair<SimulationVariable, std::vector<PetscScalar> > > region_data_map;
           region_data_map::iterator region_data_it;
 
-          region_data.insert( std::make_pair("Solution", std::make_pair(region->get_variable("potential", POINT_CENTER), std::vector<double>())) );
-          region_data.insert( std::make_pair("Solution", std::make_pair(region->get_variable("electron", POINT_CENTER), std::vector<double>())) );
-          region_data.insert( std::make_pair("Solution", std::make_pair(region->get_variable("hole", POINT_CENTER), std::vector<double>())) );
-          region_data.insert( std::make_pair("Solution", std::make_pair(region->get_variable("temperature", POINT_CENTER), std::vector<double>())) );
+          region_data.insert( std::make_pair("Solution", std::make_pair(region->get_variable("potential", POINT_CENTER), std::vector<PetscScalar>())) );
+          region_data.insert( std::make_pair("Solution", std::make_pair(region->get_variable("electron", POINT_CENTER), std::vector<PetscScalar>())) );
+          region_data.insert( std::make_pair("Solution", std::make_pair(region->get_variable("hole", POINT_CENTER), std::vector<PetscScalar>())) );
+          region_data.insert( std::make_pair("Solution", std::make_pair(region->get_variable("temperature", POINT_CENTER), std::vector<PetscScalar>())) );
+          region_data.insert( std::make_pair("Solution", std::make_pair(region->get_variable("trap.a", POINT_CENTER), std::vector<PetscScalar>())) );
+          region_data.insert( std::make_pair("Solution", std::make_pair(region->get_variable("trap.b", POINT_CENTER), std::vector<PetscScalar>())) );
+          region_data.insert( std::make_pair("Solution", std::make_pair(region->get_variable("trap.bn", POINT_CENTER), std::vector<PetscScalar>())) );
+          region_data.insert( std::make_pair("Solution", std::make_pair(region->get_variable("hion", POINT_CENTER), std::vector<PetscScalar>())) );
 
 
           std::vector<SimulationVariable> custom_variable;
           region->get_user_defined_variable(POINT_CENTER, SCALAR, custom_variable);
           for(unsigned int n=0; n<custom_variable.size(); ++n)
-            region_data.insert( std::make_pair("Custom", std::make_pair(custom_variable[n], std::vector<double>())) );
+            region_data.insert( std::make_pair("Custom", std::make_pair(custom_variable[n], std::vector<PetscScalar>())) );
 
           SimulationRegion::const_processor_node_iterator node_it = region->on_processor_nodes_begin();
           SimulationRegion::const_processor_node_iterator node_it_end = region->on_processor_nodes_end();
@@ -1474,7 +1506,7 @@ void CGNSIO::write (const std::string& filename)
             for( region_data_it = region_data.begin(); region_data_it != region_data.end(); ++region_data_it)
             {
               const SimulationVariable & variable = region_data_it->second.first;
-              region_data_it->second.second.push_back( node_data->data<double>( variable.variable_index ) / variable.variable_unit );
+              region_data_it->second.second.push_back( node_data->data<PetscScalar>( variable.variable_index ) / variable.variable_unit );
             }
           }
 
@@ -1514,18 +1546,18 @@ void CGNSIO::write (const std::string& filename)
         {
           std::vector<unsigned int> region_node_id;
 
-          std::multimap< std::string, std::pair<SimulationVariable, std::vector<double> > >  region_data;
-          typedef std::multimap< std::string, std::pair<SimulationVariable, std::vector<double> > > region_data_map;
+          std::multimap< std::string, std::pair<SimulationVariable, std::vector<PetscScalar> > >  region_data;
+          typedef std::multimap< std::string, std::pair<SimulationVariable, std::vector<PetscScalar> > > region_data_map;
           region_data_map::iterator region_data_it;
 
-          region_data.insert( std::make_pair("Solution", std::make_pair(region->get_variable("potential", POINT_CENTER), std::vector<double>())) );
-          region_data.insert( std::make_pair("Solution", std::make_pair(region->get_variable("temperature", POINT_CENTER), std::vector<double>())) );
+          region_data.insert( std::make_pair("Solution", std::make_pair(region->get_variable("potential", POINT_CENTER), std::vector<PetscScalar>())) );
+          region_data.insert( std::make_pair("Solution", std::make_pair(region->get_variable("temperature", POINT_CENTER), std::vector<PetscScalar>())) );
 
 
           std::vector<SimulationVariable> custom_variable;
           region->get_user_defined_variable(POINT_CENTER, SCALAR, custom_variable);
           for(unsigned int n=0; n<custom_variable.size(); ++n)
-            region_data.insert( std::make_pair("Custom", std::make_pair(custom_variable[n], std::vector<double>())) );
+            region_data.insert( std::make_pair("Custom", std::make_pair(custom_variable[n], std::vector<PetscScalar>())) );
 
           SimulationRegion::const_processor_node_iterator node_it = region->on_processor_nodes_begin();
           SimulationRegion::const_processor_node_iterator node_it_end = region->on_processor_nodes_end();
@@ -1539,7 +1571,7 @@ void CGNSIO::write (const std::string& filename)
             for( region_data_it = region_data.begin(); region_data_it != region_data.end(); ++region_data_it)
             {
               const SimulationVariable & variable = region_data_it->second.first;
-              region_data_it->second.second.push_back( node_data->data<double>( variable.variable_index ) / variable.variable_unit );
+              region_data_it->second.second.push_back( node_data->data<PetscScalar>( variable.variable_index ) / variable.variable_unit );
             }
           }
 
@@ -1579,19 +1611,19 @@ void CGNSIO::write (const std::string& filename)
         {
           std::vector<unsigned int> region_node_id;
 
-          std::multimap< std::string, std::pair<SimulationVariable, std::vector<double> > >  region_data;
-          typedef std::multimap< std::string, std::pair<SimulationVariable, std::vector<double> > > region_data_map;
+          std::multimap< std::string, std::pair<SimulationVariable, std::vector<PetscScalar> > >  region_data;
+          typedef std::multimap< std::string, std::pair<SimulationVariable, std::vector<PetscScalar> > > region_data_map;
           region_data_map::iterator region_data_it;
 
-          region_data.insert( std::make_pair("Solution", std::make_pair(region->get_variable("potential", POINT_CENTER), std::vector<double>())) );
-          region_data.insert( std::make_pair("Solution", std::make_pair(region->get_variable("electron", POINT_CENTER), std::vector<double>())) );
-          region_data.insert( std::make_pair("Solution", std::make_pair(region->get_variable("temperature", POINT_CENTER), std::vector<double>())) );
+          region_data.insert( std::make_pair("Solution", std::make_pair(region->get_variable("potential", POINT_CENTER), std::vector<PetscScalar>())) );
+          region_data.insert( std::make_pair("Solution", std::make_pair(region->get_variable("electron", POINT_CENTER), std::vector<PetscScalar>())) );
+          region_data.insert( std::make_pair("Solution", std::make_pair(region->get_variable("temperature", POINT_CENTER), std::vector<PetscScalar>())) );
 
 
           std::vector<SimulationVariable> custom_variable;
           region->get_user_defined_variable(POINT_CENTER, SCALAR, custom_variable);
           for(unsigned int n=0; n<custom_variable.size(); ++n)
-            region_data.insert( std::make_pair("Custom", std::make_pair(custom_variable[n], std::vector<double>())) );
+            region_data.insert( std::make_pair("Custom", std::make_pair(custom_variable[n], std::vector<PetscScalar>())) );
 
           SimulationRegion::const_processor_node_iterator node_it = region->on_processor_nodes_begin();
           SimulationRegion::const_processor_node_iterator node_it_end = region->on_processor_nodes_end();
@@ -1605,7 +1637,7 @@ void CGNSIO::write (const std::string& filename)
             for( region_data_it = region_data.begin(); region_data_it != region_data.end(); ++region_data_it)
             {
               const SimulationVariable & variable = region_data_it->second.first;
-              region_data_it->second.second.push_back( node_data->data<double>( variable.variable_index ) / variable.variable_unit );
+              region_data_it->second.second.push_back( node_data->data<PetscScalar>( variable.variable_index ) / variable.variable_unit );
             }
           }
 
@@ -1685,14 +1717,14 @@ void CGNSIO::write (const std::string& filename)
 }
 
 
-std::vector<double> & CGNSIO::_sort_it (std::vector<double> & x, const std::vector<unsigned int > &id)
+std::vector<double>  CGNSIO::_sort_it (const std::vector<PetscScalar> & x, const std::vector<unsigned int > &id)
 {
-  std::vector<double> xx(x) ;
+  std::vector<double> xx(x.size()) ;
 
   for(unsigned int i=0; i<id.size(); i++)
-    x[id[i]] = xx[i];
+    xx[id[i]] = x[i];
 
-  return x;
+  return xx;
 }
 
 

@@ -59,9 +59,7 @@ void Partitioner::partition (MeshBase& mesh, const std::vector<std::vector<unsig
   // clear cluster if data exist
   this->_clear_cluster();
 
-  this->_build_flat_cluster(mesh);
-
-  this->_merge_elem_to_cluster(mesh, cluster);
+  this->_build_cluster(mesh, cluster);
 
   // Call the partitioning function
   this->_do_partition(mesh,n);
@@ -85,9 +83,7 @@ void Partitioner::repartition(MeshBase& mesh, const std::vector<std::vector<unsi
   // clear cluster if data exist
   this->_clear_cluster();
 
-  this->_build_flat_cluster(mesh);
-
-  this->_merge_elem_to_cluster(mesh, cluster);
+  this->_build_cluster(mesh, cluster);
 
   // Call the partitioning function
   this->_do_repartition(mesh,n);
@@ -247,93 +243,37 @@ void Partitioner::_set_node_processor_ids(MeshBase& mesh)
 
 
 
-void Partitioner::_build_flat_cluster(MeshBase& mesh)
+void Partitioner::_build_cluster(MeshBase& mesh, const std::vector<std::vector<unsigned int> > *cluster_elems)
 {
-  START_LOG("build_flat_cluster()", "Partitioner");
-
-  MeshBase::element_iterator       elem_it  = mesh.active_elements_begin();
-  const MeshBase::element_iterator elem_end = mesh.active_elements_end();
-
-  _elem_cluster_map.resize(mesh.n_elem(), 0);
-
-  for (; elem_it != elem_end; ++elem_it)
+  if(!cluster_elems)
   {
-    const Elem* elem = *elem_it;
-
     Cluster * cluster = new Cluster;
-
-    cluster->id = elem->id();
-    cluster->elems.push_back(elem);
-
+    MeshBase::element_iterator       elem_it  = mesh.active_elements_begin();
+    const MeshBase::element_iterator elem_end = mesh.active_elements_end();
+    for (unsigned int n=0; elem_it != elem_end; ++elem_it, ++n)
+    {
+      const Elem* elem = *elem_it;
+      cluster->elems.push_back(elem);
+      cluster->elem_id_map.insert(std::make_pair(elem, n));
+    }
     _clusters.push_back(cluster);
-    _elem_cluster_map[elem->id()] = cluster;
-  } // end for elem_it
-
-  STOP_LOG("build_flat_cluster()", "Partitioner");
+  }
+  else
+  {
+    for(unsigned int c=0; c<cluster_elems->size(); ++c)
+    {
+       Cluster * cluster = new Cluster;
+       const std::vector<unsigned int> elems = (*cluster_elems)[c];
+       for(unsigned int n=0; n<elems.size(); ++n)
+       {
+          const Elem * elem = mesh.elem(elems[n]);
+          cluster->elems.push_back(elem);
+          cluster->elem_id_map.insert(std::make_pair(elem, n));
+       }
+       _clusters.push_back(cluster);
+    }
+  }
 }
-
-
-
-void Partitioner::_merge_elem_to_cluster(MeshBase& mesh, const std::vector<std::vector<unsigned int> > *cluster_elems)
-{
-
-  if(!cluster_elems) return;
-
-  START_LOG("merge_elem_to_cluster()", "Partitioner");
-
-  // create new cluster
-  std::vector<Cluster *> new_clusters;
-  std::map<const Elem *, const Cluster *> new_elem_cluster_map;
-  for(unsigned int n=0; n<cluster_elems->size(); ++n)
-  {
-    // create new Cluster
-    Cluster * cluster = new Cluster;
-    // set the elems of this cluster
-    for(unsigned int m=0; m<(*cluster_elems)[n].size(); ++m)
-      cluster->elems.push_back(mesh.elem((*cluster_elems)[n][m]));
-    // give a unique id to new cluster
-    cluster->id = _clusters.size() + n;
-    new_clusters.push_back(cluster);
-    // build elem to cluster map
-    for(unsigned int m=0; m<cluster->elems.size(); ++m)
-      new_elem_cluster_map.insert(std::make_pair(cluster->elems[m], cluster));
-  }
-
-  // replace old (flat) cluster by new cluster
-  std::map<const Elem *, const Cluster *>::iterator elem_cluster_map_it = new_elem_cluster_map.begin();
-  for( ;elem_cluster_map_it != new_elem_cluster_map.end(); ++elem_cluster_map_it)
-  {
-    const Elem * elem = elem_cluster_map_it->first;
-    const Cluster * cluster = elem_cluster_map_it->second;
-    const Cluster * old_cluster = _elem_cluster_map[elem->id()];
-    delete old_cluster;
-    _elem_cluster_map[elem->id()] = cluster;
-  }
-
-  // can be free here
-  new_elem_cluster_map.clear();
-
-  // rebuild _clusters array, the order should keeps the same between processors
-  std::map<unsigned int, Cluster *> _cluster_map; //order the cluster by its id
-  for( unsigned int n = 0; n < _elem_cluster_map.size(); ++n)
-  {
-    if(!_elem_cluster_map[n]) continue; // _elem_cluster_map may have empty entries!
-    Cluster * cluster = const_cast<Cluster *>(_elem_cluster_map[n]);
-    _cluster_map.insert(std::make_pair(cluster->id, cluster));
-  }
-
-  _clusters.clear();
-  std::map<unsigned int, Cluster *>::iterator  cluster_map_it = _cluster_map.begin();
-  for( ; cluster_map_it != _cluster_map.end(); ++cluster_map_it)
-    _clusters.push_back(cluster_map_it->second);
-
-  // assign new id to cluster
-  for(unsigned int n=0; n<_clusters.size(); ++n)
-    _clusters[n]->id = n;
-
-  STOP_LOG("merge_elem_to_cluster()", "Partitioner");
-}
-
 
 
 
@@ -342,196 +282,9 @@ void Partitioner::_clear_cluster()
   for(unsigned int n=0; n<_clusters.size(); ++n)
     delete _clusters[n];
   _clusters.clear();
-
-  _elem_cluster_map.clear();
 }
 
 
 
-#if 0
-std::vector<const Elem *> Partitioner::cluster_neighbor_elem(const Cluster * cluster) const
-{
-  std::set<const Elem *> elements;
-
-  for(unsigned int m=0; m<cluster->elems.size(); ++m)
-  {
-    const Elem * elem = cluster->elems[m];
-    // Loop over the element's neighbors.  An element
-    // adjacency corresponds to a face neighbor
-    for (unsigned int ms=0; ms<elem->n_neighbors(); ms++)
-    {
-      const Elem* neighbor = elem->neighbor(ms);
-
-      if (neighbor != NULL)
-      {
-        // If the neighbor is active treat it
-        // as a connection
-        if (neighbor->active())
-        {
-          if( elements.find(neighbor) != elements.end() )
-            elements.erase(neighbor);
-          else
-            elements.insert(neighbor);
-        }
-
-#ifdef ENABLE_AMR
-
-        // Otherwise we need to find all of the
-        // neighbor's children that are connected to
-        // us and add them
-        else
-        {
-          // The side of the neighbor to which
-          // we are connected
-          const unsigned int ns = neighbor->which_neighbor_am_i (elem);
-
-          // Get all the active children (& grandchildren, etc...)
-          // of the neighbor.
-          std::vector<const Elem*> neighbors_offspring;
-          neighbor->active_family_tree (neighbors_offspring);
-
-          // Get all the neighbor's children that
-          // live on that side and are thus connected
-          // to us
-          for (unsigned int nc=0; nc<neighbors_offspring.size(); nc++)
-          {
-            const Elem* child = neighbors_offspring[nc];
-
-            // This does not assume a level-1 mesh.
-            // Note that since children have sides numbered
-            // coincident with the parent then this is a sufficient test.
-            if (child->neighbor(ns) == elem)
-            {
-              if( elements.find(child) != elements.end() )
-                elements.erase(child);
-              else
-                elements.insert(child);
-            }
-          }
-        }
-
-#endif /* ifdef ENABLE_AMR */
-
-      }
-    } // end for neighbor
-  }
-
-  // set neighbor info of this cluster
-  //NOTE, cluster neighbor elem may belongs to the same cluster, we need to eliminate the duplicate neighbor
-  std::set<const Cluster *> cluster_neighbor_set;
-  std::vector<const Elem *> elems;
-  std::set<const Elem *>::const_iterator it = elements.begin();
-  for( ; it != elements.end(); ++it)
-  {
-    const Elem * elem = *it;
-    const Cluster * cluster_neighbor = _elem_cluster_map[elem->id()];
-    if( cluster_neighbor_set.find(cluster_neighbor) == cluster_neighbor_set.end() )
-    {
-      cluster_neighbor_set.insert(cluster_neighbor);
-      elems.push_back(elem);
-    }
-  }
-
-
-  // sort the nodes by ID
-  DofObject::Less less;
-  std::sort( elems.begin(), elems.end(), less );
-
-  assert(elems.size() == cluster->neighbors.size());
-
-
-  return elems;
-}
-#endif
-
-
-std::vector<const Elem *> Partitioner::cluster_neighbor_elem(const Cluster * cluster) const
-{
-
-  // the elems belongs to this cluster
-  std::set<const Elem *> cluster_elem;
-  cluster_elem.insert(cluster->elems.begin(), cluster->elems.end());
-
-  // the neighbor of this cluster, should ordered by id, then each processor has the same order!
-  std::set<const Elem *> cluster_neighbor;
-
-  // build cluster_neighbor
-  for(unsigned int m=0; m<cluster->elems.size(); ++m)
-  {
-    const Elem * elem = cluster->elems[m];
-    for (unsigned int ms=0; ms<elem->n_neighbors(); ms++)
-    {
-      const Elem* neighbor = elem->neighbor(ms);
-      // neighbor should not be NULL and not belongs to this cluster
-      if (neighbor != NULL && cluster_elem.find(neighbor)==cluster_elem.end())
-      {
-        // If the neighbor is active treat it
-        // as a connection
-        if (neighbor->active())
-        {
-          cluster_neighbor.insert(neighbor);
-        }
-
-#ifdef ENABLE_AMR
-
-        // Otherwise we need to find all of the
-        // neighbor's children that are connected to
-        // us and add them
-        else
-        {
-          // The side of the neighbor to which
-          // we are connected
-          const unsigned int ns = neighbor->which_neighbor_am_i (elem);
-
-          // Get all the active children (& grandchildren, etc...)
-          // of the neighbor.
-          std::vector<const Elem*> neighbors_offspring;
-          neighbor->active_family_tree (neighbors_offspring);
-
-          // Get all the neighbor's children that
-          // live on that side and are thus connected
-          // to us
-          for (unsigned int nc=0; nc<neighbors_offspring.size(); nc++)
-          {
-            const Elem* child = neighbors_offspring[nc];
-
-            // This does not assume a level-1 mesh.
-            // Note that since children have sides numbered
-            // coincident with the parent then this is a sufficient test.
-            if (child->neighbor(ns) == elem)
-            {
-              cluster_neighbor.insert(child);
-            }
-          }
-        }
-
-#endif /* ifdef ENABLE_AMR */
-
-      }
-    } // end for neighbor
-  }
-
-  // set neighbor info of this cluster
-  std::vector<const Elem *> elems;
-
-  //NOTE, cluster neighbor elem may belongs to the same cluster, we need to eliminate the duplicate neighbor
-  std::set<const Cluster *> neighbor_set;
-  std::set<const Elem *>::iterator set_it = cluster_neighbor.begin();
-  for(; set_it != cluster_neighbor.end(); ++set_it)
-  {
-    const Elem * neighbor = (*set_it);
-    const Cluster * neighbor_cluster = _elem_cluster_map[neighbor->id()];
-    if(neighbor_set.find(neighbor_cluster) == neighbor_set.end())
-      elems.push_back(neighbor);
-    neighbor_set.insert(neighbor_cluster);
-  }
-
-  // sort the nodes by ID
-  DofObject::Less less;
-  std::sort( elems.begin(), elems.end(), less );
-
-  return elems;
-
-}
 
 

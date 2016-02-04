@@ -92,6 +92,8 @@ private:
   */
  void set_mole_function_file(const Parser::Card & c);
 
+ enum Profile_Data_Axes {AXES_X, AXES_Y, AXES_Z, AXES_XY, AXES_XZ, AXES_YZ, AXES_XYZ};
+
  /**
   * @return the first mole fraction of given node
   */
@@ -107,7 +109,7 @@ private:
   */
  std::vector<MoleFunction * >  _mole_funs;
  std::vector<std::pair<InterpolationBase *, InterpolationBase*> >  _mole_data;
-
+ std::vector<int> _mole_int_type;
 };
 
 

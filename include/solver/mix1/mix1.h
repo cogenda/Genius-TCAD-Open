@@ -124,21 +124,31 @@ public:
    */
   virtual void build_petsc_sens_jacobian(Vec x, Mat *jac, Mat *pc);
 
+
+
   /**
-   * function for line search post check. do Newton damping here
+   * function for line search pre check. do Newton damping here
+   */
+  virtual void sens_line_search_pre_check(Vec x, Vec y, PetscBool *changed_y)
+  {
+    FVM_FlexNonlinearSolver::sens_line_search_pre_check(x, y, changed_y);
+  }
+
+
+  /**
+   * function for line search post check. check for positive carrier density
    */
   virtual void sens_line_search_post_check(Vec x, Vec y, Vec w, PetscBool *changed_y, PetscBool *changed_w)
   {
     switch( SolverSpecify::Damping )
     {
-      case SolverSpecify::DampingPotential : potential_damping(x, y, w, changed_y, changed_w); break;
-      case SolverSpecify::DampingBankRose  : bank_rose_damping(x, y, w, changed_y, changed_w); break;
-      case SolverSpecify::DampingNo        : positive_density_damping(x, y, w, changed_y, changed_w); break;
-      default: positive_density_damping(x, y, w, changed_y, changed_w);
+      case SolverSpecify::DampingPotential      : potential_damping(x, y, w, changed_y, changed_w); break;
+      default: check_positive_density(x, y, w, changed_y, changed_w);
     }
-
+  
     MixSolverBase::sens_line_search_post_check(x, y, w, changed_y, changed_w);
   }
+
 
   /**
    * test if BDF2 can be used for next time step
@@ -171,6 +181,7 @@ public:
       case SchottkyContact   : return 3; // displacement current
       case SimpleGateContact : return 1; // displacement current
       case GateContact       : return 1; // displacement current
+      case PolyGateContact   : return 1; // displacement current
       case SolderPad         : return 1; // conductance current
       case ChargedContact    : return 1; // for electrostatic Gauss's law
       default: return 0;
@@ -189,10 +200,11 @@ private:
    */
   void bank_rose_damping(Vec x, Vec y, Vec w, PetscBool *changed_y, PetscBool *changed_w);
 
+
   /**
-   * Positive carrier density Newton damping scheme
+   * check for positive carrier density
    */
-  void positive_density_damping(Vec x, Vec y, Vec w, PetscBool *changed_y, PetscBool *changed_w);
+  void check_positive_density(Vec x, Vec y, Vec w, PetscBool *changed_y, PetscBool *changed_w);
 
 };
 

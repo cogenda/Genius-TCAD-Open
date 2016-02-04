@@ -20,6 +20,56 @@
 /********************************************************************************/
 
 
+/** \mainpage Genius
+    \author   Gong Ding
+    \version  1.9.0
+    \date     20-Oct-2015
+    \see      http://www.cogenda.com/
+
+
+    Genius is the next-generation 3D parallel device simulator, 
+    which provides unprecedented capability and performance 
+    with leading parallel computing technologies. 
+    
+    Genius is the commercial TCAD device simulator that scaled 
+    beyond the 10-transistor barrier. With Genius, one is able 
+    to routinely simulate circuit cells like inverter, 6T SRAM, 
+    latch and flip-flop, and expect 10 fold reduction in 
+    simulation run times.
+    
+    Unlike many TCAD products in the market, the Genius Device 
+    Simulator is a completely new design. Parallelism, scalability 
+    and extensibility were considered in its design goals at a 
+    very early stage. Furthermore, Genius has been constructed 
+    using newer numerical simulation techniques and software 
+    development tools.
+
+    With parallel computation, Genius enables you to reduce 
+    simulation time by 10 times or more. At the same time, 
+    you may simulate larger device structures, or small circuit 
+    blocks containing several devices with Genius, which was 
+    very difficult, if not impossible with other simulators.
+    
+    Main features
+    - Drift-diffusion model;
+    - Lattice heating model;
+    - Energy balance model;
+    - DC, AC and transient simulation modes;
+    - Circuit/Device mixed simulation;
+    - Material library with 30 material types;
+    - A wide range of mobility models;
+    - Impact ionization model;
+    - Band-to-band tunneling model;
+    - Carrier trapping at defects;
+    - Hall effect;
+    - 3D Ray-tracing optics;
+    - 2D FEM Optics;
+    - 3D TID model;
+    - device model generation from GDSII mask layout;
+    - data format conversion from other major TCAD tools.
+*/
+
+
 #include <cstdlib>
 #include <iostream>
 #include <fstream>
@@ -32,6 +82,7 @@
 #include "file_include.h"
 #include "sync_file.h"
 #include "perf_log.h"
+#include "memory_log.h"
 #include "parser.h"
 #include "control.h"
 #include "parallel.h"
@@ -46,12 +97,17 @@
 
 static void show_logo();
 
-#if PETSC_VERSION_GE(3,2,0)
+#if PETSC_VERSION_GE(3,5,0)
+static PetscErrorCode genius_error_handler(MPI_Comm comm, int line, const char *func, const char *file, PetscErrorCode n,PetscErrorType p,const char *mess, void *ctx);
+#elif PETSC_VERSION_GE(3,2,0)
 static PetscErrorCode genius_error_handler(MPI_Comm comm, int line, const char *func, const char *file, const char *dir,PetscErrorCode n, PetscErrorType p, const char *mess,void *ctx);
 #else
 static PetscErrorCode genius_error_handler(int line, const char *func, const char *file, const char *dir,PetscErrorCode n, int p, const char *mess,void *ctx);
 #endif
 
+#if PETSC_VERSION_GE(3,4,0)
+#include "petsctime.h"
+#endif
 
 // --------------------------------------------------------
 // The entrance of GENIUS
@@ -69,20 +125,24 @@ int main(int argc, char ** args)
   if( Genius::n_processors() > 1 )
   {
     PetscPrintf(PETSC_COMM_WORLD,"ERROR: Open Source Version does not support multi-processor.\n");
-    PetscFinalize();
+    Genius::clean_processors();
     exit(0);
   }
 #endif
 
   // record the start time
   PetscLogDouble t_start;
+#if PETSC_VERSION_GE(3,4,0)
+  PetscTime(&t_start);
+#else
   PetscGetTime(&t_start);
+#endif
 
   // count the number of user's input argument
   if(argc<2)
   {
     PetscPrintf(PETSC_COMM_WORLD,"usage: mpirun -n [1-9]+ genius -i card_file [petsc_option]\n");
-    PetscFinalize();
+    Genius::clean_processors();
     exit(0);
   }
 
@@ -90,8 +150,8 @@ int main(int argc, char ** args)
   // test if GENIUS_DIR has been set correctly
   if( getenv("GENIUS_DIR") == NULL )
   {
-    PetscPrintf(PETSC_COMM_WORLD,"ERROR: User should set entironment variable GENIUS_DIR.\n");
-    PetscFinalize();
+    PetscPrintf(PETSC_COMM_WORLD,"ERROR: User should set environment variable GENIUS_DIR.\n");
+    Genius::clean_processors();
     exit(0);
   }
   Genius::set_genius_dir(getenv("GENIUS_DIR"));
@@ -111,7 +171,7 @@ int main(int argc, char ** args)
     if( !file_flg )
     {
       PetscPrintf(PETSC_COMM_WORLD,"ERROR: I want an input file to tell me what to do.\n");
-      PetscFinalize();
+      Genius::clean_processors();
       exit(0);
     }
     Genius::set_input_file(petsc_arg_buffer);
@@ -147,7 +207,7 @@ int main(int argc, char ** args)
 #endif
     {
       PetscPrintf(PETSC_COMM_WORLD,"ERROR: I can't read input file '%s', access failed.\n", Genius::input_file() );
-      PetscFinalize();
+      Genius::clean_processors();
       exit(0);
     }
   }
@@ -177,7 +237,7 @@ int main(int argc, char ** args)
 #endif
   {
     PetscPrintf(PETSC_COMM_WORLD,"ERROR: I can't read pattern file at %s, access failed.\n", pattern_file.c_str() );
-    PetscFinalize();
+    Genius::clean_processors();
     exit(0);
   }
 
@@ -199,7 +259,7 @@ int main(int argc, char ** args)
     remove(localfile.c_str());
 
     PetscPrintf(PETSC_COMM_WORLD,"ERROR: I can't parse input file.\n");
-    PetscFinalize();
+    Genius::clean_processors();
     exit(0);
   }
 
@@ -223,10 +283,21 @@ int main(int argc, char ** args)
     solve_ctrl->setSolutionFile(fsol.str().c_str());
   }
   solve_ctrl->mainloop();
+  
+  // record memory usage
+  MMU * mmu = MMU::instance();
+  mmu->measure();
+  int memory = mmu->vmhwm();
+  Parallel::sum(memory);
 
   // record the end time
   PetscLogDouble t_end;
+#if PETSC_VERSION_GE(3,4,0)
+  PetscTime(&t_end);
+#else
   PetscGetTime(&t_end);
+#endif
+
   PetscLogDouble elapsed_time = t_end - t_start;
 
   // change to mm:ss format
@@ -237,6 +308,7 @@ int main(int argc, char ** args)
   << min <<" min "
   << std::setiosflags(std::ios::fixed) <<  std::setprecision(3)
   << sec<<" second."
+  << " Memory usage " <<  memory/1024 << " MB."
   <<" Good bye." << std::endl;
 
   MESSAGE<<time_ss.str(); RECORD();
@@ -288,7 +360,7 @@ void show_logo()
   else if(sizeof(PetscScalar)==sizeof(long double))
     PetscPrintf(PETSC_COMM_WORLD,"*        Commercial Version %-8s with long double precision.     *\n", PACKAGE_VERSION);
   PetscPrintf(PETSC_COMM_WORLD,"*                                                                       *\n");
-  PetscPrintf(PETSC_COMM_WORLD,"*      Copyright (C) 2007-2010 by Cogenda Pte Ltd.                      *\n");
+  PetscPrintf(PETSC_COMM_WORLD,"*      Copyright (C) 2007-2015 by Cogenda Pte Ltd.                      *\n");
   PetscPrintf(PETSC_COMM_WORLD,"*                http://www.cogenda.com                                 *\n");
   PetscPrintf(PETSC_COMM_WORLD,"*************************************************************************\n");
 #else
@@ -308,17 +380,22 @@ void show_logo()
   else if(sizeof(PetscScalar)==sizeof(long double))
     PetscPrintf(PETSC_COMM_WORLD,"*        Open Source Version %-8s with long double precision.    *\n", PACKAGE_VERSION);
   PetscPrintf(PETSC_COMM_WORLD,"*                                                                       *\n");
-  PetscPrintf(PETSC_COMM_WORLD,"*      Copyright (C) 2007-2010 by Cogenda Pte Ltd.                      *\n");
+  PetscPrintf(PETSC_COMM_WORLD,"*      Copyright (C) 2007-2015 by Cogenda Pte Ltd.                      *\n");
   PetscPrintf(PETSC_COMM_WORLD,"*                http://www.cogenda.com                                 *\n");
   PetscPrintf(PETSC_COMM_WORLD,"*************************************************************************\n");
 #endif
 
+#if PETSC_VERSION_GE(3,5,0)
+  PetscSynchronizedFlush(PETSC_COMM_WORLD, PETSC_STDOUT);
+#else
   PetscSynchronizedFlush(PETSC_COMM_WORLD);
-
+#endif  
 }
 
 
-#if PETSC_VERSION_GE(3,2,0)
+#if PETSC_VERSION_GE(3,5,0)
+PetscErrorCode genius_error_handler(MPI_Comm comm, int line, const char *func, const char *file, PetscErrorCode n,PetscErrorType p,const char *mess, void *ctx)
+#elif PETSC_VERSION_GE(3,2,0)
 PetscErrorCode genius_error_handler(MPI_Comm comm, int line, const char *func, const char *file, const char *dir,PetscErrorCode n, PetscErrorType p, const char *mess,void *ctx)
 #else
 PetscErrorCode genius_error_handler(int line, const char *func, const char *file, const char *dir,PetscErrorCode n, int p, const char *mess,void *ctx)

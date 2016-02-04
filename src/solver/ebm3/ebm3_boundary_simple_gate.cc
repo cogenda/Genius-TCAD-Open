@@ -216,97 +216,15 @@ void SimpleGateContactBC::EBM3_Function(PetscScalar * x, Vec f, InsertMode &add_
 
 
 
-/*---------------------------------------------------------------------
- * reserve non zero pattern in jacobian matrix for EBM3 solver
- */
-void SimpleGateContactBC::EBM3_Jacobian_Reserve(Mat *jac, InsertMode &add_value_flag)
-{
-
-  // ADD 0 to some position of Jacobian matrix to prevent MatAssembly expurgation these position.
-
-  // since we will use ADD_VALUES operat, check the matrix state.
-  if( (add_value_flag != ADD_VALUES) && (add_value_flag != NOT_SET_VALUES) )
-  {
-    MatAssemblyBegin(*jac, MAT_FLUSH_ASSEMBLY);
-    MatAssemblyEnd(*jac, MAT_FLUSH_ASSEMBLY);
-  }
-
-  BoundaryCondition::const_node_iterator node_it = nodes_begin();
-  BoundaryCondition::const_node_iterator end_it = nodes_end();
-  for(; node_it!=end_it; ++node_it )
-  {
-    // skip node not belongs to this processor
-    if( (*node_it)->processor_id()!=Genius::processor_id() ) continue;
-
-    const FVM_Node * fvm_node = (*region_node_begin(*node_it)).second.second;
-    // bd node, psi = Ve
-    MatSetValue(*jac, fvm_node->global_offset()+0, this->global_offset(), 0, ADD_VALUES);
-  }
-
-  // reserve jacobian entries for the circuit equation of simple gate electrode
-  {
-    std::vector<PetscInt> bc_node_reserve;
-    for(node_it = nodes_begin(); node_it!=end_it; ++node_it )
-    {
-      // reserve for displacement current
-      const FVM_Node *  fvm_node = get_region_fvm_node(*node_it, SemiconductorRegion);
-      const SimulationRegion * region = get_fvm_node_region(*node_it, SemiconductorRegion);
-
-      if(fvm_node->on_processor())
-      {
-        for(unsigned int nv=0; nv<region->ebm_n_variables(); ++nv)
-          bc_node_reserve.push_back(fvm_node->global_offset()+nv);
-
-        FVM_Node::fvm_neighbor_node_iterator nb_it     =  fvm_node->neighbor_node_begin();
-        FVM_Node::fvm_neighbor_node_iterator nb_it_end =  fvm_node->neighbor_node_end();
-        for(; nb_it!=nb_it_end; ++nb_it)
-        {
-          const FVM_Node *  fvm_nb_node = (*nb_it).first;
-          for(unsigned int nv=0; nv<region->ebm_n_variables(); ++nv)
-            bc_node_reserve.push_back(fvm_nb_node->global_offset()+nv);
-        }
-      }
-    }
-    Parallel::allgather(bc_node_reserve);
-
-    if(Genius::processor_id() == Genius::n_processors()-1)
-    {
-      PetscInt bc_global_offset = this->global_offset();
-
-      MatSetValue(*jac, bc_global_offset, bc_global_offset, 0, ADD_VALUES);
-
-      if(this->is_inter_connect_bc())
-        MatSetValue(*jac, bc_global_offset, this->inter_connect_hub()->global_offset(), 0, ADD_VALUES);
-
-      if(bc_node_reserve.size())
-      {
-        std::vector<PetscScalar> bc_node_reserve_zero(bc_node_reserve.size(), 0.0);
-        MatSetValues(*jac, 1, &bc_global_offset, bc_node_reserve.size(), &bc_node_reserve[0], &bc_node_reserve_zero[0], ADD_VALUES);
-      }
-    }
-
-  }
-
-  // the last operator is ADD_VALUES
-  add_value_flag = ADD_VALUES;
-
-}
-
 
 
 
 /*---------------------------------------------------------------------
  * build function and its jacobian for EBM3 solver
  */
-void SimpleGateContactBC::EBM3_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_value_flag)
+void SimpleGateContactBC::EBM3_Jacobian(PetscScalar * x, SparseMatrix<PetscScalar> *jac, InsertMode &add_value_flag)
 {
   // the Jacobian of simple gate boundary condition is processed here
-
-  if( (add_value_flag != ADD_VALUES) && (add_value_flag != NOT_SET_VALUES) )
-  {
-    MatAssemblyBegin(*jac, MAT_FLUSH_ASSEMBLY);
-    MatAssemblyEnd(*jac, MAT_FLUSH_ASSEMBLY);
-  }
 
   PetscInt bc_global_offset = this->global_offset();
 
@@ -348,8 +266,8 @@ void SimpleGateContactBC::EBM3_Jacobian(PetscScalar * x, Mat *jac, InsertMode &a
     AutoDScalar dP = S*(eps_ox*(Ve - Work_Function-V)/Thick + q);
 
     //governing equation of psi
-    MatSetValue(*jac, fvm_node->global_offset(), fvm_node->global_offset(), dP.getADValue(0), ADD_VALUES);
-    MatSetValue(*jac, fvm_node->global_offset(), bc_global_offset, dP.getADValue(1), ADD_VALUES);
+    jac->add( fvm_node->global_offset(),  fvm_node->global_offset(),  dP.getADValue(0) );
+    jac->add( fvm_node->global_offset(),  bc_global_offset,  dP.getADValue(1) );
 
     // process the Jacobian of equation of T
     // if this gate bc is external boundary, set heat flux here
@@ -360,7 +278,7 @@ void SimpleGateContactBC::EBM3_Jacobian(PetscScalar * x, Mat *jac, InsertMode &a
       AutoDScalar T = x[fvm_node->local_offset()+node_Tl_offset]; T.setADValue(0, 1.0); // psi of this node
       PetscScalar S  = fvm_node->outside_boundary_surface_area();
       AutoDScalar fT = Heat_Transfer*(T_external()-T)*S;
-      MatSetValue(*jac, fvm_node->global_offset()+node_Tl_offset, fvm_node->global_offset()+node_Tl_offset, fT.getADValue(0), ADD_VALUES);
+      jac->add( fvm_node->global_offset()+node_Tl_offset,  fvm_node->global_offset()+node_Tl_offset,  fT.getADValue(0) );
     }
 
     // displacement current, only first order in time.
@@ -380,8 +298,8 @@ void SimpleGateContactBC::EBM3_Jacobian(PetscScalar * x, Mat *jac, InsertMode &a
         PetscScalar mna_scaling = ext_circuit()->mna_scaling(SolverSpecify::dt);
         current_disp = mna_scaling*current_disp;
       }
-      MatSetValue(*jac, bc_global_offset, fvm_node->global_offset(), current_disp.getADValue(0), ADD_VALUES);
-      MatSetValue(*jac, bc_global_offset, bc_global_offset, current_disp.getADValue(1), ADD_VALUES);
+      jac->add( bc_global_offset,  fvm_node->global_offset(),  current_disp.getADValue(0) );
+      jac->add( bc_global_offset,  bc_global_offset,  current_disp.getADValue(1) );
     }
 
   }
@@ -426,15 +344,15 @@ void SimpleGateContactBC::EBM3_Jacobian(PetscScalar * x, Mat *jac, InsertMode &a
       // f_ext = Ve - V_ic + R*current;
 
       // d(f_ext)/d(Ve)
-      MatSetValue(*jac, bc_global_offset, bc_global_offset, 1.0, ADD_VALUES);
+      jac->add( bc_global_offset,  bc_global_offset,  1.0 );
       // d(f_ext)/d(V_ic)
-      MatSetValue(*jac, bc_global_offset, this->inter_connect_hub()->global_offset(), -1.0, ADD_VALUES);
+      jac->add( bc_global_offset,  this->inter_connect_hub()->global_offset(),  -1.0 );
     }
     //for stand alone electrode
     else
     {
       ext_circuit()->potential() = x[this->local_offset()];
-      MatSetValue(*jac, bc_global_offset, bc_global_offset, ext_circuit()->mna_jacobian(SolverSpecify::dt), ADD_VALUES);
+      jac->add( bc_global_offset,  bc_global_offset,  ext_circuit()->mna_jacobian(SolverSpecify::dt) );
     }
   }
 
@@ -454,3 +372,4 @@ void SimpleGateContactBC::EBM3_Update_Solution(PetscScalar *)
   Parallel::sum(ext_circuit()->current());
   this->ext_circuit()->update();
 }
+

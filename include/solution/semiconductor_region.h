@@ -52,7 +52,9 @@ public:
   /**
    * constructor
    */
-  SemiconductorSimulationRegion(const std::string &name, const std::string &material, const double T, const double z);
+  SemiconductorSimulationRegion(const std::string &name, const std::string &material,
+                                const double T, const unsigned int dim, const double z,
+                                const TensorValue<double> & crystal_coord_matrix);
 
   /**
    * destructor
@@ -104,6 +106,12 @@ public:
   virtual void clear();
 
   /**
+   * convert a point(vector) from simulation coordinate system to crystal coordinate system
+   */
+  virtual TensorValue<PetscScalar> crystal_coord_matrix() const
+  { return _crystal_coord_matrix; }
+
+  /**
    * @return the quality if each fvm cell
    */
   virtual Real fvm_cell_quality() const;
@@ -123,14 +131,30 @@ public:
   /**
    * @return the optical refraction index of the region
    */
-  virtual Complex get_optical_refraction(double lamda)
-  { return material()->optical->RefractionIndex(lamda, T_external()); }
+  virtual Complex get_optical_refraction(double lamda) const
+  {
+    std::complex<PetscScalar> r = material()->optical->RefractionIndex(lamda, T_external());
+    return Complex(r.real(), r.imag());
+  }
 
   /**
    * @return the energy bandgap for optical simulation
    */
-  virtual double get_optical_Eg(double T)
-  { return material()->band->Eg(T); }
+  virtual double get_optical_Eg() const
+  { return material()->band->Eg(T_external()); }
+
+
+  /**
+   * @return the optical refraction index of the region
+   */
+  virtual Complex get_optical_refraction(const FVM_Node *, double lamda) const;
+
+  /**
+   * @return the energy bandgap for optical simulation
+   */
+  virtual double get_optical_Eg(const FVM_Node *) const;
+
+
 
   /**
    * @return relative permittivity of material
@@ -141,14 +165,14 @@ public:
   /**
    * @return maretial density [g cm^-3]
    */
-  virtual double get_density(PetscScalar T) const
-    { return mt->basic->Density(T); }
+  virtual double get_density() const
+    { return mt->basic->Density(T_external()); }
 
   /**
    * @return affinity of material
    */
-  virtual double get_affinity(PetscScalar T) const
-    { return mt->basic->Affinity(T); }
+  virtual double get_affinity() const
+  { return mt->basic->Affinity(T_external()); }
 
   /**
    * virtual function for set different model, calibrate parameters to PMI
@@ -158,11 +182,11 @@ public:
   /**
    * get atom fraction of region material
    */
-  virtual void atom_fraction(std::vector<std::string> &atoms, std::vector<double> & fraction) const
+  virtual void atom_fraction(std::vector<Atom> &atoms, std::vector<double> & fraction) const
   {
     atoms.clear();
     fraction.clear();
-    mt->basic->atom_fraction(atoms, fraction);
+    mt->basic->G4Material(atoms, fraction);
   }
 
   /**
@@ -220,10 +244,19 @@ private:
    */
   void find_nearest_interface_normal();
 
+  
+#if defined(HAVE_UNORDERED_SET)
+  typedef std::unordered_set<const Elem *> _elem_touch_boundary_type;
+#elif defined(HAVE_TR1_UNORDERED_SET) || defined(HAVE_TR1_UNORDERED_SET_WITH_STD_HEADER)
+  typedef std::tr1::unordered_set<const Elem *> _elem_touch_boundary_type;
+#else
+  typedef std::set<const Elem *>  _elem_touch_boundary_type;
+#endif
+  
   /**
    * record element has side/edge/node on boundary
    */
-  std::set<const Elem *> _elem_touch_boundary;
+  _elem_touch_boundary_type _elem_touch_boundary;
 
   /**
    * function to fill _elem_touch_boundary
@@ -264,6 +297,11 @@ public:
 private:
 
   /**
+   * convert a point(vector) from simulation coordinate system to crystal coordinate system
+   */
+  TensorValue<PetscScalar>  _crystal_coord_matrix;
+
+  /**
    * the pointer to material database
    */
   Material::MaterialSemiconductor *mt;
@@ -288,11 +326,15 @@ private:
 
 private:
 
+#ifdef TCAD_SOLVERS
   void DDM1_Gummel_Carrier_Electron(PetscScalar * x, Mat A, Vec r, InsertMode &add_value_flag);
 
   void DDM1_Gummel_Carrier_Hole(PetscScalar * x, Mat A, Vec r, InsertMode &add_value_flag);
+#endif
 
 public:
+
+#ifdef TCAD_SOLVERS
 
   //////////////////////////////////////////////////////////////////////////////////////////////
   //----------------Function and Jacobian evaluate for Poisson's Equation---------------------//
@@ -311,7 +353,7 @@ public:
   /**
    * build function and its jacobian for poisson solver
    */
-  virtual void Poissin_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_value_flag);
+  virtual void Poissin_Jacobian(PetscScalar * x, SparseMatrix<PetscScalar> *jac, InsertMode &add_value_flag);
 
   /**
    * process function and its jacobian at hanging node for poisson solver (experimental)
@@ -321,7 +363,7 @@ public:
   /**
    * process function and its jacobian at hanging node for poisson solver (experimental)
    */
-  virtual void Poissin_Jacobian_Hanging_Node(PetscScalar * x, Mat *jac, InsertMode &add_value_flag);
+  virtual void Poissin_Jacobian_Hanging_Node(PetscScalar * x, SparseMatrix<PetscScalar> *jac, InsertMode &add_value_flag);
 
   /**
    * update solution data of FVM_NodeData by petsc vector of poisson's equation.
@@ -346,7 +388,7 @@ public:
   /**
    * build function and its jacobian for L1 DDM
    */
-  virtual void DDM1_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_value_flag);
+  virtual void DDM1_Jacobian(PetscScalar * x, SparseMatrix<PetscScalar> *jac, InsertMode &add_value_flag);
 
   /**
    * build time derivative term and its jacobian for L1 DDM
@@ -356,7 +398,7 @@ public:
   /**
    * build time derivative term and its jacobian for L1 DDM
    */
-  virtual void DDM1_Time_Dependent_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_value_flag);
+  virtual void DDM1_Time_Dependent_Jacobian(PetscScalar * x, SparseMatrix<PetscScalar> *jac, InsertMode &add_value_flag);
 
   /**
    * function for evaluating pseudo time step of level 1 DDM equation.
@@ -366,22 +408,12 @@ public:
   /**
    * function for evaluating Jacobian of pseudo time step of level 1 DDM equation.
    */
-  virtual void DDM1_Pseudo_Time_Step_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_value_flag);
+  virtual void DDM1_Pseudo_Time_Step_Jacobian(PetscScalar * x, SparseMatrix<PetscScalar> *jac, InsertMode &add_value_flag);
 
   /**
    * function for convergence test of pseudo time step of level 1 DDM equation.
    */
   virtual int DDM1_Pseudo_Time_Step_Convergence_Test(PetscScalar * x);
-
-  /**
-   * process function and its jacobian at hanging node for L1 DDM (experimental)
-   */
-  virtual void DDM1_Function_Hanging_Node(PetscScalar * x, Vec f, InsertMode &add_value_flag);
-
-  /**
-   * process function and its jacobian at hanging node for L1 DDM (experimental)
-   */
-  virtual void DDM1_Jacobian_Hanging_Node(PetscScalar * x, Mat *jac, InsertMode &add_value_flag);
 
   /**
    * update solution data of FVM_NodeData by petsc vector of L1 DDM.
@@ -402,22 +434,12 @@ public:
   /**
    * build function and its jacobian for L1 HALL DDM
    */
-  virtual void HALL_Function(const VectorValue<double> & B, PetscScalar * x, Vec f, InsertMode &add_value_flag);
+  virtual void HALL_Function(const VectorValue<PetscScalar> & B, PetscScalar * x, Vec f, InsertMode &add_value_flag);
 
   /**
    * build function and its jacobian for L1 HALL DDM
    */
-  virtual void HALL_Jacobian(const VectorValue<double> & B, PetscScalar * x, Mat *jac, InsertMode &add_value_flag);
-
-  /**
-   * process function and its jacobian at hanging node for L1 HALL DDM (experimental)
-   */
-  virtual void HALL_Function_Hanging_Node(PetscScalar * x, Vec f, InsertMode &add_value_flag);
-
-  /**
-   * process function and its jacobian at hanging node for L1 HALL DDM (experimental)
-   */
-  virtual void HALL_Jacobian_Hanging_Node(PetscScalar * x, Mat *jac, InsertMode &add_value_flag);
+  virtual void HALL_Jacobian(const VectorValue<PetscScalar> & B, PetscScalar * x, SparseMatrix<PetscScalar> *jac, InsertMode &add_value_flag);
 
   /**
    * build time derivative term and its jacobian for L1 HALL DDM
@@ -427,7 +449,7 @@ public:
   /**
    * build time derivative term and its jacobian for L1 HALL DDM
    */
-  virtual void HALL_Time_Dependent_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_value_flag);
+  virtual void HALL_Time_Dependent_Jacobian(PetscScalar * x, SparseMatrix<PetscScalar> *jac, InsertMode &add_value_flag);
 
   /**
    * update solution data of FVM_NodeData by petsc vector of L1 HALL DDM
@@ -463,7 +485,7 @@ public:
   /**
    * function for evaluating Jacobian of Density Gradient equation.
    */
-  virtual void DG_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_value_flag);
+  virtual void DG_Jacobian(PetscScalar * x, SparseMatrix<PetscScalar> *jac, InsertMode &add_value_flag);
 
   /**
    * function for evaluating time derivative term of Density Gradient equation.
@@ -473,7 +495,7 @@ public:
   /**
    * function for evaluating Jacobian of time derivative term of Density Gradient equation.
    */
-  virtual void DG_Time_Dependent_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_value_flag);
+  virtual void DG_Time_Dependent_Jacobian(PetscScalar * x, SparseMatrix<PetscScalar> *jac, InsertMode &add_value_flag);
 
   /**
    * function for update solution value of Density Gradient equation.
@@ -498,7 +520,7 @@ public:
   /**
    * build function and its jacobian for L2 DDM
    */
-  virtual void DDM2_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_value_flag);
+  virtual void DDM2_Jacobian(PetscScalar * x, SparseMatrix<PetscScalar> *jac, InsertMode &add_value_flag);
 
   /**
    * build time derivative term and its jacobian for L2 DDM
@@ -508,7 +530,7 @@ public:
   /**
    * build time derivative term and its jacobian for L2 DDM
    */
-  virtual void DDM2_Time_Dependent_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_value_flag);
+  virtual void DDM2_Time_Dependent_Jacobian(PetscScalar * x, SparseMatrix<PetscScalar> *jac, InsertMode &add_value_flag);
 
   /**
    * function for evaluating pseudo time step for L2 DDM
@@ -518,22 +540,12 @@ public:
   /**
    * function for evaluating Jacobian of pseudo time step for L2 DDM
    */
-  virtual void DDM2_Pseudo_Time_Step_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_value_flag);
+  virtual void DDM2_Pseudo_Time_Step_Jacobian(PetscScalar * x, SparseMatrix<PetscScalar> *jac, InsertMode &add_value_flag);
 
   /**
    * function for convergence test of pseudo time step for L2 DDM
    */
   virtual int DDM2_Pseudo_Time_Step_Convergence_Test(PetscScalar * x);
-
-  /**
-   * process function and its jacobian at hanging node for L2 DDM (experimental)
-   */
-  virtual void DDM2_Function_Hanging_Node(PetscScalar * x, Vec f, InsertMode &add_value_flag);
-
-  /**
-   * process function and its jacobian at hanging node for L2 DDM (experimental)
-   */
-  virtual void DDM2_Jacobian_Hanging_Node(PetscScalar * x, Mat *jac, InsertMode &add_value_flag);
 
   /**
    * update solution data of FVM_NodeData by petsc vector of L2 DDM.
@@ -568,17 +580,7 @@ public:
   /**
    * build function and its jacobian for L3 EBM
    */
-  virtual void EBM3_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_value_flag);
-
-  /**
-   * process function and its jacobian at hanging node for L3 EBM (experimental)
-   */
-  virtual void EBM3_Function_Hanging_Node(PetscScalar * x, Vec f, InsertMode &add_value_flag);
-
-  /**
-   * process function and its jacobian at hanging node for L3 EBM (experimental)
-   */
-  virtual void EBM3_Jacobian_Hanging_Node(PetscScalar * x, Mat *jac, InsertMode &add_value_flag);
+  virtual void EBM3_Jacobian(PetscScalar * x, SparseMatrix<PetscScalar> *jac, InsertMode &add_value_flag);
 
   /**
    * build time derivative term and its jacobian for L3 EBM
@@ -588,7 +590,7 @@ public:
   /**
    * build time derivative term and its jacobian for L3 EBM
    */
-  virtual void EBM3_Time_Dependent_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_value_flag);
+  virtual void EBM3_Time_Dependent_Jacobian(PetscScalar * x, SparseMatrix<PetscScalar> *jac, InsertMode &add_value_flag);
 
   /**
    * update solution data of FVM_NodeData by petsc vector of L3 EBM.
@@ -609,24 +611,24 @@ public:
   /**
    * fill matrix of DDMAC equation
    */
-  virtual void DDMAC_Fill_Matrix_Vector(Mat A,  Vec b, const Mat J, const double omega, InsertMode &add_value_flag) const;
+  virtual void DDMAC_Fill_Matrix_Vector(Mat A,  Vec b, const Mat J, const PetscScalar omega, InsertMode &add_value_flag) const;
 
   /**
    * filling AC transformation matrix (as preconditioner) entry by Jacobian matrix
    */
-  virtual void DDMAC_Fill_Transformation_Matrix(Mat T, const Mat J, const double omega, InsertMode &add_value_flag) const;
+  virtual void DDMAC_Fill_Transformation_Matrix(Mat T, const Mat J, const PetscScalar omega, InsertMode &add_value_flag) const;
 
   /**
    * fill matrix of DDMAC equation for fvm_node
    */
-  virtual void DDMAC_Fill_Nodal_Matrix_Vector(const FVM_Node *fvm_node, Mat A, Vec b, const Mat J, const double omega, InsertMode & add_value_flag,
+  virtual void DDMAC_Fill_Nodal_Matrix_Vector(const FVM_Node *fvm_node, Mat A, Vec b, const Mat J, const PetscScalar omega, InsertMode & add_value_flag,
       const SimulationRegion * adjacent_region=NULL, const FVM_Node * adjacent_fvm_node=NULL) const;
 
   /**
    * fill matrix of DDMAC equation for variable of fvm_node
    */
   virtual void DDMAC_Fill_Nodal_Matrix_Vector(const FVM_Node *fvm_node, const SolutionVariable var,
-      Mat A, Vec b, const Mat J, const double omega, InsertMode & add_value_flag,
+      Mat A, Vec b, const Mat J, const PetscScalar omega, InsertMode & add_value_flag,
       const SimulationRegion * adjacent_region=NULL, const FVM_Node * adjacent_fvm_node=NULL) const;
 
   /**
@@ -686,56 +688,17 @@ public:
 
 #endif
 
-  //////////////////////////////////////////////////////////////////////////////////
-  //----------------- functions for Fast Hydrodynamic solver  --------------------//
-  //////////////////////////////////////////////////////////////////////////////////
-
-  /**
-   * function for fill vector of Hydrodynamic equation.
-   */
-  virtual void HDM_Fill_Value(Vec x, Vec vol);
-
-  /**
-   * function for evaluating flux of Hydrodynamic equation.
-   */
-  virtual void HDM_Flux(const PetscScalar * x, Vec flux, Vec t);
-
-  /**
-   * function for evaluating flux of Hydrodynamic equation.
-   */
-  virtual void HDM_Source(const PetscScalar * lx, const PetscScalar *lt, Vec x);
-
-  /**
-   * function for update solution value of Hydrodynamic equation.
-   */
-  virtual void HDM_Update_Solution(const PetscScalar * x);
-
-
-  //////////////////////////////////////////////////////////////////////////////////
-  //-----------------  functions for Linear Poissin solver   ---------------------//
-  //////////////////////////////////////////////////////////////////////////////////
-
-  /**
-   * function for build matrix of linear poisson's equation.
-   */
-  virtual void LinearPoissin_Matrix(Mat A, InsertMode &add_value_flag);
-
-
-  /**
-   * function for build RHS vector of linear poisson's equation.
-   */
-  virtual void LinearPoissin_RHS(Vec b, InsertMode &add_value_flag);
-
-
-  /**
-   * function for update solution value of linear poisson's equation.
-   */
-  virtual void LinearPoissin_Update_Solution(const PetscScalar * x);
-
 
   //////////////////////////////////////////////////////////////////////////////////
   //-----------------  functions for mobility evaluation     ---------------------//
   //////////////////////////////////////////////////////////////////////////////////
+
+
+
+  /**
+   * function for evaluating mobility of node.
+   */
+  void Mob_Evaluation();
 
   /**
    * function for evaluating mobility of edge.
@@ -743,10 +706,14 @@ public:
    * the moblity is ordered as region's edge, and weighted by partial area of the edge
    *
    */
-  virtual void Mob_Evaluation( std::vector< std::pair<unsigned int, unsigned int> > &edge,
-                               std::vector< std::pair<double, double> > & mob,
-                               std::vector< double > & weight) const;
+   void Mob_Evaluation( std::vector< std::pair<unsigned int, unsigned int> > &edge,
+                        std::vector< std::pair<double, double> > & mob,
+                        std::vector< double > & weight) const;
 
+#endif
+
+
+#ifdef IDC_SOLVERS
 #ifdef COGENDA_COMMERCIAL_PRODUCT
   //////////////////////////////////////////////////////////////////////////////////
   //----------------Function and Jacobian evaluate for RIC   ---------------------//
@@ -766,7 +733,7 @@ public:
   /**
    * function for evaluating Jacobian of RIC equation.
    */
-  virtual void RIC_Jacobian(PetscScalar *, Mat *, InsertMode &) {}
+  virtual void RIC_Jacobian(PetscScalar *, SparseMatrix<PetscScalar> *, InsertMode &) {}
 
   /**
    * function for evaluating time derivative term of RIC equation.
@@ -776,12 +743,48 @@ public:
   /**
    * function for evaluating Jacobian of time derivative term of RIC equation.
    */
-  virtual void RIC_Time_Dependent_Jacobian(PetscScalar * , Mat *, InsertMode &) {}
+  virtual void RIC_Time_Dependent_Jacobian(PetscScalar * , SparseMatrix<PetscScalar> *, InsertMode &) {}
 
   /**
    * function for update solution value of RIC equation.
    */
   virtual void RIC_Update_Solution(PetscScalar *) {}
+
+  //////////////////////////////////////////////////////////////////////////////////
+  //----------------Function and Jacobian evaluate for DICTAT---------------------//
+  //////////////////////////////////////////////////////////////////////////////////
+
+  /**
+   * filling solution data from FVM_NodeData into petsc vector of DICTAT equation.
+   * can be used as initial data of nonlinear equation or diverged recovery.
+   */
+  virtual void DICTAT_Fill_Value(Vec , Vec ) {}
+
+  /**
+   * function for evaluating DICTAT equation.
+   */
+  virtual void DICTAT_Function(PetscScalar * , Vec , InsertMode &) {}
+
+  /**
+   * function for evaluating Jacobian of DICTAT equation.
+   */
+  virtual void DICTAT_Jacobian(PetscScalar *, SparseMatrix<PetscScalar> *, InsertMode &) {}
+
+  /**
+   * function for evaluating time derivative term of DICTAT equation.
+   */
+  virtual void DICTAT_Time_Dependent_Function(PetscScalar *, Vec , InsertMode &) {}
+
+  /**
+   * function for evaluating Jacobian of time derivative term of DICTAT equation.
+   */
+  virtual void DICTAT_Time_Dependent_Jacobian(PetscScalar * , SparseMatrix<PetscScalar> *, InsertMode &) {}
+
+  /**
+   * function for update solution value of DICTAT equation.
+   */
+  virtual void DICTAT_Update_Solution(PetscScalar *) {}
+#endif
 
 #endif
 };

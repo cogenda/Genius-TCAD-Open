@@ -36,7 +36,7 @@
 #include "simulation_system.h"
 #include "simulation_region.h"
 #include "boundary_condition_collector.h"
-
+#include "material.h"
 
 
 
@@ -45,6 +45,8 @@ using PhysicalUnit::um;
 using PhysicalUnit::V;
 using PhysicalUnit::K;
 using PhysicalUnit::eV;
+using PhysicalUnit::Pa;
+
 
 /**
  * This method implements reading a mesh from a specified file
@@ -93,7 +95,7 @@ void DFISEIO::read (const std::string& filename)
       if(!grid_info.is_boundary_region(r) && !grid_info.is_interface_region(r))
       {
         mesh.set_subdomain_label( grid_info.region_to_fieldregion(r), grid_info.regions[r] );
-        mesh.set_subdomain_material( grid_info.region_to_fieldregion(r), grid_info.materials[r]);
+        mesh.set_subdomain_material( grid_info.region_to_fieldregion(r), Material::FormatMaterialString(grid_info.materials[r]));
       }
     }
 
@@ -408,6 +410,8 @@ void DFISEIO::_set_boundary(const DFISE::INFO & grid_info)
     std::vector<short int>          boundary_il;
     mesh.boundary_info->build_side_list (boundary_el, boundary_sl, boundary_il);
 
+    std::map<std::string, std::vector<std::string> > bd_split;
+
     // <bd-index, <region_index, region_index>, elem-side> >
     typedef std::map<short int, std::map<std::pair<unsigned int, unsigned int>, std::vector<std::pair<unsigned int, unsigned int> > > > BoundaryRegions;
     BoundaryRegions boundary_regions;
@@ -453,6 +457,8 @@ void DFISEIO::_set_boundary(const DFISE::INFO & grid_info)
             new_boundary_label = boundary_label + '_' + mesh.subdomain_label_by_id(region_2) + "_to_" + mesh.subdomain_label_by_id(region_1);
         }
 
+        bd_split[boundary_label].push_back(new_boundary_label);
+
         short int new_bd_id = new_bd_id_begin++;
         bd_map[new_boundary_label] = new_bd_id;
 
@@ -465,6 +471,18 @@ void DFISEIO::_set_boundary(const DFISE::INFO & grid_info)
           mesh.boundary_info->add_side(elem, side, new_bd_id);
         }
       }
+    }
+
+    for(std::map<std::string, std::vector<std::string> >::const_iterator it = bd_split.begin(); it != bd_split.end(); it++)
+    {
+      MESSAGE<<"  Warning: Split boundary " << it->first << " into: ";
+      const std::vector<std::string> & bc_array = it->second;
+      for(unsigned int n=0; n<bc_array.size(); ++n)
+      {
+        MESSAGE<< bc_array[n] <<" ";
+      }
+      MESSAGE<< std::endl;
+      RECORD();
     }
 
   }
@@ -562,13 +580,18 @@ void DFISEIO::_set_region()
     {
         case SemiconductorRegion :
         {
-          bool has_net_doping_concentration = ise_reader->is_value_exist("DopingConcentration", r);
-          bool has_total_doping_concentration = ise_reader->is_value_exist("TotalConcentration", r);
+          bool has_net_doping_concentration = ise_reader->is_function_exist("DopingConcentration", r);
+          bool has_total_doping_concentration = ise_reader->is_function_exist("TotalConcentration", r);
 
-          bool species_doping_concentration = ( ise_reader->is_value_exist_fuzzy("Boron", r) ||
-                                                ise_reader->is_value_exist_fuzzy("Phosphorus", r) ||
-                                                ise_reader->is_value_exist_fuzzy("Arsenic", r) ||
-                                                ise_reader->is_value_exist_fuzzy("Antimony", r) );
+          bool has_donor_concentration = ise_reader->is_function_exist("DonorConcentration", r);
+          bool has_acceptor_concentration = ise_reader->is_function_exist("AcceptorConcentration", r);
+
+          bool species_doping_concentration = ( ise_reader->is_function_exist_fuzzy("Boron", r) ||
+                                                ise_reader->is_function_exist_fuzzy("Phosphorus", r) ||
+                                                ise_reader->is_function_exist_fuzzy("Arsenic", r) ||
+                                                ise_reader->is_function_exist_fuzzy("Antimony", r) );
+
+
           unsigned int Boron_index=invalid_uint, Phosphorus_index=invalid_uint, Arsenic_index=invalid_uint, Antimony_index=invalid_uint;
           // add variables to this region
           if( species_doping_concentration )
@@ -588,70 +611,92 @@ void DFISEIO::_set_region()
             FVM_NodeData * node_data = fvm_node->node_data();  genius_assert(node_data);
             unsigned int dfise_node_index = _node_id_to_dfise_node_index_map[fvm_node->root_node()->id()];
 
-            double NetConcentration = ise_reader->get_scaler_value("DopingConcentration", r, dfise_node_index)* doping_scale;
-            double TotalConcentration = ise_reader->get_scaler_value("TotalConcentration", r, dfise_node_index)* doping_scale;
+            // process doping
+            double NetConcentration = ise_reader->get_scaler_function("DopingConcentration", r, dfise_node_index)* doping_scale;
+            double TotalConcentration = ise_reader->get_scaler_function("TotalConcentration", r, dfise_node_index)* doping_scale;
+
+            double DonorConcentration = ise_reader->get_scaler_function("DonorConcentration", r, dfise_node_index)* doping_scale;
+            double AcceptorConcentration = ise_reader->get_scaler_function("AcceptorConcentration", r, dfise_node_index)* doping_scale;
 
             double Phosphorus=0.0;
-            if( ise_reader->is_value_exist("PhosphorusActiveConcentration", r) )
-              Phosphorus = ise_reader->get_scaler_value("PhosphorusActiveConcentration", r, dfise_node_index)* doping_scale;
-            else if( ise_reader->is_value_exist("PhosphorusConcentration", r) )
-              Phosphorus = ise_reader->get_scaler_value("PhosphorusConcentration", r, dfise_node_index)* doping_scale;
+            if( ise_reader->is_function_exist("PhosphorusActiveConcentration", r) )
+              Phosphorus = ise_reader->get_scaler_function("PhosphorusActiveConcentration", r, dfise_node_index)* doping_scale;
+            else if( ise_reader->is_function_exist("PhosphorusConcentration", r) )
+              Phosphorus = ise_reader->get_scaler_function("PhosphorusConcentration", r, dfise_node_index)* doping_scale;
 
             double Arsenic=0.0;
-            if( ise_reader->is_value_exist("ArsenicActiveConcentration", r) )
-              Arsenic = ise_reader->get_scaler_value("ArsenicActiveConcentration", r, dfise_node_index)* doping_scale;
-            else if( ise_reader->is_value_exist("ArsenicConcentration", r) )
-              Arsenic = ise_reader->get_scaler_value("ArsenicConcentration", r, dfise_node_index)* doping_scale;
+            if( ise_reader->is_function_exist("ArsenicActiveConcentration", r) )
+              Arsenic = ise_reader->get_scaler_function("ArsenicActiveConcentration", r, dfise_node_index)* doping_scale;
+            else if( ise_reader->is_function_exist("ArsenicConcentration", r) )
+              Arsenic = ise_reader->get_scaler_function("ArsenicConcentration", r, dfise_node_index)* doping_scale;
 
             double Antimony=0.0;
-            if( ise_reader->is_value_exist("AntimonyActiveConcentration", r) )
-              Antimony = ise_reader->get_scaler_value("AntimonyActiveConcentration", r, dfise_node_index)* doping_scale;
-            else if( ise_reader->is_value_exist("AntimonyConcentration", r) )
-              Antimony = ise_reader->get_scaler_value("AntimonyConcentration", r, dfise_node_index)* doping_scale;
+            if( ise_reader->is_function_exist("AntimonyActiveConcentration", r) )
+              Antimony = ise_reader->get_scaler_function("AntimonyActiveConcentration", r, dfise_node_index)* doping_scale;
+            else if( ise_reader->is_function_exist("AntimonyConcentration", r) )
+              Antimony = ise_reader->get_scaler_function("AntimonyConcentration", r, dfise_node_index)* doping_scale;
 
             double Boron=0.0;
-            if( ise_reader->is_value_exist("BoronActiveConcentration", r) )
-              Boron = ise_reader->get_scaler_value("BoronActiveConcentration", r, dfise_node_index)* doping_scale;
-            else if( ise_reader->is_value_exist("BoronConcentration", r) )
-              Boron = ise_reader->get_scaler_value("BoronConcentration", r, dfise_node_index)* doping_scale;
+            if( ise_reader->is_function_exist("BoronActiveConcentration", r) )
+              Boron = ise_reader->get_scaler_function("BoronActiveConcentration", r, dfise_node_index)* doping_scale;
+            else if( ise_reader->is_function_exist("BoronConcentration", r) )
+              Boron = ise_reader->get_scaler_function("BoronConcentration", r, dfise_node_index)* doping_scale;
 
 
             // Have species doping concentration and don't have DopingConcentration
             if(species_doping_concentration && !has_net_doping_concentration)
             {
-              node_data->data<Real>(Phosphorus_index) = Phosphorus;
-              node_data->data<Real>(Arsenic_index)    = Arsenic;
-              node_data->data<Real>(Antimony_index)   = Antimony;
-              node_data->data<Real>(Boron_index)      = Boron;
+              std::cout<<"species_doping_concentration && !has_net_doping_concentration " << Boron << " " << Phosphorus + Arsenic + Antimony << std::endl;
+              node_data->data<PetscScalar>(Phosphorus_index) = Phosphorus;
+              node_data->data<PetscScalar>(Arsenic_index)    = Arsenic;
+              node_data->data<PetscScalar>(Antimony_index)   = Antimony;
+              node_data->data<PetscScalar>(Boron_index)      = Boron;
               node_data->Na()   = Boron;
               node_data->Nd()   = Phosphorus + Arsenic + Antimony;
-              continue;
+            }
+            else if(has_donor_concentration && has_acceptor_concentration)
+            {
+              node_data->Na()   = AcceptorConcentration;
+              node_data->Nd()   = DonorConcentration;
             }
 
             // both have DopingConcentration and TotalConcentration
-            if( has_total_doping_concentration )
+            else if( has_total_doping_concentration  && has_net_doping_concentration)
             {
               node_data->Na()   = 0.5*(TotalConcentration - NetConcentration);
               node_data->Nd()   = 0.5*(TotalConcentration + NetConcentration);
-              continue;
             }
 
             // check if species_doping_concentration match net_doping_concentration
 
-            if(species_doping_concentration && std::abs((Phosphorus + Arsenic + Antimony) - Boron - NetConcentration) < 1e-2*std::abs(NetConcentration) )
+            else if(species_doping_concentration && std::abs((Phosphorus + Arsenic + Antimony) - Boron - NetConcentration) < 1e-2*std::abs(NetConcentration) )
             {
-              node_data->data<Real>(Phosphorus_index) = Phosphorus;
-              node_data->data<Real>(Arsenic_index)    = Arsenic;
-              node_data->data<Real>(Antimony_index)   = Antimony;
-              node_data->data<Real>(Boron_index)      = Boron;
+              node_data->data<PetscScalar>(Phosphorus_index) = Phosphorus;
+              node_data->data<PetscScalar>(Arsenic_index)    = Arsenic;
+              node_data->data<PetscScalar>(Antimony_index)   = Antimony;
+              node_data->data<PetscScalar>(Boron_index)      = Boron;
               node_data->Na()   = Boron;
               node_data->Nd()   = Phosphorus + Arsenic + Antimony;
-              continue;
             }
 
             // at last, we have to set doping by only NetConcentration
-            node_data->Na()   = NetConcentration < 0 ? -NetConcentration : 0;
-            node_data->Nd()   = NetConcentration > 0 ?  NetConcentration : 0;
+            else
+            {
+              node_data->Na()   = NetConcentration < 0 ? -NetConcentration : 0;
+              node_data->Nd()   = NetConcentration > 0 ?  NetConcentration : 0;
+            }
+
+            // process stress
+            double stress_xx = ise_reader->get_scaler_value("StressXX", r, dfise_node_index)*Pa;
+            double stress_xy = ise_reader->get_scaler_value("StressXY", r, dfise_node_index)*Pa;
+            double stress_xz = ise_reader->get_scaler_value("StressXZ", r, dfise_node_index)*Pa;
+            double stress_yy = ise_reader->get_scaler_value("StressYY", r, dfise_node_index)*Pa;
+            double stress_yz = ise_reader->get_scaler_value("StressYZ", r, dfise_node_index)*Pa;
+            double stress_zz = ise_reader->get_scaler_value("StressZZ", r, dfise_node_index)*Pa;
+
+            TensorValue<PetscScalar> stress(stress_xx, stress_xy, stress_xz, stress_xy, stress_yy, stress_yz, stress_xz, stress_yz, stress_zz);
+
+            node_data->stress() = region->crystal_coord_matrix() * stress;
           }
 
           // after import previous solutions, we re-init region here
@@ -714,8 +759,10 @@ void DFISEIO::write (const std::string& filename)
     SimulationRegion * region = const_cast<SimulationRegion *>(system.region(r));
     if(region->type() == SemiconductorRegion)
     {
-      unsigned int  doping_index   = region->add_variable( SimulationVariable("DopingConcentration", SCALAR, POINT_CENTER, "cm^-3", invalid_uint, true, true)  );
-      unsigned int  net_index      = region->add_variable( SimulationVariable("NetConcentration", SCALAR, POINT_CENTER, "cm^-3", invalid_uint, true, true)  );
+      // Net doping concentration (DopingConcentration):
+      unsigned int  net_index   = region->add_variable( SimulationVariable("DopingConcentration", SCALAR, POINT_CENTER, "cm^-3", invalid_uint, true, true)  );
+      // Total doping concentration (TotalConcentration):
+      unsigned int  tot_index = region->add_variable( SimulationVariable("TotalConcentration", SCALAR, POINT_CENTER, "cm^-3", invalid_uint, true, true)  );
 
       SimulationRegion::local_node_iterator node_it = region->on_local_nodes_begin();
       SimulationRegion::local_node_iterator node_it_end = region->on_local_nodes_end();
@@ -724,19 +771,24 @@ void DFISEIO::write (const std::string& filename)
         FVM_Node * fvm_node = (*node_it);
 
         FVM_NodeData * node_data = fvm_node->node_data();  genius_assert(node_data);
-        node_data->data<Real>(doping_index) = node_data->Total_doping();
-        node_data->data<Real>(net_index) = node_data->Net_doping();
+        node_data->data<PetscScalar>(tot_index) = node_data->Total_doping();
+        node_data->data<PetscScalar>(net_index) = node_data->Net_doping();
       }
     }
   }
 
   std::vector<DFISE::DATASET *> datasets;
   datasets.push_back(_build_dataset("DopingConcentration", "DopingConcentration"));
-  datasets.push_back(_build_dataset("NetConcentration", "NetConcentration"));
+  datasets.push_back(_build_dataset("TotalConcentration", "TotalConcentration"));
+  //datasets.push_back(_build_dataset("na", "AcceptorConcentration"));
+  //datasets.push_back(_build_dataset("nd", "DonorConcentration"));
+
 
   if( Genius::processor_id() == 0)
   {
     ise_writer = new DFISE::DFISE_MESH;
+
+    _build_material_name_map();
 
     _build_region();
 
@@ -871,6 +923,75 @@ void DFISEIO::write (const std::string& filename)
 
 
 
+void DFISEIO::_build_material_name_map()
+{
+  // mapping genius material name to sentaurus material name
+
+ _material_name_map["AlAs"                  ] =  "AlAs";
+ _material_name_map["AlGaAs"                ] =  "AlGaAs";
+ _material_name_map["AlGaN"                 ] =  "AlGaN";
+ _material_name_map["AlInGaN"               ] =  "AlInGaN";
+ _material_name_map["AlInN"                 ] =  "AlInN";
+ _material_name_map["AlN"                   ] =  "AlN";
+ _material_name_map["Al"                    ] =  "Aluminum";
+ _material_name_map["Ambient"               ] =  "Ambient";
+ _material_name_map["GenericInsulator"      ] =  "Anyinsulator";
+ _material_name_map["GenericMaterial"       ] =  "Anymaterial";
+ _material_name_map["GenericSemiconductor"  ] =  "Anysemiconductor";
+ _material_name_map["BSG"                   ] =  "BSG";
+ _material_name_map["CdTe"                  ] =  "CdTe";
+ _material_name_map["Ceramic"               ] =  "Ceramic";
+ _material_name_map["Co"                    ] =  "Cobalt";
+ _material_name_map["Cu"                    ] =  "Copper";
+ _material_name_map["Default"               ] =  "Default";
+ _material_name_map["GaAs"                  ] =  "GaAs";
+ _material_name_map["GaAsP"                 ] =  "GaAsP";
+ _material_name_map["GaInP"                 ] =  "GaInP";
+ _material_name_map["GaN"                   ] =  "GaN";
+ _material_name_map["GaP"                   ] =  "GaP";
+ _material_name_map["Air"                   ] =  "Gas";
+ //_material_name_map[] =  "GatePolySilicon";
+ _material_name_map["Ge"                    ] =  "Germanium";
+ _material_name_map["Au"                    ] =  "Gold";
+ _material_name_map["HgCdTe"                ] =  "HgCdTe";
+ _material_name_map["HgTe"                  ] =  "HgTe";
+ _material_name_map["InAlAs"                ] =  "InAlAs";
+ _material_name_map["InAs"                  ] =  "InAs";
+ _material_name_map["InAsP"                 ] =  "InAsP";
+ _material_name_map["InGaAs"                ] =  "InGaAs";
+ _material_name_map["InGaAsP"               ] =  "InGaAsP";
+ _material_name_map["InGaN"                 ] =  "InGaN";
+ _material_name_map["InN"                   ] =  "InN";
+ _material_name_map["InP"                   ] =  "InP";
+ _material_name_map["Metal"                 ] =  "Metal";
+ _material_name_map["Mo"                    ] =  "Molybdenum";
+ _material_name_map["Nitride"               ] =  "Nitride";
+ //_material_name_map[] =  "Oxide";
+ _material_name_map["S-SiO2"                ] =  "OxideAsSemiconductor";
+ //_material_name_map[] =  "Oxynitride";
+ _material_name_map["Photoresist"           ] =  "Photoresist";
+ _material_name_map["Pt"                    ] =  "Platinum";
+ _material_name_map["NPolySi"               ] =  "PolySi";
+ _material_name_map["PPolySi"               ] =  "PolySi";
+ _material_name_map["PolySi"                ] =  "PolySi";
+ //_material_name_map[] =  "PolySilicon";
+ _material_name_map["Resist"                ] =  "Resist";
+ //_material_name_map[] =  "Si3N4";
+ _material_name_map["SiO2"                  ] =  "SiO2";
+ _material_name_map["TiSi2"                 ] =  "Silicide";
+ _material_name_map["Si"                    ] =  "Silicon";
+ _material_name_map["3C-SiC"                ] =  "SiliconCarbide";
+ _material_name_map["SiGe"                  ] =  "SiliconGermanium";
+ _material_name_map["Ag"                    ] =  "Silver";
+ //_material_name_map[] =  "Solder60_40";
+ //_material_name_map[] =  "StrainedSilicon";
+ _material_name_map["Ta"                    ] =  "Tantalum";
+ _material_name_map["Ti"                    ] =  "Titanium";
+ _material_name_map["W"                     ] =  "Tungsten";
+ _material_name_map["Vacuum"                ] =  "Vacuum";
+}
+
+
 
 
 void DFISEIO::_build_region()
@@ -896,7 +1017,11 @@ void DFISEIO::_build_region()
   {
     const SimulationRegion * region = system.region(r);
     _regions.push_back(region->name());
-    _materials.push_back(region->material());
+
+    if(_material_name_map.find(region->material()) != _material_name_map.end())
+      _materials.push_back(_material_name_map.find(region->material())->second);
+    else
+      _materials.push_back(region->material());
   }
 
   // boundary cells, labels and material "Contact"
@@ -1174,9 +1299,9 @@ DFISE::DATASET * DFISEIO::_build_dataset( const std::string & variable,  const s
     {
       validity.push_back(region->name());
 
-      std::vector<Real> data;
+      std::vector<PetscScalar> data;
       std::vector<unsigned int> index;
-      region->get_variable_data<Real>(variable, POINT_CENTER, data);
+      region->get_variable_data<PetscScalar>(variable, POINT_CENTER, data);
       region->region_node(index);
 
       for(unsigned int n=0; n<index.size(); ++n)

@@ -44,7 +44,6 @@ namespace SurfaceLocator
   {
     Point center;
     Real  r;
-    unsigned int nx, ny, nz;
     std::vector<const Elem *> voxel_elements;
   };
 
@@ -110,6 +109,21 @@ private:
   BoundingBox _bounding_box;
 
   /**
+   * x size of Voxel
+   */
+  Real _x_size;
+
+  /**
+   * y size of Voxel
+   */
+  Real _y_size;
+
+  /**
+   * z size of Voxel
+   */
+  Real _z_size;
+
+  /**
    * radius size of Voxel sphere
    */
   Real _radius_size;
@@ -138,15 +152,23 @@ private:
   /**
    * arrays of voxel
    */
-  SurfaceLocator::Voxel * _space_division;
+  std::map<unsigned int, SurfaceLocator::Voxel *>  _space_division;
 
   /**
    * get a voxel by index
    */
-  SurfaceLocator::Voxel * _get_voxel(unsigned int nx, unsigned int ny, unsigned int nz) const
+  SurfaceLocator::Voxel * _get_voxel(unsigned int nx, unsigned int ny, unsigned int nz) 
   {
-    if(  nx >= _dim_x || ny >= _dim_y  || nz >=_dim_z) return 0;
-    return & _space_division[nx*(_dim_y*_dim_z) + ny*_dim_z + nz];
+    unsigned int key = nx*(_dim_y*_dim_z) + ny*_dim_z + nz;
+    if( _space_division.find(key) == _space_division.end() )
+    {
+      SurfaceLocator::Voxel * voxel = new SurfaceLocator::Voxel;
+      voxel->center = _bounding_box.first + Point(_x_size*nx, _y_size*ny, _z_size*nz);
+      voxel->r = _radius_size;
+      _space_division[key] = voxel;
+      return voxel;
+    }
+    return _space_division[key];
   }
 
 

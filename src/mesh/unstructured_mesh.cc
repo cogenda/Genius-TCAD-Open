@@ -830,8 +830,8 @@ void UnstructuredMesh::set_prepared ()
 {
   // Reset our PointLocator.  This needs to happen any time the elements
   // in the underlying elements in the mesh have changed, so we do it here.
-  this->clear_point_locator();
-  this->clear_surface_locator();
+  //this->clear_point_locator();
+  //this->clear_surface_locator();
 
   // The mesh is now prepared for use.
   _is_prepared = true;
@@ -961,12 +961,12 @@ void UnstructuredMesh::create_submesh (UnstructuredMesh& new_mesh,
 
 
 
-void UnstructuredMesh::partition_cluster(std::vector<std::vector<unsigned int> > & clusters)
+bool UnstructuredMesh::partition_cluster(std::vector<std::vector<unsigned int> > & clusters)
 {
+  if(_subdomain_cluster.empty()) return false;
+
   clusters.resize(_subdomain_cluster.size());
-  if(_subdomain_cluster.empty()) return;
-
-
+  
   // map subdomain to clusters
   std::map<unsigned int, unsigned int> subdomain_map;
   for(unsigned int n=0; n<_subdomain_cluster.size(); ++n)
@@ -987,7 +987,8 @@ void UnstructuredMesh::partition_cluster(std::vector<std::vector<unsigned int> >
       clusters[n].push_back(elem->id());
     }
   }
-
+  
+  return true;
 }
 
 

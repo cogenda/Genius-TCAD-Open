@@ -194,7 +194,13 @@ public:
    */
   bool is_boundary_elem(const Elem *e) const
   { return _boundary_side_id.find(e) != _boundary_side_id.end(); }
-
+  
+  
+  /**
+   * @return true when elem-side pair is boundary
+   */
+  bool is_boundary_elem_side(const Elem * elem, unsigned int side) const;
+    
 
   /**
    * @returns the number of element-based boundary conditions.

@@ -126,27 +126,7 @@ namespace DFISE
     { return data_sets[n]; }
 
 
-    /**
-     * @return true when value with name value_name exist
-     */
-    bool is_value_exist(const std::string & value_name) const
-    {
-      for(unsigned int n=0; n<data_sets.size(); ++n)
-        if(data_sets[n]->name == value_name)
-          return true;
-      return false;
-    }
 
-    /**
-     * @return true when value with fuzzy name value_name exist
-     */
-    bool is_value_exist_fuzzy(const std::string & value_name) const
-    {
-      for(unsigned int n=0; n<data_sets.size(); ++n)
-        if(data_sets[n]->name.find(value_name)!=std::string::npos)
-          return true;
-      return false;
-    }
 
     /**
      * @return true when value with name value_name exist and valid in region
@@ -177,7 +157,7 @@ namespace DFISE
     {
       double value = 0.0;
       for(unsigned int n=0; n<data_sets.size(); ++n)
-        if(data_sets[n]->name == value_name && data_sets[n]->is_valid(region))
+        if(data_sets[n]->name == value_name && data_sets[n]->is_valid(region) && data_sets[n]->location == DATASET::vertex)
         {
           value += data_sets[n]->get_scaler_value_by_node_index(node_index);
         }
@@ -186,15 +166,38 @@ namespace DFISE
 
 
     /**
-     * @return the node scalar value with value_name, and the value should be valid in region
+     * @return true when data set with function function_name exist and valid in region
      */
-    double get_scaler_value(int data_set_index, unsigned int region, unsigned int node_index) const
+    bool is_function_exist(const std::string & function_name, unsigned int region) const
     {
-      double value =0;
-      if(data_sets[data_set_index]->is_valid(region))
-      {
-        value = data_sets[data_set_index]->get_scaler_value_by_node_index(node_index);
-      }
+      for(unsigned int n=0; n<data_sets.size(); ++n)
+        if(data_sets[n]->function == function_name && data_sets[n]->is_valid(region))
+          return true;
+      return false;
+    }
+
+    /**
+     * @return true when data set with fuzzy function function_name exist and valid in region
+     */
+    bool is_function_exist_fuzzy(const std::string & function_name, unsigned int region) const
+    {
+      for(unsigned int n=0; n<data_sets.size(); ++n)
+        if(data_sets[n]->function.find(function_name)!=std::string::npos && data_sets[n]->is_valid(region))
+          return true;
+      return false;
+    }
+
+    /**
+     * @return the node scalar value with function_name, and the value should be valid in region
+     */
+    double get_scaler_function(const std::string & function_name, unsigned int region, unsigned int node_index) const
+    {
+      double value = 0.0;
+      for(unsigned int n=0; n<data_sets.size(); ++n)
+        if(data_sets[n]->function == function_name && data_sets[n]->is_valid(region) && data_sets[n]->location == DATASET::vertex)
+        {
+          value += data_sets[n]->get_scaler_value_by_node_index(node_index);
+        }
       return value;
     }
 

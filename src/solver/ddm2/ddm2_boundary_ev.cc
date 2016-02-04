@@ -72,7 +72,7 @@ void ElectrodeVacuumInterfaceBC::DDM2_Function(PetscScalar * x, Vec f, InsertMod
     {
     case SemiconductorRegion:
       {
-        // process governing equation of T, which should consider heat exchange to entironment
+        // process governing equation of T, which should consider heat exchange to environment
         PetscScalar T = x[fvm_node->local_offset()+3];  // lattice temperature
 
         // add heat flux out of Neumann boundary to lattice temperature equatiuon
@@ -87,7 +87,7 @@ void ElectrodeVacuumInterfaceBC::DDM2_Function(PetscScalar * x, Vec f, InsertMod
     case ElectrodeRegion :
     case InsulatorRegion :
       {
-        // process governing equation of T, which should consider heat exchange to entironment
+        // process governing equation of T, which should consider heat exchange to environment
         PetscScalar T = x[fvm_node->local_offset()+1];  // lattice temperature
         // add heat flux out of Neumann boundary to lattice temperature equatiuon
         PetscScalar S  = fvm_node->outside_boundary_surface_area();
@@ -116,20 +116,13 @@ void ElectrodeVacuumInterfaceBC::DDM2_Function(PetscScalar * x, Vec f, InsertMod
 /*---------------------------------------------------------------------
  * build function and its jacobian for DDML2 solver
  */
-void ElectrodeVacuumInterfaceBC::DDM2_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_value_flag)
+void ElectrodeVacuumInterfaceBC::DDM2_Jacobian(PetscScalar * x, SparseMatrix<PetscScalar> *jac, InsertMode &add_value_flag)
 {
   // Neumann boundary condition is processed here
   const PetscScalar Heat_Transfer = this->scalar("heat.transfer");
 
   // only consider heat exchange with external environment, if heat transfer rate is zero, do nothing
   if( Heat_Transfer == 0.0 ) return;
-
-  // since we will use ADD_VALUES operat, check the matrix state.
-  if( (add_value_flag != ADD_VALUES) && (add_value_flag != NOT_SET_VALUES) )
-  {
-    MatAssemblyBegin(*jac, MAT_FLUSH_ASSEMBLY);
-    MatAssemblyEnd(*jac, MAT_FLUSH_ASSEMBLY);
-  }
 
 
   BoundaryCondition::const_node_iterator node_it = nodes_begin();
@@ -149,14 +142,14 @@ void ElectrodeVacuumInterfaceBC::DDM2_Jacobian(PetscScalar * x, Mat *jac, Insert
         //the indepedent variable number, we only need 1 here.
         adtl::AutoDScalar::numdir=1;
 
-        // process governing equation of T, which should consider heat exchange to entironment
+        // process governing equation of T, which should consider heat exchange to environment
         AutoDScalar T = x[fvm_node->local_offset()+3];  T.setADValue(0, 1.0); // lattice temperature
 
         // add heat flux out of Neumann boundary to lattice temperature equatiuon
         PetscScalar S  = fvm_node->outside_boundary_surface_area();
         AutoDScalar fT = Heat_Transfer*(T_external()-T)*S;
 
-        MatSetValue(*jac, fvm_node->global_offset()+3, fvm_node->global_offset()+3, fT.getADValue(0),  ADD_VALUES);
+        jac->add( fvm_node->global_offset()+3,  fvm_node->global_offset()+3,  fT.getADValue(0) );
 
         break;
       }
@@ -167,14 +160,14 @@ void ElectrodeVacuumInterfaceBC::DDM2_Jacobian(PetscScalar * x, Mat *jac, Insert
         //the indepedent variable number, we only need 1 here.
         adtl::AutoDScalar::numdir=1;
 
-        // process governing equation of T, which should consider heat exchange to entironment
+        // process governing equation of T, which should consider heat exchange to environment
         AutoDScalar T = x[fvm_node->local_offset()+1];  T.setADValue(0, 1.0); // lattice temperature
 
         // add heat flux out of Neumann boundary to lattice temperature equatiuon
         PetscScalar S  = fvm_node->outside_boundary_surface_area();
         AutoDScalar fT = Heat_Transfer*(T_external()-T)*S;
 
-        MatSetValue(*jac, fvm_node->global_offset()+1, fvm_node->global_offset()+1, fT.getADValue(0),  ADD_VALUES);
+        jac->add( fvm_node->global_offset()+1,  fvm_node->global_offset()+1,  fT.getADValue(0) );
 
         break;
       }
@@ -190,3 +183,4 @@ void ElectrodeVacuumInterfaceBC::DDM2_Jacobian(PetscScalar * x, Mat *jac, Insert
   add_value_flag = ADD_VALUES;
 
 }
+

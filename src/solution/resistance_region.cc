@@ -58,13 +58,13 @@ void MetalSimulationRegion::set_aux_parasitic_parameter(double res, double cap)
 }
 
 
-MetalSimulationRegion::MetalSimulationRegion(const std::string &name, const std::string &material, const double T, const double z)
-    :SimulationRegion(name, material, T, z)
+MetalSimulationRegion::MetalSimulationRegion(const std::string &name, const std::string &material, const double T, const unsigned int dim, const double z)
+  :SimulationRegion(name, material, T, dim, z)
 {
   // material should be initializted after region variables
   this->set_region_variables();
   mt = new Material::MaterialConductor(this);
-  _conductance = mt->basic->Conductance();
+
 }
 
 
@@ -106,13 +106,14 @@ void MetalSimulationRegion::set_region_variables()
   _cell_data_storage.allocate_tensor_variable( std::vector<bool>(FVM_Resistance_CellData::n_tensor(),false));
 
   // define _region_point_variables
+  _region_point_variables["dmin"            ] = SimulationVariable("dmin", SCALAR, POINT_CENTER, "1", FVM_Resistance_NodeData::_dmin_, true);
   _region_point_variables["electron"        ] = SimulationVariable("electron", SCALAR, POINT_CENTER, "cm^-3", FVM_Resistance_NodeData::_n_, true);
   _region_point_variables["potential"       ] = SimulationVariable("potential", SCALAR, POINT_CENTER, "V", FVM_Resistance_NodeData::_psi_, true);
   _region_point_variables["temperature"     ] = SimulationVariable("temperature", SCALAR, POINT_CENTER, "K", FVM_Resistance_NodeData::_T_, true);
   _region_point_variables["density"         ] = SimulationVariable("density", SCALAR, POINT_CENTER, "g/cm^3", FVM_Resistance_NodeData::_density_, true);
   _region_point_variables["affinity"        ] = SimulationVariable("affinity", SCALAR, POINT_CENTER, "eV", FVM_Resistance_NodeData::_affinity_, true);
-  _region_point_variables["ec"              ] = SimulationVariable("ec", SCALAR, POINT_CENTER, "eV", FVM_Resistance_NodeData::_Ec_, true);
-  _region_point_variables["ev"              ] = SimulationVariable("ev", SCALAR, POINT_CENTER, "eV", FVM_Resistance_NodeData::_Ev_, true);
+  _region_point_variables["Ec"              ] = SimulationVariable("Ec", SCALAR, POINT_CENTER, "eV", FVM_Resistance_NodeData::_Ec_, true);
+  _region_point_variables["Ev"              ] = SimulationVariable("Ev", SCALAR, POINT_CENTER, "eV", FVM_Resistance_NodeData::_Ev_, true);
   _region_point_variables["eps"             ] = SimulationVariable("eps", SCALAR, POINT_CENTER, "C/V/m", FVM_Resistance_NodeData::_eps_, true);
   _region_point_variables["mu"              ] = SimulationVariable("mu", SCALAR, POINT_CENTER, "s^2*V/C/m", FVM_Resistance_NodeData::_mu_, true);
 
@@ -146,6 +147,8 @@ void MetalSimulationRegion::set_region_variables()
 
 void MetalSimulationRegion::init(PetscScalar T_external)
 {
+  _conductance = mt->basic->Conductance();
+
   //init FVM_NodeData
   local_node_iterator node_it = on_local_nodes_begin();
   local_node_iterator node_it_end = on_local_nodes_end();
@@ -161,7 +164,7 @@ void MetalSimulationRegion::init(PetscScalar T_external)
     node_data->T()  =  T_external;
 
     // set aux data for metal
-    //node_data->n()        = mt->basic->IonDensity(T_external);
+    node_data->n()        = mt->basic->IonDensity(T_external);
     node_data->affinity() = mt->basic->Affinity(T_external);
     node_data->psi()      = -mt->basic->Affinity(T_external);
     node_data->density()  = mt->basic->Density(T_external);
@@ -180,6 +183,8 @@ void MetalSimulationRegion::init(PetscScalar T_external)
 void MetalSimulationRegion::reinit_after_import()
 {
 
+  _conductance = mt->basic->Conductance();
+
   //init FVM_NodeData
   local_node_iterator node_it = on_local_nodes_begin();
   local_node_iterator node_it_end = on_local_nodes_end();
@@ -195,12 +200,14 @@ void MetalSimulationRegion::reinit_after_import()
     PetscScalar T =node_data->T();
 
     // set aux data for metal
+    node_data->n()        = mt->basic->IonDensity(T);
     node_data->affinity() = mt->basic->Affinity(T);
     node_data->density()  = mt->basic->Density(T);
     node_data->eps()      = eps0*mt->basic->Permittivity();
     node_data->mu()       = mu0*mt->basic->Permeability();
 
   }
+
 
   //NOTE T and psi are read from data file!
 
@@ -211,6 +218,8 @@ void MetalSimulationRegion::reinit_after_import()
 void MetalSimulationRegion::set_pmi(const std::string &type, const std::string &model_name, std::vector<Parser::Parameter> & pmi_parameters)
 {
   get_material_base()->set_pmi(type,model_name,pmi_parameters);
+
+  _conductance = mt->basic->Conductance();
 
   local_node_iterator it = on_local_nodes_begin();
   for ( ; it!=on_local_nodes_end(); ++it)

@@ -84,6 +84,11 @@ struct ScalarTraits<double> { static const bool value = true; };
 template<>
 struct ScalarTraits<long double> { static const bool value = true; };
 
+#if (WITH_PETSCSCALAR_FLOAT128 && __GNUC__ >= 4 && __GNUC_MINOR__ >=6) 
+template<>
+struct ScalarTraits<__float128> { static const bool value = true; };
+#endif
+
 template<>
 struct ScalarTraits<std::complex<float> > { static const bool value = true; };
 
@@ -92,6 +97,11 @@ struct ScalarTraits<std::complex<double> > { static const bool value = true; };
 
 template<>
 struct ScalarTraits<std::complex<long double> > { static const bool value = true; };
+
+#if (WITH_PETSCSCALAR_FLOAT128 && __GNUC__ >= 4 && __GNUC_MINOR__ >=6) 
+template<>
+struct ScalarTraits<std::complex<__float128> > { static const bool value = true; };
+#endif
 
 template<>
 struct ScalarTraits<AutoDScalar> { static const bool value = true; };
@@ -188,6 +198,12 @@ SUPERTYPE(int, long double);
 SUPERTYPE(float, double);
 SUPERTYPE(float, long double);
 SUPERTYPE(double, long double);
+
+#if (WITH_PETSCSCALAR_FLOAT128 && __GNUC__ >= 4 && __GNUC_MINOR__ >=6) 
+SUPERTYPE(float, __float128);
+SUPERTYPE(double, __float128);
+SUPERTYPE(long double, __float128);
+#endif
 
 // gcc can't tell which of the following is the most specialized?  Weak.
 /*

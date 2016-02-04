@@ -60,7 +60,7 @@ void MetalSimulationRegion::DG_Function(PetscScalar * x, Vec f, InsertMode &add_
 }
 
 
-void MetalSimulationRegion::DG_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_value_flag)
+void MetalSimulationRegion::DG_Jacobian(PetscScalar * x, SparseMatrix<PetscScalar> *jac, InsertMode &add_value_flag)
 {
   this->DDM1_Jacobian(x, jac, add_value_flag);
 }
@@ -72,7 +72,7 @@ void MetalSimulationRegion::DG_Time_Dependent_Function(PetscScalar * x, Vec f, I
 }
 
 
-void MetalSimulationRegion::DG_Time_Dependent_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_value_flag)
+void MetalSimulationRegion::DG_Time_Dependent_Jacobian(PetscScalar * x, SparseMatrix<PetscScalar> *jac, InsertMode &add_value_flag)
 {
   this->DDM1_Time_Dependent_Jacobian(x, jac, add_value_flag);
 }
@@ -82,6 +82,7 @@ void MetalSimulationRegion::DG_Update_Solution(PetscScalar *lxx)
 {
   this->DDM1_Update_Solution(lxx);
 }
+
 
 
 

@@ -141,52 +141,14 @@ void ElectrodeInterConnectBC::inter_connect_function(PetscScalar *x , Vec f, Ins
 
 
 
-/*---------------------------------------------------------------------
- * reserve matrix entries
- */
-void ElectrodeInterConnectBC::inter_connect_reserve(Mat *jac, InsertMode &add_value_flag)
-{
-
-  // since we will use ADD_VALUES operat, check the matrix state.
-  if( (add_value_flag != ADD_VALUES) && (add_value_flag != NOT_SET_VALUES) )
-  {
-    MatAssemblyBegin(*jac, MAT_FLUSH_ASSEMBLY);
-    MatAssemblyEnd(*jac, MAT_FLUSH_ASSEMBLY);
-  }
-
-  // only past processor do this
-  if(Genius::is_last_processor())
-  {
-    // current flow into each electrode
-    const std::vector<BoundaryCondition * > & electrodes = this->inter_connect();
-    for(unsigned int n=0; n<electrodes.size(); ++n)
-    {
-      const BoundaryCondition * electrode = electrodes[n];
-      MatSetValue(*jac, this->global_offset(), this->global_offset(), 0, ADD_VALUES);
-      MatSetValue(*jac, this->global_offset(), electrode->global_offset(), 0, ADD_VALUES);
-    }
-  }
-
-  // the last operator is ADD_VALUES
-  add_value_flag = ADD_VALUES;
-
-}
 
 
 
 /*---------------------------------------------------------------------
  * set jacobian matrix entries
  */
-void ElectrodeInterConnectBC::inter_connect_jacobian(PetscScalar *x , Mat *jac, InsertMode &add_value_flag)
+void ElectrodeInterConnectBC::inter_connect_jacobian(PetscScalar *x , SparseMatrix<PetscScalar> *jac, InsertMode &add_value_flag)
 {
-
-  // since we will use ADD_VALUES operat, check the matrix state.
-  if( (add_value_flag != ADD_VALUES) && (add_value_flag != NOT_SET_VALUES) )
-  {
-    MatAssemblyBegin(*jac, MAT_FLUSH_ASSEMBLY);
-    MatAssemblyEnd(*jac, MAT_FLUSH_ASSEMBLY);
-  }
-
   // only last processor do this
   if(Genius::is_last_processor())
   {
@@ -203,14 +165,14 @@ void ElectrodeInterConnectBC::inter_connect_jacobian(PetscScalar *x , Mat *jac, 
       const BoundaryCondition * electrode = electrodes[n];
       PetscScalar r  = electrode->ext_circuit()->inter_connect_resistance();
       //I += mna_scaling*(Vic-Ve)/r;
-      MatSetValue(*jac, this->global_offset(), this->global_offset(), mna_scaling/r, ADD_VALUES);
-      MatSetValue(*jac, this->global_offset(), electrode->global_offset(), -mna_scaling/r, ADD_VALUES);
+      jac->add(this->global_offset(), this->global_offset(), mna_scaling/r);
+      jac->add(this->global_offset(), electrode->global_offset(), -mna_scaling/r);
     }
 
-    MatSetValue(*jac, this->global_offset(), this->global_offset(), ext_circuit()->mna_jacobian(SolverSpecify::dt), ADD_VALUES);
+    jac->add(this->global_offset(), this->global_offset(), ext_circuit()->mna_jacobian(SolverSpecify::dt));
 
     //PetscScalar Is = mna_scaling*(Vic - ext_circuit()->potential())*SolverSpecify::Gmin/(V/A);
-    MatSetValue(*jac, this->global_offset(), this->global_offset(), mna_scaling*SolverSpecify::Gmin/(V/A), ADD_VALUES);
+    jac->add(this->global_offset(), this->global_offset(), mna_scaling*SolverSpecify::Gmin/(V/A));
   }
 
   // the last operator is ADD_VALUES

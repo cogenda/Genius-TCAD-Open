@@ -25,8 +25,16 @@ boundary Type = OhmicContact        ID = back      Res=0 Cap=0 Ind=0
 # import model from medici TIF file
 IMPORT   TIFFile="90nm.tif"
 
+# specify physical model, use Lombardi mobility here.
+MODEL    Region=Si Mob.Force=EJ ESurface=true 
+PMI      Region=Si  Type=mobility  Model=Lombardi
+PMI      Region=Si  Type=Band real<V0.BGN>=0
+
+
 METHOD Type=Poisson LS=MUMPS
 SOLVE
+
+EXPORT cgns="90nm.cgns"
 
 # set vcc to 0.21V
 ATTACH   Electrode=drain VApp=VCC
@@ -34,10 +42,7 @@ METHOD   Type=DDML1 NS=Basic LS=MUMPS
 SOLVE    Type=STEADY
 
 
-# specify physical model, use Lombardi mobility here.
-MODEL    Region=Si Mob.Force=EJ ESurface=true 
-PMI      Region=Si  Type=mobility  Model=Lombardi
-PMI      Region=Si  Type=Band real<V0.BGN>=0
+
 
 METHOD   Type=DDML1 NS=Basic LS=MUMPS Damping=Potential toler.relax=1e6
 SOLVE    Type=DCSWEEP VScan=polysili  out.prefix=v21  VStart=0.00 VStep=0.02 VStop=0.7

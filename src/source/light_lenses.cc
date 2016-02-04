@@ -182,6 +182,7 @@ LightThread * LightLenses::operator << (LightThread *light) const
       // set y axis as lens center to light incident point
       Point y_axis = (aim_point - active_lens->center).unit(true);
       Point z_axis = active_lens->norm.cross(y_axis);
+
       // the parallel and perpendicular E
       const double Et = light->E_dir()*z_axis;
       const double Ep = light->E_dir()*(z_axis.cross(light->dir()));
@@ -191,8 +192,14 @@ LightThread * LightLenses::operator << (LightThread *light) const
       if(y_axis*light->dir() < 0.0)
         aim_angle = 2*M_PI-aim_angle;
       // ABCD transform
-      double t_distance = active_lens->A*aim_distance + active_lens->B*aim_angle;
-      double t_angle = active_lens->C*aim_distance + active_lens->D*aim_angle;
+      //   |y |    | A   B |  |y0 |
+      //   |  |  = |       |* |   |
+      //   |y'|    | C   D |  |y0'|
+      // originally, approximation is valid as long as sin(y') ≈ y'
+      // so here we use tan(y'), which increased the valid range of y'
+      double t_distance = active_lens->A*aim_distance + active_lens->B*tan(aim_angle);
+      double t_angle = atan(active_lens->C*aim_distance + active_lens->D*tan(aim_angle));
+
       // recalculate startpoint, dir and E_dir of light
       light->dir() =  cos(t_angle)*active_lens->norm + sin(t_angle)*y_axis;
       light->start_point() = active_lens->center + t_distance*y_axis + 1e-6*active_lens->radius*light->dir();

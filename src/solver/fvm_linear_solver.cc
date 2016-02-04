@@ -46,7 +46,7 @@ extern "C"
   static PetscErrorCode __genius_petsc_ksp_convergence_test(KSP, PetscInt its, PetscReal rnorm, KSPConvergedReason* reason, void *ctx)
   {
     int ierr=0;
-    // convert void* to FVM_NonlinearSolver*
+    // convert void* to FVM_LinearSolver*
     FVM_LinearSolver * linear_solver = (FVM_LinearSolver *)ctx;
 
     linear_solver->petsc_ksp_convergence_test(its, rnorm, reason);
@@ -142,7 +142,8 @@ void FVM_LinearSolver::setup_linear_data()
   ierr = MatSetOption(A, MAT_KEEP_ZEROED_ROWS, PETSC_TRUE); genius_assert(!ierr);
 #endif
 
-  //ierr = MatSetOption(A, MAT_YES_NEW_NONZERO_LOCATIONS); genius_assert(!ierr);
+  // we have to set this flag since preallocation is not exact
+  ierr = MatSetOption(A, MAT_NEW_NONZERO_LOCATIONS, PETSC_TRUE); genius_assert(!ierr);
 
   // indicates when MatSetValue with ADD_VALUES mode, the 0 entries will be ignored
   // since I uas ADD_VALUES 0 for keeping nonzero pattern, do not use this parameter!
@@ -156,8 +157,11 @@ void FVM_LinearSolver::setup_linear_data()
   // create petsc linear solver context
   ierr = KSPCreate(PETSC_COMM_WORLD, &ksp); genius_assert(!ierr);
 
-  // set corresponding matrix
-  ierr = KSPSetOperators(ksp, A, A, SAME_NONZERO_PATTERN); genius_assert(!ierr);
+#if PETSC_VERSION_GE(3,5,0)
+  ierr = KSPSetOperators(ksp,A,A); genius_assert(!ierr);
+#else
+  ierr = KSPSetOperators(ksp,A,A,SAME_NONZERO_PATTERN); genius_assert(!ierr);
+#endif
 
   // get petsc preconditional context
   ierr = KSPGetPC(ksp, &pc); genius_assert(!ierr);
@@ -171,6 +175,89 @@ void FVM_LinearSolver::setup_linear_data()
   // set user defined ksy convergence criterion
   ierr = KSPSetConvergenceTest (ksp, __genius_petsc_ksp_convergence_test, this, PETSC_NULL); genius_assert(!ierr);
 
+}
+
+
+/*------------------------------------------------------------------
+ * dump matrix to external file for analysis
+ */
+void FVM_LinearSolver::dump_matrix_petsc(const Mat mat,const std::string &file) const
+{
+  PetscViewer viewer;
+  PetscViewerBinaryOpen(PETSC_COMM_WORLD, file.c_str(), FILE_MODE_WRITE, &viewer);
+  //PetscViewerSetFormat(viewer,PetscViewerFormat format)
+  MatView(mat, viewer);
+  PetscViewerDestroy(PetscDestroyObject(viewer));
+}
+
+
+/*------------------------------------------------------------------
+ * dump matrix in asc format to external file
+ */
+void FVM_LinearSolver::dump_matrix_asc(const Mat mat, const std::string &file) const
+{
+  PetscViewer viewer;
+  PetscViewerASCIIOpen(PETSC_COMM_WORLD, file.c_str(), &viewer);
+  //PetscViewerSetFormat(viewer,PetscViewerFormat format)
+  MatView(mat, viewer);
+  PetscViewerDestroy(PetscDestroyObject(viewer));
+}
+
+
+/*------------------------------------------------------------------
+ * dump matrix in triplet format to external file
+ */
+void FVM_LinearSolver::dump_matrix_triplet(const Mat mat, const std::string &file) const
+{
+  // serial only
+  genius_assert(Genius::n_processors() ==1);
+
+  std::ofstream out(file.c_str());
+  out<<std::scientific<<std::setprecision(15);
+
+  PetscInt nrow, ncol;
+  MatGetSize(mat, &nrow, &ncol);
+
+  for(PetscInt row=0; row<nrow; row++)
+  {
+    PetscInt row_ncol;
+    const PetscInt * row_cols_pointer;
+    const PetscScalar * row_vals_pointer;
+
+    MatGetRow(mat, row, &row_ncol, &row_cols_pointer, &row_vals_pointer);
+
+    for(PetscInt c=0; c<row_ncol; ++c)
+      out << row << " " << row_cols_pointer[c] << " " << row_vals_pointer[c] << std::endl;
+    // restore pointers
+    MatRestoreRow(mat, row, &row_ncol, &row_cols_pointer, &row_vals_pointer);
+  }
+
+  out.close();
+}
+
+
+
+/*------------------------------------------------------------------
+ * dump vector to external file
+ */
+void FVM_LinearSolver::dump_vector_petsc(const Vec vec, const std::string &file) const
+{
+  PetscViewer viewer;
+  PetscViewerBinaryOpen(PETSC_COMM_WORLD, file.c_str(), FILE_MODE_WRITE, &viewer);
+  VecView(vec, viewer);
+  PetscViewerDestroy(PetscDestroyObject(viewer));
+}
+
+
+/*------------------------------------------------------------------
+ * load vector from external file
+ */
+void FVM_LinearSolver::load_vector_petsc(Vec vec, const std::string &file) const
+{
+  PetscViewer viewer;
+  PetscViewerBinaryOpen(PETSC_COMM_WORLD, file.c_str(), FILE_MODE_READ, &viewer);
+  VecLoad(vec, viewer);
+  PetscViewerDestroy(PetscDestroyObject(viewer));
 }
 
 
@@ -206,7 +293,7 @@ void FVM_LinearSolver::clear_linear_data()
  */
 FVM_LinearSolver::~FVM_LinearSolver()
 {
-  
+
 }
 
 
@@ -225,7 +312,11 @@ PetscInt FVM_LinearSolver::get_linear_iteration() const
  */
 void FVM_LinearSolver::petsc_ksp_convergence_test(PetscInt its, PetscReal rnorm, KSPConvergedReason* reason)
 {
+#if PETSC_VERSION_GE(3,5,0)
+  KSPConvergedDefault(ksp, its, rnorm, reason, this);
+#else
   KSPDefaultConverged(ksp, its, rnorm, reason, this);
+#endif
 }
 
 
@@ -331,8 +422,9 @@ void FVM_LinearSolver::set_petsc_linear_solver_type()
             ierr = KSPSetType (ksp, (char*) KSPPREONLY); genius_assert(!ierr);
             ierr = PCSetType  (pc, (char*) PCLU); genius_assert(!ierr);
             ierr = PCFactorSetMatSolverPackage (pc, "mumps"); genius_assert(!ierr);
-            //ierr = set_petsc_option("-mat_mumps_icntl_14", "80", false);  genius_assert(!ierr);
-            //ierr = set_petsc_option("-mat_mumps_icntl_23","4000", false);
+            // required for eliminate INFO -9 error
+            ierr = set_petsc_option("-mat_mumps_icntl_14", MUMPS_ICNTL_14, false);  genius_assert(!ierr);
+            ierr = set_petsc_option("-mat_mumps_icntl_23", MUMPS_ICNTL_23, false);
 #else
             MESSAGE<< "Warning:  no MUMPS solver configured, use BCGS instead!" << std::endl;
             RECORD();
@@ -391,6 +483,8 @@ void FVM_LinearSolver::set_petsc_linear_solver_type()
             MESSAGE<< "Using MUMPS linear solver..."<<std::endl;
             RECORD();
             ierr = PCFactorSetMatSolverPackage (pc, "mumps"); genius_assert(!ierr);
+            ierr = set_petsc_option("-mat_mumps_icntl_14", MUMPS_ICNTL_14,false);  genius_assert(!ierr);
+            ierr = set_petsc_option("-mat_mumps_icntl_23", MUMPS_ICNTL_23,false);  genius_assert(!ierr);
 #else
             MESSAGE << "Warning:  no MUMPS solver configured, use default solver instead!" << std::endl;
             RECORD();
@@ -529,7 +623,11 @@ void FVM_LinearSolver::set_petsc_preconditioner_type()
       //ierr = PCFactorSetMatOrderingType(pc, MATORDERING_ND); genius_assert(!ierr);
       //ierr = PCFactorSetMatOrderingType(pc, MATORDERING_RCM);
       //ierr = set_petsc_option("-pc_factor_nonzeros_along_diagonal", "0"); genius_assert(!ierr);
+#if PETSC_VERSION_GE(3, 6, 0)        
+      ierr = PCFactorSetAllowDiagonalFill(pc, PETSC_TRUE);genius_assert(!ierr);
+#else
       ierr = PCFactorSetAllowDiagonalFill(pc);genius_assert(!ierr);
+#endif  
       //ierr = set_petsc_option("-pc_factor_diagonal_fill", "0");
       return;
 #endif
@@ -595,6 +693,8 @@ void FVM_LinearSolver::set_petsc_preconditioner_type()
 #ifdef PETSC_HAVE_MUMPS
         MESSAGE<< "Using MUMPS as LU preconditioner..."<<std::endl;    RECORD();
         ierr = PCFactorSetMatSolverPackage (pc, "mumps"); genius_assert(!ierr);
+        ierr = set_petsc_option("-mat_mumps_icntl_14", MUMPS_ICNTL_14, false);  genius_assert(!ierr);
+        ierr = set_petsc_option("-mat_mumps_icntl_23", MUMPS_ICNTL_23, false);  genius_assert(!ierr);
 #endif
         ierr = PCFactorSetReuseFill(pc, PETSC_TRUE);genius_assert(!ierr);
         ierr = PCFactorSetReuseOrdering(pc, PETSC_TRUE); genius_assert(!ierr);
@@ -609,6 +709,8 @@ void FVM_LinearSolver::set_petsc_preconditioner_type()
         ierr = PCSetType (pc, (char*) PCLU);       genius_assert(!ierr);
         MESSAGE<< "Using MUMPS as parallel LU preconditioner..."<<std::endl;    RECORD();
         ierr = PCFactorSetMatSolverPackage (pc, "mumps"); genius_assert(!ierr);
+        ierr = set_petsc_option("-mat_mumps_icntl_14", MUMPS_ICNTL_14,false);  genius_assert(!ierr);
+        ierr = set_petsc_option("-mat_mumps_icntl_23", MUMPS_ICNTL_23,false);  genius_assert(!ierr);
         ierr = PCFactorSetReuseFill(pc, PETSC_TRUE);genius_assert(!ierr);
         ierr = PCFactorSetReuseOrdering(pc, PETSC_TRUE); genius_assert(!ierr);
         ierr = PCFactorSetColumnPivot(pc, 1.0); genius_assert(!ierr);
@@ -653,7 +755,11 @@ void FVM_LinearSolver::set_petsc_preconditioner_type()
         ierr = PCFactorSetReuseOrdering(pc, PETSC_TRUE); genius_assert(!ierr);
         ierr = PCFactorSetColumnPivot(pc, 1.0); genius_assert(!ierr);
         ierr = PCFactorSetShiftType(pc,MAT_SHIFT_NONZERO);genius_assert(!ierr);
+#if PETSC_VERSION_GE(3, 6, 0)        
+        ierr = PCFactorSetAllowDiagonalFill(pc, PETSC_TRUE);genius_assert(!ierr);
+#else
         ierr = PCFactorSetAllowDiagonalFill(pc);genius_assert(!ierr);
+#endif  
         switch ( _preconditioner_type )
         {
           case SolverSpecify::ASMILU0_PRECOND: set_petsc_option("-pc_factor_levels","0"); break;
@@ -753,6 +859,13 @@ int FVM_LinearSolver::set_petsc_option(const std::string &key, const std::string
     ukey = std::string("-") + this->ksp_prefix() + key.substr(1) ;
   else
     ukey = key;
+
+  // if the option has been set in command line
+  PetscBool  set;
+  PetscOptionsHasName(NULL, ukey.c_str(), &set);
+  if(set) return 0;
+
+  // set the option
   petsc_options[ukey] = value;
   return PetscOptionsSetValue(ukey.c_str(), value.c_str());
 }

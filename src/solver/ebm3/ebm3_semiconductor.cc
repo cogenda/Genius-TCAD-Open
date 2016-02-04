@@ -354,7 +354,9 @@ void SemiconductorSimulationRegion::EBM3_Function(PetscScalar * x, Vec f, Insert
           }
         }
         // interface normal, point to semiconductor side
-        Point norm = - elem->outside_unit_normal(side_insul);
+        Point _norm = - elem->outside_unit_normal(side_insul);
+        // stupid code... we can not dot point with VectorValue<PetscScalar> yet.
+        VectorValue<PetscScalar> norm(_norm(0), _norm(1), _norm(2));
         // effective electric fields in vertical
         PetscScalar ZETAN = mt->mob->ZETAN();
         PetscScalar ETAN  = mt->mob->ETAN();
@@ -471,8 +473,8 @@ void SemiconductorSimulationRegion::EBM3_Function(PetscScalar * x, Vec f, Insert
         // takes care of the change effective DOS.
         // Ec/Ev should not be used except when its difference between two nodes.
         // The same comment applies to Ec2/Ev2.
-        PetscScalar Ec1 =  -(e*V1 + n1_data->affinity() + kb*T1*log(mt->band->nie(p1, n1, T1)));
-        PetscScalar Ev1 =  -(e*V1 + n1_data->affinity() - kb*T1*log(mt->band->nie(p1, n1, T1)));
+        PetscScalar Ec1 =  -(e*V1 + n1_data->affinity() - n1_data->dEcStrain() + mt->band->EgNarrowToEc(p1, n1, T1) + kb*T1*log(n1_data->Nc()));
+        PetscScalar Ev1 =  -(e*V1 + n1_data->affinity() - n1_data->dEvStrain() - mt->band->EgNarrowToEv(p1, n1, T1) - kb*T1*log(n1_data->Nv()) + mt->band->Eg(T1));
         if(get_advanced_model()->Fermi)
         {
           Ec1 = Ec1 - kb*T1*log(gamma_f(fabs(n1)/n1_data->Nc()));
@@ -507,8 +509,8 @@ void SemiconductorSimulationRegion::EBM3_Function(PetscScalar * x, Vec f, Insert
         if(get_advanced_model()->enable_Tp())
           Tp2 = x[n2_local_offset + node_Tp_offset]/p2;
 
-        PetscScalar Ec2 =  -(e*V2 + n2_data->affinity() + kb*T2*log(mt->band->nie(p2, n2, T2)));
-        PetscScalar Ev2 =  -(e*V2 + n2_data->affinity() - kb*T2*log(mt->band->nie(p2, n2, T2)));
+        PetscScalar Ec2 =  -(e*V2 + n2_data->affinity() - n2_data->dEcStrain() + mt->band->EgNarrowToEc(p2, n2, T2) + kb*T2*log(n2_data->Nc()));
+        PetscScalar Ev2 =  -(e*V2 + n2_data->affinity() - n2_data->dEvStrain() - mt->band->EgNarrowToEv(p2, n2, T2) - kb*T2*log(n2_data->Nv()) + mt->band->Eg(T2));
         if(get_advanced_model()->Fermi)
         {
           Ec2 = Ec2 - kb*T2*log(gamma_f(fabs(n2)/n2_data->Nc()));
@@ -529,11 +531,14 @@ void SemiconductorSimulationRegion::EBM3_Function(PetscScalar * x, Vec f, Insert
         {
           if (get_advanced_model()->Mob_Force == ModelSpecify::ESimple && !insulator_interface_elem )
           {
-            Point dir = (*fvm_n1->root_node() - *fvm_n2->root_node()).unit();
             PetscScalar Ep = fabs((V2-V1)/length);
             PetscScalar Et = 0;
             if(mos_channel_elem)
+            {
+              Point _dir = (*fvm_n1->root_node() - *fvm_n2->root_node()).unit();
+              VectorValue<PetscScalar> dir(_dir(0), _dir(1), _dir(2));
               Et = (E - dir*(E*dir)).size();
+            }
 
             mt->mapping(fvm_n1->root_node(), n1_data, SolverSpecify::clock);
             mun1 = mt->mob->ElecMob(p1, n1, T1, Ep, Et, Tn1);
@@ -747,7 +752,7 @@ void SemiconductorSimulationRegion::EBM3_Function(PetscScalar * x, Vec f, Insert
           Tn = std::min(Tn1,Tn2);
           Tp = std::min(Tp1,Tp2);
 
-          VectorValue<PetscScalar> ev = (elem->point(edge_nodes.second) - elem->point(edge_nodes.first));
+          VectorValue<Real> ev = (elem->point(edge_nodes.second) - elem->point(edge_nodes.first));
           PetscScalar riin1 = 0.5 + 0.5* (ev.unit()).dot(Jnv.unit(true));
           PetscScalar riin2 = 1.0 - riin1;
           PetscScalar riip2 = 0.5 + 0.5* (ev.unit()).dot(Jpv.unit(true));
@@ -1170,4 +1175,5 @@ void SemiconductorSimulationRegion::EBM3_Time_Dependent_Function(PetscScalar * x
 #endif
 
 }
+
 

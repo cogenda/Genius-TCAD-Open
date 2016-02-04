@@ -21,7 +21,7 @@
 
 
 #include "solver_base.h"
-#include "fvm_nonlinear_solver.h"
+#include "fvm_flex_nonlinear_solver.h"
 #include "ksp_convergence_hook.h"
 #include "parallel.h"
 
@@ -100,7 +100,7 @@ void KSPConvergenceHook::post_iteration()
 {
   if ( !Genius::processor_id() )
   {
-    const FVM_NonlinearSolver & nonlinear_solver = dynamic_cast<const FVM_NonlinearSolver &>(_solver);
+    const FVM_FlexNonlinearSolver & nonlinear_solver = dynamic_cast<const FVM_FlexNonlinearSolver &>(_solver);
     std::vector<double>  residual_history = nonlinear_solver.ksp_residual_history();
 
     std::string ksp_prefix = SolverSpecify::out_prefix+".residual_history";

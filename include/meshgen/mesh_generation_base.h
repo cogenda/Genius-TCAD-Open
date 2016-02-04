@@ -26,10 +26,9 @@
 #ifndef __mesh_generation_base_h__
 #define __mesh_generation_base_h__
 
-#include "mesh_base.h"
-#include "mesh_modification.h"
-#include "mesh_refinement.h"
 
+class MeshBase;
+class MeshRefinement;
 
 class MeshGeneratorBase
 {

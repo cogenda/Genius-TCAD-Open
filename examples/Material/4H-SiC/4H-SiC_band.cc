@@ -19,8 +19,8 @@
 /*                                                                           */
 /*****************************************************************************/
 //
-// Material Type: 3C-SiC
-
+// Material Type: 4H-SiC
+#include <algorithm>
 
 #include "PMI.h"
 
@@ -37,10 +37,6 @@ private:
   PetscScalar EGBETA;    // The value of beta  used in calculating the temperature depended energy bandgap.
   PetscScalar ELECMASS;  // The relative effective mass of electron
   PetscScalar HOLEMASS;  // The relative effective mass of hole
-  PetscScalar NC300;     // The effective density of states in the conduction band at 300K.
-  PetscScalar NV300;     // The effective density of states in the valence band at 300K.
-  PetscScalar NC_F;      // The parameter for temperature depended effective density of states in the conduction band.
-  PetscScalar NV_F;      // The parameter for temperature depended effective density of states in the valence band.
   // Model of Bandgap Narrowing due to Heavy Doping
   PetscScalar N0_BGN;    // The concentration parameter used in Slotboom's band-gap narrowing model.
   PetscScalar V0_BGN;    // The voltage parameter used in Slotboom's band-gap narrowing model.
@@ -54,14 +50,10 @@ private:
     EGALPH    = 3.300000E-04*eV/K;
     EGBETA    = 0.000000E+02*K;
 
-    ELECMASS  = 0.76*me;
-    HOLEMASS  = 1.19*me;
-    NC300     = 1.680000E+19*std::pow(cm,-3);
-    NV300     = 4.580000E+18*std::pow(cm,-3);
-    NC_F      = 1.500000e+00;
-    NV_F      = 1.500000e+00;
+    ELECMASS  = 0.39*me;
+    HOLEMASS  = 0.82*me;
     N0_BGN    = 1.000000e+17*std::pow(cm,-3);
-    V0_BGN    = 9.000000E-03*V;
+    V0_BGN    = 9.000000E-03*eV;
     CON_BGN   = 5.000000e-01;
 
 #ifdef __CALIBRATE__
@@ -72,10 +64,6 @@ private:
 
     parameter_map.insert(para_item("ELECMASS", PARA("ELECMASS", "The relative effective mass of electron", "electron mass", me, &ELECMASS)) );
     parameter_map.insert(para_item("HOLEMASS", PARA("HOLEMASS", "The relative effective mass of hole", "electron mass", me, &HOLEMASS)) );
-    parameter_map.insert(para_item("NC300",    PARA("NC300",    "The effective density of states in the conduction band at 300K", "cm^-3", std::pow(cm,-3), &NC300)) );
-    parameter_map.insert(para_item("NV300",    PARA("NV300",    "The effective density of states in the valence band at 300K", "cm^-3", std::pow(cm,-3), &NV300)) );
-    parameter_map.insert(para_item("NC.F",     PARA("NC.F",     "The parameter for temperature depended effective density of states in the conduction band", "-", 1.0, &NC_F)) );
-    parameter_map.insert(para_item("NV.F",     PARA("NV.F",     "The parameter for temperature depended effective density of states in the valence band", "-", 1.0, &NV_F)) );
 
     parameter_map.insert(para_item("N0.BGN",   PARA("N0.BGN",   "The concentration parameter used in Slotboom's band-gap narrowing model", "cm^-3", std::pow(cm,-3), &N0_BGN)) );
     parameter_map.insert(para_item("V0.BGN",   PARA("V0.BGN",   "The voltage parameter used in Slotboom's band-gap narrowing model", "V", V, &V0_BGN)) );
@@ -143,48 +131,337 @@ public:
   // Nc and Nv
   PetscScalar Nc (const PetscScalar &Tl)
   {
-    return NC300*std::pow(Tl/T300,NC_F);
+    return 2*4*std::pow(2*pi*EffecElecMass(Tl)*kb*Tl/(h*h),1.5);
   }
   AutoDScalar Nc (const AutoDScalar &Tl)
   {
-    return NC300*adtl::pow(Tl/T300,NC_F);
+    return 2*4*adtl::pow(2*pi*EffecElecMass(Tl)*kb*Tl/(h*h),1.5);
   }
+
   PetscScalar Nv (const PetscScalar &Tl)
   {
-    return NV300*std::pow(Tl/T300,NV_F);
+    return 2*std::pow(2*pi*EffecHoleMass(Tl)*kb*Tl/(h*h),1.5);
   }
   AutoDScalar Nv (const AutoDScalar &Tl)
   {
-    return NV300*adtl::pow(Tl/T300,NV_F);
+    return 2*adtl::pow(2*pi*EffecHoleMass(Tl)*kb*Tl/(h*h),1.5);
   }
 
   //---------------------------------------------------------------------------
   PetscScalar ni (const PetscScalar &Tl)
   {
     PetscScalar bandgap = Eg(Tl);
-    PetscScalar Nc = NC300*std::pow(Tl/T300,NC_F);
-    PetscScalar Nv = NV300*std::pow(Tl/T300,NV_F);
-    return sqrt(Nc*Nv)*exp(-bandgap/(2*kb*Tl));
+    return sqrt(Nc(Tl)*Nv(Tl))*exp(-bandgap/(2*kb*Tl));
   }
+
   // nie, Eg narrow should be considered
   PetscScalar nie (const PetscScalar &p, const PetscScalar &n, const PetscScalar &Tl)
   {
     PetscScalar bandgap = Eg(Tl);
-    PetscScalar Nc = NC300*std::pow(Tl/T300,NC_F);
-    PetscScalar Nv = NV300*std::pow(Tl/T300,NV_F);
-    return sqrt(Nc*Nv)*exp(-bandgap/(2*kb*Tl))*exp(EgNarrow(p, n, Tl));
+    return sqrt(Nc(Tl)*Nv(Tl))*exp(-bandgap/(2*kb*Tl))*exp(EgNarrow(p, n, Tl)/(2*kb*Tl));
   }
   AutoDScalar nie (const AutoDScalar &p, const AutoDScalar &n, const AutoDScalar &Tl)
   {
     AutoDScalar bandgap = Eg(Tl);
-    AutoDScalar Nc = NC300*adtl::pow(Tl/T300,NC_F);
-    AutoDScalar Nv = NV300*adtl::pow(Tl/T300,NV_F);
-    AutoDScalar ret=sqrt(Nc*Nv)*exp(-bandgap/(2*kb*Tl))*exp(EgNarrow(p, n, Tl));
-    return ret;
+    return sqrt(Nc(Tl)*Nv(Tl))*exp(-bandgap/(2*kb*Tl))*exp(EgNarrow(p, n, Tl)/(2*kb*Tl));
   }
 
   //end of Bandgap
+public:  
+  //[incomplete ionization]
+  
+  int IonType( const std::string & ion_string )
+  {
+    // convert ion_string to lower case
+    std::string ion_string_lower_case(ion_string);
+    std::transform(ion_string_lower_case.begin(), ion_string_lower_case.end(), ion_string_lower_case.begin(), ::tolower);
 
+    // exactly match
+    if( species_map.find(ion_string) != species_map.end() )
+      return species_map.find(ion_string)->second.ion;
+
+    // partly match species
+    std::map<std::string, Species>::const_iterator it = species_map.begin();
+    for(; it != species_map.end(); ++it)
+      if(ion_string_lower_case.find(it->first)!=std::string::npos)
+        return it->second.ion;
+
+    return 0;
+  }
+  
+  
+
+  PetscScalar Na_II(const PetscScalar &p, const PetscScalar &Tl, bool fermi)
+  {
+    PetscScalar Ni = ReadDopingNa() + ReadDopingNd();
+    PetscScalar Nv = this->Nv(Tl);
+
+    PetscScalar gamma = 1.0;
+    if( fermi ) gamma = gamma_f(p/Nv);
+
+    PetscScalar Na_eff = 0.0;
+
+    std::map<std::string, Species>::const_iterator it = species_map.begin();
+    for( ; it != species_map.end(); ++it)
+    {
+      if(it->second.ion < 0)
+      {
+        const std::string & ion_string = it->first;
+        if( HasVariable(ion_string) )
+        {
+          PetscScalar Na = ReadRealVariable(VariableIndex(ion_string));
+          PetscScalar Na_crit = it->second.N_crit;
+          PetscScalar Eh      = it->second.Eh;
+          PetscScalar Ec      = it->second.Ec;
+          PetscScalar g       = it->second.GB;
+          PetscScalar alpha   = it->second.alpha;
+          if( Na > 0.0  )
+          {
+            if(Na < Na_crit)
+            {
+              PetscScalar dEh = Eh - alpha*std::pow(Ni, 1.0/3.0);
+              PetscScalar dEc = Ec - alpha*std::pow(Ni, 1.0/3.0);
+              PetscScalar ph = gamma*Nv*exp(-dEh/(kb*Tl));
+              PetscScalar pc = gamma*Nv*exp(-dEc/(kb*Tl));
+              Na_eff += 0.5*Na/( 1 + g*p/ph ) + 0.5*Na/( 1 + g*p/pc );
+            }
+            else
+              Na_eff += Na;
+          }
+        }
+      }
+    }
+    return Na_eff;
+  }
+
+
+  AutoDScalar Na_II(const AutoDScalar &p, const AutoDScalar &Tl, bool fermi)
+  {
+    PetscScalar Ni = ReadDopingNa() + ReadDopingNd();
+    AutoDScalar Nv = this->Nv(Tl);
+
+    AutoDScalar gamma = 1.0;
+    if( fermi ) gamma = gamma_f(p/Nv);
+
+    AutoDScalar Na_eff = 0.0;
+
+    std::map<std::string, Species>::const_iterator it = species_map.begin();
+    for( ; it != species_map.end(); ++it)
+    {
+      if(it->second.ion < 0)
+      {
+        const std::string & ion_string = it->first;
+        if( HasVariable(ion_string) )
+        {
+          PetscScalar Na = ReadRealVariable(VariableIndex(ion_string));
+          PetscScalar Na_crit = it->second.N_crit;
+          PetscScalar Eh      = it->second.Eh;
+          PetscScalar Ec      = it->second.Ec;
+          PetscScalar g       = it->second.GB;
+          PetscScalar alpha   = it->second.alpha;
+          if( Na > 0.0  )
+          {
+            if(Na < Na_crit)
+            {
+              PetscScalar dEh = Eh - alpha*std::pow(Ni, 1.0/3.0);
+              PetscScalar dEc = Ec - alpha*std::pow(Ni, 1.0/3.0);
+              AutoDScalar ph = gamma*Nv*exp(-dEh/(kb*Tl));
+              AutoDScalar pc = gamma*Nv*exp(-dEc/(kb*Tl));
+              Na_eff += 0.5*Na/( 1 + g*p/ph ) + 0.5*Na/( 1 + g*p/pc );
+            }
+            else
+              Na_eff += Na;
+          }
+        }
+      }
+    }
+
+    return Na_eff;
+  }
+
+  PetscScalar Nd_II(const PetscScalar &n, const PetscScalar &Tl, bool fermi)
+  {
+    PetscScalar Ni = ReadDopingNa() + ReadDopingNd();
+    PetscScalar Nc = this->Nc(Tl);
+
+    PetscScalar gamma = 1.0;
+    if( fermi ) gamma = gamma_f(n/Nc);
+
+    PetscScalar Nd_eff = 0.0;
+
+    std::map<std::string, Species>::const_iterator it = species_map.begin();
+    for( ; it != species_map.end(); ++it)
+    {
+      if(it->second.ion > 0)
+      {         
+        const std::string & ion_string = it->first;
+        if( HasVariable(ion_string) )
+        {
+          PetscScalar Nd = ReadRealVariable(VariableIndex(ion_string));
+          PetscScalar Nd_crit = it->second.N_crit;
+          PetscScalar Eh      = it->second.Eh;
+          PetscScalar Ec      = it->second.Ec;
+          PetscScalar g       = it->second.GB;
+          PetscScalar alpha   = it->second.alpha;
+          if( Nd > 0.0  )
+          {
+            if(Nd < Nd_crit)
+            {
+              PetscScalar dEh = Eh - alpha*std::pow(Ni, 1.0/3.0);
+              PetscScalar dEc = Ec - alpha*std::pow(Ni, 1.0/3.0);
+              PetscScalar nh = gamma*Nc*exp(-dEh/(kb*Tl));
+              PetscScalar nc = gamma*Nc*exp(-dEc/(kb*Tl));
+              Nd_eff += 0.5*Nd/( 1 + g*n/nh ) + 0.5*Nd/( 1 + g*n/nc );
+            }
+            else
+              Nd_eff += Nd;
+          }
+        }//if( HasVariable(ion_string) )
+      }
+    }
+    
+    return Nd_eff;
+  }
+
+  AutoDScalar Nd_II(const AutoDScalar &n, const AutoDScalar &Tl, bool fermi)
+  {
+    PetscScalar Ni = ReadDopingNa() + ReadDopingNd();
+    AutoDScalar Nc = this->Nc(Tl);
+
+    AutoDScalar gamma = 1.0;
+    if( fermi ) gamma = gamma_f(n/Nc);
+
+    AutoDScalar Nd_eff = 0.0;
+
+    std::map<std::string, Species>::const_iterator it = species_map.begin();
+    for( ; it != species_map.end(); ++it)
+    {
+      if(it->second.ion > 0)
+      {
+        const std::string & ion_string = it->first;
+        if( HasVariable(ion_string) )
+        {
+          PetscScalar Nd = ReadRealVariable(VariableIndex(ion_string));
+          PetscScalar Nd_crit = it->second.N_crit;
+          PetscScalar Eh      = it->second.Eh;
+          PetscScalar Ec      = it->second.Ec;
+          PetscScalar g       = it->second.GB;
+          PetscScalar alpha   = it->second.alpha;
+          if( Nd > 0.0  )
+          {
+            if(Nd < Nd_crit)
+            {
+              PetscScalar dEh = Eh - alpha*std::pow(Ni, 1.0/3.0);
+              PetscScalar dEc = Ec - alpha*std::pow(Ni, 1.0/3.0);
+              AutoDScalar nh = gamma*Nc*exp(-dEh/(kb*Tl));
+              AutoDScalar nc = gamma*Nc*exp(-dEc/(kb*Tl));
+              Nd_eff += 0.5*Nd/( 1 + g*n/nh ) + 0.5*Nd/( 1 + g*n/nc );
+            }
+            else
+              Nd_eff += Nd;
+          }
+        }//if( HasVariable(ion_string) )
+      }
+    }
+
+    return Nd_eff;
+  }
+
+
+private:
+
+  struct Species
+  {
+    std::string name;
+    int ion;             // ion type, -1 for p type and +1 for n type
+    PetscScalar Eh;      // The constant term used in the calculation of the band ionization energy at hexagonal site
+    PetscScalar Ec;      // The constant term used in the calculation of the band ionization energy at cubic site
+    PetscScalar GB;      // The band degeneracy factor
+    PetscScalar alpha;   // The prefactor for the doping dependent term used in the calculation of the band ionization energy
+    PetscScalar beta;    // The prefactor the temperature dependent term used in the calculation of the band ionization energy.
+    PetscScalar gamma;   // The exponent of temperature used in the calculation of the band ionization energy.
+    PetscScalar N_crit;  // The impurity concentration form which the doping transition from incomplete ionization to complete ionization
+  };
+
+  // predefined and user specified species
+  std::map<std::string, Species> species_map;
+
+  // Init value
+  void IncompleteIonization_Init()
+  {
+    // p type
+    Species boron    = {"boron",    -1, 0.300*eV, 0.300*eV, 4.0, 0.0*eV*cm,      200.0, 0.950, 1e22*std::pow(cm, -3)  };
+    Species aluminum = {"aluminum", -1, 0.230*eV, 0.230*eV, 4.0, 0.0*eV*cm,      200.0, 0.950, 1e22*std::pow(cm, -3)  };
+    
+    // n type
+    Species nitrogen   = {"nitrogen",   1, 0.050*eV, 0.100*eV, 2.0, 0.0*eV*cm, 200.0, 1.000, 1e22*std::pow(cm, -3)  };
+    Species phosphorus = {"phosphorus", 1, 0.045*eV, 0.100*eV, 2.0, 0.0*eV*cm, 200.0, 1.000, 1e22*std::pow(cm, -3)  };
+
+    species_map["boron"     ] = boron;
+    species_map["aluminum"  ] = aluminum;
+    species_map["nitrogen"  ] = nitrogen;
+    species_map["phosphorus"] = phosphorus;
+    
+    // alias
+    species_map["BoronActive"     ] = boron;
+    species_map["AluminumActive"  ] = aluminum;
+    species_map["NitrogenActive"  ] = nitrogen;
+    species_map["PhosphorusActive"] = phosphorus;
+  }
+
+  void IncompleteIonization_Setup(std::vector<Parser::Parameter> & pmi_parameters)
+  {
+    // check if any user defind species
+    std::string species_name;
+    for(std::vector<Parser::Parameter>::iterator it = pmi_parameters.begin(); it != pmi_parameters.end();)
+    {
+      if( it->type() == Parser::STRING && it->name() == "species" )
+      {
+        species_name = it->get_string();
+        it = pmi_parameters.erase(it);
+      }
+      else
+        ++it;
+    }
+
+    if( !species_name.empty() )
+    {
+      int ion=0 ;
+      PetscScalar Eh=0.0;
+      PetscScalar Ec=0.0;
+      PetscScalar GB=0;
+      PetscScalar alpha=0.0;
+      PetscScalar beta=0.0;
+      PetscScalar gamma=1.0;
+      PetscScalar N_crit=1e22;
+
+      for(std::vector<Parser::Parameter>::iterator it = pmi_parameters.begin(); it != pmi_parameters.end();)
+      {
+        if( it->type() == Parser::INTEGER && it->name() == "ion" )
+        { ion = it->get_int(); it = pmi_parameters.erase(it); }
+        else if( it->type() == Parser::REAL && it->name() == "ebh" )
+        { Eh = it->get_real(); it = pmi_parameters.erase(it); }
+        else if( it->type() == Parser::REAL && it->name() == "ebc" )
+        { Ec = it->get_real(); it = pmi_parameters.erase(it); }
+        else if( it->type() == Parser::REAL && it->name() == "gb" )
+        { GB = it->get_real(); it = pmi_parameters.erase(it); }
+        else if( it->type() == Parser::REAL && it->name() == "alpha" )
+        { alpha = it->get_real(); it = pmi_parameters.erase(it); }
+        else if( it->type() == Parser::REAL && it->name() == "beta" )
+        { beta = it->get_real(); it = pmi_parameters.erase(it); }
+        else if( it->type() == Parser::REAL && it->name() == "gamma" )
+        { gamma = it->get_real(); it = pmi_parameters.erase(it); }
+        else if( it->type() == Parser::REAL && it->name() == "ncrit" )
+        { N_crit = it->get_real(); it = pmi_parameters.erase(it); }
+        else
+          ++it;
+      }
+
+      Species species = { species_name, ion, Eh*eV, Ec*eV, GB, alpha*eV*cm, beta, gamma, N_crit*std::pow(cm, -3) };
+      species_map[species_name] = species;
+    }
+  }
+  
 private:
   //[Lifetime]
   //Lifetimes
@@ -329,6 +606,22 @@ private:
   }
 
 public:
+
+  /**
+   * @return direct Recombination rate
+   */
+  PetscScalar CDIR           (const PetscScalar &Tl)  { return C_DIRECT; }
+
+  /**
+   * @return electron Auger Recombination rate
+   */
+  PetscScalar AUGERN           (const PetscScalar &p, const PetscScalar &n, const PetscScalar &Tl) { return AUGN; }
+
+  /**
+   * @return hole Auger Recombination rate
+   */
+  PetscScalar AUGERP           (const PetscScalar &p, const PetscScalar &n, const PetscScalar &Tl)  { return AUGP; }
+
   //---------------------------------------------------------------------------
   // Direct Recombination
   PetscScalar R_Direct     (const PetscScalar &p, const PetscScalar &n, const PetscScalar &Tl)
@@ -648,6 +941,7 @@ public:
   {
     T300 = 300.0*K;
     Eg_Init();
+    IncompleteIonization_Init();
     Lifetime_Init();
     Recomb_Init();
     RelaxTime_Init();
@@ -657,6 +951,73 @@ public:
 
   ~GSS_SiC4H_BandStructure()
   {}
+  
+  // set parameters for each band model
+  int calibrate(std::vector<Parser::Parameter> & pmi_parameters)
+  {
+    IncompleteIonization_Setup(pmi_parameters);
+
+    return PMI_Server::calibrate(pmi_parameters);
+  }  
+  
+private:
+  /*-----------------------------------------------------------------------
+   *   GAMMA calculates f1/2(eta)/exp(eta) according to the approximate
+   *   formula in casey's book,dummy arguement x=f1/2(eta).
+   */
+  PetscScalar gamma_f(PetscScalar x)
+  {
+    const PetscScalar a=3.53553e-1,b=4.95009e-3,c=1.48386e-4;
+    const PetscScalar d=4.42563e-6,pi1=1.772453851e0,pi2=9.869604401e0;
+    const PetscScalar VerySmallNumericValue = 1.0e-30;
+    const PetscScalar MaximumExponent = 76.0;
+
+    PetscScalar temx;
+    if(x>1.0e1)
+    {
+      temx=sqrt(std::pow(7.5e-1*pi1*x,PetscScalar(4.e0/3.e0))-pi2/6.e0);
+      if(x > MaximumExponent)
+        return VerySmallNumericValue;
+      else
+        return x/exp(temx);
+    }
+    else if(x>0.0)
+    {
+      temx=x*(a+x*(-b+x*(c-x*d)));
+      return 1.0/exp(temx);
+    }
+    else
+      return 1.0;
+  }
+
+
+  AutoDScalar gamma_f(const AutoDScalar &x)
+  {
+    const PetscScalar a=3.53553e-1,b=4.95009e-3,c=1.48386e-4;
+    const PetscScalar d=4.42563e-6,pi1=1.772453851e0,pi2=9.869604401e0;
+    const PetscScalar VerySmallNumericValue = 1.0e-30;
+    const PetscScalar MaximumExponent = 76.0;
+
+    AutoDScalar temx;
+    if(x>1.0e1)
+    {
+      temx=sqrt(adtl::pow(7.5e-1*pi1*x,PetscScalar(4.e0/3.e0))-pi2/6.e0);
+      if(x > MaximumExponent)
+        return VerySmallNumericValue;
+      else
+        return x/exp(temx);
+    }
+    else if(x>0.0)
+    {
+      temx=x*(a+x*(-b+x*(c-x*d)));
+      return 1.0/exp(temx);
+    }
+    else
+      return 1.0;
+  }
+  
+  
+  
 }
 ;
 

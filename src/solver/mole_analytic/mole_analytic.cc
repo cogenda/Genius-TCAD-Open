@@ -21,7 +21,10 @@
 
 #include "mesh_base.h"
 #include "mole_analytic/mole_analytic.h"
+#include "interpolation_1d_linear.h"
+#include "interpolation_1d_spline.h"
 #include "interpolation_2d_csa.h"
+#include "interpolation_2d_nn.h"
 //#include "interpolation_3d_qshep.h"
 #include "interpolation_3d_nbtet.h"
 #include "parallel.h"
@@ -41,10 +44,18 @@ int MoleAnalytic::create_solver()
     const Parser::Card c = _decks.get_current_card();
     if(c.key() == "MOLE" )
     {
-      if(c.is_enum_value("type","file"))
-        set_mole_function_file(c);
-      else
-        set_mole_function_linear(c);
+      if(c.is_parameter_exist("type"))
+      {
+        if(c.is_enum_value("type","file"))
+          set_mole_function_file(c);
+        if(c.is_enum_value("type","linear"))
+          set_mole_function_linear(c);
+      }
+      else 
+      {
+        MESSAGE<<"ERROR at " << c.get_fileline() <<" MOLE: must have type parameter." << std::endl; RECORD();
+        genius_error();
+      }
     }
   }
 
@@ -129,16 +140,46 @@ void MoleAnalytic::set_mole_function_file(const Parser::Card & c)
   else
     LUnit = 1e-6;
 
-  InterpolationBase *interpolatorX, *interpolatorY;
+  int axes=AXES_XY;  // default axes for 2D mesh
   if(is_3D_mesh)
+    axes=AXES_XYZ; // default axes for 3D mesh
+
+  if (c.is_enum_value("axes", "x"))
+    axes=AXES_X;
+  else if (c.is_enum_value("axes", "y"))
+    axes=AXES_Y;
+  else if (c.is_enum_value("axes", "z"))
+    axes=AXES_Z;
+  else if (c.is_enum_value("axes", "xy"))
+    axes=AXES_XY;
+  else if (c.is_enum_value("axes", "xz"))
+    axes=AXES_XZ;
+  else if (c.is_enum_value("axes", "yz"))
+    axes=AXES_YZ;
+  else if (c.is_enum_value("axes", "xyz"))
+    axes=AXES_XYZ;
+
+
+  InterpolationBase * interpolatorX=0;
+  InterpolationBase * interpolatorY=0;
+  switch(axes)
   {
-    interpolatorX = new Interpolation3D_nbtet; // 3D mesh
-    interpolatorY = new Interpolation3D_nbtet; // 3D mesh
-  }
-  else
-  {
-    interpolatorX = new Interpolation2D_CSA; // 2D mesh
-    interpolatorY = new Interpolation2D_CSA; // 2D mesh
+  case AXES_X:
+  case AXES_Y:
+  case AXES_Z:
+    interpolatorX = new Interpolation1D_Linear; // 1D profile
+    interpolatorY = new Interpolation1D_Linear; // 1D profile
+    break;
+  case AXES_XY:
+  case AXES_XZ:
+  case AXES_YZ:
+    interpolatorX = new Interpolation2D_NN; // 2D profile
+    interpolatorY = new Interpolation2D_NN; // 2D profile
+    //interpolator = new Interpolation2D_CSA; // 2D profile
+    break;
+  case AXES_XYZ:
+    interpolatorX = new Interpolation3D_nbtet; // 3D profile
+    interpolatorY = new Interpolation3D_nbtet; // 3D profile
   }
 
   interpolatorX->set_interpolation_type(0, InterpolationBase::Linear);
@@ -172,24 +213,57 @@ void MoleAnalytic::set_mole_function_file(const Parser::Card & c)
       std::getline(in, buf);
       std::istringstream line(buf);
 
-      line >> p[0];// read x location
-      line >> p[1];// read y location
-      if(is_3D_mesh)
-        line >> p[2];// read z location
+      switch(axes)
+      {
+      case AXES_X:
+        in >> p[0]; break; // read the only coordinate
+      case AXES_Y:
+        in >> p[1]; break;
+      case AXES_Z:
+        in >> p[2]; break;
+      case AXES_XY:
+        in >> p[0] >> p[1]; break; // read two coordinates
+      case AXES_XZ:
+        in >> p[0] >> p[2]; break; // read two coordinates
+        break;
+      case AXES_YZ:
+        in >> p[1] >> p[2]; break; // read two coordinates
+      case AXES_XYZ:
+        in >> p[0] >> p[1] >> p[2]; break; // read three coordinates
+      }
 
       p *= PhysicalUnit::m*LUnit;     // scale to length unit
       p = transform*p + translate; //do transform & translate
+
+      Point p1;
+      switch(axes)
+      {
+      case AXES_X:
+        p1[0] = p[0]; break;
+      case AXES_Y:
+        p1[0] = p[1]; break;
+      case AXES_Z:
+        p1[0] = p[2]; break;
+      case AXES_XY:
+        p1[0] = p[0]; p1[1] = p[1]; break;
+      case AXES_XZ:
+        p1[0] = p[0]; p1[1] = p[2]; break;
+      case AXES_YZ:
+        p1[0] = p[1]; p1[1] = p[2]; break;
+      case AXES_XYZ:
+        p1[0] = p[0]; p1[1] = p[1]; p1[2] = p[2]; break;
+      }
 
       line >> moleX;
 
       if(!line.fail())
       {
-        interpolatorX->add_scatter_data(p, 0, moleX);
+        interpolatorX->add_scatter_data(p1, 0, moleX);
 
         line >> moleY;
         if(!line.fail())
         {
-          interpolatorY->add_scatter_data(p, 0, moleY);
+          interpolatorY->add_scatter_data(p1, 0, moleY);
           hasY = 1;
         }
       }
@@ -212,12 +286,14 @@ void MoleAnalytic::set_mole_function_file(const Parser::Card & c)
     interpolatorY->broadcast(0);
     interpolatorY->setup(0);
     _mole_data.push_back(std::pair<InterpolationBase*, InterpolationBase*>(interpolatorX, interpolatorY));
+    _mole_int_type.push_back(axes);
   }
   else
   {
     interpolatorX->broadcast(0);
     interpolatorX->setup(0);
     _mole_data.push_back(std::pair<InterpolationBase*, InterpolationBase*>(interpolatorX, (InterpolationBase*)NULL));
+    _mole_int_type.push_back(axes);
     delete interpolatorY;
   }
 }
@@ -279,7 +355,7 @@ void MoleAnalytic::set_mole_function_linear(const Parser::Card & c)
   }
 
   //build linear mole function for first mole fraction
-  MoleFunction * mf = new LinearMoleFunction(region, x_base, x_dir, x_mole, x_mole_slope, true);
+  MoleFunction * mf = new LinearMoleFunction(region, x_base, x_end, x_dir, x_mole, x_mole_slope, true);
 
   //push it into _mole_funs vector
   _mole_funs.push_back(mf);
@@ -319,7 +395,7 @@ void MoleAnalytic::set_mole_function_linear(const Parser::Card & c)
     }
 
     //build linear mole function for first mole fraction
-    MoleFunction * mf = new LinearMoleFunction(region, y_base, y_dir, y_mole, y_mole_slope, false);
+    MoleFunction * mf = new LinearMoleFunction(region, y_base, y_end, y_dir, y_mole, y_mole_slope, false);
 
     //push it into _mole_funs vector
     _mole_funs.push_back(mf);
@@ -339,16 +415,48 @@ double MoleAnalytic::mole_x(const std::string & region, const Node * node)
     if(_mole_funs[i]->region() != region) continue;
 
     if(_mole_funs[i]->mole_x())
-      return  _mole_funs[i]->profile((*node)(0),(*node)(1),(*node)(2));
+      mole +=  _mole_funs[i]->profile((*node)(0),(*node)(1),(*node)(2));
   }
 
   // then check mole profile file
   for(size_t i=0; i<_mole_data.size(); i++)
   {
+    int axes = _mole_int_type[i];
     InterpolationBase * interp = _mole_data[i].first;
     if (!interp)
       continue;
-    double mx = interp->get_interpolated_value(*node, 0);
+    Point p;
+    switch(axes)
+    {
+    case AXES_X:
+      p[0]=(*node)(0);
+      break;
+    case AXES_Y:
+      p[0]=(*node)(1);
+      break;
+    case AXES_Z:
+      p[0]=(*node)(2);
+      break;
+    case AXES_XY:
+      p[0]=(*node)(0);
+      p[1]=(*node)(1);
+      break;
+    case AXES_XZ:
+      p[0]=(*node)(0);
+      p[1]=(*node)(2);
+      break;
+    case AXES_YZ:
+      p[0]=(*node)(1);
+      p[1]=(*node)(2);
+      break;
+    case AXES_XYZ:
+      p[0]=(*node)(0);
+      p[1]=(*node)(1);
+      p[2]=(*node)(2);
+      break;
+    }
+
+    double mx = interp->get_interpolated_value(p, 0);
     mx = mx<0.0 ? 0.0 : mx;
     mx = mx>1.0 ? 1.0 : mx;
 #if defined(HAVE_FENV_H) && defined(DEBUG)
@@ -360,10 +468,9 @@ double MoleAnalytic::mole_x(const std::string & region, const Node * node)
       MESSAGE<< (*node)(2)/um << " " << mx << " , ignored.\n";
       RECORD();
       feclearexcept(FE_ALL_EXCEPT);
-      return mole;
     }
 #endif
-    return mx;
+    mole += mx;
   }
 
   return mole;
@@ -380,16 +487,47 @@ double MoleAnalytic::mole_y(const std::string & region, const Node * node)
     if(_mole_funs[i]->region() != region) continue;
 
     if(_mole_funs[i]->mole_y())
-      return  _mole_funs[i]->profile((*node)(0),(*node)(1),(*node)(2));
+      mole +=  _mole_funs[i]->profile((*node)(0),(*node)(1),(*node)(2));
   }
 
   // then check mole profile file
   for(size_t i=0; i<_mole_data.size(); i++)
   {
+    int axes = _mole_int_type[i];
     InterpolationBase * interp = _mole_data[i].second;
     if (!interp)
       continue;
-    double mx = interp->get_interpolated_value(*node, 0);
+    Point p;
+    switch(axes)
+    {
+    case AXES_X:
+      p[0]=(*node)(0);
+      break;
+    case AXES_Y:
+      p[0]=(*node)(1);
+      break;
+    case AXES_Z:
+      p[0]=(*node)(2);
+      break;
+    case AXES_XY:
+      p[0]=(*node)(0);
+      p[1]=(*node)(1);
+      break;
+    case AXES_XZ:
+      p[0]=(*node)(0);
+      p[1]=(*node)(2);
+      break;
+    case AXES_YZ:
+      p[0]=(*node)(1);
+      p[1]=(*node)(2);
+      break;
+    case AXES_XYZ:
+      p[0]=(*node)(0);
+      p[1]=(*node)(1);
+      p[2]=(*node)(2);
+      break;
+    }
+    double mx = interp->get_interpolated_value(p, 0);
     mx = mx<0.0 ? 0.0 : mx;
     mx = mx>1.0 ? 1.0 : mx;
 #if defined(HAVE_FENV_H) && defined(DEBUG)
@@ -401,10 +539,9 @@ double MoleAnalytic::mole_y(const std::string & region, const Node * node)
       MESSAGE<< (*node)(2)/um << " " << mx << " , ignored.\n";
       RECORD();
       feclearexcept(FE_ALL_EXCEPT);
-      return mole;
     }
 #endif
-    return mx;
+    mole += mx;
   }
 
   return mole;

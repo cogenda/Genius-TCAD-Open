@@ -20,7 +20,7 @@
 /********************************************************************************/
 
 #include <iomanip>
-
+#include "petsc_matrix.h"
 #include "ddm_ac/ddm_ac.h"
 #include "parallel.h"
 #include "mathfunc.h"  // for PI
@@ -96,6 +96,8 @@ int DDMACSolver::create_solver()
     // alloc memory for sequence matrix here
     ierr = MatSeqAIJSetPreallocation ( J_, 0, &n_nz[0] );    genius_assert ( !ierr );
   }
+  // we have to set this flag since preallocation is not exact
+  ierr = MatSetOption(J_, MAT_NEW_NONZERO_LOCATIONS, PETSC_TRUE); genius_assert(!ierr);
 
 
   // extra matrix for store A
@@ -112,6 +114,8 @@ int DDMACSolver::create_solver()
     // alloc memory for sequence matrix here
     ierr = MatSeqAIJSetPreallocation ( A_, 0, &n_nz[0] );    genius_assert ( !ierr );
   }
+  // we have to set this flag since preallocation is not exact
+  ierr = MatSetOption(A_, MAT_NEW_NONZERO_LOCATIONS, PETSC_TRUE); genius_assert(!ierr);
 
 
   // extra matrix for transformation matrix, each row has only 2 entry
@@ -133,7 +137,7 @@ int DDMACSolver::create_solver()
   // extra vector for store T*b
   VecDuplicate ( b, &b_ );
 
-  MESSAGE<< "AC Small Signal Solver init ok..." << std::endl;
+  MESSAGE<< "AC Small Signal Solver init finished." << std::endl;
   RECORD();
 
   return FVM_LinearSolver::create_solver();
@@ -222,18 +226,19 @@ int DDMACSolver::pre_solve_process ( bool /*load_solution*/ )
   InsertMode add_value_flag = NOT_SET_VALUES;
 
   // evaluate Jacobian matrix of governing equations of EBM in all the regions
+  PetscMatrix<PetscScalar> *Jac = new PetscMatrix<PetscScalar>(n_global_dofs, n_global_dofs, n_local_dofs, n_local_dofs);
   for ( unsigned int n=0; n<_system.n_regions(); n++ )
   {
-    SimulationRegion * region = _system.region ( n );
-    region->EBM3_Jacobian ( lss, &J_, add_value_flag );
+    SimulationRegion * region = _system.region(n);
+    region->EBM3_Jacobian(lss, Jac, add_value_flag);
   }
+  Jac->close(true);
+  MatCopy(Jac->mat(), J_, DIFFERENT_NONZERO_PATTERN);
+  delete Jac;
 
   // restore array back to Vec
   VecRestoreArray ( ls, &lss );
 
-  // assembly the matrix J
-  MatAssemblyBegin ( J_, MAT_FINAL_ASSEMBLY );
-  MatAssemblyEnd ( J_, MAT_FINAL_ASSEMBLY );
 
 
   /*
@@ -250,9 +255,13 @@ int DDMACSolver::pre_solve_process ( bool /*load_solution*/ )
 
   for ( unsigned int n=0; n<SolverSpecify::Electrode_ACScan.size(); ++n )
   {
-    BoundaryCondition * bc = _system.get_bcs()->get_bc ( SolverSpecify::Electrode_ACScan[n] );
-    genius_assert ( bc!=NULL );
-    bc->ext_circuit()->Vac() = SolverSpecify::VAC;
+    std::vector<BoundaryCondition *> bcs = _system.get_bcs()->get_bcs_by_electrode_label( SolverSpecify::Electrode_ACScan[n] );
+    for(size_t b=0; b<bcs.size(); b++)
+    {
+      BoundaryCondition * bc = bcs[b];
+      if(bc && bc->is_electrode())
+        bc->ext_circuit()->Vac() = SolverSpecify::VAC;
+    }
   }
 
   return FVM_LinearSolver::pre_solve_process ( true );
@@ -281,7 +290,7 @@ int DDMACSolver::solve()
 
     MESSAGE
     <<"AC Scan: f("<<SolverSpecify::Electrode_ACScan[0]<<") = "
-    << std::setiosflags ( std::ios::fixed )
+    << std::scientific
     <<SolverSpecify::Freq*PhysicalUnit::s/1e6<<" MHz "<<"\n";
     RECORD();
 
@@ -324,7 +333,7 @@ int DDMACSolver::solve()
 int DDMACSolver::post_solve_process()
 {
 
-  double omega = 2*PI*SolverSpecify::Freq;
+  PetscScalar omega = 2*PI*SolverSpecify::Freq;
 
   VecScatterBegin ( scatter, x, lx, INSERT_VALUES, SCATTER_FORWARD );
   VecScatterEnd ( scatter, x, lx, INSERT_VALUES, SCATTER_FORWARD );
@@ -405,7 +414,7 @@ int DDMACSolver::destroy_solver()
 /*------------------------------------------------------------------
  * build the matrix and right hand side vector b with certain freq omega
  */
-void DDMACSolver::build_ddm_ac ( double omega )
+void DDMACSolver::build_ddm_ac ( PetscScalar omega )
 {
 
   START_LOG ( "build_ddm_ac()", "DDMACSolver" );

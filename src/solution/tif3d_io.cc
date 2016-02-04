@@ -33,7 +33,7 @@
 #include "simulation_region.h"
 #include "expr_evaluate.h"
 #include "parallel.h"
-
+#include "material.h"
 
 using PhysicalUnit::cm;
 using PhysicalUnit::um;
@@ -86,7 +86,7 @@ void TIF3DIO::read (const std::string& filename)
     std::vector<TIF3D::Region_t>::const_iterator tif_region_it  = tif3d_reader.region_array().begin();
     for(int r=0; tif_region_it!=tif3d_reader.region_array().end(); ++tif_region_it)
     {
-      std::string material = tif_region_it->material;
+      std::string material = Material::FormatMaterialString(tif_region_it->material);
       mesh.set_subdomain_label(r, tif_region_it->name );
       mesh.set_subdomain_material(r, material);
       tif_region_to_mesh_region[tif_region_it->index] = r;
@@ -426,9 +426,9 @@ void TIF3DIO::read (const std::string& filename)
         int region_index = r;
         std::pair<int, int> key = std::make_pair(tif_node_index, region_index);
         if(solution_map.find(key)!=solution_map.end())
-          node_data->data<Real>(sol_index)  = tif3d_reader.sol_data(solution_map.find(key)->second).data_array[i]*unit;
+          node_data->data<PetscScalar>(sol_index)  = tif3d_reader.sol_data(solution_map.find(key)->second).data_array[i]*unit;
         else
-          node_data->data<Real>(sol_index)  = 0.0;
+          node_data->data<PetscScalar>(sol_index)  = 0.0;
       }
     }
   }

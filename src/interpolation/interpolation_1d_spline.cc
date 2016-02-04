@@ -43,7 +43,7 @@ void Interpolation1D_Spline::setup(int group)
     {
     case Linear    : y.push_back(value[u]); break;
     case SignedLog : y.push_back((value[u]>0 ? 1.0 : -1.0)*std::log(1.0+std::abs(value[u]))); break;
-    case Asinh     : y.push_back(boost::math::asinh(value[u])); break;
+    case Asinh     : y.push_back(asinh(value[u])); break;
     }
   }
 
@@ -130,13 +130,17 @@ void Interpolation1D_Spline::broadcast(unsigned int root)
 
 double Interpolation1D_Spline::get_interpolated_value(const Point & point, int group) const
 {
-  int n = _coordinate.size();
+  double tval = point.x();
+  double yval = 0.0;
+
   const std::vector<double> & t = _coordinate;
   const std::vector<double> & y = _pre_computed_value.find(group)->second;
   const std::vector<double> & ypp = _pre_computed_value_pp.find(group)->second;
 
-  double tval = point.x();
-  double yval = 0.0;
+  if(tval <= t.front()) return y.front();
+  if(tval >= t.back())  return y.back();
+
+  int n = _coordinate.size();
   //
   //  Determine the interval [ double(I), double(I+1) ] that contains TVAL.
   //  Values below double[0] or above double[N-1] use extrapolation.

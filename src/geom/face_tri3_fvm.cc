@@ -28,6 +28,8 @@
 #include <TNT/tnt.h>
 #include <TNT/jama_lu.h>
 
+//#define DEBUG
+
 /*
  *   TRI3:  2               TRI3:  C
  *          o                      o
@@ -182,7 +184,7 @@ void Tri3_FVM::prepare_for_fvm()
   }
 
 
-  // add volume
+  // compute partial volume
   for( unsigned int i=0; i<3; i++ ) // has 3 side (edge)
   {
     unsigned int node1 = side_nodes_map[i][0];
@@ -192,6 +194,17 @@ void Tri3_FVM::prepare_for_fvm()
     vt[node1] +=  0.5 * 0.5 * l[i] * dt[i];
     vt[node2] +=  0.5 * 0.5 * l[i] * dt[i];
   }
+  
+  // truncated partial volum consistant with element volume
+  if(obtuse_edge!=invalid_uint)
+  {
+    unsigned int obtuse_node = (2+obtuse_edge)%3;
+    unsigned int n1 = side_nodes_map[obtuse_edge][0];
+    unsigned int n2 = side_nodes_map[obtuse_edge][1];
+    vt[obtuse_node] = vol - vt[n1] - vt[n2];
+  }
+  
+  
 
 
   // self test

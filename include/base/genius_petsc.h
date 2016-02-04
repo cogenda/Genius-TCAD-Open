@@ -42,4 +42,14 @@
   #undef HAVE_MPI
 #endif
 
+#ifdef WINDOWS
+  #define MUMPS_ICNTL_14 "50"
+  #define MUMPS_ICNTL_23 "0"
+#endif
+
+#ifdef LINUX
+  #define MUMPS_ICNTL_14 "50"
+  #define MUMPS_ICNTL_23 "0"
+#endif
+
 #endif /* GENIUS_PETSC_H_ */

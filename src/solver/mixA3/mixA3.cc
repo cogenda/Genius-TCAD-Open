@@ -32,6 +32,7 @@ using PhysicalUnit::e;
 using PhysicalUnit::cm;
 using PhysicalUnit::K;
 using PhysicalUnit::A;
+using PhysicalUnit::V;
 
 /*------------------------------------------------------------------
  * create nonlinear solver contex and adjust some parameters
@@ -108,7 +109,11 @@ int MixA3Solver::solve()
       case SolverSpecify::TRANSIENT :
       solve_transient(); break;
 
-      default: genius_error();
+      default:
+      {
+        MESSAGE<<"ERROR: MixA3Solver does not support this solve type." << std::endl; RECORD();
+        //genius_error();
+      }
   }
 
   STOP_LOG("solve()", "MixA3Solver");
@@ -136,6 +141,30 @@ int MixA3Solver::post_solve_process()
   {
     SimulationRegion * region = _system.region(n);
     region->EBM3_Update_Solution(lxx);
+  }
+
+
+  // extra work, calculate the electric field
+  for(unsigned int n=0; n<_system.n_regions(); n++)
+  {
+    SimulationRegion * region = _system.region(n);
+
+    SimulationRegion::processor_node_iterator it = region->on_processor_nodes_begin();
+    SimulationRegion::processor_node_iterator it_end = region->on_processor_nodes_end();
+    for(; it!=it_end; ++it)
+    {
+      FVM_Node * fvm_node = *it;
+      FVM_NodeData * node_data = fvm_node->node_data();
+      node_data->E() = -fvm_node->gradient(POTENTIAL, true);
+    }
+  }
+
+
+  // update bcs
+  for(unsigned int b=0; b<_system.get_bcs()->n_bcs(); b++)
+  {
+    BoundaryCondition * bc = _system.get_bcs()->get_bc(b);
+    bc->MixA_EBM3_Update_Solution(lxx);
   }
 
   VecRestoreArray(lx, &lxx);
@@ -202,7 +231,6 @@ int MixA3Solver::diverged_recovery()
  */
 void MixA3Solver::potential_damping(Vec x, Vec y, Vec w, PetscBool *changed_y, PetscBool *changed_w)
 {
-
   PetscScalar    *xx;
   PetscScalar    *yy;
   PetscScalar    *ww;
@@ -211,24 +239,21 @@ void MixA3Solver::potential_damping(Vec x, Vec y, Vec w, PetscBool *changed_y, P
   VecGetArray(y, &yy);  // new search direction and length
   VecGetArray(w, &ww);  // current candidate iterate
 
-  PetscScalar dV_max = 0.0; // the max changes of psi
-  const PetscScalar onePerCMC = 1.0*std::pow(cm,-3);
+  const PetscScalar onePerMC = 1.0e-6*std::pow(cm,-3);
   const PetscScalar T_external = this->get_system().T_external();
 
-  // we should find dV_max;
+
+  PetscScalar dV_min =  std::numeric_limits<PetscScalar>::max(); // the min changes of psi
+  PetscScalar dV_max = -std::numeric_limits<PetscScalar>::max(); // the max changes of psi
+  PetscScalar dV;
+  PetscScalar dV_comm;
+  // we should find dV_max/dV_min;
   // first, we find in local
   for(unsigned int n=0; n<_system.n_regions(); n++)
   {
     // only consider semiconductor region
     const SimulationRegion * region = _system.region(n);
     if( region->type() != SemiconductorRegion ) continue;
-
-    unsigned int node_psi_offset = region->ebm_variable_offset(POTENTIAL);
-    unsigned int node_n_offset   = region->ebm_variable_offset(ELECTRON);
-    unsigned int node_p_offset   = region->ebm_variable_offset(HOLE);
-    unsigned int node_Tl_offset  = region->ebm_variable_offset(TEMPERATURE);
-    unsigned int node_Tn_offset  = region->ebm_variable_offset(E_TEMP);
-    unsigned int node_Tp_offset  = region->ebm_variable_offset(H_TEMP);
 
     SimulationRegion::const_processor_node_iterator it = region->on_processor_nodes_begin();
     SimulationRegion::const_processor_node_iterator it_end = region->on_processor_nodes_end();
@@ -239,61 +264,36 @@ void MixA3Solver::potential_damping(Vec x, Vec y, Vec w, PetscBool *changed_y, P
       // we konw the position of fvm_node->local_offset() is psi in semiconductor region
       unsigned int local_offset = fvm_node->local_offset();
 
-      if(  std::abs( yy[local_offset + node_psi_offset] ) > dV_max)
-        dV_max = std::abs(yy[local_offset + node_psi_offset]);
-
-      //prevent negative carrier density
-      if ( ww[local_offset+node_n_offset] < onePerCMC )
-        ww[local_offset+node_n_offset] = onePerCMC;
-      if ( ww[local_offset+node_p_offset] < onePerCMC )
-        ww[local_offset+node_p_offset] = onePerCMC;
-
-      // limit lattice temperature to env temperature - 50k
-      if(region->get_advanced_model()->enable_Tl())
-      {
-        if ( ww[local_offset+node_Tl_offset] < T_external - 50*K )
-          ww[local_offset+node_Tl_offset] = T_external - 50*K;
-      }
-      // electrode temperature should not below 90% of lattice temperature
-      if(region->get_advanced_model()->enable_Tn())
-      {
-        PetscScalar n0=xx[local_offset+node_n_offset];
-        PetscScalar n1=ww[local_offset+node_n_offset];
-        PetscScalar T0=xx[local_offset+node_Tn_offset]/n0;
-        PetscScalar T1=T0*(1-std::min(n1/n0,2.0)) + ww[local_offset+node_Tn_offset]/n0;
-        if (T1 < 0.9*T_external)
-          T1 = 0.9*T_external;
-        ww[local_offset+node_Tn_offset] = T1*n1;
-      }
-      // hole temperature should not below 90% of lattice temperature
-      if(region->get_advanced_model()->enable_Tp())
-      {
-        PetscScalar p0=xx[local_offset+node_p_offset];
-        PetscScalar p1=ww[local_offset+node_p_offset];
-        PetscScalar T0=xx[local_offset+node_Tp_offset]/p0;
-        PetscScalar T1=T0*(1-std::min(p1/p0,2.0)) + ww[local_offset+node_Tp_offset]/p0;
-        if (T1 < 0.9*T_external)
-          T1 = 0.9*T_external;
-        ww[local_offset+node_Tp_offset] = T1*p1;
-      }
+      dV_max = std::max(dV_max, yy[local_offset]);
+      dV_min = std::min(dV_min, yy[local_offset]);
     }
   }
 
-  // for parallel situation, we should find the dv_max in global.
+  // for parallel situation, we should find the dv_max/dV_min in global.
   Parallel::max( dV_max );
+  Parallel::min( dV_min );
 
-  if( dV_max > 1e-6 )
+  if(dV_max < dV_min) goto potential_damping_end;
+
+  // find the max/min in absolutely value
+  if( std::abs(dV_max) < std::abs(dV_min) ) std::swap(dV_max, dV_min);
+
+  // compute the dV and dV in common
+  dV = std::abs(dV_max - dV_min);
+  dV_comm = dV_max*dV_min > 0.0 ? dV_min : 0.0;
+
+  if( dV > 1e-6*V )
   {
     // compute logarithmic potential damping factor f;
     PetscScalar Vt = kb*T_external/e;
-    PetscScalar f = log(1+dV_max/Vt)/(dV_max/Vt);
+    PetscScalar f = log(1+dV/Vt)/(dV/Vt);
 
     // do newton damping here
     for(unsigned int n=0; n<_system.n_regions(); n++)
     {
       // only consider semiconductor region
       const SimulationRegion * region = _system.region(n);
-      //if( region->type() != SemiconductorRegion ) continue;
+      if( region->type() != SemiconductorRegion ) continue;
 
       unsigned int node_psi_offset = region->ebm_variable_offset(POTENTIAL);
 
@@ -305,46 +305,55 @@ void MixA3Solver::potential_damping(Vec x, Vec y, Vec w, PetscBool *changed_y, P
 
         unsigned int local_offset = fvm_node->local_offset();
 
-        ww[local_offset + node_psi_offset] = xx[local_offset + node_psi_offset] - f*yy[local_offset + node_psi_offset];
+        ww[local_offset+0] = xx[local_offset+0] - (dV_comm + f*(yy[local_offset+0]-dV_comm));
+
+        //prevent negative carrier density
+        if ( ww[local_offset+1] < 0 )
+        { ww[local_offset+1] = 1e-2*fabs(xx[local_offset+1]) + onePerMC;}
+        if ( ww[local_offset+2] < 0 )
+        { ww[local_offset+2] = 1e-2*fabs(xx[local_offset+2]) + onePerMC;}
       }
     }
   }
 
+
+potential_damping_end:
+
   //damping spice nodal voltage update
-  if(Genius::is_last_processor())
+  if(Genius::is_last_processor() && SolverSpecify::damping_spice)
   {
     for(unsigned int n=0; n<_circuit->n_ckt_nodes(); ++n)
     {
-      if(_circuit->is_voltage_node(n))
+      if(_circuit->is_voltage_node(n) && !_circuit->is_link_to_electrode(n))
       {
         unsigned int array_offset_x = _circuit->array_offset_x(n);
         PetscScalar dV_max = std::abs(yy[array_offset_x]);
-        if (dV_max>5)
+        if (dV_max>1)
         {
-          PetscScalar damp_factor = 5/dV_max;
-          ww[array_offset_x] = xx[array_offset_x] - damp_factor*yy[array_offset_x];
+          PetscScalar damp_factor = log(1+dV_max/20)/(dV_max/20);
+          ww[array_offset_x] = xx[array_offset_x] - yy[array_offset_x]*damp_factor;
         }
       }
 
-      if(_circuit->is_current_node(n))
+      if(_circuit->is_current_node(n) && !_circuit->is_link_to_electrode(n))
       {
         unsigned int array_offset_x = _circuit->array_offset_x(n);
         PetscScalar dI_max = std::abs(yy[array_offset_x]);
         if (dI_max>1)
         {
-          PetscScalar damp_factor = 1/dI_max;
-          ww[array_offset_x] = xx[array_offset_x] - damp_factor*yy[array_offset_x];
+          PetscScalar damp_factor = log(1+dI_max/10)/(dI_max/10);
+          ww[array_offset_x] = xx[array_offset_x] - yy[array_offset_x]*damp_factor;
         }
       }
+
     }
   }
+
+  *changed_w = PETSC_TRUE;
 
   VecRestoreArray(x, &xx);
   VecRestoreArray(y, &yy);
   VecRestoreArray(w, &ww);
-
-  *changed_y = PETSC_FALSE;
-  *changed_w = PETSC_TRUE;
 
   return;
 }
@@ -354,11 +363,8 @@ void MixA3Solver::potential_damping(Vec x, Vec y, Vec w, PetscBool *changed_y, P
 /*------------------------------------------------------------------
  * Bank-Rose Newton Damping
  */
-void MixA3Solver::bank_rose_damping(Vec , Vec , Vec , PetscBool *changed_y, PetscBool *changed_w)
+void MixA3Solver::bank_rose_damping(Vec x, Vec y, Vec w, PetscBool *changed_y, PetscBool *changed_w)
 {
-  *changed_y = PETSC_FALSE;
-  *changed_w = PETSC_FALSE;
-
   return;
 }
 
@@ -367,7 +373,7 @@ void MixA3Solver::bank_rose_damping(Vec , Vec , Vec , PetscBool *changed_y, Pets
 /*------------------------------------------------------------------
  * positive density Newton Damping
  */
-void MixA3Solver::positive_density_damping(Vec x, Vec y, Vec w, PetscBool *changed_y, PetscBool *changed_w)
+void MixA3Solver::check_positive_density(Vec x, Vec y, Vec w, PetscBool *changed_y, PetscBool *changed_w)
 {
 
   PetscScalar    *xx;
@@ -404,11 +410,6 @@ void MixA3Solver::positive_density_damping(Vec x, Vec y, Vec w, PetscBool *chang
 
       unsigned int local_offset = fvm_node->local_offset();
 
-      // psi update should not large than 1V
-      if ( fabs(yy[local_offset + node_psi_offset]) > 1.0 )
-      {
-        ww[local_offset + node_psi_offset] = xx[local_offset + node_psi_offset] - std::sign(yy[local_offset + node_psi_offset ])*1.0;
-      }
 
       //prevent negative carrier density
       if ( ww[local_offset+1] < onePerCMC )
@@ -457,7 +458,6 @@ void MixA3Solver::positive_density_damping(Vec x, Vec y, Vec w, PetscBool *chang
   VecRestoreArray(y, &yy);
   VecRestoreArray(w, &ww);
 
-  *changed_y = PETSC_FALSE;
   *changed_w = PETSC_TRUE;
 
   return;
@@ -600,6 +600,9 @@ PetscReal MixA3Solver::LTE_norm()
   PetscReal eps_r = SolverSpecify::TS_rtol;
   // abs error
   PetscReal eps_a = SolverSpecify::TS_atol;
+  PetscReal concentration = 5e22*std::pow(cm, -3);
+  PetscReal temperature = 10000*K;
+
 
   VecZeroEntries(xp);
   VecZeroEntries(LTE);
@@ -668,17 +671,17 @@ PetscReal MixA3Solver::LTE_norm()
             unsigned int local_offset = fvm_node->local_offset();
 
             ll[local_offset+node_psi_offset] = 0;
-            ll[local_offset+node_n_offset] = ll[local_offset+node_n_offset]/(eps_r*xx[local_offset+node_n_offset]+eps_a);
-            ll[local_offset+node_p_offset] = ll[local_offset+node_p_offset]/(eps_r*xx[local_offset+node_p_offset]+eps_a);
+            ll[local_offset+node_n_offset] = ll[local_offset+node_n_offset]/(eps_r*xx[local_offset+node_n_offset]+eps_a*concentration);
+            ll[local_offset+node_p_offset] = ll[local_offset+node_p_offset]/(eps_r*xx[local_offset+node_p_offset]+eps_a*concentration);
 
             if(region->get_advanced_model()->enable_Tl())
-              ll[local_offset+node_Tl_offset] = ll[local_offset+node_Tl_offset]/(eps_r*xx[local_offset+node_Tl_offset]+eps_a); // temperature
+              ll[local_offset+node_Tl_offset] = ll[local_offset+node_Tl_offset]/(eps_r*xx[local_offset+node_Tl_offset]+eps_a*concentration*temperature); // temperature
 
             if(region->get_advanced_model()->enable_Tn())
-              ll[local_offset+node_Tn_offset] = ll[local_offset+node_Tn_offset]/(eps_r*xx[local_offset+node_Tn_offset]+eps_a); // temperature
+              ll[local_offset+node_Tn_offset] = ll[local_offset+node_Tn_offset]/(eps_r*xx[local_offset+node_Tn_offset]+eps_a*concentration*temperature); // temperature
 
             if(region->get_advanced_model()->enable_Tp())
-              ll[local_offset+node_Tp_offset] = ll[local_offset+node_Tp_offset]/(eps_r*xx[local_offset+node_Tp_offset]+eps_a); // temperature
+              ll[local_offset+node_Tp_offset] = ll[local_offset+node_Tp_offset]/(eps_r*xx[local_offset+node_Tp_offset]+eps_a*temperature); // temperature
           }
 
           N += (region->ebm_n_variables()-1)*region->n_on_processor_node();
@@ -703,7 +706,7 @@ PetscReal MixA3Solver::LTE_norm()
             ll[local_offset+node_psi_offset] = 0;
 
             if(region->get_advanced_model()->enable_Tl())
-              ll[local_offset+node_Tl_offset] = ll[local_offset+node_Tl_offset]/(eps_r*xx[local_offset+node_Tl_offset]+eps_a); // temperature
+              ll[local_offset+node_Tl_offset] = ll[local_offset+node_Tl_offset]/(eps_r*xx[local_offset+node_Tl_offset]+eps_a*temperature); // temperature
           }
 
           N += (region->ebm_n_variables()-1)*region->n_on_processor_node();
@@ -724,9 +727,12 @@ PetscReal MixA3Solver::LTE_norm()
     {
       unsigned int array_offset_f = _circuit->array_offset_f(n);
       unsigned int array_offset_x = _circuit->array_offset_x(n);
-      ll[array_offset_f] = ll[array_offset_f]/(eps_r*xx[array_offset_x]+eps_a);
+      if(_circuit->is_voltage_node(n))
+      {
+        ll[array_offset_f] = ll[array_offset_f]/(eps_r*xx[array_offset_x]+eps_a*1000*V);
+        N++;
+      }
     }
-    N += _circuit->n_ckt_nodes();
   }
 
   VecRestoreArray(x, &xx);
@@ -974,17 +980,6 @@ void MixA3Solver::build_petsc_sens_residual(Vec x, Vec r)
   genius_assert( !fetestexcept(FE_INVALID) );
 #endif
 
-  // process hanging node here
-  for(unsigned int n=0; n<_system.n_regions(); n++)
-  {
-    SimulationRegion * region = _system.region(n);
-    region->EBM3_Function_Hanging_Node(lxx, r, add_value_flag);
-  }
-
-#if defined(HAVE_FENV_H) && defined(DEBUG)
-  genius_assert( !fetestexcept(FE_INVALID) );
-#endif
-
   build_spice_function(lxx, r, add_value_flag);
 
 #if defined(HAVE_FENV_H) && defined(DEBUG)
@@ -1054,7 +1049,7 @@ void MixA3Solver::build_petsc_sens_jacobian(Vec x, Mat *, Mat *)
   // get PetscScalar array contains solution from local solution vector lx
   VecGetArray(lx, &lxx);
 
-  MatZeroEntries(J);
+  Jac->zero();
 
   // flag for indicate ADD_VALUES operator.
   InsertMode add_value_flag = NOT_SET_VALUES;
@@ -1063,7 +1058,7 @@ void MixA3Solver::build_petsc_sens_jacobian(Vec x, Mat *, Mat *)
   for(unsigned int n=0; n<_system.n_regions(); n++)
   {
     SimulationRegion * region = _system.region(n);
-    region->EBM3_Jacobian(lxx, &J, add_value_flag);
+    region->EBM3_Jacobian(lxx, Jac, add_value_flag);
   }
 
 #if defined(HAVE_FENV_H) && defined(DEBUG)
@@ -1075,36 +1070,14 @@ void MixA3Solver::build_petsc_sens_jacobian(Vec x, Mat *, Mat *)
     for(unsigned int n=0; n<_system.n_regions(); n++)
     {
       SimulationRegion * region = _system.region(n);
-      region->EBM3_Time_Dependent_Jacobian(lxx, &J, add_value_flag);
+      region->EBM3_Time_Dependent_Jacobian(lxx, Jac, add_value_flag);
     }
 
-  // process hanging node here
-  for(unsigned int n=0; n<_system.n_regions(); n++)
-  {
-    SimulationRegion * region = _system.region(n);
-    region->EBM3_Jacobian_Hanging_Node(lxx, &J, add_value_flag);
-  }
 #if defined(HAVE_FENV_H) && defined(DEBUG)
   genius_assert( !fetestexcept(FE_INVALID) );
 #endif
 
-  build_spice_jacobian(lxx, &J, add_value_flag);
-
-
-
-  // before first assemble, resereve none zero pattern for each boundary
-
-  if( !jacobian_matrix_first_assemble )
-  {
-    for(unsigned int b=0; b<_system.get_bcs()->n_bcs(); b++)
-    {
-      BoundaryCondition * bc = _system.get_bcs()->get_bc(b);
-      if(bc->is_spice_electrode())
-        bc->MixA_EBM3_Jacobian_Reserve(&J, add_value_flag);
-      else
-        bc->EBM3_Jacobian_Reserve(&J, add_value_flag);
-    }
-  }
+  build_spice_jacobian(lxx, Jac, add_value_flag);
 
 
 
@@ -1112,36 +1085,34 @@ void MixA3Solver::build_petsc_sens_jacobian(Vec x, Mat *, Mat *)
   genius_assert( !fetestexcept(FE_INVALID) );
 #endif
 
-  // evaluate Jacobian matrix of governing equations of EBML3 for all the boundaries
-  MatAssemblyBegin(J, MAT_FINAL_ASSEMBLY);
-  MatAssemblyEnd(J, MAT_FINAL_ASSEMBLY);
-
-  // we do not allow zero insert/add to matrix
-  if( !jacobian_matrix_first_assemble )
-    genius_assert(!MatSetOption(J, MAT_IGNORE_ZERO_ENTRIES, PETSC_TRUE));
+  
+  // assembly matrix
+  Jac->close(false);
 
   std::vector<PetscInt> src_row,  dst_row,  clear_row;
   for(unsigned int b=0; b<_system.get_bcs()->n_bcs(); b++)
   {
     BoundaryCondition * bc = _system.get_bcs()->get_bc(b);
     if(bc->is_spice_electrode())
-      bc->MixA_EBM3_Jacobian_Preprocess(lxx, &J, src_row, dst_row, clear_row);
+      bc->MixA_EBM3_Jacobian_Preprocess(lxx, Jac, src_row, dst_row, clear_row);
     else
-      bc->EBM3_Jacobian_Preprocess(lxx, &J, src_row, dst_row, clear_row);
+      bc->EBM3_Jacobian_Preprocess(lxx, Jac, src_row, dst_row, clear_row);
   }
+  
   //add source rows to destination rows
-  PetscUtils::MatAddRowToRow(J, src_row, dst_row);
+  Jac->add_row_to_row(src_row, dst_row);
   // clear row
-  PetscUtils::MatZeroRows(J, clear_row.size(), clear_row.empty() ? NULL : &clear_row[0], 0.0);
+  Jac->clear_row(clear_row);
+  
   add_value_flag = NOT_SET_VALUES;
 
   for(unsigned int b=0; b<_system.get_bcs()->n_bcs(); b++)
   {
     BoundaryCondition * bc = _system.get_bcs()->get_bc(b);
     if(bc->is_spice_electrode())
-      bc->MixA_EBM3_Jacobian(lxx, &J, add_value_flag);
+      bc->MixA_EBM3_Jacobian(lxx, Jac, add_value_flag);
     else
-      bc->EBM3_Jacobian(lxx, &J, add_value_flag);
+      bc->EBM3_Jacobian(lxx, Jac, add_value_flag);
   }
 
 
@@ -1152,24 +1123,12 @@ void MixA3Solver::build_petsc_sens_jacobian(Vec x, Mat *, Mat *)
   // restore array back to Vec
   VecRestoreArray(lx, &lxx);
 
-  // assembly the matrix
-  MatAssemblyBegin(J, MAT_FINAL_ASSEMBLY);
-  MatAssemblyEnd  (J, MAT_FINAL_ASSEMBLY);
+  Jac->close(true);
 
 
   //scaling the matrix
   MatDiagonalScale(J, L, PETSC_NULL);
 
-  // we use the reciprocal of matrix diagonal as scaling value
-  // this will take place at next call
-  //MatGetDiagonal(J, L);
-  //VecReciprocal(L);
-
-  //MatView(J, PETSC_VIEWER_DRAW_WORLD);
-  //getchar();
-
-  if(!jacobian_matrix_first_assemble)
-    jacobian_matrix_first_assemble = true;
 
   STOP_LOG("MixA3Solver_Jacobian()", "MixA3Solver");
 

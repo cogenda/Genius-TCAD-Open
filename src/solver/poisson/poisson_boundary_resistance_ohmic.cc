@@ -186,7 +186,7 @@ void IF_Metal_OhmicBC::Poissin_Function ( PetscScalar * x, Vec f, InsertMode &ad
       PetscScalar Eg  = semiconductor_node_data->Eg();
 
       //governing equation for Ohmic contact boundary
-      PetscScalar ff = V_semiconductor - kb*T/e*boost::math::asinh(semiconductor_node_data->Net_doping()/(2*ni))
+      PetscScalar ff = V_semiconductor - kb*T/e*asinh(semiconductor_node_data->Net_doping()/(2*ni))
                        + Eg/(2*e)
                        + kb*T*log(Nc/Nv)/(2*e)
                        + semiconductor_node_data->affinity();
@@ -229,65 +229,10 @@ void IF_Metal_OhmicBC::Poissin_Function ( PetscScalar * x, Vec f, InsertMode &ad
 
 
 
-
-/*---------------------------------------------------------------------
- * reserve non zero pattern in jacobian matrix for Poissin solver
- */
-void IF_Metal_OhmicBC::Poissin_Jacobian_Reserve ( Mat *jac, InsertMode &add_value_flag )
-{
-
-  // ADD 0 to some position of Jacobian matrix to prevent MatAssembly expurgation these position.
-
-
-  // since we will use ADD_VALUES operat, check the matrix state.
-  if ( ( add_value_flag != ADD_VALUES ) && ( add_value_flag != NOT_SET_VALUES ) )
-  {
-    MatAssemblyBegin ( *jac, MAT_FLUSH_ASSEMBLY );
-    MatAssemblyEnd ( *jac, MAT_FLUSH_ASSEMBLY );
-  }
-
-  const SimulationRegion * _r1 = bc_regions().first;
-  const SimulationRegion * _r2 = bc_regions().second;
-
-
-  BoundaryCondition::const_node_iterator node_it = nodes_begin();
-  BoundaryCondition::const_node_iterator end_it = nodes_end();
-  for ( ; node_it!=end_it; ++node_it )
-  {
-    // skip node not belongs to this processor
-    if ( ( *node_it )->processor_id() !=Genius::processor_id() ) continue;
-
-
-    const FVM_Node * semiconductor_node  = get_region_fvm_node ( ( *node_it ), _r1 );
-    const FVM_Node * resistance_node = get_region_fvm_node ( ( *node_it ), _r2 );
-
-    // process insulator region when necessary
-    if ( has_associated_region ( ( *node_it ), InsulatorRegion ) )
-    {
-      BoundaryCondition::region_node_iterator  rnode_it     = region_node_begin ( *node_it );
-      BoundaryCondition::region_node_iterator  end_rnode_it = region_node_end ( *node_it );
-      for ( ; rnode_it!=end_rnode_it; ++rnode_it )
-      {
-        const SimulationRegion * region = ( *rnode_it ).second.first;
-        if ( region->type() != InsulatorRegion ) continue;
-        const FVM_Node * insulator_node  = ( *rnode_it ).second.second;
-        MatSetValue ( *jac, insulator_node->global_offset(), resistance_node->global_offset(), 0, ADD_VALUES );
-      }
-    }
-  }
-
-
-  // the last operator is ADD_VALUES
-  add_value_flag = ADD_VALUES;
-
-}
-
-
-
 /*---------------------------------------------------------------------
  * do pre-process to jacobian matrix for poisson solver
  */
-void IF_Metal_OhmicBC::Poissin_Jacobian_Preprocess(PetscScalar *, Mat *jac, std::vector<PetscInt> &src_row,
+void IF_Metal_OhmicBC::Poissin_Jacobian_Preprocess(PetscScalar *, SparseMatrix<PetscScalar> *jac, std::vector<PetscInt> &src_row,
     std::vector<PetscInt> &dst_row, std::vector<PetscInt> &clear_row)
 {
 
@@ -329,15 +274,8 @@ void IF_Metal_OhmicBC::Poissin_Jacobian_Preprocess(PetscScalar *, Mat *jac, std:
 /*---------------------------------------------------------------------
  * build function and its jacobian for Poissin solver
  */
-void IF_Metal_OhmicBC::Poissin_Jacobian ( PetscScalar * x, Mat *jac, InsertMode &add_value_flag )
+void IF_Metal_OhmicBC::Poissin_Jacobian ( PetscScalar * x, SparseMatrix<PetscScalar> *jac, InsertMode &add_value_flag )
 {
-  // since we will use ADD_VALUES operat, check the matrix state.
-  if( (add_value_flag != ADD_VALUES) && (add_value_flag != NOT_SET_VALUES) )
-  {
-    MatAssemblyBegin(*jac, MAT_FLUSH_ASSEMBLY);
-    MatAssemblyEnd(*jac, MAT_FLUSH_ASSEMBLY);
-  }
-
   const PetscScalar T = T_external();
 
   const SimulationRegion * _r1 = bc_regions().first;
@@ -372,13 +310,13 @@ void IF_Metal_OhmicBC::Poissin_Jacobian ( PetscScalar * x, Mat *jac, InsertMode 
       PetscScalar Eg  = semiconductor_node_data->Eg();
 
       //governing equation for Ohmic contact boundary
-      AutoDScalar ff = V_semiconductor - kb*T/e*boost::math::asinh(semiconductor_node_data->Net_doping()/(2*ni))
+      AutoDScalar ff = V_semiconductor - kb*T/e*asinh(semiconductor_node_data->Net_doping()/(2*ni))
                        + Eg/(2*e)
                        + kb*T*log(Nc/Nv)/(2*e)
                        + semiconductor_node_data->affinity();
 
       // set governing equation to function vector
-      MatSetValue(*jac, semiconductor_node->global_offset(), semiconductor_node->global_offset(), ff.getADValue ( 0 ), ADD_VALUES);
+      jac->add(semiconductor_node->global_offset(), semiconductor_node->global_offset(), ff.getADValue ( 0 ));
     }
 
 
@@ -388,7 +326,7 @@ void IF_Metal_OhmicBC::Poissin_Jacobian ( PetscScalar * x, Mat *jac, InsertMode 
       //governing equation for Ohmic contact boundary
       AutoDScalar ff = V_resistance + resistance_node_data->affinity()/e;
       // set governing equation to function vector
-      MatSetValue(*jac, resistance_node->global_offset(), resistance_node->global_offset(), ff.getADValue ( 0 ), ADD_VALUES);
+      jac->add(resistance_node->global_offset(), resistance_node->global_offset(), ff.getADValue ( 0 ));
     }
 
     // if we have insulator node?
@@ -405,8 +343,8 @@ void IF_Metal_OhmicBC::Poissin_Jacobian ( PetscScalar * x, Mat *jac, InsertMode 
         const FVM_Node * insulator_node  = ( *rnode_it ).second.second;
         AutoDScalar V_insulator  = x[insulator_node->local_offset() ]; V_insulator.setADValue ( 1, 1.0 );
         AutoDScalar f_phi =  V_insulator - V_resistance;
-        MatSetValue ( *jac, insulator_node->global_offset(), resistance_node->global_offset(), f_phi.getADValue ( 0 ), ADD_VALUES );
-        MatSetValue ( *jac, insulator_node->global_offset(), insulator_node->global_offset(), f_phi.getADValue ( 1 ), ADD_VALUES );
+        jac->add(insulator_node->global_offset(), resistance_node->global_offset(), f_phi.getADValue ( 0 ) );
+        jac->add(insulator_node->global_offset(), insulator_node->global_offset(), f_phi.getADValue ( 1 ) );
       }
     }
   }

@@ -83,12 +83,21 @@ private:
   * since reading deck involves stack operate, we can not use const here
   */
  Parser::InputParser & _decks;
+ 
+
 
  /**
   * parse PROFILE card with uniform doping, build uniform doping function and
   * push into _doping_funs.
   */
  void set_doping_function_uniform(const Parser::Card & c);
+ 
+ 
+ /**
+  * parse PROFILE card with linear doping, build linear doping function and
+  * push into _doping_funs.
+  */
+ void set_doping_function_linear(const Parser::Card & c);
 
  /**
   * parse PROFILE card with analytic doping, build analytic doping function and
@@ -118,24 +127,56 @@ private:
  void set_doping_function_file(const Parser::Card & c);
 
 
- double _do_doping_interp(int i, const Node *node, const std::string &msg=std::string());
-
+ 
  /**
-  * @return the acceptor concentration of node
-  */
- double doping_Na(const Node * node);
-
+  * doping function struct  
+  */ 
+ struct DopingFunction_t
+ {
+   std::string label;
+   
+   /**
+    * doping function 
+    */ 
+   DopingFunction * df;
+   
+  /**
+   *  the applied regions
+   */ 
+   std::string region;
+ };
+ 
  /**
-  * @return the donor concentration of node
-  */
- double doping_Nd(const Node * node);
+  * doping data struct  
+  */ 
+ struct DopingData_t
+ {
+   std::string label;
+   
+   /**
+    * doping function 
+    */ 
+   std::pair<int, InterpolationBase * > df;
+      
+   /**
+    *  the applied regions
+    */ 
+   std::string region;
+ };
 
- /**
-  * the pointer vector to DopingFunction
-  */
- std::vector<DopingFunction * >  _doping_funs;
- std::vector<std::pair<int, InterpolationBase * > > _doping_data;
- std::map<std::string,DopingFunction * >  _custom_profile_funs;
+
+ std::vector<DopingFunction_t>  _custom_profile_funs;
+ std::vector<DopingData_t>  _custom_profile_data;
+ 
+ void _doping_function_apply(DopingFunction * df, const std::string &region_app);
+ void _custom_profile_function_apply(const std::string &ion, DopingFunction * df, const std::string &region_app);
+ 
+ 
+ void _doping_data_apply(std::pair<int, InterpolationBase * > df, const std::string &region_app);
+ void _custom_profile_data_apply(const std::string &ion, std::pair<int, InterpolationBase * > df, const std::string &region_app);
+ 
+  
+ double _do_data_interp(std::pair<int, InterpolationBase * > df, const Node *node, const std::string &msg=std::string());
 
 };
 

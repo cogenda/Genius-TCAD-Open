@@ -44,14 +44,39 @@ class FVM_Insulator_NodeData : public FVM_NodeData
     enum   InsulatorData
     {
       /**
+       * minimal distance
+       */
+      _dmin_ = 0,
+
+      /**
        * electron density
        */
-      _n_=0,
+      _n_,
 
       /**
        * hole density
        */
       _p_,
+      
+      /**
+       * H+ density
+       */
+      _HIon_,
+
+      /**
+       * A type trap density
+       */
+      _trap_a_,
+
+      /**
+       * B type trap density
+       */
+      _trap_b_,
+      
+      /**
+       * neutral state B type trap density
+       */
+      _trap_bn_,
 
       /**
        * electrostatic potential
@@ -255,7 +280,7 @@ class FVM_Insulator_NodeData : public FVM_NodeData
     /**
      * @return data by enum name
      */
-    virtual Real  get_variable_real ( SolutionVariable variable ) const
+    virtual PetscScalar  get_variable_real ( SolutionVariable variable ) const
     {
       switch ( variable )
       {
@@ -275,7 +300,7 @@ class FVM_Insulator_NodeData : public FVM_NodeData
     /**
      * set variable by enum name
      */
-    virtual void set_variable_real ( SolutionVariable variable, Real value )
+    virtual void set_variable_real ( SolutionVariable variable, PetscScalar value )
     {
       switch ( variable )
       {
@@ -305,28 +330,41 @@ class FVM_Insulator_NodeData : public FVM_NodeData
     //--------------------------------------------------------------------
 
     /**
+     * @return the minimal distange to surface
+     */
+    virtual PetscScalar         dmin()          const
+    { return _data_storage->scalar ( _dmin_, _offset ); }
+
+    /**
+     * @return the writable reference to the minimal distange to surface
+     */
+    virtual PetscScalar &       dmin()
+    { return _data_storage->scalar ( _dmin_, _offset ); }
+
+
+    /**
      * @return the statistic potential
      */
-    virtual Real         psi()        const
+    virtual PetscScalar         psi()        const
     { return _data_storage->scalar ( _psi_, _offset ); }
 
     /**
      * @return the statistic potential
      */
-    virtual Real &       psi()
+    virtual PetscScalar &       psi()
     { return _data_storage->scalar ( _psi_, _offset ); }
 
 
     /**
      * @return the electron density
      */
-    virtual Real         n()          const
+    virtual PetscScalar         n()          const
     { return _data_storage->scalar ( _n_, _offset ); }
 
     /**
      * @return the writable reference to electron density
      */
-    virtual Real &       n()
+    virtual PetscScalar &       n()
     { return _data_storage->scalar ( _n_, _offset ); }
 
 
@@ -334,56 +372,109 @@ class FVM_Insulator_NodeData : public FVM_NodeData
     /**
      * @return the hole density
      */
-    virtual Real         p()          const
+    virtual PetscScalar         p()          const
     { return _data_storage->scalar ( _p_, _offset ); }
 
 
     /**
      * @return the writable reference to hole density
      */
-    virtual Real &       p()
+    virtual PetscScalar &       p()
     { return _data_storage->scalar ( _p_, _offset ); }
+
+
+    /**
+     * @return the H+ densiy
+     */
+    virtual PetscScalar         HIon()          const
+    { return _data_storage->scalar ( _HIon_, _offset ); }
+
+    /**
+     * @return the writable reference to H+ densiy
+     */
+    virtual PetscScalar &       HIon()
+    { return _data_storage->scalar ( _HIon_, _offset ); }
+    
+    /**
+     * @return the A type trap density
+     */
+    virtual PetscScalar         trap_a()          const
+    { return _data_storage->scalar ( _trap_a_, _offset ); }
+
+    /**
+     * @return the writable reference to A type trap density
+     */
+    virtual PetscScalar &       trap_a()
+    { return _data_storage->scalar ( _trap_a_, _offset ); }
 
 
 
     /**
+     * @return the B type trap density
+     */
+    virtual PetscScalar         trap_b()          const
+    { return _data_storage->scalar ( _trap_b_, _offset ); }
+
+
+    /**
+     * @return the writable reference to B type trap density
+     */
+    virtual PetscScalar &       trap_b()
+    { return _data_storage->scalar ( _trap_b_, _offset ); }
+
+    
+    /**
+     * @return the neutral state B type trap density
+     */
+    virtual PetscScalar         trap_bn()          const
+    { return _data_storage->scalar ( _trap_bn_, _offset ); }
+
+
+    /**
+     * @return the writable reference to neutral state B type trap density
+     */
+    virtual PetscScalar &       trap_bn()
+    { return _data_storage->scalar ( _trap_bn_, _offset ); }
+  
+
+    /**
      * @return the lattice temperature
      */
-    virtual Real         T()          const
+    virtual PetscScalar         T()          const
     { return _data_storage->scalar ( _T_, _offset ); }
 
     /**
      * @return the lattice temperature
      */
-    virtual Real &       T()
+    virtual PetscScalar &       T()
     { return _data_storage->scalar ( _T_, _offset ); }
 
 
     /**
      * @return the electron temperature, the same as lattice temperature
      */
-    virtual Real         Tn()          const
+    virtual PetscScalar         Tn()          const
     { return _data_storage->scalar ( _T_, _offset ); }
 
 
     /**
      * @return the writable reference to electron temperature, the same as lattice temperature
      */
-    virtual Real &       Tn()
+    virtual PetscScalar &       Tn()
     { return _data_storage->scalar ( _T_, _offset ); }
 
 
     /**
      * @return the hole temperature, the same as lattice temperature
      */
-    virtual Real         Tp()          const
+    virtual PetscScalar         Tp()          const
     { return _data_storage->scalar ( _T_, _offset ); }
 
 
     /**
      * @return the writable reference to hole temperature, the same as lattice temperature
      */
-    virtual Real &       Tp()
+    virtual PetscScalar &       Tp()
     { return _data_storage->scalar ( _T_, _offset ); }
 
 
@@ -391,140 +482,140 @@ class FVM_Insulator_NodeData : public FVM_NodeData
     /**
      * @return the carrier generation ratio due to OptG and PatG
      */
-    virtual Real         Field_G()          const
+    virtual PetscScalar         Field_G()          const
     { return _data_storage->scalar ( _Field_G_, _offset ); }
 
     /**
      * @return the writable carrier generation ratio due to OptG and PatG
      */
-    virtual Real &       Field_G()
+    virtual PetscScalar &       Field_G()
     { return _data_storage->scalar ( _Field_G_, _offset ); }
 
 
     /**
      * @return the particle energy
      */
-    virtual Real         PatE()          const
+    virtual PetscScalar         PatE()          const
     { return _data_storage->scalar ( _PatE_, _offset ); }
 
     /**
      * @return the writable particle energy
      */
-    virtual Real &       PatE()
+    virtual PetscScalar &       PatE()
     { return _data_storage->scalar ( _PatE_, _offset ); }
 
 
    /**
     * @return the dose rate
     */
-    virtual Real         DoseRate()          const
+    virtual PetscScalar         DoseRate()          const
     { return _data_storage->scalar ( _DoseRate_, _offset ); }
 
    /**
     * @return the writable reference to dose rate
     */
-    virtual Real &       DoseRate()
+    virtual PetscScalar &       DoseRate()
     { return _data_storage->scalar ( _DoseRate_, _offset ); }
 
 
     /**
      * @return the statistic potential
      */
-    virtual std::complex<Real>         psi_ac()          const
+    virtual std::complex<PetscScalar>         psi_ac()          const
     { return _data_storage->complex ( _psi_ac_, _offset ); }
 
     /**
      * @return the writable reference to statistic potential
      */
-    virtual std::complex<Real> &       psi_ac()
+    virtual std::complex<PetscScalar> &       psi_ac()
     { return _data_storage->complex ( _psi_ac_, _offset ); }
 
     /**
      * @return the lattice temperature
      */
-    virtual std::complex<Real>         T_ac()          const
+    virtual std::complex<PetscScalar>         T_ac()          const
     { return  _data_storage->complex ( _T_ac_, _offset ); }
 
     /**
      * @return the writable reference to lattice temperature
      */
-    virtual std::complex<Real> &       T_ac()
+    virtual std::complex<PetscScalar> &       T_ac()
     { return _data_storage->complex ( _T_ac_, _offset ); }
 
     /**
        * @return the complex E file. only used by EM FEM solver
        */
-    virtual std::complex<Real>         OptE_complex()          const
+    virtual std::complex<PetscScalar>         OptE_complex()          const
     { return _data_storage->complex ( _OpE_complex_, _offset ); }
 
     /**
      * @return the writable reference to complex E file. only used by EM FEM solver
      */
-    virtual std::complex<Real> &       OptE_complex()
+    virtual std::complex<PetscScalar> &       OptE_complex()
     { return _data_storage->complex ( _OpE_complex_, _offset ); }
 
     /**
      * @return the complex H file. only used by EM FEM solver
      */
-    virtual std::complex<Real>         OptH_complex()          const
+    virtual std::complex<PetscScalar>         OptH_complex()          const
     { return _data_storage->complex ( _OpH_complex_, _offset ); }
 
     /**
      * @return the writable reference to complex H file. only used by EM FEM solver
      */
-    virtual std::complex<Real> &       OptH_complex()
+    virtual std::complex<PetscScalar> &       OptH_complex()
     { return _data_storage->complex ( _OpH_complex_, _offset ); }
 
 
     /**
      * @return the statistic potential at previous time step
      */
-    virtual Real         psi_last()          const
+    virtual PetscScalar         psi_last()          const
     { return _data_storage->scalar ( _psi_last_, _offset ); }
 
     /**
      * @return the writable reference to statistic potential at previous time step
      */
-    virtual Real &       psi_last()
+    virtual PetscScalar &       psi_last()
     { return _data_storage->scalar ( _psi_last_, _offset ); }
 
 
     /**
      * @return the old statistic potential
      */
-    virtual Real         psi_old()          const
+    virtual PetscScalar         psi_old()          const
     { return _data_storage->scalar ( _psi_old_, _offset ); }
 
     /**
      * @return the writable reference to old statistic potential
      */
-    virtual Real &       psi_old()
+    virtual PetscScalar &       psi_old()
     { return _data_storage->scalar ( _psi_old_, _offset ); }
 
 
     /**
      * @return the electron density at previous time step
      */
-    virtual Real         n_last()          const
+    virtual PetscScalar         n_last()          const
     { return _data_storage->scalar ( _n_last_, _offset ); }
 
     /**
      * @return the writable reference to electron density at previous time step
      */
-    virtual Real &       n_last()
+    virtual PetscScalar &       n_last()
     { return _data_storage->scalar ( _n_last_, _offset ); }
 
 
     /**
      * @return the hole density at previous time step
      */
-    virtual Real         p_last()          const
+    virtual PetscScalar         p_last()          const
     { return _data_storage->scalar ( _p_last_, _offset ); }
 
     /**
      * @return the writable reference to hole density at previous time step
      */
-    virtual Real &       p_last()
+    virtual PetscScalar &       p_last()
     { return _data_storage->scalar ( _p_last_, _offset ); }
 
 
@@ -532,13 +623,13 @@ class FVM_Insulator_NodeData : public FVM_NodeData
     /**
      * @return the lattice temperature at previous time step
      */
-    virtual Real         T_last()          const
+    virtual PetscScalar         T_last()          const
     { return _data_storage->scalar ( _T_last_, _offset ); }
 
     /**
      * @return the writable reference to lattice temperature at previous time step
      */
-    virtual Real &       T_last()
+    virtual PetscScalar &       T_last()
     { return _data_storage->scalar ( _T_last_, _offset ); }
 
 
@@ -546,61 +637,75 @@ class FVM_Insulator_NodeData : public FVM_NodeData
     /**
      * @return the electron affinity
      */
-    virtual Real         affinity()          const
+    virtual PetscScalar         affinity()          const
     { return _data_storage->scalar ( _affinity_, _offset ); }
 
     /**
      * @return the writable reference to the electron affinity
      */
-    virtual Real &       affinity()
+    virtual PetscScalar &       affinity()
     { return _data_storage->scalar ( _affinity_, _offset ); }
 
 
     /**
      * @return the bandgap
      */
-    virtual Real         Eg()          const
+    virtual PetscScalar         Eg()          const
     { return _data_storage->scalar ( _Eg_, _offset ); }
 
     /**
      * @return the writable reference to the bandgap
      */
-    virtual Real &       Eg()
+    virtual PetscScalar &       Eg()
     { return _data_storage->scalar ( _Eg_, _offset ); }
 
     /**
      * @return the conduction band
      */
-    virtual Real         Ec()          const;
+    virtual PetscScalar         Ec()          const;
 
     /**
      * @return the writable reference to the conduction band
      */
-    virtual Real &       Ec()
+    virtual PetscScalar &       Ec()
     { return _data_storage->scalar ( _Ec_, _offset ); }
 
     /**
      * @return the valance band
      */
-    virtual Real         Ev()          const;
+    virtual PetscScalar         Ev()          const;
 
     /**
      * @return the writable reference to the valance band
      */
-    virtual Real &       Ev()
+    virtual PetscScalar &       Ev()
     { return _data_storage->scalar ( _Ev_, _offset ); }
+    
+    
+    /**
+     * @return the quantum conduction band
+     */
+    virtual PetscScalar         Eqc()          const
+    { return Ec(); }
+   
+    
+    /**
+     * @return the quantum valence band
+     */
+    virtual PetscScalar         Eqv()          const
+    { return Ev(); }
 
 
     /**
      * @return the mass density of the material
      */
-    virtual Real         density()          const
+    virtual PetscScalar         density()          const
     { return _data_storage->scalar ( _density_, _offset ); }
 
     /**
      * @return the writable reference to the mass density of the material
      */
-    virtual Real &       density()
+    virtual PetscScalar &       density()
     { return _data_storage->scalar ( _density_, _offset ); }
 
 
@@ -608,13 +713,13 @@ class FVM_Insulator_NodeData : public FVM_NodeData
     /**
      * @return the dielectric permittivity
      */
-    virtual Real         eps()          const
+    virtual PetscScalar         eps()          const
     { return _data_storage->scalar ( _eps_, _offset ); }
 
     /**
      * @return the writable reference to the dielectric permittivity
      */
-    virtual Real &       eps()
+    virtual PetscScalar &       eps()
     { return _data_storage->scalar ( _eps_, _offset ); }
 
 
@@ -622,37 +727,37 @@ class FVM_Insulator_NodeData : public FVM_NodeData
     /**
      * @return the megnetic permeability
      */
-    virtual Real         mu()          const
+    virtual PetscScalar         mu()          const
     { return _data_storage->scalar ( _mu_, _offset ); }
 
     /**
      * @return the writable reference to the megnetic permeability
      */
-    virtual Real &       mu()
+    virtual PetscScalar &       mu()
     { return _data_storage->scalar ( _mu_, _offset ); }
 
     /**
      * @return the quasi-fermi potential of electron
      */
-    virtual Real         qFn()           const;
+    virtual PetscScalar         qFn()           const;
 
     /**
      * @return the quasi-fermi potential of hole
      */
-    virtual Real         qFp()           const;
+    virtual PetscScalar         qFp()           const;
 
 
     /**
      * @return the electrical field
      */
-    virtual VectorValue<Real> E()       const
+    virtual VectorValue<PetscScalar> E()       const
     { return _data_storage->vector ( _E_, _offset );}
 
 
     /**
      * @return the writable reference to electrical field
      */
-    virtual VectorValue<Real> & E()
+    virtual VectorValue<PetscScalar> & E()
     { return _data_storage->vector ( _E_, _offset );}
 
 

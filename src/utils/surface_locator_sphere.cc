@@ -29,6 +29,8 @@
 #include "elem.h"
 #include "surface_locator_sphere.h"
 
+#define DEBUG
+
 using namespace SurfaceLocator;
 
 
@@ -60,7 +62,9 @@ SurfaceLocatorSphere::~SurfaceLocatorSphere ()
 
 void SurfaceLocatorSphere::clear ()
 {
-  delete [] _space_division;
+  std::map<unsigned int, SurfaceLocator::Voxel *>::const_iterator vol_it =  _space_division.begin();
+  for( ; vol_it !=  _space_division.end(); vol_it++ )
+    delete vol_it->second;
 
   delete _exact_dist;
 
@@ -101,30 +105,17 @@ void SurfaceLocatorSphere::init ()
   _bounding_box = std::make_pair(min, max);
 
   // set radius_size, we must limit the size to about 100*100*100
-  Real x_size = (_bounding_box.second.x() - _bounding_box.first.x())/100.0;
-  Real y_size = (_bounding_box.second.y() - _bounding_box.first.y())/100.0;
-  Real z_size = (_bounding_box.second.z() - _bounding_box.first.z())/100.0;
-  _radius_size = (x_size + y_size + z_size)/3.0;
+  _x_size = (_bounding_box.second.x() - _bounding_box.first.x())/100.0+1e-30;
+  _y_size = (_bounding_box.second.y() - _bounding_box.first.y())/100.0+1e-30;
+  _z_size = (_bounding_box.second.z() - _bounding_box.first.z())/100.0+1e-30;
+  _radius_size =  0.5*sqrt(_x_size*_x_size + _y_size*_y_size + _z_size*_z_size)*(1.0+1e-10);
 
 
-  _dim_x = static_cast<unsigned int>((_bounding_box.second.x() - _bounding_box.first.x())/_radius_size) + 2;
-  _dim_y = static_cast<unsigned int>((_bounding_box.second.y() - _bounding_box.first.y())/_radius_size) + 2;
-  _dim_z = static_cast<unsigned int>((_bounding_box.second.z() - _bounding_box.first.z())/_radius_size) + 2;
+  _dim_x = static_cast<unsigned int>((_bounding_box.second.x() - _bounding_box.first.x())/_x_size) + 1;
+  _dim_y = static_cast<unsigned int>((_bounding_box.second.y() - _bounding_box.first.y())/_y_size) + 1;
+  _dim_z = static_cast<unsigned int>((_bounding_box.second.z() - _bounding_box.first.z())/_z_size) + 1;
   unsigned int voxel_size = _dim_x*_dim_y*_dim_z;
 
-
-  _space_division = new Voxel[voxel_size];
-  for(unsigned int nx=0; nx<_dim_x; ++nx)
-    for(unsigned int ny=0; ny<_dim_y; ++ny)
-      for(unsigned int nz=0; nz<_dim_z; ++nz)
-      {
-        Voxel * voxel = _get_voxel(nx, ny, nz);
-        voxel->nx = nx;
-        voxel->ny = ny;
-        voxel->nz = nz;
-        voxel->center = _bounding_box.first + Point(_radius_size*nx, _radius_size*ny, _radius_size*nz);
-        voxel->r = 0.5*sqrt(3.0)*_radius_size;
-      }
 
   for(unsigned int n=0; n<elems.size(); ++n)
   {
@@ -151,16 +142,20 @@ void SurfaceLocatorSphere::init ()
 
   _exact_dist = new tree_type(std::ptr_fun(get_location));
   //for all the non-empty voxel
-  for(unsigned int n=0; n<voxel_size; ++n)
+  std::map<unsigned int, SurfaceLocator::Voxel *>::const_iterator vol_it =  _space_division.begin();
+  for( ; vol_it !=  _space_division.end(); vol_it++ )
   {
-    const Voxel * voxel = &_space_division[n];
+    const Voxel * voxel = vol_it->second;
     if(voxel->voxel_elements.empty()) continue;
     _exact_dist->insert(voxel);
   }
-
-
+  
   // ready for take-off
   this->_initialized = true;
+
+#if defined(HAVE_FENV_H) && defined(DEBUG)
+  genius_assert( !fetestexcept(FE_INVALID) );
+#endif
 }
 
 
@@ -176,13 +171,13 @@ void SurfaceLocatorSphere::_get_elem_range(const Elem * elem, Trinity &low, Trin
       max(i) = std::max(max(i), elem->point(n)(i));
     }
 
-  low.nx = static_cast<unsigned int>( (min.x() - _bounding_box.first.x()) / _radius_size );
-  low.ny = static_cast<unsigned int>( (min.y() - _bounding_box.first.y()) / _radius_size );
-  low.nz = static_cast<unsigned int>( (min.z() - _bounding_box.first.z()) / _radius_size );
+  low.nx =  static_cast<unsigned int>( (min.x() - _bounding_box.first.x()) / _x_size );
+  low.ny =  static_cast<unsigned int>( (min.y() - _bounding_box.first.y()) / _y_size );
+  low.nz =  static_cast<unsigned int>( (min.z() - _bounding_box.first.z()) / _z_size );
 
-  high.nx = static_cast<unsigned int>( (max.x() - _bounding_box.first.x()) / _radius_size ) + 1;
-  high.ny = static_cast<unsigned int>( (max.y() - _bounding_box.first.y()) / _radius_size ) + 1;
-  high.nz = static_cast<unsigned int>( (max.z() - _bounding_box.first.z()) / _radius_size ) + 1;
+  high.nx =  static_cast<unsigned int>( (max.x() - _bounding_box.first.x()) / _x_size ) + 1;
+  high.ny =  static_cast<unsigned int>( (max.y() - _bounding_box.first.y()) / _y_size ) + 1;
+  high.nz =  static_cast<unsigned int>( (max.z() - _bounding_box.first.z()) / _z_size ) + 1;
 
 }
 
@@ -199,7 +194,7 @@ bool SurfaceLocatorSphere::_is_elem_in_voxel(const Voxel * voxel, const Elem * e
 }
 
 
-
+#if 0
 std::pair<const Elem*, unsigned int> SurfaceLocatorSphere::operator() (const Point& p, Point & project_point, const Real dist) const
 {
   // find the nearest voxel which is not empty by kdtree
@@ -253,6 +248,43 @@ std::pair<const Elem*, unsigned int> SurfaceLocatorSphere::operator() (const Poi
   return _surface_to_volume_element_map.find(nearest_elem)->second;;
 
 }
+#endif
 
 
+std::pair<const Elem*, unsigned int> SurfaceLocatorSphere::operator() (const Point& p, Point & project_point, const Real dist) const
+{
+  // find the nearest voxel which is not empty by kdtree
+  Voxel temp;
+  temp.center = p;
+  std::pair<tree_type::const_iterator,  tree_type::distance_type> pItr = _exact_dist->find_nearest((&temp), dist + 2*_radius_size);
 
+  // no find within given distance
+  if(pItr.first == _exact_dist->end() )
+    return std::make_pair((const Elem*)0, invalid_uint);
+
+  const std::vector<const Elem *> & voting_elem = (*pItr.first)->voxel_elements;
+
+  // search at these element
+  const Elem * nearest_elem = 0;
+  Point nearest_point;
+  Real  voting_dist = 1e30;
+
+  std::vector<const Elem *>::const_iterator elem_it = voting_elem.begin();
+  for( ; elem_it != voting_elem.end(); ++elem_it)
+  {
+    const Elem * surface_elem = *elem_it;
+
+    Real d;
+    Point np = surface_elem->nearest_point(p, &d);
+    if( d < voting_dist )
+    {
+      nearest_elem = surface_elem;
+      nearest_point = np;
+      voting_dist = d;
+    }
+  }
+
+  project_point = nearest_point;
+  return _surface_to_volume_element_map.find(nearest_elem)->second;;
+
+}

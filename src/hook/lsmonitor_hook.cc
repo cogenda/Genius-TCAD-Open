@@ -19,7 +19,7 @@
 /*                                                                              */
 /********************************************************************************/
 
-#include "fvm_nonlinear_solver.h"
+#include "fvm_flex_nonlinear_solver.h"
 #include "lsmonitor_hook.h"
 
 
@@ -104,7 +104,7 @@ void LinearSolverMonitorHook::pre_iteration()
  */
 void LinearSolverMonitorHook::post_iteration()
 {
-  FVM_NonlinearSolver & nonlinear_solver = dynamic_cast<FVM_NonlinearSolver &>(_solver);
+  FVM_FlexNonlinearSolver & nonlinear_solver = dynamic_cast<FVM_FlexNonlinearSolver &>(_solver);
   const SimulationSystem &system = nonlinear_solver.get_system();
 
 

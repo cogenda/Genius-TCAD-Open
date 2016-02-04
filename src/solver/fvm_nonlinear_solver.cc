@@ -32,6 +32,7 @@
 #endif
 
 
+
 //--------------------------------------------------------------------
 // Functions with C linkage to pass to PETSc.  PETSc will call these
 // methods as needed.
@@ -99,16 +100,23 @@ extern "C"
 
   //---------------------------------------------------------------
   // this function is called by PETSc to evaluate the Jacobian at X
+#if PETSC_VERSION_GE(3,5,0)
+  static PetscErrorCode  __genius_petsc_snes_jacobian (SNES, Vec x, Mat jac, Mat pc, void *ctx)
+#else
   static PetscErrorCode  __genius_petsc_snes_jacobian (SNES, Vec x, Mat *jac, Mat *pc, MatStructure *msflag, void *ctx)
+#endif
   {
     int ierr=0;
 
     // convert void* to FVM_NonlinearSolver*
     FVM_NonlinearSolver * nonlinear_solver = (FVM_NonlinearSolver *)ctx;
-
+#if PETSC_VERSION_GE(3,5,0)
+    nonlinear_solver->build_petsc_sens_jacobian(x, &jac, &pc);
+#else
     nonlinear_solver->build_petsc_sens_jacobian(x, jac, pc);
-
     *msflag = SAME_NONZERO_PATTERN;
+#endif
+
 
     //*msflag = DIFFERENT_NONZERO_PATTERN;
 
@@ -163,10 +171,6 @@ extern "C"
  */
 FVM_NonlinearSolver::FVM_NonlinearSolver(SimulationSystem & system): FVM_PDESolver(system)
 {
-  PetscErrorCode ierr;
-
-  // create petsc nonlinear solver context
-  ierr = SNESCreate(PETSC_COMM_WORLD, &snes); genius_assert(!ierr);
 
 }
 
@@ -194,6 +198,7 @@ void FVM_NonlinearSolver::setup_nonlinear_data()
   // create local vector, which has extra room for ghost dofs! the MPI_COMM here is PETSC_COMM_SELF
   ierr = VecCreateSeq(PETSC_COMM_SELF,  local_index_array.size() , &lx); genius_assert(!ierr);
   ierr = VecCreateSeq(PETSC_COMM_SELF,  local_index_array.size() , &lf); genius_assert(!ierr);
+  ierr = VecCreateSeq(PETSC_COMM_SELF,  local_index_array.size() , &ll); genius_assert(!ierr);
 
   // create the index for vector statter
 #if PETSC_VERSION_GE(3,2,0)
@@ -243,8 +248,8 @@ void FVM_NonlinearSolver::setup_nonlinear_data()
   ierr = MatSetOption(J, MAT_KEEP_ZEROED_ROWS, PETSC_TRUE); genius_assert(!ierr);
 #endif
 
-
-  //ierr = MatSetOption(J, MAT_YES_NEW_NONZERO_LOCATIONS); genius_assert(!ierr);
+  // we have to set this flag since preallocation is not exact
+  ierr = MatSetOption(J, MAT_NEW_NONZERO_LOCATIONS, PETSC_TRUE); genius_assert(!ierr);
 
   // indicates when MatSetValue with ADD_VALUES mode, the 0 entries will be ignored
   // since I uas ADD_VALUES 0 for keeping nonzero pattern, do not use this parameter!
@@ -256,6 +261,8 @@ void FVM_NonlinearSolver::setup_nonlinear_data()
   ierr = MatSetFromOptions(J); genius_assert(!ierr);
 
 
+  // create petsc nonlinear solver context
+  ierr = SNESCreate(PETSC_COMM_WORLD, &snes); genius_assert(!ierr);
 
   // set petsc nonlinear solver type here
   set_petsc_nonelinear_solver_type();
@@ -365,13 +372,26 @@ void FVM_NonlinearSolver::dump_matrix_triplet(const Mat mat, const std::string &
 
 
 /*------------------------------------------------------------------
- * dump function to external file
+ * dump vector to external file
  */
 void FVM_NonlinearSolver::dump_vector_petsc(const Vec vec, const std::string &file) const
 {
   PetscViewer viewer;
   PetscViewerBinaryOpen(PETSC_COMM_WORLD, file.c_str(), FILE_MODE_WRITE, &viewer);
   VecView(vec, viewer);
+  PetscViewerDestroy(PetscDestroyObject(viewer));
+}
+
+
+
+/*------------------------------------------------------------------
+ * load vector from external file
+ */
+void FVM_NonlinearSolver::load_vector_petsc(Vec vec, const std::string &file) const
+{
+  PetscViewer viewer;
+  PetscViewerBinaryOpen(PETSC_COMM_WORLD, file.c_str(), FILE_MODE_READ, &viewer);
+  VecLoad(vec, viewer);
   PetscViewerDestroy(PetscDestroyObject(viewer));
 }
 
@@ -420,16 +440,12 @@ void FVM_NonlinearSolver::clear_nonlinear_data()
   ierr = VecDestroy(PetscDestroyObject(L));                 genius_assert(!ierr);
   ierr = VecDestroy(PetscDestroyObject(lx));                genius_assert(!ierr);
   ierr = VecDestroy(PetscDestroyObject(lf));                genius_assert(!ierr);
+  ierr = VecDestroy(PetscDestroyObject(ll));                genius_assert(!ierr);
   ierr = ISDestroy(PetscDestroyObject(gis));                genius_assert(!ierr);
   ierr = ISDestroy(PetscDestroyObject(lis));                genius_assert(!ierr);
   ierr = VecScatterDestroy(PetscDestroyObject(scatter));    genius_assert(!ierr);
   ierr = MatDestroy(PetscDestroyObject(J));                 genius_assert(!ierr);
   ierr = SNESDestroy(PetscDestroyObject(snes));             genius_assert(!ierr);
-
-#if PETSC_VERSION_GE(3,3,0)
-  if(_nonlinear_solver_type == SolverSpecify::Newton || _nonlinear_solver_type == SolverSpecify::LineSearch )
-  {  ierr = SNESLineSearchDestroy(PetscDestroyObject(snesls)); genius_assert(!ierr); }
-#endif
 
   // clear petsc options
   std::map<std::string, std::string>::const_iterator it = petsc_options.begin();
@@ -478,7 +494,11 @@ void FVM_NonlinearSolver::petsc_snes_monitor(PetscInt its, PetscReal fnorm)
  */
 void FVM_NonlinearSolver::petsc_snes_convergence_test(PetscInt its, PetscReal xnorm, PetscReal gnorm, PetscReal fnorm, SNESConvergedReason *reason)
 {
+#if PETSC_VERSION_GE(3,4,0)
+  SNESConvergedDefault(snes, its, xnorm, gnorm, fnorm, reason, this);
+#else
   SNESDefaultConverged(snes, its, xnorm, gnorm, fnorm, reason, this);
+#endif
 }
 
 
@@ -487,7 +507,11 @@ void FVM_NonlinearSolver::petsc_snes_convergence_test(PetscInt its, PetscReal xn
  */
 void FVM_NonlinearSolver::petsc_ksp_convergence_test(PetscInt its, PetscReal rnorm, KSPConvergedReason* reason)
 {
+#if PETSC_VERSION_GE(3,5,0)
+  KSPConvergedDefault(ksp, its, rnorm, reason, this);
+#else
   KSPDefaultConverged(ksp, its, rnorm, reason, this);
+#endif
 }
 
 
@@ -497,6 +521,11 @@ void FVM_NonlinearSolver::petsc_ksp_convergence_test(PetscInt its, PetscReal rno
 void FVM_NonlinearSolver::sens_line_search_pre_check(Vec , Vec , PetscBool *)
 {
   hook_list()->pre_iteration();
+
+#if defined(HAVE_FENV_H) && defined(DEBUG)
+  genius_assert( !fetestexcept(FE_INVALID) );
+#endif
+
   return;
 }
 
@@ -511,6 +540,11 @@ void FVM_NonlinearSolver::sens_line_search_post_check(Vec x, Vec y, Vec w, Petsc
   hook_list()->post_check((void*)f, (void*)x, (void*)y, (void*)w, _changed_y, _changed_w);
   *changed_y = _changed_y ? PETSC_TRUE : *changed_y;
   *changed_w = _changed_w ? PETSC_TRUE : *changed_w;
+
+#if defined(HAVE_FENV_H) && defined(DEBUG)
+  genius_assert( !fetestexcept(FE_INVALID) );
+#endif
+
   return;
 }
 
@@ -525,33 +559,63 @@ void FVM_NonlinearSolver::set_petsc_nonelinear_solver_type()
   switch (_nonlinear_solver_type)
   {
       case SolverSpecify::Newton:
-      ierr = SNESSetType(snes,SNESLS); genius_assert(!ierr);
-#if PETSC_VERSION_GE(3,3,0)
-      ierr = SNESLineSearchCreate(PETSC_COMM_WORLD, &snesls); genius_assert(!ierr);
-      ierr = SNESLineSearchSetType(snesls, SNESLINESEARCHBASIC); genius_assert(!ierr);
+#if PETSC_VERSION_GE(3,4,0)
+      ierr = SNESSetType(snes,SNESNEWTONLS); genius_assert(!ierr);
 #else
+      ierr = SNESSetType(snes,SNESLS); genius_assert(!ierr);
+#endif
+
+#if PETSC_VERSION_GE(3,4,0)
+      ierr = SNESGetLineSearch(snes, &snesls); genius_assert(!ierr);
+      ierr = SNESLineSearchSetType(snesls, SNESLINESEARCHBASIC); genius_assert(!ierr);
+#endif
+
+#if PETSC_VERSION_EQ(3,3,0)
+      ierr = SNESGetSNESLineSearch(snes, &snesls); genius_assert(!ierr);
+      ierr = SNESLineSearchSetType(snesls, SNESLINESEARCHBASIC); genius_assert(!ierr);
+#endif
+
+#if PETSC_VERSION_LE(3,2,0)
       ierr = SNESLineSearchSet(snes, SNESLineSearchNo, PETSC_NULL); genius_assert(!ierr);
 #endif
+
       // set the LineSearch pre/post check routine
       ierr = SNESLineSearchSetPreCheck(snesls, __genius_petsc_snes_pre_check, this); genius_assert(!ierr);
       ierr = SNESLineSearchSetPostCheck(snesls, __genius_petsc_snes_post_check, this); genius_assert(!ierr);
       return;
 
       case SolverSpecify::LineSearch:
-      ierr = SNESSetType(snes,SNESLS); genius_assert(!ierr);
-#if PETSC_VERSION_GE(3,3,0)
-      ierr = SNESLineSearchCreate(PETSC_COMM_WORLD, &snesls); genius_assert(!ierr);
-      ierr = SNESLineSearchSetType(snesls, SNESLINESEARCHBT); genius_assert(!ierr);
+#if PETSC_VERSION_GE(3,4,0)
+      ierr = SNESSetType(snes,SNESNEWTONLS); genius_assert(!ierr);
 #else
+      ierr = SNESSetType(snes,SNESLS); genius_assert(!ierr);
+#endif
+
+#if PETSC_VERSION_GE(3,4,0)
+      ierr = SNESGetLineSearch(snes, &snesls); genius_assert(!ierr);
+      ierr = SNESLineSearchSetType(snesls, SNESLINESEARCHBT); genius_assert(!ierr);
+#endif
+
+#if PETSC_VERSION_EQ(3,3,0)
+      ierr = SNESGetSNESLineSearch(snes, &snesls); genius_assert(!ierr);
+      ierr = SNESLineSearchSetType(snesls, SNESLINESEARCHBT); genius_assert(!ierr);
+#endif
+
+#if PETSC_VERSION_LE(3,2,0)
       ierr = SNESLineSearchSet(snes, SNESLineSearchCubic, PETSC_NULL); genius_assert(!ierr);
 #endif
+
       // set the LineSearch pre/post check routine
       ierr = SNESLineSearchSetPreCheck(snesls, __genius_petsc_snes_pre_check, this); genius_assert(!ierr);
       ierr = SNESLineSearchSetPostCheck(snesls, __genius_petsc_snes_post_check, this); genius_assert(!ierr);
       return;
 
       case SolverSpecify::TrustRegion:
+#if PETSC_VERSION_GE(3,4,0)
+      ierr = SNESSetType(snes, SNESNEWTONTR); genius_assert(!ierr);
+#else
       ierr = SNESSetType(snes, SNESTR); genius_assert(!ierr);
+#endif
       ierr = SNESSetTrustRegionTolerance(snes, 1e-30); genius_assert(!ierr);
       return;
 
@@ -665,8 +729,9 @@ void FVM_NonlinearSolver::set_petsc_linear_solver_type()
             ierr = KSPSetType (ksp, (char*) KSPPREONLY); genius_assert(!ierr);
             ierr = PCSetType  (pc, (char*) PCLU); genius_assert(!ierr);
             ierr = PCFactorSetMatSolverPackage (pc, "mumps"); genius_assert(!ierr);
-            //ierr = set_petsc_option("-mat_mumps_icntl_14", "80",false);  genius_assert(!ierr);
-            //ierr = set_petsc_option("-mat_mumps_icntl_23","4000",false);
+            // required for eliminate INFO -9 error
+            ierr = set_petsc_option("-mat_mumps_icntl_14", MUMPS_ICNTL_14,false);  genius_assert(!ierr);
+            ierr = set_petsc_option("-mat_mumps_icntl_23", MUMPS_ICNTL_23,false);  genius_assert(!ierr);
 #else
             MESSAGE<< "Warning:  no MUMPS solver configured, use BCGS instead!" << std::endl;
             RECORD();
@@ -734,6 +799,8 @@ void FVM_NonlinearSolver::set_petsc_linear_solver_type()
             MESSAGE<< "Using MUMPS linear solver..."<<std::endl;
             RECORD();
             ierr = PCFactorSetMatSolverPackage (pc, "mumps"); genius_assert(!ierr);
+            ierr = set_petsc_option("-mat_mumps_icntl_14",MUMPS_ICNTL_14,false);  genius_assert(!ierr);
+            ierr = set_petsc_option("-mat_mumps_icntl_23",MUMPS_ICNTL_23,false);  genius_assert(!ierr);
 #else
             MESSAGE << "Warning:  no MUMPS solver configured, use default LU solver instead!" << std::endl;
             RECORD();
@@ -872,7 +939,11 @@ void FVM_NonlinearSolver::set_petsc_preconditioner_type()
         //ierr = PCFactorSetMatOrderingType(pc, MATORDERING_ND); genius_assert(!ierr);
         //ierr = PCFactorSetMatOrderingType(pc, MATORDERING_RCM);
         //ierr = set_petsc_option("-pc_factor_nonzeros_along_diagonal", 0); genius_assert(!ierr);
+#if PETSC_VERSION_GE(3, 6, 0)
+        ierr = PCFactorSetAllowDiagonalFill(pc, PETSC_TRUE);genius_assert(!ierr);
+#else
         ierr = PCFactorSetAllowDiagonalFill(pc);genius_assert(!ierr);
+#endif
         //ierr = set_petsc_option("-pc_factor_diagonal_fill", 0);
         return;
 #endif
@@ -946,6 +1017,9 @@ void FVM_NonlinearSolver::set_petsc_preconditioner_type()
 #ifdef PETSC_HAVE_MUMPS
           MESSAGE<< "Using MUMPS as LU preconditioner..."<<std::endl;    RECORD();
           ierr = PCFactorSetMatSolverPackage (pc, "mumps"); genius_assert(!ierr);
+          ierr = set_petsc_option("-mat_mumps_icntl_14", MUMPS_ICNTL_14,false);  genius_assert(!ierr);
+          ierr = set_petsc_option("-mat_mumps_icntl_23", MUMPS_ICNTL_23, false);  genius_assert(!ierr);
+          //ierr = set_petsc_option("-mat_mumps_cntl_4","0.0",false);  genius_assert(!ierr); //static pivot
 #endif
           ierr = PCFactorSetReuseFill(pc, PETSC_TRUE);genius_assert(!ierr);
           ierr = PCFactorSetReuseOrdering(pc, PETSC_TRUE); genius_assert(!ierr);
@@ -959,6 +1033,8 @@ void FVM_NonlinearSolver::set_petsc_preconditioner_type()
           ierr = PCSetType (pc, (char*) PCLU);       genius_assert(!ierr);
           MESSAGE<< "Using MUMPS as parallel LU preconditioner..."<<std::endl;    RECORD();
           ierr = PCFactorSetMatSolverPackage (pc, "mumps"); genius_assert(!ierr);
+          ierr = set_petsc_option("-mat_mumps_icntl_14", MUMPS_ICNTL_14,false);  genius_assert(!ierr);
+          ierr = set_petsc_option("-mat_mumps_icntl_23", MUMPS_ICNTL_23,false);  genius_assert(!ierr);
           ierr = PCFactorSetReuseFill(pc, PETSC_TRUE);genius_assert(!ierr);
           ierr = PCFactorSetReuseOrdering(pc, PETSC_TRUE); genius_assert(!ierr);
           ierr = PCFactorSetColumnPivot(pc, 1.0); genius_assert(!ierr);
@@ -1002,7 +1078,11 @@ void FVM_NonlinearSolver::set_petsc_preconditioner_type()
           ierr = PCFactorSetReuseOrdering(pc, PETSC_TRUE); genius_assert(!ierr);
           ierr = PCFactorSetColumnPivot(pc, 1.0); genius_assert(!ierr);
           ierr = PCFactorSetShiftType(pc,MAT_SHIFT_NONZERO);genius_assert(!ierr);
+#if PETSC_VERSION_GE(3, 6, 0)
+          ierr = PCFactorSetAllowDiagonalFill(pc, PETSC_TRUE);genius_assert(!ierr);
+#else
           ierr = PCFactorSetAllowDiagonalFill(pc);genius_assert(!ierr);
+#endif
           switch ( _preconditioner_type )
           {
             case SolverSpecify::ASMILU0_PRECOND: set_petsc_option("-pc_factor_levels","0"); break;
@@ -1021,6 +1101,8 @@ void FVM_NonlinearSolver::set_petsc_preconditioner_type()
         ierr = set_petsc_option("-sub_ksp_type","preonly"); genius_assert(!ierr);
         ierr = set_petsc_option("-sub_pc_type","lu"); genius_assert(!ierr);
         ierr = set_petsc_option("-sub_pc_factor_mat_solver_package","mumps"); genius_assert(!ierr);
+        ierr = set_petsc_option("-mat_mumps_icntl_14", MUMPS_ICNTL_14,false);  genius_assert(!ierr);
+        ierr = set_petsc_option("-mat_mumps_icntl_23", MUMPS_ICNTL_23,false);  genius_assert(!ierr);
 #else
         ierr = set_petsc_option("-sub_pc_type","ilu"); genius_assert(!ierr);
 #endif
@@ -1100,38 +1182,27 @@ int FVM_NonlinearSolver::set_petsc_option(const std::string &key, const std::str
     ukey = std::string("-") + this->snes_prefix() + key.substr(1) ;
   else
     ukey = key;
+
+  // if the option has been set in command line
+  PetscBool  set;
+  PetscOptionsHasName(NULL, ukey.c_str(), &set);
+  if(set) return 0;
+
+  // set the option
   petsc_options[ukey] = value;
   return PetscOptionsSetValue(ukey.c_str(), value.c_str());
 }
 
 
 
-#if PETSC_VERSION_LE(3,1,0)
-#define SNES_DIVERGED_LINE_SEARCH SNES_DIVERGED_LS_FAILURE
-#endif
-void FVM_NonlinearSolver::sens_solve()
+
+void FVM_NonlinearSolver::snes_solve()
 {
   START_LOG("sens_solve()", "FVM_NonlinearSolver");
 
   // do snes solve
   SNESSolve ( snes, PETSC_NULL, x );
 
-  // get the converged reason
-  SNESConvergedReason reason;
-  SNESGetConvergedReason ( snes,&reason );
-
-  // if Line search failed, disable Line search
-  if ( reason == SNES_DIVERGED_LINE_SEARCH || reason == SNES_DIVERGED_LOCAL_MIN )
-  {
-    MESSAGE <<"------> nonlinear solver " << SNESConvergedReasons[reason] <<". Disable Line Search.\n\n\n";
-    RECORD();
-#if PETSC_VERSION_GE(3,3,0)
-    SNESLineSearchSetType(snesls, SNESLINESEARCHBASIC);
-#else
-    SNESLineSearchSet(snesls, SNESLineSearchNo,PETSC_NULL);
-#endif
-    SNESSolve ( snes, PETSC_NULL, x );
-  }
 
   STOP_LOG("sens_solve()", "FVM_NonlinearSolver");
 }
@@ -1225,10 +1296,13 @@ double FVM_NonlinearSolver::condition_number_of_jacobian_matrix()
   SVDGetConverged(svd_l, &nconv_l);
   if(nconv_l>0)
   {
-    SVDGetSingularTriplet(svd_l, 0, &sigma_large, PETSC_NULL, PETSC_NULL);
-    SVDComputeRelativeError(svd_l, 0, &error);
-    MESSAGE<< "Largest singular value  : " << std::scientific << std::setprecision(6)<<std::setw(10) << sigma_large << " with error " << error << std::endl;
-    RECORD();
+    for(PetscInt i=0; i<nconv_l; ++i)
+    {
+      SVDGetSingularTriplet(svd_l, i, &sigma_large, PETSC_NULL, PETSC_NULL);
+      SVDComputeRelativeError(svd_l, i, &error);
+      MESSAGE<< "Largest " << i << " singular value  : " << std::scientific << std::setprecision(6)<<std::setw(10) << sigma_large << " with error " << error << std::endl;
+      RECORD();
+    }
   }
 
   // find the smallest singular value
@@ -1237,14 +1311,19 @@ double FVM_NonlinearSolver::condition_number_of_jacobian_matrix()
   SVDGetConverged(svd_s, &nconv_s);
   if(nconv_s>0)
   {
-    SVDGetSingularTriplet(svd_s, 0, &sigma_small, PETSC_NULL, PETSC_NULL);
-    SVDComputeRelativeError(svd_s, 0, &error);
-    MESSAGE<< "Smallest singular value : " << std::scientific << std::setprecision(6)<<std::setw(10) << sigma_small << " with error " << error << std::endl;
-    RECORD();
+    for(PetscInt i=0; i<nconv_s; ++i)
+    {
+      SVDGetSingularTriplet(svd_s, i, &sigma_small, PETSC_NULL, PETSC_NULL);
+      SVDComputeRelativeError(svd_s, i, &error);
+      MESSAGE<< "Smallest " << i << " singular value : " << std::scientific << std::setprecision(6)<<std::setw(10) << sigma_small << " with error " << error << std::endl;
+      RECORD();
+    }
   }
 
   if(nconv_l>0 && nconv_s>0)
   {
+    SVDGetSingularTriplet(svd_l, 0, &sigma_large, PETSC_NULL, PETSC_NULL);
+    SVDGetSingularTriplet(svd_s, 0, &sigma_small, PETSC_NULL, PETSC_NULL);
     MESSAGE<< "Approx condition number: " << std::scientific << std::setprecision(6)<<std::setw(10) << sigma_large/sigma_small << std::endl;
     RECORD();
   }

@@ -129,15 +129,15 @@ int MeshGeneratorQuad4::set_region(const Parser::Card &c)
   }
 
 
-  if( static_cast<int>(region.ixmin) < 0  ||  region.ixmax > (IX-1) || region.ixmin > region.ixmax )
+  if( static_cast<int>(region.ixmin) < 0  ||  region.ixmax > (IX-1) || region.ixmin >= region.ixmax )
   {
-    MESSAGE<<"ERROR at " <<c.get_fileline()<< " REGION: Can't locate left/right boundary of region!\n";
+    MESSAGE<<"ERROR at " <<c.get_fileline()<< " REGION " << region.label << ": Can't locate left/right boundary of region!\n";
     RECORD();
     return 1;
   }
-  if( static_cast<int>(region.iymin) < 0  ||  region.iymax > (IY-1) || region.iymin > region.iymax )
+  if( static_cast<int>(region.iymin) < 0  ||  region.iymax > (IY-1) || region.iymin >= region.iymax )
   {
-    MESSAGE<<"ERROR at " <<c.get_fileline()<< " REGION: Can't locate top/bottom boundary of region!\n";
+    MESSAGE<<"ERROR at " <<c.get_fileline()<< " REGION " << region.label << ": Can't locate top/bottom boundary of region!\n";
     RECORD();
     return 1;
   }
@@ -168,7 +168,7 @@ int MeshGeneratorQuad4::set_region(const Parser::Card &c)
 int  MeshGeneratorQuad4::get_cell_region_id(unsigned int ixmin, unsigned int  ixmax,
                                             unsigned int iymin, unsigned int  iymax)
 {
-  int id = 0;
+  int id = -1;
 
   for(size_t i=0; i < region_array1d.size(); i++)
   {
@@ -277,6 +277,12 @@ int MeshGeneratorQuad4::set_face(const Parser::Card &c)
     return 1;
   }
 
+  if( ixmin == ixmax && iymin == iymax )
+  {
+    MESSAGE<<"ERROR at " <<c.get_fileline()<< " FACE: face degradated to a point!\n";
+    RECORD();
+    return 1;
+  }
 
   make_face(ixmin,ixmax,iymin,iymax,label);
 
@@ -505,8 +511,10 @@ int MeshGeneratorQuad4::do_mesh()
     for (unsigned int j=0; j<IY-1; j++)
       for (unsigned int i=0; i<IX-1; i++)
       {
+        int region_id = get_cell_region_id (i,i+1,j,j+1);
+        if( region_id <0 ) continue;
+        
         Elem* elem = _mesh.add_elem(Elem::build(QUAD4).release());
-
 
         elem->set_node(0) = _mesh.node_ptr( i + IX*(j)             );
         elem->set_node(1) = _mesh.node_ptr( (i+1) + IX*(j)         );
@@ -514,7 +522,7 @@ int MeshGeneratorQuad4::do_mesh()
         elem->set_node(3) = _mesh.node_ptr( i + IX*((j+1))         );
 
         // set subdomain id
-        elem->subdomain_id() = get_cell_region_id (i,i+1,j,j+1);
+        elem->subdomain_id() = region_id;
 
         // set boundary id, however, all the region faces are set to Neumann at present,
         // we should pick up the face lies on interface of two regions later.

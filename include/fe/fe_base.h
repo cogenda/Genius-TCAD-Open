@@ -199,7 +199,7 @@ public:
    * on the element.
    */
   const std::vector<std::vector<Real> >& get_phi() const
-  { genius_assert(!calculations_started || calculate_phi);
+  { assert(!calculations_started || calculate_phi);
     calculate_phi = true; return phi; }
 
   /**
@@ -214,7 +214,7 @@ public:
    * points.
    */
   const std::vector<std::vector<RealGradient> >& get_dphi() const
-  { genius_assert(!calculations_started || calculate_dphi);
+  { assert(!calculations_started || calculate_dphi);
     calculate_dphi = true; return dphi; }
 
   /**
@@ -222,7 +222,7 @@ public:
    * points.
    */
   const std::vector<std::vector<Real> >& get_dphidx() const
-  { genius_assert(!calculations_started || calculate_dphi);
+  { assert(!calculations_started || calculate_dphi);
     calculate_dphi = true; return dphidx; }
 
   /**
@@ -230,7 +230,7 @@ public:
    * points.
    */
   const std::vector<std::vector<Real> >& get_dphidy() const
-  { genius_assert(!calculations_started || calculate_dphi);
+  { assert(!calculations_started || calculate_dphi);
     calculate_dphi = true; return dphidy; }
 
   /**
@@ -238,28 +238,28 @@ public:
    * points.
    */
   const std::vector<std::vector<Real> >& get_dphidz() const
-  { genius_assert(!calculations_started || calculate_dphi);
+  { assert(!calculations_started || calculate_dphi);
     calculate_dphi = true; return dphidz; }
 
   /**
    * @returns Shape function derivatives in the xi direction.
    */
   const std::vector<std::vector<Real> >& get_dphidxi() const
-  { genius_assert(!calculations_started || calculate_dphi);
+  { assert(!calculations_started || calculate_dphi);
     calculate_dphi = true; return dphidxi; }
 
   /**
    * @returns Shape function derivatives in the eta direction.
    */
   const std::vector<std::vector<Real> >& get_dphideta() const
-  { genius_assert(!calculations_started || calculate_dphi);
+  { assert(!calculations_started || calculate_dphi);
     calculate_dphi = true; return dphideta; }
 
   /**
    * @returns Shape function derivatives in the zeta direction.
    */
   const std::vector<std::vector<Real> >& get_dphidzeta() const
-  { genius_assert(!calculations_started || calculate_dphi);
+  { assert(!calculations_started || calculate_dphi);
     calculate_dphi = true; return dphidzeta; }
 
 #ifdef ENABLE_SECOND_DERIVATIVES
@@ -269,7 +269,7 @@ public:
    * points.
    */
   const std::vector<std::vector<RealTensor> >& get_d2phi() const
-  { genius_assert(!calculations_started || calculate_d2phi);
+  { assert(!calculations_started || calculate_d2phi);
     calculate_d2phi = true; return d2phi; }
 
   /**
@@ -277,7 +277,7 @@ public:
    * points.
    */
   const std::vector<std::vector<Real> >& get_d2phidx2() const
-  { genius_assert(!calculations_started || calculate_d2phi);
+  { assert(!calculations_started || calculate_d2phi);
     calculate_d2phi = true; return d2phidx2; }
 
   /**
@@ -285,7 +285,7 @@ public:
    * points.
    */
   const std::vector<std::vector<Real> >& get_d2phidxdy() const
-  { genius_assert(!calculations_started || calculate_d2phi);
+  { assert(!calculations_started || calculate_d2phi);
     calculate_d2phi = true; return d2phidxdy; }
 
   /**
@@ -293,7 +293,7 @@ public:
    * points.
    */
   const std::vector<std::vector<Real> >& get_d2phidxdz() const
-  { genius_assert(!calculations_started || calculate_d2phi);
+  { assert(!calculations_started || calculate_d2phi);
     calculate_d2phi = true; return d2phidxdz; }
 
   /**
@@ -301,7 +301,7 @@ public:
    * points.
    */
   const std::vector<std::vector<Real> >& get_d2phidy2() const
-  { genius_assert(!calculations_started || calculate_d2phi);
+  { assert(!calculations_started || calculate_d2phi);
     calculate_d2phi = true; return d2phidy2; }
 
   /**
@@ -309,7 +309,7 @@ public:
    * points.
    */
   const std::vector<std::vector<Real> >& get_d2phidydz() const
-  { genius_assert(!calculations_started || calculate_d2phi);
+  { assert(!calculations_started || calculate_d2phi);
     calculate_d2phi = true; return d2phidydz; }
 
   /**
@@ -317,7 +317,7 @@ public:
    * points.
    */
   const std::vector<std::vector<Real> >& get_d2phidz2() const
-  { genius_assert(!calculations_started || calculate_d2phi);
+  { assert(!calculations_started || calculate_d2phi);
     calculate_d2phi = true; return d2phidz2; }
 
 #endif

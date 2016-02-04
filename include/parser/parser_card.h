@@ -241,6 +241,16 @@ namespace Parser
     bool  is_parameter_exist(const std::string & parameter_name) const
       { return _parameter_map.find(parameter_name) != _parameter_map.end() ; }
 
+    /**
+     * @return true if parameter exist.
+     */
+    bool  is_parameter_exist(const std::string & parameter_name, const std::string &alias) const
+    {
+      bool find_p     = _parameter_map.find(parameter_name) != _parameter_map.end() ;
+      bool find_alias = _parameter_map.find(alias) != _parameter_map.end() ;
+      return (find_p || find_alias);
+    }
+
 
     /**
      * @return the number of parameters with name parameter_name.
@@ -253,7 +263,6 @@ namespace Parser
      */
     size_t parameter_size() const
     {
-      genius_assert(_parameter_map.size()==_parameter_vec.size());
       return _parameter_map.size();
     }
 
@@ -315,7 +324,7 @@ namespace Parser
      */
     bool is_enum_value( const std::string & name,  const std::string &value) const
     {
-      return value == get_string(name.c_str() , "");
+      return value == get_string_lower_case(name.c_str() , "");
     }
 
     /**

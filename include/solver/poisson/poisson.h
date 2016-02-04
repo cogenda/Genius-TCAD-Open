@@ -24,7 +24,7 @@
 #ifndef __poisson_h__
 #define __poisson_h__
 
-#include "fvm_nonlinear_solver.h"
+#include "fvm_flex_nonlinear_solver.h"
 #include "enum_solver_specify.h"
 
 /**
@@ -34,13 +34,13 @@
  * For semiconductor region, electron and hole density n and p
  * are the function of \Phi ( actually, related with fermi potential  )
  */
-class PoissonSolver : public FVM_NonlinearSolver
+class PoissonSolver : public FVM_FlexNonlinearSolver
 {
 public:
   /**
    * the constructor of PoissonSolver, take system as parameter
    */
-  PoissonSolver(SimulationSystem & system): FVM_NonlinearSolver(system)
+  PoissonSolver(SimulationSystem & system): FVM_FlexNonlinearSolver(system)
   {system.record_active_solver(this->solver_type());}
 
   /**
@@ -91,7 +91,7 @@ public:
       case SemiconductorRegion : return 1;
       case InsulatorRegion     : return 1;
       case ElectrodeRegion     : return 1;
-      case MetalRegion    : return 1;
+      case MetalRegion         : return 1;
       default : return 0;
     }
   }
@@ -107,41 +107,6 @@ public:
       default: return 0;   // others, no extra bc equation
     }
   }
-
-  /**
-   * @return the matrix bandwidth of each boundary condition which owns extra dofs
-   */
-  virtual unsigned int bc_bandwidth(const BoundaryCondition * bc) const
-  {
-    switch (bc->bc_type())
-    {
-      case ChargedContact   :  return 1;  // the ChargedContact bc equation has a bandwidth of 1
-      case ChargeIntegral   :  return bc->inter_connect().size()+1;
-      // others, bandwidth is zero
-      default: return 0;
-    }
-  }
-
-  /**
-   * @return the boundary condition dofs contributed by each boundary node
-   */
-  virtual unsigned int bc_node_dofs(const BoundaryCondition * bc) const
-  {
-    switch (bc->bc_type())
-    {
-      case ChargedContact    : return 1; // node on ChargedContact has one dof to bc equation
-      default: return 0;
-    }
-  }
-
-
-  /**
-   * indicates if PDE involves all neighbor elements.
-   * when it is true, the matrix bandwidth will include all the nodes belongs to neighbor elements, i.e. DDM solver
-   * when it is false, only neighbor nodes (link local node by edge) are appeared in matrix bandwidth, i.e. poisson solver.
-   */
-  virtual bool all_neighbor_elements_involved(const SimulationRegion * ) const
-  { return false; }
 
 
   /**
@@ -165,7 +130,7 @@ public:
   virtual void sens_line_search_post_check(Vec x, Vec y, Vec w, PetscBool *changed_y, PetscBool *changed_w)
   {
     this->potential_damping(x, y, w, changed_y, changed_w);
-    FVM_NonlinearSolver::sens_line_search_post_check(x, y, w, changed_y, changed_w);
+    FVM_FlexNonlinearSolver::sens_line_search_post_check(x, y, w, changed_y, changed_w);
   }
 
 private:

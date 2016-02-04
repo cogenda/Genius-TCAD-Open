@@ -54,9 +54,7 @@
 #include <limits>
 #include <iostream>
 
-#include "asinh.hpp" // for asinh
-#include "acosh.hpp" // for acosh
-#include "atanh.hpp" // for atanh
+#include "std_ext.h"
 
 #include "genius_dll.h"
 
@@ -76,8 +74,11 @@ extern "C"
   DLL_EXPORT_DECLARE  void  set_ad_number(const unsigned int p);
 }
 
-typedef double PetscScalar;
-
+#if (WITH_PETSCSCALAR_FLOAT128 && __GNUC__ >= 4 && __GNUC_MINOR__ >=6)    
+  typedef __float128 PetscScalar;
+#else
+  typedef double PetscScalar;
+#endif  
 
 namespace adtl
 {
@@ -564,10 +565,10 @@ namespace adtl
   const AutoDScalar pow(const AutoDScalar &a, PetscScalar v)
   {
     AutoDScalar tmp;
-    tmp.val=::pow(a.val, v);
+    tmp.val=std::pow(a.val, v);
     PetscScalar tmp2;
     if(v-1 < 0 && a.val==0.0) tmp2 = 0.0;
-    else tmp2=v*::pow(a.val, v-1);
+    else tmp2=v*std::pow(a.val, v-1);
     for (unsigned int _i=0; _i<AutoDScalar::numdir; ++_i)
       tmp.adval[_i]=tmp2*a.adval[_i];
     return tmp;
@@ -576,8 +577,8 @@ namespace adtl
   const AutoDScalar pow(const AutoDScalar &a, const AutoDScalar &b)
   {
     AutoDScalar tmp;
-    tmp.val=::pow(a.val, b.val);
-    PetscScalar tmp2=b.val*::pow(a.val, b.val-1);
+    tmp.val=std::pow(a.val, b.val);
+    PetscScalar tmp2=b.val*std::pow(a.val, b.val-1);
     PetscScalar tmp3=::log(a.val)*tmp.val;
     for (unsigned int _i=0; _i<AutoDScalar::numdir; ++_i)
       tmp.adval[_i]=tmp2*a.adval[_i]+tmp3*b.adval[_i];
@@ -587,7 +588,7 @@ namespace adtl
   const AutoDScalar pow(PetscScalar v, const AutoDScalar &a)
   {
     AutoDScalar tmp;
-    tmp.val=::pow(v, a.val);
+    tmp.val=std::pow(v, a.val);
     PetscScalar tmp2=tmp.val*::log(v);
     for (unsigned int _i=0; _i<AutoDScalar::numdir; ++_i)
       tmp.adval[_i]=tmp2*a.adval[_i];
@@ -639,7 +640,7 @@ namespace adtl
   const AutoDScalar asinh (const AutoDScalar &a)
   {
     AutoDScalar tmp;
-    tmp.val=boost::math::asinh(a.val);
+    tmp.val=::asinh(a.val);
     PetscScalar tmp2=::sqrt(a.val*a.val+1);
     for (unsigned int _i=0; _i<AutoDScalar::numdir; ++_i)
       tmp.adval[_i]=a.adval[_i]/tmp2;
@@ -649,7 +650,7 @@ namespace adtl
   const AutoDScalar acosh (const AutoDScalar &a)
   {
     AutoDScalar tmp;
-    tmp.val=boost::math::acosh(a.val);
+    tmp.val=::acosh(a.val);
     PetscScalar tmp2=::sqrt(a.val*a.val-1);
     for (unsigned int _i=0; _i<AutoDScalar::numdir; ++_i)
       tmp.adval[_i]=a.adval[_i]/tmp2;
@@ -659,7 +660,7 @@ namespace adtl
   const AutoDScalar atanh (const AutoDScalar &a)
   {
     AutoDScalar tmp;
-    tmp.val=boost::math::atanh(a.val);
+    tmp.val=::atanh(a.val);
     PetscScalar tmp2=1-a.val*a.val;
     for (unsigned int _i=0; _i<AutoDScalar::numdir; ++_i)
       tmp.adval[_i]=a.adval[_i]/tmp2;
@@ -893,7 +894,7 @@ namespace adtl
 
   const AutoDScalar ldexp (const AutoDScalar &a, const PetscScalar v)
   {
-    return a*::pow(2.,v);
+    return a*std::pow(2.,v);
   }
 
   const AutoDScalar ldexp (const PetscScalar v, const AutoDScalar &a)

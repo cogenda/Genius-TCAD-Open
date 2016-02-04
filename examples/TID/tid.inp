@@ -1,0 +1,50 @@
+#==============================================================================
+# Genius example: Total dose effect simulation
+#==============================================================================
+
+GLOBAL    T=300 
+
+# Create an initial simulation mesh
+MESH      Type=S_HEX8
+X.MESH    WIDTH=0.1    N.SPACES=2 
+Y.MESH    DEPTH=1.0    N.SPACES=30
+Z.MESH    WIDTH=0.1    N.SPACES=2
+
+
+# Region material set to SiO2
+REGION    Label=SiO2    Material=SiO2
+FACE      Label=Elec1   Location=TOP
+FACE      Label=Elec2   Location=BOTTOM
+
+
+#------------------------------------------------------------------------------
+# voltage sources.
+vsource Type = VDC    ID = GND  Tdelay=0 Vconst=0.0
+vsource Type = VDC    ID = VCC  Tdelay=0 Vconst=1.0
+
+
+#------------------------------------------------------------------------------
+# specify boundary condition.
+boundary Type=GateContact      ID=Elec1   WorkFunction=4.7 Res=0 Cap=0 Ind=0
+boundary Type=GateContact      ID=Elec2   WorkFunction=4.7 Res=0 Cap=0 Ind=0
+
+#------------------------------------------------------------------------------
+# compute a biased state.
+ATTACH   Electrode=Elec1 Vapp=VCC
+METHOD   Type=Poisson LS=LU
+SOLVE
+
+
+#------------------------------------------------------------------------------
+# simulate TID effect. 
+
+# do 100krad TID calculation under given bias
+TID type=drift totaldose=100e3 doserate=10.0 dosestep=1e3 opstep=100e3
+
+
+
+
+# export result
+EXPORT VTK=tid.vtu
+
+END

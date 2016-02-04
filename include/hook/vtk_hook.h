@@ -77,6 +77,14 @@ private:
   */
   unsigned int count;
 
+
+  /**
+   * only save vtk in this interval
+   */
+  double _t_start;
+  double _t_stop;
+
+
   /**
    * last value
    */
@@ -92,6 +100,10 @@ private:
   double _f_step;
   double _v_step;
   double _i_step;
+
+
+  unsigned int lag_count;
+  unsigned int lag;
 
   /**
    * the time(voltage, current) sequence for paraview animation

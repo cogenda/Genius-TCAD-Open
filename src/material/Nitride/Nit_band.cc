@@ -28,7 +28,6 @@ class GSS_Nitride_BandStructure : public PMII_BandStructure
 {
 private:
 
-  PetscScalar AFFINITY;  // The electron affinity for the material.
   PetscScalar BANDGAP;   // The bandgap for the material.
 
 
@@ -41,20 +40,25 @@ private:
 
   void   Band_Init()
   {
-    AFFINITY = 2.5*eV;
     BANDGAP  = 4.7*eV;
 
     HCI_ECN  = 8.790000e+04*V/cm;
     HCI_ECP  = 8.790000e+04*V/cm;
-    HCI_BARLN = 2.590000E-04*pow(V*cm, 0.5);
-    HCI_TUNLN = 3.000000E-05*pow(V*cm*cm, 1.0/3.0);
-    HCI_BARLP = 2.590000E-04*pow(V*cm, 0.5);
-    HCI_TUNLP = 3.000000E-05*pow(V*cm*cm, 1.0/3.0);
+    HCI_BARLN = 2.590000E-04*std::pow(V*cm, 0.5);
+    HCI_TUNLN = 3.000000E-05*std::pow(V*cm*cm, 1.0/3.0);
+    HCI_BARLP = 2.590000E-04*std::pow(V*cm, 0.5);
+    HCI_TUNLP = 3.000000E-05*std::pow(V*cm*cm, 1.0/3.0);
   }
 
 public:
 
   PetscScalar Eg            (const PetscScalar &Tl) const { return BANDGAP;  }
+  
+  PetscScalar EffecElecMass (const PetscScalar &Tl) const { return me; }
+  
+  PetscScalar EffecHoleMass  (const PetscScalar &Tl) const { return me; }
+  
+  PetscScalar ARichardson() const { return 1.100000e+02*A/(K*cm)/(K*cm); }
 
 public:
 
@@ -70,13 +74,21 @@ public:
     return exp( -sqrt(HCI_ECP/E_ins) );
   }
 
-  PetscScalar HCI_Barrier_n(const PetscScalar &affinity_semi, const PetscScalar &,
+  PetscScalar HCI_Barrier_n(const PetscScalar &affinity_semi, const PetscScalar &, const PetscScalar &affinity_ins,
                             const PetscScalar &t_ins, const PetscScalar &E_ins) const
-  { return (affinity_semi - AFFINITY) - HCI_BARLN*pow(E_ins, 0.5) - HCI_TUNLN*pow(E_ins, 2.0/3.0) ; }
+  {
+    if(E_ins > 0)
+      return (affinity_semi - affinity_ins) - HCI_BARLN*std::pow(E_ins, 0.5) - HCI_TUNLN*std::pow(E_ins, 2.0/3.0) ;
+    return (affinity_semi - affinity_ins) - E_ins*t_ins;
+  }
 
-  PetscScalar HCI_Barrier_p(const PetscScalar &affinity_semi, const PetscScalar & Eg_semi,
+  PetscScalar HCI_Barrier_p(const PetscScalar &affinity_semi, const PetscScalar & Eg_semi, const PetscScalar &affinity_ins,
                             const PetscScalar &t_ins, const PetscScalar &E_ins) const
-  { return (AFFINITY + BANDGAP - affinity_semi -  Eg_semi) - HCI_BARLP*pow(E_ins, 0.5) - HCI_TUNLP*pow(E_ins, 2.0/3.0) ; }
+  {
+    if(E_ins < 0)
+      return (affinity_ins + BANDGAP - affinity_semi -  Eg_semi) - HCI_BARLP*std::pow(fabs(E_ins), 0.5) - HCI_TUNLP*std::pow(fabs(E_ins), 2.0/3.0) ;
+    return (affinity_ins + BANDGAP - affinity_semi -  Eg_semi) + E_ins*t_ins;
+  }
 
   PetscScalar J_FN_Tunneling(const PetscScalar &E_ins, const PetscScalar &alpha) const
   { return 0.0; }

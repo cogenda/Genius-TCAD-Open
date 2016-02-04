@@ -24,8 +24,8 @@ extern "C"
     double nodeset;		/* Value of the .nodeset option */
     double *ptr;		/* ??? */
     struct sCKTnode *next;	/* pointer to the next node */
-  unsigned int icGiven:1;	/* FLAG ic given */
-  unsigned int nsGiven:1;	/* FLAG nodeset given */
+    unsigned int icGiven;	/* FLAG ic given */
+    unsigned int nsGiven;	/* FLAG nodeset given */
   }
   CKTnode;
 

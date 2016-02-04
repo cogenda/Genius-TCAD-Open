@@ -1,17 +1,17 @@
 /*
   MonotCubicInterpolator
   Copyright (C) 2006 Statoil ASA
-
+ 
   This program is free software; you can redistribute it and/or
   modify it under the terms of the GNU General Public License
   as published by the Free Software Foundation; either version 2
   of the License, or (at your option) any later version.
-
+ 
   This program is distributed in the hope that it will be useful,
   but WITHOUT ANY WARRANTY; without even the implied warranty of
   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
   GNU General Public License for more details.
-
+ 
   You should have received a copy of the GNU General Public License
   along with this program; if not, write to the Free Software
   Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
@@ -20,15 +20,15 @@
 /**
    @file MonotCubicInterpolator.C
    @brief Represents one dimensional function f with single valued argument x
-
+ 
    Class to represent a one-dimensional function with single-valued
    argument.  Cubic interpolation, preserving the monotonicity of the
    discrete known function values
-
+ 
    @see MonotCubicInterpolator.h for further documentation.
-
+ 
    $Id$
-
+ 
    @author Håvard Berland <havb (at) statoil.com>, December 2006
 */
 
@@ -46,26 +46,26 @@
 using namespace std;
 
 /*
-
+ 
   SOME DISCUSSION ON DATA STORAGE:
-
+ 
   Internal data structure of points and values:
-
+ 
   vector(s):
    - Easier coding
    - Faster vector operations when setting up derivatives.
    - sorting slightly more complex.
    - insertion of further values bad.
-
+ 
   vector<double,double>
    - easy sorting
    - code complexity almost as for map.
    - insertion of additional values bad
-
+ 
   vector over struct datapoint { x, f, d}
    - nice code
    - not as sortable, insertion is cumbersome.
-
+ 
    ** This is used currently: **
   map<double, double> one for (x,f) and one for (x,d)
    - Naturally sorted on x-values (done by the map-construction)
@@ -74,43 +74,51 @@ using namespace std;
    - easier to just add code to linear interpolation code
    - x-data is duplicated, but that memory waste is
      unlikely to represent a serious issue.
-
+ 
   map<double, <double, double> >
    - naturally couples x-value, f-value and d-value
    - even more unreadable(??) code?
    - higher skills needed by programmer.
-
-
+ 
+ 
   MONOTONE QUBIC INTERPOLATION:
-
+ 
   It is a local algorithm. Adding one point only incur recomputation
   of values in a neighbourhood of the point (in the interval getting
   divided).
-
+ 
   NOTE: We do not currently make use of this local fact. Upon
   insertion of a new data pair, everything is recomputed. Revisit this
   only when then becomes a bottleneck.
-
+ 
 */
 
 
 
 
 MonotCubicInterpolator::
-MonotCubicInterpolator(const vector<double> & x, const vector<double> & f) {
-  if (x.size() != f.size()) {
+MonotCubicInterpolator(const vector<double> & x, const vector<double> & f)
+{
+  set(x, f);
+}
+
+
+void MonotCubicInterpolator::set(const std::vector<double> & x , const std::vector<double> & f)
+{
+  if (x.size() != f.size())
+  {
     throw("Unable to constuct MonotCubicInterpolator from vectors.") ;
   }
 
   // Add the contents of the input vectors to our map of values.
   vector<double>::const_iterator posx, posf;
-  for (posx = x.begin(), posf = f.begin(); posx != x.end(); ++posx, ++posf) {
+  for (posx = x.begin(), posf = f.begin(); posx != x.end(); ++posx, ++posf)
+  {
     data[*posx] = *posf ;
   }
 
   computeInternalFunctionData();
 }
-
 
 
 bool
@@ -121,40 +129,47 @@ read(const std::string & datafilename, int xColumn, int fColumn)
   ddata.clear() ;
 
   ifstream datafile_fs(datafilename.c_str());
-  if (!datafile_fs) {
+  if (!datafile_fs)
+  {
     return false ;
   }
 
   string linestring;
-  while (!datafile_fs.eof()) {
+  while (!datafile_fs.eof())
+  {
     getline(datafile_fs, linestring);
 
     // Replace commas with space:
     string::size_type pos = 0;
-    while ( (pos = linestring.find(",", pos)) != string::npos ) {
-        // cout << "Found comma at position " << pos << endl;
-        linestring.replace(pos, 1, " ");
-        pos++;
+    while ( (pos = linestring.find(",", pos)) != string::npos )
+    {
+      // cout << "Found comma at position " << pos << endl;
+      linestring.replace(pos, 1, " ");
+      pos++;
     }
 
     stringstream strs(linestring);
     int columnindex = 0;
     std::vector<double> value;
-    if (linestring.size() > 0 && linestring.at(0) != '#') {
-        while (!(strs.rdstate() & std::ios::failbit)) {
-            double tmp;
-            strs >> tmp;
-            value.push_back(tmp);
-            columnindex++;
-        }
+    if (linestring.size() > 0 && linestring.at(0) != '#')
+    {
+      while (!(strs.rdstate() & std::ios::failbit))
+      {
+        double tmp;
+        strs >> tmp;
+        value.push_back(tmp);
+        columnindex++;
+      }
     }
-    if (columnindex >= (max(xColumn, fColumn))) {
+    if (columnindex >= (max(xColumn, fColumn)))
+    {
       data[value[xColumn-1]] =  value[fColumn-1] ;
     }
   }
   datafile_fs.close();
 
-  if (data.size() == 0) {
+  if (data.size() == 0)
+  {
     return false ;
   }
 
@@ -165,9 +180,11 @@ read(const std::string & datafilename, int xColumn, int fColumn)
 
 void
 MonotCubicInterpolator::
-addPair(double newx, double newf) throw(const char*) {
+addPair(double newx, double newf) throw(const char*)
+{
 #if 0
-  if (isnan(newx) || isinf(newx) || isnan(newf) || isinf(newf)) {
+  if (isnan(newx) || isinf(newx) || isnan(newf) || isinf(newf))
+  {
     throw("MonotCubicInterpolator: addPair() received inf/nan input.");
   }
 #endif
@@ -182,9 +199,11 @@ addPair(double newx, double newf) throw(const char*) {
 
 double
 MonotCubicInterpolator::
-evaluate(double x) const throw(const char*){
+evaluate(double x) const throw(const char*)
+{
 #if 0
-  if (isnan(x) || isinf(x)) {
+  if (isnan(x) || isinf(x))
+  {
     throw("MonotCubicInterpolator: evaluate() received inf/nan input.");
   }
 #endif
@@ -192,18 +211,22 @@ evaluate(double x) const throw(const char*){
   map<double,double>::const_iterator xf_iterator = data.lower_bound(x);
 
   // First check if we must extrapolate:
-  if (xf_iterator == data.begin()) {
-    if (data.begin()->first == x) { // Just on the interval limit
+  if (xf_iterator == data.begin())
+  {
+    if (data.begin()->first == x)
+    { // Just on the interval limit
       return data.begin()->second;
     }
-    else {
+    else
+    {
       // Constant extrapolation (!!)
       return data.begin()->second;
     }
   }
-  if (xf_iterator == data.end()) {
-      // Constant extrapolation (!!)
-      return data.rbegin()->second;
+  if (xf_iterator == data.end())
+  {
+    // Constant extrapolation (!!)
+    return data.rbegin()->second;
   }
 
 
@@ -214,17 +237,19 @@ evaluate(double x) const throw(const char*){
   // we now have: xf2.first > x
 
   // Linear interpolation if derivative data is not available:
-  if (ddata.size() != data.size()) {
+  if (ddata.size() != data.size())
+  {
     double finterp =  xf1.second +
-      (xf2.second - xf1.second) / (xf2.first - xf1.first)
-      * (x - xf1.first);
+                      (xf2.second - xf1.second) / (xf2.first - xf1.first)
+                      * (x - xf1.first);
     return finterp;
   }
-  else { // Do Cubic Hermite spline
+  else
+  { // Do Cubic Hermite spline
     double t = (x - xf1.first)/(xf2.first - xf1.first); // t \in [0,1]
     double h = xf2.first - xf1.first;
     double finterp
-      = xf1.second       * H00(t)
+    = xf1.second       * H00(t)
       + ddata[xf1.first] * H10(t) * h
       + xf2.second       * H01(t)
       + ddata[xf2.first] * H11(t) * h ;
@@ -250,7 +275,8 @@ get_xVector() const
 
   vector<double> outputvector;
   outputvector.reserve(data.size());
-  for (xf_iterator = data.begin(); xf_iterator != data.end(); ++xf_iterator) {
+  for (xf_iterator = data.begin(); xf_iterator != data.end(); ++xf_iterator)
+  {
     outputvector.push_back(xf_iterator->first);
   }
   return outputvector;
@@ -266,7 +292,8 @@ get_fVector() const
 
   vector<double> outputvector;
   outputvector.reserve(data.size());
-  for (xf_iterator = data.begin(); xf_iterator != data.end(); ++xf_iterator) {
+  for (xf_iterator = data.begin(); xf_iterator != data.end(); ++xf_iterator)
+  {
     outputvector.push_back(xf_iterator->second);
   }
   return outputvector;
@@ -282,15 +309,17 @@ toString() const
   std::string dataString;
   std::stringstream dataStringStream;
   for (map<double,double>::const_iterator it = data.begin();
-       it != data.end(); ++it) {
-      dataStringStream << setprecision(precision) << it->first;
+       it != data.end(); ++it)
+  {
+    dataStringStream << setprecision(precision) << it->first;
     dataStringStream << '\t';
     dataStringStream << setprecision(precision) << it->second;
     dataStringStream << '\n';
   }
   dataStringStream << "Derivative values:" << endl;
   for (map<double,double>::const_iterator it = ddata.begin();
-       it != ddata.end(); ++it) {
+       it != ddata.end(); ++it)
+  {
     dataStringStream << setprecision(precision) << it->first;
     dataStringStream << '\t';
     dataStringStream << setprecision(precision) << it->second;
@@ -306,7 +335,8 @@ pair<double,double>
 MonotCubicInterpolator::
 getMissingX() const throw(const char*)
 {
-  if( data.size() < 2) {
+  if( data.size() < 2)
+  {
     throw("MonotCubicInterpolator::getMissingX() only one datapoint.");
   }
 
@@ -320,10 +350,12 @@ getMissingX() const throw(const char*)
 
   for (xf_iterator = data.begin(), xf_next_iterator = ++(data.begin());
        xf_next_iterator != data.end();
-       ++xf_iterator, ++xf_next_iterator) {
+       ++xf_iterator, ++xf_next_iterator)
+  {
     double absfDiff = fabs((double)(*xf_next_iterator).second
                            - (double)(*xf_iterator).second);
-    if (absfDiff > maxfDiffValue) {
+    if (absfDiff > maxfDiffValue)
+    {
       maxfDiffPair_iterator = xf_iterator;
       maxfDiffValue = absfDiff;
     }
@@ -338,19 +370,24 @@ getMissingX() const throw(const char*)
 
 pair<double,double>
 MonotCubicInterpolator::
-getMaximumF() const throw(const char*) {
-  if (data.size() <= 1) {
+getMaximumF() const throw(const char*)
+{
+  if (data.size() <= 1)
+  {
     throw ("MonotCubicInterpolator::getMaximumF() empty data.") ;
   }
   if (strictlyIncreasing)
     return *data.rbegin();
   else if (strictlyDecreasing)
     return *data.begin();
-  else {
+  else
+  {
     pair<double,double> maxf = *data.rbegin() ;
     map<double,double>::const_iterator xf_iterator;
-    for (xf_iterator = data.begin() ; xf_iterator != data.end(); ++xf_iterator) {
-      if (xf_iterator->second > maxf.second) {
+    for (xf_iterator = data.begin() ; xf_iterator != data.end(); ++xf_iterator)
+    {
+      if (xf_iterator->second > maxf.second)
+      {
         maxf = *xf_iterator ;
       } ;
     }
@@ -361,20 +398,26 @@ getMaximumF() const throw(const char*) {
 
 pair<double,double>
 MonotCubicInterpolator::
-getMinimumF() const throw(const char*) {
-  if (data.size() <= 1) {
+getMinimumF() const throw(const char*)
+{
+  if (data.size() <= 1)
+  {
     throw ("MonotCubicInterpolator::getMinimumF() empty data.") ;
   }
   if (strictlyIncreasing)
     return *data.begin();
-  else if (strictlyDecreasing) {
+  else if (strictlyDecreasing)
+  {
     return *data.rbegin();
   }
-  else {
+  else
+  {
     pair<double,double> minf = *data.rbegin() ;
     map<double,double>::const_iterator xf_iterator;
-    for (xf_iterator = data.begin() ; xf_iterator != data.end(); ++xf_iterator) {
-      if (xf_iterator->second < minf.second) {
+    for (xf_iterator = data.begin() ; xf_iterator != data.end(); ++xf_iterator)
+    {
+      if (xf_iterator->second < minf.second)
+      {
         minf = *xf_iterator ;
       } ;
     }
@@ -385,10 +428,12 @@ getMinimumF() const throw(const char*) {
 
 void
 MonotCubicInterpolator::
-computeInternalFunctionData() const {
+computeInternalFunctionData() const
+{
 
   /* The contents of this function is meaningless if there is only one datapoint */
-  if (data.size() <= 1) {
+  if (data.size() <= 1)
+  {
     return;
   }
 
@@ -415,7 +460,8 @@ computeInternalFunctionData() const {
   xf_next_iterator = ++(data.begin());
   /* Cater for non-strictness, search for direction for monotoneness */
   while (xf_next_iterator != data.end() &&
-         xf_iterator->second == xf_next_iterator->second) {
+         xf_iterator->second == xf_next_iterator->second)
+  {
     /* Ok, equal values, this is not strict. */
     strictlyMonotone = false;
     strictlyIncreasing = false;
@@ -426,47 +472,57 @@ computeInternalFunctionData() const {
   }
 
 
-  if (xf_next_iterator != data.end()) {
+  if (xf_next_iterator != data.end())
+  {
 
-    if ( xf_iterator->second > xf_next_iterator->second) {
+    if ( xf_iterator->second > xf_next_iterator->second)
+    {
       // Ok, decreasing, check monotoneness:
       strictlyDecreasing = true;// if strictlyMonotone == false, this one should not be trusted anyway
       decreasing = true;
       strictlyIncreasing = false;
       increasing = false;
-      while(++xf_iterator, ++xf_next_iterator != data.end()) {
-        if ((*xf_iterator).second <  (*xf_next_iterator).second) {
+      while(++xf_iterator, ++xf_next_iterator != data.end())
+      {
+        if ((*xf_iterator).second <  (*xf_next_iterator).second)
+        {
           monotone = false;
           strictlyMonotone = false;
           strictlyDecreasing = false; // meaningless now
           break; // out of while loop
         }
-        if ((*xf_iterator).second <= (*xf_next_iterator).second) {
+        if ((*xf_iterator).second <= (*xf_next_iterator).second)
+        {
           strictlyMonotone = false;
           strictlyDecreasing = false; // meaningless now
         }
       }
     }
-    else if (xf_iterator->second < xf_next_iterator->second) {
+    else if (xf_iterator->second < xf_next_iterator->second)
+    {
       // Ok, assume increasing, check monotoneness:
       strictlyDecreasing = false;
       strictlyIncreasing = true;
       decreasing = false;
       increasing = true;
-      while(++xf_iterator, ++xf_next_iterator != data.end()) {
-        if ((*xf_iterator).second >  (*xf_next_iterator).second) {
+      while(++xf_iterator, ++xf_next_iterator != data.end())
+      {
+        if ((*xf_iterator).second >  (*xf_next_iterator).second)
+        {
           monotone = false;
           strictlyMonotone = false;
           strictlyIncreasing = false; // meaningless now
           break; // out of while loop
         }
-        if ((*xf_iterator).second >= (*xf_next_iterator).second) {
+        if ((*xf_iterator).second >= (*xf_next_iterator).second)
+        {
           strictlyMonotone = false;
           strictlyIncreasing = false; // meaningless now
         }
       }
     }
-    else {
+    else
+    {
       // first two values must be equal if we get
       // here, but that should have been taken care
       // of by the while loop above.
@@ -476,9 +532,8 @@ computeInternalFunctionData() const {
   }
   computeSimpleDerivatives();
 
-  if (monotone) {
-    adjustDerivativesForMonotoneness();
-  }
+  // do it when locally monotone
+  adjustDerivativesForMonotoneness();
 
   strictlyMonotoneCached = true;
   monotoneCached = true;
@@ -503,44 +558,48 @@ computeInternalFunctionData() const {
 //       Assumes at least 3 datapoints. If less than three, this function is a noop.
 void
 MonotCubicInterpolator::
-chopFlatEndpoints(const double epsilon) {
+chopFlatEndpoints(const double epsilon)
+{
 
-    if (getSize() < 3) {
-        return;
-    }
+  if (getSize() < 3)
+  {
+    return;
+  }
 
-    map<double,double>::iterator xf_iterator;
-    map<double,double>::iterator xf_next_iterator;
+  map<double,double>::iterator xf_iterator;
+  map<double,double>::iterator xf_next_iterator;
 
-    // Clear flags:
-    strictlyMonotoneCached = false;
-    monotoneCached = false;
+  // Clear flags:
+  strictlyMonotoneCached = false;
+  monotoneCached = false;
 
-    // Chop left end:
-    xf_iterator = data.begin();
-    xf_next_iterator = ++(data.begin());
-    // Erase data points that are similar to its right value from the left end.
-    while ((xf_next_iterator != data.end()) &&
-           (fabs(xf_iterator->second - xf_next_iterator->second) < epsilon )) {
-        xf_next_iterator++;
-        data.erase(xf_iterator);
-	xf_iterator++;
-    }
+  // Chop left end:
+  xf_iterator = data.begin();
+  xf_next_iterator = ++(data.begin());
+  // Erase data points that are similar to its right value from the left end.
+  while ((xf_next_iterator != data.end()) &&
+         (fabs(xf_iterator->second - xf_next_iterator->second) < epsilon ))
+  {
+    xf_next_iterator++;
+    data.erase(xf_iterator);
+    xf_iterator++;
+  }
 
-    xf_iterator = data.end();
-    xf_iterator--;   // (data.end() points beyond the last element)
-    xf_next_iterator = xf_iterator;
+  xf_iterator = data.end();
+  xf_iterator--;   // (data.end() points beyond the last element)
+  xf_next_iterator = xf_iterator;
+  xf_next_iterator--;
+  // Erase data points that are similar to its left value from the right end.
+  while ((xf_next_iterator != data.begin()) &&
+         (fabs(xf_iterator->second - xf_next_iterator->second) < epsilon ))
+  {
     xf_next_iterator--;
-    // Erase data points that are similar to its left value from the right end.
-    while ((xf_next_iterator != data.begin()) &&
-           (fabs(xf_iterator->second - xf_next_iterator->second) < epsilon )) {
-        xf_next_iterator--;
-        data.erase(xf_iterator);
-	xf_iterator--;
-    }
+    data.erase(xf_iterator);
+    xf_iterator--;
+  }
 
-    // Finished chopping, so recompute function data:
-    computeInternalFunctionData();
+  // Finished chopping, so recompute function data:
+  computeInternalFunctionData();
 }
 
 
@@ -561,58 +620,66 @@ chopFlatEndpoints(const double epsilon) {
 //
 void
 MonotCubicInterpolator::
-shrinkFlatAreas(const double epsilon) {
+shrinkFlatAreas(const double epsilon)
+{
 
-    if (getSize() < 2) {
-        return;
+  if (getSize() < 2)
+  {
+    return;
+  }
+
+  map<double,double>::iterator xf_iterator;
+  map<double,double>::iterator xf_next_iterator;
+
+
+  // Nothing to do if we already are strictly monotone
+  if (isStrictlyMonotone())
+  {
+    return;
+  }
+
+  // Refuse to change a curve that is not monotone.
+  if (!isMonotone())
+  {
+    return;
+  }
+
+  // Clear flags, they are not to be trusted after we modify the
+  // data
+  strictlyMonotoneCached = false;
+  monotoneCached = false;
+
+  // Iterate through data values, if two data pairs
+  // have equal values, delete one of the data pair.
+  // Do not trust the source code on which data point is being
+  // removed (x-values of equal y-points might be averaged in the future)
+  xf_iterator = data.begin();
+  xf_next_iterator = ++(data.begin());
+
+  while (xf_next_iterator != data.end())
+  {
+    //cout << xf_iterator->first << "," << xf_iterator->second << " " << xf_next_iterator->first << "," << xf_next_iterator->second << "\n";
+    if (fabs(xf_iterator->second - xf_next_iterator->second) < epsilon )
+    {
+      //cout << "erasing data pair" << xf_next_iterator->first << " " << xf_next_iterator->second << "\n";
+      map <double,double>::iterator xf_tobedeleted_iterator = xf_next_iterator;
+      xf_next_iterator++;
+      data.erase(xf_tobedeleted_iterator);
     }
-
-    map<double,double>::iterator xf_iterator;
-    map<double,double>::iterator xf_next_iterator;
-
-
-    // Nothing to do if we already are strictly monotone
-    if (isStrictlyMonotone()) {
-        return;
+    else
+    {
+      xf_iterator++;
+      xf_next_iterator++;
     }
-
-    // Refuse to change a curve that is not monotone.
-    if (!isMonotone()) {
-        return;
-    }
-
-    // Clear flags, they are not to be trusted after we modify the
-    // data
-    strictlyMonotoneCached = false;
-    monotoneCached = false;
-
-    // Iterate through data values, if two data pairs
-    // have equal values, delete one of the data pair.
-    // Do not trust the source code on which data point is being
-    // removed (x-values of equal y-points might be averaged in the future)
-    xf_iterator = data.begin();
-    xf_next_iterator = ++(data.begin());
-
-    while (xf_next_iterator != data.end()) {
-        //cout << xf_iterator->first << "," << xf_iterator->second << " " << xf_next_iterator->first << "," << xf_next_iterator->second << "\n";
-        if (fabs(xf_iterator->second - xf_next_iterator->second) < epsilon ) {
-            //cout << "erasing data pair" << xf_next_iterator->first << " " << xf_next_iterator->second << "\n";
-            map <double,double>::iterator xf_tobedeleted_iterator = xf_next_iterator;
-            xf_next_iterator++;
-            data.erase(xf_tobedeleted_iterator);
-        }
-        else {
-            xf_iterator++;
-            xf_next_iterator++;
-        }
-    }
+  }
 
 }
 
 
 void
 MonotCubicInterpolator::
-computeSimpleDerivatives() const {
+computeSimpleDerivatives() const
+{
 
   ddata.clear();
 
@@ -639,10 +706,12 @@ computeSimpleDerivatives() const {
   ddata[xf_next_iterator->first] = diff ;
 
   // If we have more than two intervals, loop over internal points:
-  if (data.size() > 2) {
+  if (data.size() > 2)
+  {
 
     map<double,double>::const_iterator intpoint;
-    for (intpoint = ++data.begin(); intpoint != --data.end(); ++intpoint) {
+    for (intpoint = ++data.begin(); intpoint != --data.end(); ++intpoint)
+    {
       /*
         diff = (f2 - f1)/(x2-x1)/w + (f3-f1)/(x3-x2)/2
 
@@ -654,10 +723,10 @@ computeSimpleDerivatives() const {
       map<double,double>::const_iterator nextpoint = intpoint; ++nextpoint;
 
       diff = (nextpoint->second - intpoint->second)/
-        (2*(nextpoint->first - intpoint->first))
-        +
-        (intpoint->second - lastpoint->second) /
-        (2*(intpoint->first - lastpoint->first));
+             (2*(nextpoint->first - intpoint->first))
+             +
+             (intpoint->second - lastpoint->second) /
+             (2*(intpoint->first - lastpoint->first));
 
       ddata[intpoint->first] = diff ;
     }
@@ -668,37 +737,66 @@ computeSimpleDerivatives() const {
 
 void
 MonotCubicInterpolator::
-adjustDerivativesForMonotoneness() const {
+adjustDerivativesForMonotoneness() const
+{
   map<double,double>::const_iterator point, dpoint;
 
-  /* Loop over all intervals, ie. loop over all points and look
-     at the interval to the right of the point */
+  /* Loop over all intervals */
   for (point = data.begin(), dpoint = ddata.begin();
        point != --data.end();
-       ++point, ++dpoint) {
+       ++point, ++dpoint)
+  {
+    map<double,double>::const_iterator prevpoint;
+    prevpoint = point; --prevpoint;
+
     map<double,double>::const_iterator nextpoint, nextdpoint;
     nextpoint = point; ++nextpoint;
     nextdpoint = dpoint; ++nextdpoint;
 
+    map<double,double>::const_iterator nextnextpoint;
+    nextnextpoint = nextpoint; ++nextnextpoint;
+
+    // locally monotone?
+    bool locally_monotone = false;
+    if( point != data.begin() && nextnextpoint != data.end() )
+    {
+      double y = point->second;
+      double y_prev = prevpoint->second;
+      double y_next = nextpoint->second;
+      double y_next_next = nextnextpoint->second;
+
+      if( y_prev >= y && y >= y_next && y_next >= y_next_next) locally_monotone = true;
+      if( y_prev <= y && y <= y_next && y_next <= y_next_next) locally_monotone = true;
+    }
+    else
+    {
+      locally_monotone = true;
+    }
+
     double delta =
       (nextpoint->second - point->second) /
       (nextpoint->first  - point->first);
-    if (fabs(delta) < 1e-14) {
+    if (fabs(delta) < 1e-14)
+    {
       ddata[point->first] = 0.0;
       ddata[nextpoint->first] = 0.0;
-    } else {
-      double alpha = ddata[point->first] / delta;
-      double beta = ddata[nextpoint->first] / delta;
+    }
+    else
+    {
+      if(locally_monotone)
+      {
+        double alpha = ddata[point->first] / delta;
+        double beta = ddata[nextpoint->first] / delta;
 
-      if (! isMonotoneCoeff(alpha, beta)) {
-        double tau = 3/sqrt(alpha*alpha + beta*beta);
+        if (! isMonotoneCoeff(alpha, beta))
+        {
+          double tau = 3/sqrt(alpha*alpha + beta*beta);
 
-        ddata[point->first]     = tau*alpha*delta;
-        ddata[nextpoint->first] = tau*beta*delta;
+          ddata[point->first]     = tau*alpha*delta;
+          ddata[nextpoint->first] = tau*beta*delta;
+        }
       }
     }
-
-
   }
 
 
@@ -709,15 +807,21 @@ adjustDerivativesForMonotoneness() const {
 
 void
 MonotCubicInterpolator::
-scaleData(double factor) {
+scaleData(double factor)
+{
   map<double,double>::iterator it , itd  ;
-  if (data.size() == ddata.size()) {
-    for (it = data.begin() , itd = ddata.begin() ; it != data.end() ; ++it , ++itd) {
+  if (data.size() == ddata.size())
+  {
+    for (it = data.begin() , itd = ddata.begin() ; it != data.end() ; ++it , ++itd)
+    {
       it->second  *= factor ;
       itd->second *= factor ;
     } ;
-  } else {
-    for (it = data.begin() ; it != data.end() ; ++it ) {
+  }
+  else
+  {
+    for (it = data.begin() ; it != data.end() ; ++it )
+    {
       it->second  *= factor ;
     }
   }

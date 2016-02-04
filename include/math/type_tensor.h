@@ -85,6 +85,7 @@ protected:
    * Construct Tensor by three  vector. DIM==3
    */
   TypeTensor  (const TypeVector<T> &x, const TypeVector<T> &y, const TypeVector<T> &z);
+
 public:
 
   /**
@@ -355,7 +356,6 @@ template <typename T>
 inline
 TypeTensor<T>::TypeTensor  (const TypeVector<T> &x)
 {
-  genius_assert(DIM == 1);
   _coords[0] = x(0);
 }
 
@@ -363,7 +363,6 @@ template <typename T>
 inline
 TypeTensor<T>::TypeTensor  (const TypeVector<T> &x, const TypeVector<T> &y)
 {
-  genius_assert(DIM == 2);
   _coords[0] = x(0);
   _coords[1] = x(1);
   _coords[2] = y(0);
@@ -375,7 +374,6 @@ template <typename T>
 inline
 TypeTensor<T>::TypeTensor  (const TypeVector<T> &x, const TypeVector<T> &y, const TypeVector<T> &z)
 {
-  genius_assert(DIM == 3);
   _coords[0] = x(0);
   _coords[1] = x(1);
   _coords[2] = x(2);

@@ -201,6 +201,7 @@ void GateContactBC::DDM1_Function(PetscScalar * x, Vec f, InsertMode &add_value_
 
 
           // conductor region
+          case MetalRegion:
           case ElectrodeRegion:
           {
 
@@ -307,128 +308,11 @@ void GateContactBC::DDM1_Function(PetscScalar * x, Vec f, InsertMode &add_value_
 
 
 
-/*---------------------------------------------------------------------
- * reserve non zero pattern in jacobian matrix for DDML1 solver
- */
-void GateContactBC::DDM1_Jacobian_Reserve(Mat *jac, InsertMode &add_value_flag)
-{
-
-  // ADD 0 to some position of Jacobian matrix to prevent MatAssembly expurgation these position.
-
-  // since we will use ADD_VALUES operat, check the matrix state.
-  if( (add_value_flag != ADD_VALUES) && (add_value_flag != NOT_SET_VALUES) )
-  {
-    MatAssemblyBegin(*jac, MAT_FLUSH_ASSEMBLY);
-    MatAssemblyEnd(*jac, MAT_FLUSH_ASSEMBLY);
-  }
-
-  BoundaryCondition::const_node_iterator node_it = nodes_begin();
-  BoundaryCondition::const_node_iterator end_it = nodes_end();
-
-  for(; node_it!=end_it; ++node_it )
-  {
-    // skip node not belongs to this processor
-    if( (*node_it)->processor_id()!=Genius::processor_id() ) continue;
-
-    // buffer for saving regions and fvm_nodes this *node_it involves
-    std::vector<const SimulationRegion *> regions;
-    std::vector<const FVM_Node *> fvm_nodes;
-
-    // search all the fvm_node which has *node_it as root node, these fvm_nodes have the same location in geometry,
-    // but belong to different regions in logic.
-    BoundaryCondition::region_node_iterator  rnode_it     = region_node_begin(*node_it);
-    BoundaryCondition::region_node_iterator  end_rnode_it = region_node_end(*node_it);
-    for(unsigned int i=0 ; rnode_it!=end_rnode_it; ++i, ++rnode_it  )
-    {
-      regions.push_back( (*rnode_it).second.first );
-      fvm_nodes.push_back( (*rnode_it).second.second );
-
-      switch ( regions[i]->type() )
-      {
-          case InsulatorRegion:
-          {
-            // reserve for electrode potential item
-            MatSetValue(*jac, fvm_nodes[i]->global_offset()+0, this->global_offset(), 0, ADD_VALUES);
-
-            break;
-          }
-          case ElectrodeRegion:
-          {
-            // insert none zero pattern
-            MatSetValue(*jac, fvm_nodes[i]->global_offset(), fvm_nodes[0]->global_offset(), 0, ADD_VALUES);
-
-            break;
-          }
-          case VacuumRegion:
-          break;
-
-          default: genius_error(); //we should never reach here
-      }
-    }
-  }
-
-  // reserve jacobian entries for the circuit equation of gate electrode
-  {
-
-    std::vector<PetscInt> bc_node_reserve;
-    for(node_it = nodes_begin(); node_it!=end_it; ++node_it )
-    {
-      // get the derivative of electrode current to gate node
-      BoundaryCondition::region_node_iterator  rnode_it     = region_node_begin(*node_it);
-      BoundaryCondition::region_node_iterator  end_rnode_it = region_node_end(*node_it);
-      for(unsigned int i=0 ; rnode_it!=end_rnode_it; ++i, ++rnode_it  )
-      {
-        const SimulationRegion * region = ( (*rnode_it).second.first );
-        if(region->type() != InsulatorRegion) continue;
-
-        const FVM_Node * fvm_node = (*rnode_it).second.second;
-        if(fvm_node->on_processor())
-        {
-          bc_node_reserve.push_back(fvm_node->global_offset());
-
-          // get the derivative of electrode current to neighbors of bc node
-          FVM_Node::fvm_neighbor_node_iterator nb_it = fvm_node->neighbor_node_begin();
-          FVM_Node::fvm_neighbor_node_iterator nb_it_end = fvm_node->neighbor_node_end();
-          for(; nb_it != nb_it_end; ++nb_it)
-          {
-            const FVM_Node *  fvm_nb_node = (*nb_it).first;
-            bc_node_reserve.push_back(fvm_nb_node->global_offset());
-          }
-        }
-      }
-    }
-    Parallel::allgather(bc_node_reserve);
-
-    if(Genius::processor_id() == Genius::n_processors()-1)
-    {
-      PetscInt bc_global_offset = this->global_offset();
-
-      MatSetValue(*jac, bc_global_offset, bc_global_offset, 0, ADD_VALUES);
-
-      if(this->is_inter_connect_bc())
-        MatSetValue(*jac, bc_global_offset, this->inter_connect_hub()->global_offset(), 0, ADD_VALUES);
-
-      if(bc_node_reserve.size())
-      {
-        std::vector<PetscScalar> bc_node_reserve_zero(bc_node_reserve.size(), 0.0);
-        MatSetValues(*jac, 1, &bc_global_offset, bc_node_reserve.size(), &bc_node_reserve[0], &bc_node_reserve_zero[0], ADD_VALUES);
-      }
-    }
-
-  }
-
-
-  // the last operator is ADD_VALUES
-  add_value_flag = ADD_VALUES;
-
-}
-
-
 
 /*---------------------------------------------------------------------
  * do pre-process to jacobian matrix for DDML1 solver
  */
-void GateContactBC::DDM1_Jacobian_Preprocess(PetscScalar *, Mat *jac, std::vector<PetscInt> &src_row,
+void GateContactBC::DDM1_Jacobian_Preprocess(PetscScalar *, SparseMatrix<PetscScalar> *jac, std::vector<PetscInt> &src_row,
     std::vector<PetscInt> &dst_row, std::vector<PetscInt> &clear_row)
 {
 
@@ -460,18 +344,10 @@ void GateContactBC::DDM1_Jacobian_Preprocess(PetscScalar *, Mat *jac, std::vecto
 /*---------------------------------------------------------------------
  * build function and its jacobian for DDML1 solver
  */
-void GateContactBC::DDM1_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_value_flag)
+void GateContactBC::DDM1_Jacobian(PetscScalar * x, SparseMatrix<PetscScalar> *jac, InsertMode &add_value_flag)
 {
   // the Jacobian of GateContact boundary condition is processed here
   // we use AD again. no matter it is overkill here.
-
-  // since we will use ADD_VALUES operat, check the matrix state.
-  if( (add_value_flag != ADD_VALUES) && (add_value_flag != NOT_SET_VALUES) )
-  {
-    MatAssemblyBegin(*jac, MAT_FLUSH_ASSEMBLY);
-    MatAssemblyEnd(*jac, MAT_FLUSH_ASSEMBLY);
-  }
-
 
   PetscInt bc_global_offset = this->global_offset();
 
@@ -532,7 +408,7 @@ void GateContactBC::DDM1_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_val
             col.push_back(this->global_offset()); // the position of electrode equation
 
             // set Jacobian of governing equation ff
-            MatSetValues(*jac, 1, &row[0], col.size(), &col[0], f_psi.getADValue(), ADD_VALUES);
+            jac->add_row(  row[0],  col.size(),  &col[0],  f_psi.getADValue() );
 
             /*
              * process the Jacobian of current flow out of gate electrode
@@ -592,8 +468,8 @@ void GateContactBC::DDM1_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_val
                   current_disp = mna_scaling*current_disp;
                 }
 
-                MatSetValue(*jac, bc_global_offset, fvm_nodes[i]->global_offset(), current_disp.getADValue(0), ADD_VALUES);
-                MatSetValue(*jac, bc_global_offset, nb_node->global_offset(), current_disp.getADValue(1), ADD_VALUES);
+                jac->add( bc_global_offset,  fvm_nodes[i]->global_offset(),  current_disp.getADValue(0) );
+                jac->add( bc_global_offset,  nb_node->global_offset(),  current_disp.getADValue(1) );
               }
             }
 
@@ -602,6 +478,7 @@ void GateContactBC::DDM1_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_val
             break;
           }
           // conductor region (gate) which has an interface with insulator region
+          case MetalRegion:
           case ElectrodeRegion:
           {
 
@@ -619,8 +496,8 @@ void GateContactBC::DDM1_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_val
             AutoDScalar  ff = V - V_in;
 
             // set Jacobian of governing equation ff
-            MatSetValue(*jac, fvm_nodes[i]->global_offset(), fvm_nodes[i]->global_offset(), ff.getADValue(0), ADD_VALUES);
-            MatSetValue(*jac, fvm_nodes[i]->global_offset(), fvm_nodes[0]->global_offset(), ff.getADValue(1), ADD_VALUES);
+            jac->add( fvm_nodes[i]->global_offset(),  fvm_nodes[i]->global_offset(),  ff.getADValue(0) );
+            jac->add( fvm_nodes[i]->global_offset(),  fvm_nodes[0]->global_offset(),  ff.getADValue(1) );
 
             break;
           }
@@ -673,15 +550,15 @@ void GateContactBC::DDM1_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_val
       // f_ext = Ve - V_ic + R*current;
 
       // d(f_ext)/d(Ve)
-      MatSetValue(*jac, bc_global_offset, bc_global_offset, 1.0, ADD_VALUES);
+      jac->add( bc_global_offset,  bc_global_offset,  1.0 );
       // d(f_ext)/d(V_ic)
-      MatSetValue(*jac, bc_global_offset, this->inter_connect_hub()->global_offset(), -1.0, ADD_VALUES);
+      jac->add( bc_global_offset,  this->inter_connect_hub()->global_offset(),  -1.0 );
     }
     //for stand alone electrode
     else
     {
       ext_circuit()->potential() = x[this->local_offset()];
-      MatSetValue(*jac, bc_global_offset, bc_global_offset, ext_circuit()->mna_jacobian(SolverSpecify::dt), ADD_VALUES);
+      jac->add( bc_global_offset,  bc_global_offset,  ext_circuit()->mna_jacobian(SolverSpecify::dt) );
     }
   }
 
@@ -701,3 +578,4 @@ void GateContactBC::DDM1_Update_Solution(PetscScalar *)
   Parallel::sum(ext_circuit()->current());
   this->ext_circuit()->update();
 }
+

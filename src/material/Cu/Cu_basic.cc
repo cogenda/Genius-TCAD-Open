@@ -63,10 +63,16 @@ public:
   PetscScalar Affinity      (const PetscScalar &Tl) const { return AFFINITY;    }
   PetscScalar Conductance   ()                      const { return CONDUCTANCE; }
   PetscScalar ThermalVn     (const PetscScalar &Tl) const { return 1e6*cm/s;    }
-
-  void atom_fraction(std::vector<std::string> &atoms, std::vector<double> & fraction) const
+    
+  PetscScalar CurrentDensity(const PetscScalar &E, const PetscScalar &Tl) const 
+  { return E*CONDUCTANCE; }
+  
+  AutoDScalar CurrentDensity(const AutoDScalar &E, const AutoDScalar &Tl) const 
+  { return E*CONDUCTANCE; }
+  
+  void G4Material(std::vector<Atom> &atoms, std::vector<double> & fraction) const
   {
-    atoms.push_back("Cu");//Copper
+    atoms.push_back(Atom("Copper",    "Cu", 29, 63.54));//Copper
     fraction.push_back(1.0);
   }
 

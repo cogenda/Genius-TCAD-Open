@@ -130,8 +130,13 @@ namespace DFISE
     int fieldregion_index_by_label(const std::string & label) const
     {
       for(unsigned int n=0; n<regions.size(); ++n)
-        if(regions[n]==label)
+      {
+        if(regions[n]==label && !is_boundary_region(n) && !is_interface_region(n))
+        {
+          assert(_region_to_fieldregion_map.find(n) != _region_to_fieldregion_map.end());
           return _region_to_fieldregion_map.find(n)->second;
+        }
+      }
       return -1;
     }
 

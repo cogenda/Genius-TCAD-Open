@@ -124,14 +124,7 @@ public:
   /**
    * use this value as scaling to Modified Nodal Analysis
    */
-  virtual Real mna_scaling(Real dt) const
-  {
-    if( this->is_voltage_driven() )
-      return (_ind/dt+_res);
-    if( this->is_current_driven() )
-      return 1.0;
-    return 1.0;
-  }
+  virtual Real mna_scaling(Real dt) const;
 
   /**
    * calculate function of Modified Nodal Analysis
@@ -148,20 +141,13 @@ public:
   /**
    * use this value as scaling to Modified Nodal Analysis in AC model
    */
-  virtual std::complex <Real> mna_ac_scaling(Real omega)
-  { return std::complex <Real>(_res, omega*_ind); }
+  virtual std::complex <Real> mna_ac_scaling(Real omega);
 
 
   /**
    * calculate AC jacobian of Modified Nodal Analysis
    */
-  virtual std::complex <Real> mna_ac_jacobian(Real omega)
-  {
-    std::complex <Real> Z1(_res, omega*_ind);
-    std::complex <Real> Y2(0.0, omega*_cap);
-    std::complex <Real> K = Z1*Y2 + 1.0;
-    return K;
-  }
+  virtual std::complex <Real> mna_ac_jacobian(Real omega);
 
 
   /**

@@ -139,7 +139,7 @@ class Elem :    public DofObject
    * only for FVM element
    */
   virtual FVM_Node * get_fvm_node(const unsigned int /* i */) const
-  { genius_error(); return NULL; }
+  { return NULL; }
 
 
   /**
@@ -147,9 +147,12 @@ class Elem :    public DofObject
    * only for FVM element
    */
   virtual FVM_Node * get_side_fvm_node(const unsigned int /* s */, const unsigned int /* i */) const
-  { genius_error(); return NULL; }
+  { return NULL; }
 
-
+  /**
+   * @return true for fvm element
+   */
+  virtual bool is_fvm_elem() const {return false;}
 
   /**
    * @returns the pointer to local \p Node \p i as a writable reference.

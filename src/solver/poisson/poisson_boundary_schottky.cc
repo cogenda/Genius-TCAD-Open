@@ -240,87 +240,10 @@ void SchottkyContactBC::Poissin_Function(PetscScalar * x, Vec f, InsertMode &add
 
 
 
-
-/*---------------------------------------------------------------------
- * reserve non zero pattern in jacobian matrix for poisson solver
- */
-void SchottkyContactBC::Poissin_Jacobian_Reserve(Mat *jac, InsertMode &add_value_flag)
-{
-
-  // ADD 0 to some position of Jacobian matrix to prevent MatAssembly expurgation these position.
-
-  // since we will use ADD_VALUES operat, check the matrix state.
-  if( (add_value_flag != ADD_VALUES) && (add_value_flag != NOT_SET_VALUES) )
-  {
-    MatAssemblyBegin(*jac, MAT_FLUSH_ASSEMBLY);
-    MatAssemblyEnd(*jac, MAT_FLUSH_ASSEMBLY);
-  }
-
-  BoundaryCondition::const_node_iterator node_it = nodes_begin();
-  BoundaryCondition::const_node_iterator end_it = nodes_end();
-  for(; node_it!=end_it; ++node_it )
-  {
-    // skip node not belongs to this processor
-    if( (*node_it)->processor_id()!=Genius::processor_id() ) continue;
-
-    // buffer for saving regions and fvm_nodes this *node_it involves
-    std::vector<const SimulationRegion *> regions;
-    std::vector<const FVM_Node *> fvm_nodes;
-
-    // search all the fvm_node which has *node_it as root node, these fvm_nodes have the same location in geometry,
-    // but belong to different regions in logic.
-    BoundaryCondition::region_node_iterator  rnode_it     = region_node_begin(*node_it);
-    BoundaryCondition::region_node_iterator  end_rnode_it = region_node_end(*node_it);
-    for(unsigned int i=0 ; rnode_it!=end_rnode_it; ++i, ++rnode_it  )
-    {
-      regions.push_back( (*rnode_it).second.first );
-      fvm_nodes.push_back( (*rnode_it).second.second );
-
-      switch ( regions[i]->type() )
-      {
-
-      case SemiconductorRegion:
-        {
-          // no need for semiconductor region
-          break;
-        }
-      case ElectrodeRegion:
-        {
-          // insert none zero pattern
-          //MatSetValue(*jac, fvm_nodes[i]->global_offset(), fvm_nodes[i]->global_offset(), 0, ADD_VALUES);
-          MatSetValue(*jac, fvm_nodes[i]->global_offset(), fvm_nodes[0]->global_offset(), 0, ADD_VALUES);
-
-          break;
-        }
-      case InsulatorRegion:
-        {
-          // insert none zero pattern
-          //MatSetValue(*jac, fvm_nodes[i]->global_offset(), fvm_nodes[i]->global_offset(), 0, ADD_VALUES);
-          MatSetValue(*jac, fvm_nodes[i]->global_offset(), fvm_nodes[0]->global_offset(), 0, ADD_VALUES);
-
-          break;
-        }
-      case VacuumRegion:
-        break;
-
-      default: genius_error(); //we should never reach here
-      }
-    }
-  }
-
-  // the last operator is ADD_VALUES
-  add_value_flag = ADD_VALUES;
-
-}
-
-
-
-
-
 /*---------------------------------------------------------------------
  * do pre-process to jacobian matrix for poisson solver
  */
-void SchottkyContactBC::Poissin_Jacobian_Preprocess(PetscScalar *, Mat *jac, std::vector<PetscInt> &src_row,
+void SchottkyContactBC::Poissin_Jacobian_Preprocess(PetscScalar *, SparseMatrix<PetscScalar> *jac, std::vector<PetscInt> &src_row,
     std::vector<PetscInt> &dst_row, std::vector<PetscInt> &clear_row)
 {
   BoundaryCondition::const_node_iterator node_it = nodes_begin();
@@ -369,17 +292,11 @@ void SchottkyContactBC::Poissin_Jacobian_Preprocess(PetscScalar *, Mat *jac, std
 /*---------------------------------------------------------------------
  * build function and its jacobian for poisson solver
  */
-void SchottkyContactBC::Poissin_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_value_flag)
+void SchottkyContactBC::Poissin_Jacobian(PetscScalar * x, SparseMatrix<PetscScalar> *jac, InsertMode &add_value_flag)
 {
   // the Jacobian of Schottky boundary condition is processed here
   // we use AD again. no matter it is overkill here.
 
-  // since we will use ADD_VALUES operat, check the matrix state.
-  if( (add_value_flag != ADD_VALUES) && (add_value_flag != NOT_SET_VALUES) )
-  {
-    MatAssemblyBegin(*jac, MAT_FLUSH_ASSEMBLY);
-    MatAssemblyEnd(*jac, MAT_FLUSH_ASSEMBLY);
-  }
 
   const PetscScalar Work_Function = this->scalar("workfunction");
 
@@ -422,7 +339,7 @@ void SchottkyContactBC::Poissin_Jacobian(PetscScalar * x, Mat *jac, InsertMode &
           AutoDScalar ff = V + Work_Function - ext_circuit()->Vapp();
 
           // set Jacobian of governing equation ff
-          MatSetValue(*jac, fvm_nodes[i]->global_offset(), fvm_nodes[i]->global_offset(), ff.getADValue(0), ADD_VALUES);
+          jac->add(fvm_nodes[i]->global_offset(), fvm_nodes[i]->global_offset(), ff.getADValue(0));
           break;
         }
         // conductor region which has an interface with Schottky Contact boundary to semiconductor region
@@ -444,8 +361,8 @@ void SchottkyContactBC::Poissin_Jacobian(PetscScalar * x, Mat *jac, InsertMode &
           AutoDScalar  ff = V - V_semi;
 
           // set Jacobian of governing equation ff
-          MatSetValue(*jac, fvm_nodes[i]->global_offset(), fvm_nodes[i]->global_offset(), ff.getADValue(0), ADD_VALUES);
-          MatSetValue(*jac, fvm_nodes[i]->global_offset(), fvm_nodes[0]->global_offset(), ff.getADValue(1), ADD_VALUES);
+          jac->add(fvm_nodes[i]->global_offset(), fvm_nodes[i]->global_offset(), ff.getADValue(0));
+          jac->add(fvm_nodes[i]->global_offset(), fvm_nodes[0]->global_offset(), ff.getADValue(1));
 
           break;
         }
@@ -469,8 +386,8 @@ void SchottkyContactBC::Poissin_Jacobian(PetscScalar * x, Mat *jac, InsertMode &
           AutoDScalar  ff = V - V_semi;
 
           // set Jacobian of governing equation ff
-          MatSetValue(*jac, fvm_nodes[i]->global_offset(), fvm_nodes[i]->global_offset(), ff.getADValue(0), ADD_VALUES);
-          MatSetValue(*jac, fvm_nodes[i]->global_offset(), fvm_nodes[0]->global_offset(), ff.getADValue(1), ADD_VALUES);
+          jac->add(fvm_nodes[i]->global_offset(), fvm_nodes[i]->global_offset(), ff.getADValue(0));
+          jac->add(fvm_nodes[i]->global_offset(), fvm_nodes[0]->global_offset(), ff.getADValue(1));
 
           break;
         }

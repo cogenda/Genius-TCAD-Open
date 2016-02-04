@@ -80,31 +80,42 @@ enum BCType
 
 
   /**
+   * Simple Boundary condition for MOS gate
+   */
+  SimpleGateContact   = 0x0011,
+
+  /**
+   * Boundary condition for MOS gate
+   */
+  GateContact         = 0x0012,
+
+
+  /**
    * The interface of Insulator region to Insulator region.
    * Since some MOS has a nitride-oxide gate. we have to deal with this
    * boundary condition
    */
-  IF_Insulator_Insulator      = 0x0012,
+  IF_Insulator_Insulator      = 0x0013,
 
   /**
    * The interface of Semiconductor region to Insulator region.
    * this is important in MOS simulation.
    */
-  IF_Insulator_Semiconductor  = 0x0013,
+  IF_Insulator_Semiconductor  = 0x0014,
 
 
   /**
    * The interface of Electrode region to Electrode region.
    * nearly meaningless.
    */
-  IF_Electrode_Electrode      = 0x0014,
+  IF_Electrode_Electrode      = 0x0015,
 
 
   /**
    * The interface of Electrode region to resistive metal region.
    * nearly meaningless.
    */
-  IF_Electrode_Metal          = 0x0015,
+  IF_Electrode_Metal          = 0x0016,
 
 
   /**
@@ -112,37 +123,43 @@ enum BCType
    * we assume div(J)=0 on the boundary.
    * NOTE, it can be a resistat gate boundary
    */
-  IF_Insulator_Metal          = 0x0016,
+  IF_Insulator_Metal          = 0x0017,
 
   /**
    * The interface of resistive metal region to resistive metal region.
    * i.e. n-poly and p-poly contact
    */
-  IF_Metal_Metal              = 0x0017,
+  IF_Metal_Metal              = 0x0018,
 
   /**
    * The interface of Semiconductor region to semiconductor region with same material.
    * nearly meaningless.
    */
-  HomoInterface               = 0x0018,
+  HomoInterface               = 0x0019,
 
   /**
    * The interface of Semiconductor region to semiconductor region with different material.
    * which forms heterojunction.
    */
-  HeteroInterface             = 0x0019,
+  HeteroInterface             = 0x001a,
+
+
+  /**
+   * boundary condition for electrode pad. pad sould be on the surface of resistance region
+   */
+  SolderPad                   = 0x0020,
 
   /**
    * The interface of Semiconductor region to Electrode region.
    * by default, it forms OhmicContact.
    */
-  IF_Electrode_Semiconductor  = 0x001a,
+  IF_Electrode_Semiconductor  = 0x0030,
 
   /**
    * The interface of Semiconductor region to resistive metal region.
    * by default, it forms OhmicContact.
    */
-  IF_Metal_Semiconductor  = 0x001b,
+  IF_Metal_Semiconductor  = 0x0031,
 
   /**
    * Electrode which froms  Ohmic Contact.
@@ -164,15 +181,12 @@ enum BCType
    */
   IF_Metal_Schottky  = 0x0104,
 
-  /**
-   * Simple Boundary condition for MOS gate
-   */
-  SimpleGateContact   = 0x0105,
 
   /**
-   * Boundary condition for MOS gate
+   * poly silicon as gate contact.
    */
-  GateContact         = 0x0106,
+  PolyGateContact  = 0x0105,
+
 
   /**
    * Boundary condition for float metal with charge,
@@ -188,15 +202,16 @@ enum BCType
 
 
   /**
-   * boundary condition for electrode pad. pad sould be on the surface of resistance region
-   */
-  SolderPad           = 0x0109,
-
-  /**
    * Boundary condition for inter connect of electrodes
    * useful for IC cell i.e. Inverter or SRAM simulation
    */
   InterConnect        = 0x0110,
+
+
+  /**
+   * fixed potential contact
+   */
+  FixedPotential      = 0x0111,
 
 
   /**
@@ -209,15 +224,11 @@ enum BCType
    */
   SourceBoundary      = 0x1002,
 
-  /**
-   * metal region with fixed potential, only used in RIC model 
-   */
-  FixedPotential      = 0x1010,
 
   /**
-   * metal region with electron emit, only used in RIC model
+   * boundary with electron emit
    */
-  Emit                = 0x1020,
+  ChargeEmit                = 0x1020,
 
 
   INVALID_BC_TYPE     = 0xffff           // should always be last

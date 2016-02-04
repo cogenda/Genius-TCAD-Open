@@ -270,49 +270,49 @@ public:
   /**
    * data access function
    */
-  const Real & scalar(const unsigned int v, const unsigned int offset) const
+  const PetscScalar & scalar(const unsigned int v, const unsigned int offset) const
     { return _scalar_block[v][offset]; }
 
   /**
    * data access function
    */
-  Real & scalar(const unsigned int v, const unsigned int offset)
+  PetscScalar & scalar(const unsigned int v, const unsigned int offset)
   { return _scalar_block[v][offset]; }
 
   /**
    * data access function
    */
-  const std::complex<Real> & complex(const unsigned int v, const unsigned int offset) const
+  const std::complex<PetscScalar> & complex(const unsigned int v, const unsigned int offset) const
     { return _complex_block[v][offset]; }
 
   /**
    * data access function
    */
-  std::complex<Real> & complex(const unsigned int v, const unsigned int offset)
+  std::complex<PetscScalar> & complex(const unsigned int v, const unsigned int offset)
   { return _complex_block[v][offset]; }
 
   /**
    * data access function
    */
-  const VectorValue<Real> & vector(const unsigned int v, const unsigned int offset) const
+  const VectorValue<PetscScalar> & vector(const unsigned int v, const unsigned int offset) const
     { return _vector_block[v][offset]; }
 
   /**
    * data access function
    */
-  VectorValue<Real> & vector(const unsigned int v, const unsigned int offset)
+  VectorValue<PetscScalar> & vector(const unsigned int v, const unsigned int offset)
   { return _vector_block[v][offset]; }
 
   /**
    * data access function
    */
-  const TensorValue<Real> & tensor(const unsigned int v, const unsigned int offset) const
+  const TensorValue<PetscScalar> & tensor(const unsigned int v, const unsigned int offset) const
     { return _tensor_block[v][offset]; }
 
   /**
    * data access function
    */
-  TensorValue<Real> & tensor(const unsigned int v, const unsigned int offset)
+  TensorValue<PetscScalar> & tensor(const unsigned int v, const unsigned int offset)
   { return _tensor_block[v][offset]; }
 
 
@@ -336,16 +336,16 @@ public:
     size_t counter = sizeof(*this);
 
     for(unsigned int n=0; n<_scalar_block.size(); ++n)
-      counter += _scalar_block[n].capacity()*sizeof(Real);
+      counter += _scalar_block[n].capacity()*sizeof(PetscScalar);
 
     for(unsigned int n=0; n<_complex_block.size(); ++n)
-      counter += _complex_block[n].capacity()*sizeof(std::complex<Real>);
+      counter += _complex_block[n].capacity()*sizeof(std::complex<PetscScalar>);
 
     for(unsigned int n=0; n<_vector_block.size(); ++n)
-      counter += _vector_block[n].capacity()*sizeof(VectorValue<Real>);
+      counter += _vector_block[n].capacity()*sizeof(VectorValue<PetscScalar>);
 
     for(unsigned int n=0; n<_tensor_block.size(); ++n)
-      counter += _tensor_block[n].capacity()*sizeof(TensorValue<Real>);
+      counter += _tensor_block[n].capacity()*sizeof(TensorValue<PetscScalar>);
 
     return counter;
   }
@@ -366,25 +366,25 @@ private:
    * indicator of scalar value
    */
   std::vector<bool> _scalar_fill;
-  std::vector< std::vector<Real> > _scalar_block;
+  std::vector< std::vector<PetscScalar> > _scalar_block;
 
   /**
    * indicator of complex value
    */
   std::vector<bool> _complex_fill;
-  std::vector< std::vector<std::complex<Real> > > _complex_block;
+  std::vector< std::vector<std::complex<PetscScalar> > > _complex_block;
 
   /**
    * indicator of vector value
    */
   std::vector<bool> _vector_fill;
-  std::vector< std::vector<VectorValue<Real> > > _vector_block;
+  std::vector< std::vector<VectorValue<PetscScalar> > > _vector_block;
 
   /**
    * indicator of tensor value
    */
   std::vector<bool> _tensor_fill;
-  std::vector< std::vector<TensorValue<Real> > > _tensor_block;
+  std::vector< std::vector<TensorValue<PetscScalar> > > _tensor_block;
 
 };
 
@@ -394,16 +394,16 @@ template <typename T>
 inline T & DataStorage::data(const unsigned int , const unsigned int ) { }
 
 template<>
-inline Real & DataStorage::data< Real >(const unsigned int v, const unsigned int offset)  {  return _scalar_block[v][offset]; }
+inline PetscScalar & DataStorage::data< PetscScalar >(const unsigned int v, const unsigned int offset)  {  return _scalar_block[v][offset]; }
 
 template<>
-inline std::complex<Real> & DataStorage::data< std::complex<Real> >(const unsigned int v, const unsigned int offset) { return _complex_block[v][offset]; }
+inline std::complex<PetscScalar> & DataStorage::data< std::complex<PetscScalar> >(const unsigned int v, const unsigned int offset) { return _complex_block[v][offset]; }
 
 template<>
-inline VectorValue<Real> & DataStorage::data< VectorValue<Real> >(const unsigned int v, const unsigned int offset) { return _vector_block[v][offset]; }
+inline VectorValue<PetscScalar> & DataStorage::data< VectorValue<PetscScalar> >(const unsigned int v, const unsigned int offset) { return _vector_block[v][offset]; }
 
 template<>
-inline TensorValue<Real> & DataStorage::data< TensorValue<Real> >(const unsigned int v, const unsigned int offset) { return _tensor_block[v][offset]; }
+inline TensorValue<PetscScalar> & DataStorage::data< TensorValue<PetscScalar> >(const unsigned int v, const unsigned int offset) { return _tensor_block[v][offset]; }
 
 
 
@@ -411,16 +411,16 @@ template <typename T>
 inline const T & DataStorage::data(const unsigned int , const unsigned int ) const { }
 
 template<>
-inline const Real & DataStorage::data< Real >(const unsigned int v, const unsigned int offset) const { return _scalar_block[v][offset]; }
+inline const PetscScalar & DataStorage::data< PetscScalar >(const unsigned int v, const unsigned int offset) const { return _scalar_block[v][offset]; }
 
 template<>
-inline const std::complex<Real> & DataStorage::data< std::complex<Real> >(const unsigned int v, const unsigned int offset) const { return _complex_block[v][offset]; }
+inline const std::complex<PetscScalar> & DataStorage::data< std::complex<PetscScalar> >(const unsigned int v, const unsigned int offset) const { return _complex_block[v][offset]; }
 
 template<>
-inline const VectorValue<Real> & DataStorage::data< VectorValue<Real> >(const unsigned int v, const unsigned int offset) const { return _vector_block[v][offset]; }
+inline const VectorValue<PetscScalar> & DataStorage::data< VectorValue<PetscScalar> >(const unsigned int v, const unsigned int offset) const { return _vector_block[v][offset]; }
 
 template<>
-inline const TensorValue<Real> & DataStorage::data< TensorValue<Real> >(const unsigned int v, const unsigned int offset) const { return _tensor_block[v][offset]; }
+inline const TensorValue<PetscScalar> & DataStorage::data< TensorValue<PetscScalar> >(const unsigned int v, const unsigned int offset) const { return _tensor_block[v][offset]; }
 
 
 #endif

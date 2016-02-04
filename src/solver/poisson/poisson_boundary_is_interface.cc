@@ -172,10 +172,11 @@ void InsulatorSemiconductorInterfaceBC::Poissin_Function(PetscScalar * x, Vec f,
           {
             // semiconductor region should be the first region
             genius_assert(i==0);
+            const FVM_NodeData * node_data = fvm_nodes[i]->node_data();
 
             // process interface fixed charge density
             PetscScalar boundary_area = fvm_nodes[i]->outside_boundary_surface_area();
-            VecSetValue(f, fvm_nodes[i]->global_offset(), qf*boundary_area, ADD_VALUES);
+            VecSetValue(f, fvm_nodes[i]->global_offset(), (qf+node_data->interface_charge())*boundary_area, ADD_VALUES);
 
             break;
           }
@@ -228,93 +229,10 @@ void InsulatorSemiconductorInterfaceBC::Poissin_Function(PetscScalar * x, Vec f,
 
 
 
-
-/*---------------------------------------------------------------------
- * reserve non zero pattern in jacobian matrix for poisson solver
- */
-void InsulatorSemiconductorInterfaceBC::Poissin_Jacobian_Reserve(Mat *jac, InsertMode &add_value_flag)
-{
-
-  // ADD 0 to some position of Jacobian matrix to prevent MatAssembly expurgation these position.
-
-  // since we will use ADD_VALUES operat, check the matrix state.
-  if( (add_value_flag != ADD_VALUES) && (add_value_flag != NOT_SET_VALUES) )
-  {
-    MatAssemblyBegin(*jac, MAT_FLUSH_ASSEMBLY);
-    MatAssemblyEnd(*jac, MAT_FLUSH_ASSEMBLY);
-  }
-
-  // search for all the node with this boundary type
-  BoundaryCondition::const_node_iterator node_it = nodes_begin();
-  BoundaryCondition::const_node_iterator end_it = nodes_end();
-  for(; node_it!=end_it; ++node_it )
-  {
-    // skip node not belongs to this processor
-    if( (*node_it)->processor_id()!=Genius::processor_id() ) continue;
-
-    // buffer for saving regions and fvm_nodes this *node_it involves
-    std::vector<const SimulationRegion *> regions;
-    std::vector<const FVM_Node *> fvm_nodes;
-
-    // search all the fvm_node which has *node_it as root node, these fvm_nodes have the same location in geometry,
-    // but belong to different regions in logic.
-    BoundaryCondition::region_node_iterator  rnode_it     = region_node_begin(*node_it);
-    BoundaryCondition::region_node_iterator  end_rnode_it = region_node_end(*node_it);
-    for(unsigned int i=0 ; rnode_it!=end_rnode_it; ++i, ++rnode_it  )
-    {
-      regions.push_back( (*rnode_it).second.first );
-      fvm_nodes.push_back( (*rnode_it).second.second );
-
-      switch ( regions[i]->type() )
-      {
-          // Insulator-Semiconductor interface at Semiconductor side, we should reserve entrance for later add operator
-          case SemiconductorRegion:
-          {
-            // semiconductor region should be the first region
-            genius_assert(i==0);
-
-            // since we know only one ghost node exit, there is ghost_node_begin()
-            FVM_Node::fvm_ghost_node_iterator gn_it = fvm_nodes[i]->ghost_node_begin();
-            const FVM_Node * ghost_fvm_node = (*gn_it).first;
-            MatSetValue(*jac, fvm_nodes[i]->global_offset(), ghost_fvm_node->global_offset(), 0, ADD_VALUES);
-
-            FVM_Node::fvm_neighbor_node_iterator  gnb_it = ghost_fvm_node->neighbor_node_begin();
-            for(; gnb_it != ghost_fvm_node->neighbor_node_end(); ++gnb_it)
-              MatSetValue(*jac, fvm_nodes[i]->global_offset(), (*gnb_it).first->global_offset(), 0, ADD_VALUES);
-
-            break;
-          }
-
-          // Insulator-Semiconductor interface at Insulator side, we should add the rows to semiconductor region
-          case InsulatorRegion:
-          {
-            // reserve for later operator
-            MatSetValue(*jac, fvm_nodes[i]->global_offset(), fvm_nodes[0]->global_offset(), 0, ADD_VALUES);
-
-            break;
-          }
-          case VacuumRegion:
-          break;
-
-          default: genius_error(); //we should never reach here
-      }
-    }
-
-  }
-
-  // the last operator is ADD_VALUES
-  add_value_flag = ADD_VALUES;
-
-}
-
-
-
-
-
 /*---------------------------------------------------------------------
  * do pre-process to jacobian matrix for poisson solver
  */
-void InsulatorSemiconductorInterfaceBC::Poissin_Jacobian_Preprocess(PetscScalar *, Mat *jac, std::vector<PetscInt> &src_row,
+void InsulatorSemiconductorInterfaceBC::Poissin_Jacobian_Preprocess(PetscScalar *, SparseMatrix<PetscScalar> *jac, std::vector<PetscInt> &src_row,
     std::vector<PetscInt> &dst_row, std::vector<PetscInt> &clear_row)
 {
 
@@ -370,15 +288,8 @@ void InsulatorSemiconductorInterfaceBC::Poissin_Jacobian_Preprocess(PetscScalar 
 /*---------------------------------------------------------------------
  * build function and its jacobian for poisson solver
  */
-void InsulatorSemiconductorInterfaceBC::Poissin_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_value_flag)
+void InsulatorSemiconductorInterfaceBC::Poissin_Jacobian(PetscScalar * x, SparseMatrix<PetscScalar> *jac, InsertMode &add_value_flag)
 {
-
-  // since we will use ADD_VALUES operat, check the matrix state.
-  if( (add_value_flag != ADD_VALUES) && (add_value_flag != NOT_SET_VALUES) )
-  {
-    MatAssemblyBegin(*jac, MAT_FLUSH_ASSEMBLY);
-    MatAssemblyEnd(*jac, MAT_FLUSH_ASSEMBLY);
-  }
 
   //the indepedent variable number, we need 2 here.
   adtl::AutoDScalar::numdir=2;
@@ -424,8 +335,8 @@ void InsulatorSemiconductorInterfaceBC::Poissin_Jacobian(PetscScalar * x, Mat *j
             AutoDScalar  ff = V - V_semi;
 
             // set Jacobian of governing equation ff
-            MatSetValue(*jac, fvm_nodes[i]->global_offset(), fvm_nodes[i]->global_offset(), ff.getADValue(0), ADD_VALUES);
-            MatSetValue(*jac, fvm_nodes[i]->global_offset(), fvm_nodes[0]->global_offset(), ff.getADValue(1), ADD_VALUES);
+            jac->add(fvm_nodes[i]->global_offset(), fvm_nodes[i]->global_offset(), ff.getADValue(0));
+            jac->add(fvm_nodes[i]->global_offset(), fvm_nodes[0]->global_offset(), ff.getADValue(1));
 
             break;
 

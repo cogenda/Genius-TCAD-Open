@@ -1,9 +1,11 @@
 def build(bld):
   hooks = '''shell_hook rawfile_hook gnuplot_hook data_hook cv_hook
-             probe_hook vtk_hook cgns_hook mob_monitor_hook ddm_monitor_hook eigenvalue_hook
-             singularvalue_hook lsmonitor_hook spice_monitor_hook ksp_convergence_hook
-             particle_capture_g4_hook particle_capture_data_hook particle_capture_analytic_hook
-             particle_monitor_hook gummel_monitor_hook  tunneling_hook
+             probe_hook charge_deposit_hook vtk_hook cgns_hook mob_monitor_hook ddm_monitor_hook eigenvalue_hook
+             singularvalue_hook lsmonitor_hook spice_monitor_hook ksp_convergence_hook current_conservation_hook
+             particle_capture_g4_hook particle_capture_data_hook
+             particle_capture_analytic_hook particle_capture_1d_hook
+             interface_current_hook fg_qf_hook
+             particle_monitor_hook gummel_monitor_hook surface_recombination_hook tunneling_hook
              threshold_hook'''.split()
 
   common_src = ['dlhook.cc']

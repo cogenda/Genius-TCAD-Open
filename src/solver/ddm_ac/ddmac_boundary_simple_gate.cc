@@ -33,7 +33,7 @@ using PhysicalUnit::kb;
 using PhysicalUnit::e;
 
 
-void SimpleGateContactBC::DDMAC_Fill_Matrix_Vector ( Mat A, Vec b, const Mat J, const double omega, InsertMode & add_value_flag )
+void SimpleGateContactBC::DDMAC_Fill_Matrix_Vector ( Mat A, Vec b, const Mat J, const PetscScalar omega, InsertMode & add_value_flag )
 {
 
   if ( ( add_value_flag != ADD_VALUES ) && ( add_value_flag != NOT_SET_VALUES ) )
@@ -194,7 +194,7 @@ void SimpleGateContactBC::DDMAC_Fill_Matrix_Vector ( Mat A, Vec b, const Mat J, 
 
 
 
-void SimpleGateContactBC::DDMAC_Update_Solution ( const PetscScalar * lxx, const Mat, const double omega )
+void SimpleGateContactBC::DDMAC_Update_Solution ( const PetscScalar * lxx, const Mat, const PetscScalar omega )
 {
 
   std::complex<PetscScalar> Iac ( 0.0, 0.0 );

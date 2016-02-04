@@ -467,6 +467,7 @@ namespace DFISE
 
   void DFISE_MESH::read_dataset_data(BLOCK *block)
   {
+    //block->print();
     for(unsigned int n=0; n<block->n_sub_blocks(); ++n)
     {
       BLOCK * dataset_block = block->get_sub_block(n);
@@ -484,11 +485,10 @@ namespace DFISE
       for(int i=0; i<n_validity; ++i)
       {
         std::string region = fix_region_name(dataset_block->get_string_parameter("validity", i));
-        int region_index = grid_info.fieldregion_index_by_label(region);
-        assert(region_index>=0);
-
         dataset->validity.push_back(region);
-        dataset->Regions.push_back(static_cast<unsigned int>(region_index));
+
+        int region_index = grid_info.fieldregion_index_by_label(region);
+        dataset->Regions.push_back(region_index);
       }
 
       //read data
@@ -507,11 +507,10 @@ namespace DFISE
         int index=0;
 
         BLOCK * Values = dataset_block->get_sub_block("Values");
-        dataset->n_data = Values->index();
-        assert(Values->n_values()==dataset->n_data);
+        dataset->n_data = Values->index()/dataset->dimension;
+        assert(Values->n_values()==dataset->n_data*dataset->dimension);
 
-        int n_vector_data = dataset->n_data/dataset->dimension;
-        for(int i=0; i<n_vector_data; ++i)
+        for(int i=0; i<dataset->n_data; ++i)
         {
           std::vector<double> vector_value;
           for(unsigned int n=0; n<dataset->dimension; ++n)
@@ -521,29 +520,52 @@ namespace DFISE
       }
 
       // build dataset value -> grid vertex map
-      //dataset->node_to_value_index_vector.resize(dataset->n_data);
-      std::set<unsigned int> node_set;
-      for(unsigned int r=0; r<grid_info.nb_regions; ++r)
+      if( dataset->location == DATASET::vertex )
       {
-        if(!dataset->is_valid(grid_info.region_label(r))) continue;
-
-        for(unsigned int e=0; e<grid.region_elements[r].size(); ++e)
+        std::set<unsigned int> node_set;
+        for(unsigned int r=0; r<grid_info.nb_regions; ++r)
         {
-          unsigned int elem_id = grid.region_elements[r][e];
-          const  Element & elem = grid.Elements[elem_id];
+          if(!dataset->is_valid(grid_info.region_label(r))) continue;
 
-          for(unsigned int m=0; m<elem.vertices.size(); ++m)
+          for(unsigned int e=0; e<grid.region_elements[r].size(); ++e)
           {
-            unsigned int id = elem.vertices[m];
-            node_set.insert(id);
+            unsigned int elem_id = grid.region_elements[r][e];
+            const  Element & elem = grid.Elements[elem_id];
+
+            for(unsigned int m=0; m<elem.vertices.size(); ++m)
+            {
+              unsigned int id = elem.vertices[m];
+              node_set.insert(id);
+            }
           }
         }
-      }
 
-      for(std::set<unsigned int>::iterator it=node_set.begin(); it!=node_set.end(); ++it)
+        for(std::set<unsigned int>::iterator it=node_set.begin(); it!=node_set.end(); ++it)
           dataset->node_to_value_index_map.insert(std::make_pair(*it, dataset->node_to_value_index_map.size()));
 
-      assert(dataset->node_to_value_index_map.size() == dataset->n_data);
+        assert(dataset->node_to_value_index_map.size() == dataset->n_data);
+      }
+
+      // build dataset value -> grid elem map
+      if( dataset->location == DATASET::element )
+      {
+        std::set<unsigned int> elem_set;
+        for(unsigned int r=0; r<grid_info.nb_regions; ++r)
+        {
+          if(!dataset->is_valid(grid_info.region_label(r))) continue;
+
+          for(unsigned int e=0; e<grid.region_elements[r].size(); ++e)
+          {
+            unsigned int elem_id = grid.region_elements[r][e];
+            elem_set.insert(elem_id);
+          }
+        }
+
+        for(std::set<unsigned int>::iterator it=elem_set.begin(); it!=elem_set.end(); ++it)
+          dataset->elem_to_value_index_map.insert(std::make_pair(*it, dataset->elem_to_value_index_map.size()));
+
+        assert(dataset->elem_to_value_index_map.size() == dataset->n_data);
+      }
 
       data_sets.push_back(dataset);
     }

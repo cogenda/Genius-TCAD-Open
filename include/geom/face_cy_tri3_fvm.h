@@ -88,6 +88,11 @@ public:
   { _fvm_node[i] = pn; }
 
   /**
+   * @return true for fvm element
+   */
+  virtual bool is_fvm_elem() const {return true;}
+
+  /**
    * @returns a proxy element coincident with side \p i.
    */
   virtual AutoPtr<Elem> build_fvm_side (const unsigned int i, bool proxy=true) const;

@@ -40,8 +40,8 @@ using PhysicalUnit::mu0;
 
 
 
-VacuumSimulationRegion::VacuumSimulationRegion(const std::string &name, const std::string &material, const double T, const double z)
-:SimulationRegion(name, material, T, z)
+VacuumSimulationRegion::VacuumSimulationRegion(const std::string &name, const std::string &material, const double T, const unsigned int dim, const double z)
+  :SimulationRegion(name, material, T, dim, z)
 {
   this->set_region_variables();
   mt = new Material::MaterialVacuum(this);

@@ -70,16 +70,20 @@ ParticleCaptureG4Hook::ParticleCaptureG4Hook(SolverBase & solver, const std::str
     if(parm_it->name() == "doserate" && parm_it->type() == Parser::STRING)
       _dose_rate = parm_it->get_string();
   }
+  
+  //std::cout<<_resolution/mm << std::endl;
 
   _first_g4_calculation_flag = false;
 
   dose_rate = new DoseRate(solver.get_system());
   dose_rate->set_min_distance(_resolution);
+  dose_rate->refine();
 }
 
 
 ParticleCaptureG4Hook::~ParticleCaptureG4Hook()
 {
+  //dose_rate->export_vtk("debug.vtk");
   delete dose_rate;
 }
 
@@ -338,6 +342,16 @@ void ParticleCaptureG4Hook::load_events()
     ParticleEndPosition.push_back(*((double *)(addr)+i));
   }
 
+
+  // get particle weight
+  err = AMS_Memory_get_field_info(memory, "ParticleWeight", &addr, &len, &dtype, &mtype, &stype, &rtype); assert(!err);
+  AMS_Check_error(err, &msg);
+  ParticleWeight.clear();
+  for(int i=0; i<len; i++)
+  {
+    ParticleWeight.push_back(*((double *)(addr)+i));
+  }
+
   // get step number for each event
   err = AMS_Memory_get_field_info(memory, "EventStep", &addr, &len, &dtype, &mtype, &stype, &rtype); assert(!err);
   AMS_Check_error(err, &msg);
@@ -405,6 +419,8 @@ void ParticleCaptureG4Hook::process_particle_gen()
     const Elem * elem = point_locator(particles[i]);
     if(!elem || !elem->on_processor()) continue;
 
+    double c = ParticleWeight[i];
+
     SimulationRegion * region = system.region(elem->subdomain_id());
 
     //if(region->type() == InsulatorRegion)
@@ -420,7 +436,7 @@ void ParticleCaptureG4Hook::process_particle_gen()
         assert(fvm_node->node_data());
 
         double vol_ratio = elem->partial_volume_truncated(nd)/volume;
-        fvm_node->node_data()->Field_G() += charge_at_this_step*vol_ratio/fvm_node->volume()/dt;
+        fvm_node->node_data()->Field_G() += c*charge_at_this_step*vol_ratio/fvm_node->volume()/dt;
       }
     }
 
@@ -428,7 +444,7 @@ void ParticleCaptureG4Hook::process_particle_gen()
     if( floating_metal_region.find(region) != floating_metal_region.end() )
     {
       BoundaryCondition * charge_integral_bc = floating_metal_region.find(region)->second;
-      charge_integral_bc->scalar("qf") += -charge_at_this_step;
+      charge_integral_bc->scalar("qf.gen") += -c*charge_at_this_step/dt;
     }
   }
 }
@@ -569,7 +585,7 @@ void ParticleCaptureG4Hook::process_particle_dose_nodal()
         if(fvm_node && fvm_node->on_local())
         {
           FVM_NodeData * node_data = fvm_node->node_data();
-          node_data->DoseRate() += alpha*energy_density/region->get_density(T)/dt;
+          node_data->DoseRate() += alpha*energy_density/region->get_density()/dt;
         }
       }
     }
@@ -605,7 +621,7 @@ void ParticleCaptureG4Hook::process_particle_dose_nodal()
         const SimulationRegion * region = system.region(neraset_node->subdomain_id());
 
         FVM_NodeData * node_data = neraset_node->node_data();
-        node_data->DoseRate() += energy_rate/region->get_density(T);
+        node_data->DoseRate() += energy_rate/region->get_density();
       }
     }
   }

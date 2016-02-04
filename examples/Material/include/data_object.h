@@ -145,48 +145,48 @@ template <typename T>
 inline T & data(const unsigned int ) {  }
 
 template<>
-inline Real & DataObject::data< Real >(const unsigned int v)  {  return _data_storage->scalar(v, _offset); }
+inline PetscScalar & DataObject::data< PetscScalar >(const unsigned int v)  {  return _data_storage->scalar(v, _offset); }
 
 template<>
-inline std::complex<Real> & DataObject::data< std::complex<Real> >(const unsigned int v) { return _data_storage->complex(v, _offset); }
+inline std::complex<PetscScalar> & DataObject::data< std::complex<PetscScalar> >(const unsigned int v) { return _data_storage->complex(v, _offset); }
 
 template<>
-inline VectorValue<Real> & DataObject::data< VectorValue<Real> >(const unsigned int v) { return _data_storage->vector(v, _offset); }
+inline VectorValue<PetscScalar> & DataObject::data< VectorValue<PetscScalar> >(const unsigned int v) { return _data_storage->vector(v, _offset); }
 
 template<>
-inline TensorValue<Real> & DataObject::data< TensorValue<Real> >(const unsigned int v) { return _data_storage->tensor(v, _offset); }
+inline TensorValue<PetscScalar> & DataObject::data< TensorValue<PetscScalar> >(const unsigned int v) { return _data_storage->tensor(v, _offset); }
 
 
 template <typename T>
 inline const T & DataObject::data(const unsigned int ) const { }
 
 template<>
-inline const Real & DataObject::data< Real >(const unsigned int v) const { return _data_storage->scalar(v, _offset); }
+inline const PetscScalar & DataObject::data< PetscScalar >(const unsigned int v) const { return _data_storage->scalar(v, _offset); }
 
 template<>
-inline const std::complex<Real> & DataObject::data< std::complex<Real> >(const unsigned int v) const { return _data_storage->complex(v, _offset); }
+inline const std::complex<PetscScalar> & DataObject::data< std::complex<PetscScalar> >(const unsigned int v) const { return _data_storage->complex(v, _offset); }
 
 template<>
-inline const VectorValue<Real> & DataObject::data< VectorValue<Real> >(const unsigned int v) const { return _data_storage->vector(v, _offset); }
+inline const VectorValue<PetscScalar> & DataObject::data< VectorValue<PetscScalar> >(const unsigned int v) const { return _data_storage->vector(v, _offset); }
 
 template<>
-inline const TensorValue<Real> & DataObject::data< TensorValue<Real> >(const unsigned int v) const { return _data_storage->tensor(v, _offset); }
+inline const TensorValue<PetscScalar> & DataObject::data< TensorValue<PetscScalar> >(const unsigned int v) const { return _data_storage->tensor(v, _offset); }
 
 
 template <typename T>
 inline T & DataObject::data(const std::string &) { }
 
 template<>
-inline Real & DataObject::data< Real >(const std::string & v) { return _data_storage->scalar(variable_index(v), _offset); }
+inline PetscScalar & DataObject::data< PetscScalar >(const std::string & v) { return _data_storage->scalar(variable_index(v), _offset); }
 
 template<>
-inline std::complex<Real> & DataObject::data< std::complex<Real> >(const std::string & v) { return _data_storage->complex(variable_index(v), _offset); }
+inline std::complex<PetscScalar> & DataObject::data< std::complex<PetscScalar> >(const std::string & v) { return _data_storage->complex(variable_index(v), _offset); }
 
 template<>
-inline VectorValue<Real> & DataObject::data< VectorValue<Real> >(const std::string & v) { return _data_storage->vector(variable_index(v), _offset); }
+inline VectorValue<PetscScalar> & DataObject::data< VectorValue<PetscScalar> >(const std::string & v) { return _data_storage->vector(variable_index(v), _offset); }
 
 template<>
-inline TensorValue<Real> & DataObject::data< TensorValue<Real> >(const std::string & v) { return _data_storage->tensor(variable_index(v), _offset); }
+inline TensorValue<PetscScalar> & DataObject::data< TensorValue<PetscScalar> >(const std::string & v) { return _data_storage->tensor(variable_index(v), _offset); }
 
 
 
@@ -194,15 +194,15 @@ template <typename T>
 inline const T & DataObject::data(const std::string & ) const { }
 
 template<>
-inline const Real & DataObject::data< Real >(const std::string & v) const { return _data_storage->scalar(variable_index(v), _offset); }
+inline const PetscScalar & DataObject::data< PetscScalar >(const std::string & v) const { return _data_storage->scalar(variable_index(v), _offset); }
 
 template<>
-inline const std::complex<Real> & DataObject::data< std::complex<Real> >(const std::string & v) const { return _data_storage->complex(variable_index(v), _offset); }
+inline const std::complex<PetscScalar> & DataObject::data< std::complex<PetscScalar> >(const std::string & v) const { return _data_storage->complex(variable_index(v), _offset); }
 
 template<>
-inline const VectorValue<Real> & DataObject::data< VectorValue<Real> >(const std::string & v) const { return _data_storage->vector(variable_index(v), _offset); }
+inline const VectorValue<PetscScalar> & DataObject::data< VectorValue<PetscScalar> >(const std::string & v) const { return _data_storage->vector(variable_index(v), _offset); }
 
 template<>
-inline const TensorValue<Real> & DataObject::data< TensorValue<Real> >(const std::string & v) const { return _data_storage->tensor(variable_index(v), _offset); }
+inline const TensorValue<PetscScalar> & DataObject::data< TensorValue<PetscScalar> >(const std::string & v) const { return _data_storage->tensor(variable_index(v), _offset); }
 
 #endif

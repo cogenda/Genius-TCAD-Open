@@ -73,6 +73,16 @@ private:
   */
  Point _pp;
 
+ /**
+  * which region the probe point should in
+  */
+ std::string _region;
+
+ /**
+  * which material the probe point should in
+  */
+ std::string _material;
+
  const FVM_Node* _p_fvm_node;
 
  unsigned int    _min_loc;

@@ -27,7 +27,7 @@
 #include "petsc_utils.h"
 
 
-void ElectrodeInsulatorInterfaceBC::DDMAC_Fill_Matrix_Vector( Mat A, Vec b, const Mat J, const double omega, InsertMode & add_value_flag )
+void ElectrodeInsulatorInterfaceBC::DDMAC_Fill_Matrix_Vector( Mat A, Vec b, const Mat J, const PetscScalar omega, InsertMode & add_value_flag )
 {
   // after that, set new Jacobian entrance to source rows
   BoundaryCondition::const_node_iterator node_it = nodes_begin();
@@ -64,6 +64,7 @@ void ElectrodeInsulatorInterfaceBC::DDMAC_Fill_Matrix_Vector( Mat A, Vec b, cons
           break;
         }
         // Electrode-Insulator interface at Conductor side
+      case MetalRegion:
       case ElectrodeRegion:
         {
 

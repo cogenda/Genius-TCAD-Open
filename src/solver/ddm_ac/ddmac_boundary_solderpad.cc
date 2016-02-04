@@ -33,7 +33,7 @@
 
 using PhysicalUnit::e;
 
-void SolderPadBC::DDMAC_Fill_Matrix_Vector( Mat A, Vec b, const Mat J, const double omega, InsertMode & add_value_flag )
+void SolderPadBC::DDMAC_Fill_Matrix_Vector( Mat A, Vec b, const Mat J, const PetscScalar omega, InsertMode & add_value_flag )
 {
 
   if( (add_value_flag != ADD_VALUES) && (add_value_flag != NOT_SET_VALUES) )
@@ -64,7 +64,8 @@ void SolderPadBC::DDMAC_Fill_Matrix_Vector( Mat A, Vec b, const Mat J, const dou
 
   const double workfunction = resistance_region->material()->basic->Affinity(T_external());
   const double sigma = resistance_region->material()->basic->Conductance();
-
+  const std::complex <PetscScalar> mna_scaling = ext_circuit()->mna_ac_scaling(omega);
+  
   // loop again
   BoundaryCondition::const_node_iterator node_it = nodes_begin();
   BoundaryCondition::const_node_iterator end_it = nodes_end();
@@ -138,6 +139,44 @@ void SolderPadBC::DDMAC_Fill_Matrix_Vector( Mat A, Vec b, const Mat J, const dou
             PetscInt col_im   = index_im;
             MatSetValue(A, index_im, col_im, fT.getADValue(0), ADD_VALUES);
           }
+          
+           // compute current
+
+          FVM_Node::fvm_neighbor_node_iterator nb_it = fvm_nodes[i]->neighbor_node_begin();
+          for(; nb_it != fvm_nodes[i]->neighbor_node_end(); ++nb_it)
+          {
+            const FVM_Node *nb_node = (*nb_it).first;
+
+            // the psi of this node
+            AutoDScalar  V = node_data->psi(); V.setADValue(0, 1.0);
+            // the psi of neighbor node
+            AutoDScalar V_nb = nb_node->node_data()->psi(); V_nb.setADValue(1, 1.0);
+
+            // distance from nb node to this node
+            PetscScalar distance = (*(fvm_nodes[i]->root_node()) - *(nb_node->root_node())).size();
+
+            // area of out surface of control volume related with neighbor node
+            PetscScalar cv_boundary = fvm_nodes[i]->cv_surface_area(nb_node);
+            AutoDScalar J = sigma*(V-V_nb)/distance;
+
+            
+            std::complex <PetscScalar> dI_dV  = mna_scaling*cv_boundary*J.getADValue(0)*current_scale;
+            std::complex <PetscScalar> dI_dVn = mna_scaling*cv_boundary*J.getADValue(1)*current_scale;
+
+            // V
+            MatSetValue(A, bc_global_offset_re, fvm_nodes[i]->global_offset(), dI_dV.real(), ADD_VALUES);
+            MatSetValue(A, bc_global_offset_re, fvm_nodes[i]->global_offset()+regions[i]->ebm_n_variables(), -dI_dV.imag(), ADD_VALUES);
+
+            MatSetValue(A, bc_global_offset_im, fvm_nodes[i]->global_offset(), dI_dV.imag(), ADD_VALUES);
+            MatSetValue(A, bc_global_offset_im, fvm_nodes[i]->global_offset()+regions[i]->ebm_n_variables(),  dI_dV.real(), ADD_VALUES);
+
+            // V_nb
+            MatSetValue(A, bc_global_offset_re, nb_node->global_offset(), dI_dVn.real(), ADD_VALUES);
+            MatSetValue(A, bc_global_offset_re, nb_node->global_offset()+regions[i]->ebm_n_variables(), -dI_dVn.imag(), ADD_VALUES);
+
+            MatSetValue(A, bc_global_offset_im, nb_node->global_offset(), dI_dVn.imag(), ADD_VALUES);
+            MatSetValue(A, bc_global_offset_im, nb_node->global_offset()+regions[i]->ebm_n_variables(),  dI_dVn.real(), ADD_VALUES);
+          }
 
           break;
         }
@@ -196,7 +235,7 @@ void SolderPadBC::DDMAC_Fill_Matrix_Vector( Mat A, Vec b, const Mat J, const dou
 
 
 
-  // the extra equation of gate boundary
+  // the extra equation of solderpad boundary
   // For ac scan
   //
   //          _____  (Z1)          Ve
@@ -233,7 +272,7 @@ void SolderPadBC::DDMAC_Fill_Matrix_Vector( Mat A, Vec b, const Mat J, const dou
 /*---------------------------------------------------------------------
  * update electrode IV
  */
-void SolderPadBC::DDMAC_Update_Solution(const PetscScalar * lxx, const Mat, const double omega)
+void SolderPadBC::DDMAC_Update_Solution(const PetscScalar * lxx, const Mat, const PetscScalar omega)
 {
   std::complex<PetscScalar> Vac(lxx[this->local_offset()], lxx[this->local_offset()+1]);
   std::complex<PetscScalar> Iac(0.0, 0.0);
@@ -250,8 +289,8 @@ void SolderPadBC::DDMAC_Update_Solution(const PetscScalar * lxx, const Mat, cons
   if( _r2 && _r2->type() == MetalRegion ) resistance_region = dynamic_cast<const MetalSimulationRegion *>(_r2);
   genius_assert(resistance_region);
 
-  const double workfunction = resistance_region->material()->basic->Affinity(T_external());
-  const double sigma = resistance_region->material()->basic->Conductance();
+  const PetscScalar workfunction = resistance_region->material()->basic->Affinity(T_external());
+  const PetscScalar sigma = resistance_region->material()->basic->Conductance();
 
   BoundaryCondition::const_node_iterator node_it;
   BoundaryCondition::const_node_iterator end_it = nodes_end();

@@ -96,8 +96,9 @@ void MetalSimulationRegion::DDM1_Function(PetscScalar * x, Vec f, InsertMode &ad
 
   iy.reserve(2*n_edge());
   y.reserve(2*n_edge());
-
-  const double sigma = this->get_conductance();
+  
+  const PetscScalar T   = T_external();
+  
 
   // search all the edges of this region, do integral over control volume...
   const_edge_iterator it = edges_begin();
@@ -121,12 +122,13 @@ void MetalSimulationRegion::DDM1_Function(PetscScalar * x, Vec f, InsertMode &ad
       // electrostatic potential, as independent variable
       PetscScalar V1   =  x[n1_local_offset];
       PetscScalar V2   =  x[n2_local_offset];
+      PetscScalar E    = (V2-V1)/fvm_n1->distance(fvm_n2);
 
       // truncated to positive
       double S = std::abs(fvm_n1->cv_surface_area(fvm_n2));
 
       // "flux" from node 2 to node 1
-      PetscScalar f = sigma*S*(V2 - V1)/fvm_n1->distance(fvm_n2) ;
+      PetscScalar f = mt->basic->CurrentDensity(E, T)*S;
 
       // ignore thoese ghost nodes
       if( fvm_n1->on_processor() )
@@ -181,7 +183,7 @@ void MetalSimulationRegion::DDM1_Function(PetscScalar * x, Vec f, InsertMode &ad
 /*---------------------------------------------------------------------
  * build function and its jacobian for DDML1 solver
  */
-void MetalSimulationRegion::DDM1_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_value_flag)
+void MetalSimulationRegion::DDM1_Jacobian(PetscScalar * x, SparseMatrix<PetscScalar> *jac, InsertMode &add_value_flag)
 {
 
   //the indepedent variable number, since we only process edges, 2 is enough
@@ -191,14 +193,8 @@ void MetalSimulationRegion::DDM1_Jacobian(PetscScalar * x, Mat *jac, InsertMode 
   mt->set_ad_num(adtl::AutoDScalar::numdir);
 
   // note, we will use ADD_VALUES to set values of matrix J
-  // if the previous operator is not ADD_VALUES, we should flush the matrix
-  if( (add_value_flag != ADD_VALUES) && (add_value_flag != NOT_SET_VALUES) )
-  {
-    MatAssemblyBegin(*jac, MAT_FLUSH_ASSEMBLY);
-    MatAssemblyEnd(*jac, MAT_FLUSH_ASSEMBLY);
-  }
 
-  const double sigma = this->get_conductance();
+  const PetscScalar T   = T_external();
 
   // search all the edges of this region, do integral over control volume...
   const_edge_iterator it = edges_begin();
@@ -228,21 +224,22 @@ void MetalSimulationRegion::DDM1_Jacobian(PetscScalar * x, Mat *jac, InsertMode 
       // electrostatic potential, as independent variable
       AutoDScalar V1   =  x[n1_local_offset];   V1.setADValue(0,1.0);
       AutoDScalar V2   =  x[n2_local_offset];   V2.setADValue(1,1.0);
+      AutoDScalar E    = (V2-V1)/fvm_n1->distance(fvm_n2);
 
       // truncated to positive
       double S = std::abs(fvm_n1->cv_surface_area(fvm_n2));
-      AutoDScalar f =  sigma*S*(V2 - V1)/fvm_n1->distance(fvm_n2) ;
+      AutoDScalar f = mt->basic->CurrentDensity(E, T)*S;
 
       // ignore thoese ghost nodes
 
       if( fvm_n1->on_processor() )
       {
-        MatSetValues(*jac, 1, &row[0], 2, &col[0], f.getADValue(), ADD_VALUES);
+        jac->add_row(  row[0],  2,  &col[0],  f.getADValue() );
       }
 
       if( fvm_n2->on_processor() )
       {
-        MatSetValues(*jac, 1, &row[1], 2, &col[0], (-f).getADValue(), ADD_VALUES);
+        jac->add_row(  row[1],  2,  &col[0],  (-f).getADValue() );
       }
     }
   }
@@ -267,7 +264,7 @@ void MetalSimulationRegion::DDM1_Jacobian(PetscScalar * x, Mat *jac, InsertMode 
     AutoDScalar V   =  x[fvm_node->local_offset()];  V.setADValue(0, 1.0);
     AutoDScalar current = -cap*(V-fvm_node_data->psi())/SolverSpecify::dt - (V-fvm_node_data->psi())/res;
 
-    MatSetValue(*jac, fvm_node->global_offset(), fvm_node->global_offset(), current.getADValue(0), ADD_VALUES);
+    jac->add( fvm_node->global_offset(),  fvm_node->global_offset(),  current.getADValue(0) );
   }
 
   // boundary condition should be processed later!
@@ -318,15 +315,8 @@ void MetalSimulationRegion::DDM1_Pseudo_Time_Step_Function(PetscScalar * x, Vec 
 }
 
 
-void MetalSimulationRegion::DDM1_Pseudo_Time_Step_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_value_flag)
+void MetalSimulationRegion::DDM1_Pseudo_Time_Step_Jacobian(PetscScalar * x, SparseMatrix<PetscScalar> *jac, InsertMode &add_value_flag)
 {
-  // note, we will use ADD_VALUES to set values of matrix J
-  // if the previous operator is not ADD_VALUES, we should flush the matrix
-  if( (add_value_flag != ADD_VALUES) && (add_value_flag != NOT_SET_VALUES) )
-  {
-    MatAssemblyBegin(*jac, MAT_FLUSH_ASSEMBLY);
-    MatAssemblyEnd(*jac, MAT_FLUSH_ASSEMBLY);
-  }
 
   if(this->connect_to_low_resistance_solderpad()) return;
 
@@ -354,7 +344,7 @@ void MetalSimulationRegion::DDM1_Pseudo_Time_Step_Jacobian(PetscScalar * x, Mat 
     AutoDScalar V(x[local_offset]);   V.setADValue(0, 1.0);              // psi
     AutoDScalar f_V = -cap*(V-node_data->psi())/SolverSpecify::PseudoTimeStepMetal;
 
-    MatSetValue(*jac, global_offset, global_offset, f_V.getADValue(0), ADD_VALUES);
+    jac->add( global_offset,  global_offset,  f_V.getADValue(0) );
   }
 
   // the last operator is ADD_VALUES
@@ -416,6 +406,7 @@ void MetalSimulationRegion::DDM1_Update_Solution(PetscScalar *lxx)
   // however, the electrical field is always zero. We needn't do anything here.
 
 }
+
 
 
 

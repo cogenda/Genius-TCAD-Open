@@ -106,7 +106,7 @@ public:
   /**
    * add spice matrix to petsc matrix
    */
-  void build_spice_jacobian(PetscScalar *lxx, Mat *jac, InsertMode &add_value_flag);
+  void build_spice_jacobian(PetscScalar *lxx, SparseMatrix<PetscScalar> *jac, InsertMode &add_value_flag);
 
   /**
    * dump spice matrix in petsc format to external file

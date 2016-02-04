@@ -50,10 +50,10 @@ public:
   PetscScalar Permeability  ()                      const { return PERMEABI; }
   PetscScalar Affinity      (const PetscScalar &Tl) const { return AFFINITY; }
 
-  void atom_fraction(std::vector<std::string> &atoms, std::vector<double> & fraction) const
+  void G4Material(std::vector<Atom> &atoms, std::vector<double> & fraction) const
   {
-    atoms.push_back("Ga");//Gallium
-    atoms.push_back("As");//Arsenic
+    atoms.push_back(Atom("Gallium",   "Ga", 31, 69.72));//Gallium
+    atoms.push_back(Atom("Arsenic",   "As", 33, 74.922));//Arsenic
     fraction.push_back(1.0);
     fraction.push_back(1.0);
   }

@@ -178,16 +178,10 @@ void ElectrodeSimulationRegion::DDM2_Function(PetscScalar * x, Vec f, InsertMode
 /*---------------------------------------------------------------------
  * build function and its jacobian for DDML2 solver
  */
-void ElectrodeSimulationRegion::DDM2_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_value_flag)
+void ElectrodeSimulationRegion::DDM2_Jacobian(PetscScalar * x, SparseMatrix<PetscScalar> *jac, InsertMode &add_value_flag)
 {
 
   // note, we will use ADD_VALUES to set values of matrix J
-  // if the previous operator is not ADD_VALUES, we should flush the matrix
-  if( add_value_flag != ADD_VALUES && add_value_flag != NOT_SET_VALUES)
-  {
-    MatAssemblyBegin(*jac, MAT_FLUSH_ASSEMBLY);
-    MatAssemblyEnd(*jac, MAT_FLUSH_ASSEMBLY);
-  }
 
   //the indepedent variable number, since we only process edges, 2 is enough
   adtl::AutoDScalar::numdir=2;
@@ -243,20 +237,20 @@ void ElectrodeSimulationRegion::DDM2_Jacobian(PetscScalar * x, Mat *jac, InsertM
       // ignore thoese ghost nodes
       if( fvm_n1->on_processor() )
       {
-        MatSetValue(*jac, n1_global_offset, n1_global_offset, f_psi.getADValue(0), ADD_VALUES);
-        MatSetValue(*jac, n1_global_offset, n2_global_offset, f_psi.getADValue(1), ADD_VALUES);
+        jac->add( n1_global_offset,  n1_global_offset,  f_psi.getADValue(0) );
+        jac->add( n1_global_offset,  n2_global_offset,  f_psi.getADValue(1) );
 
-        MatSetValue(*jac, n1_global_offset+1, n1_global_offset+1, f_q.getADValue(0), ADD_VALUES);
-        MatSetValue(*jac, n1_global_offset+1, n2_global_offset+1, f_q.getADValue(1), ADD_VALUES);
+        jac->add( n1_global_offset+1,  n1_global_offset+1,  f_q.getADValue(0) );
+        jac->add( n1_global_offset+1,  n2_global_offset+1,  f_q.getADValue(1) );
       }
 
       if( fvm_n2->on_processor() )
       {
-        MatSetValue(*jac, n2_global_offset, n1_global_offset, -f_psi.getADValue(0), ADD_VALUES);
-        MatSetValue(*jac, n2_global_offset, n2_global_offset, -f_psi.getADValue(1), ADD_VALUES);
+        jac->add( n2_global_offset,  n1_global_offset,  -f_psi.getADValue(0) );
+        jac->add( n2_global_offset,  n2_global_offset,  -f_psi.getADValue(1) );
 
-        MatSetValue(*jac, n2_global_offset+1, n1_global_offset+1, -f_q.getADValue(0), ADD_VALUES);
-        MatSetValue(*jac, n2_global_offset+1, n2_global_offset+1, -f_q.getADValue(1), ADD_VALUES);
+        jac->add( n2_global_offset+1,  n1_global_offset+1,  -f_q.getADValue(0) );
+        jac->add( n2_global_offset+1,  n2_global_offset+1,  -f_q.getADValue(1) );
       }
     }
   }
@@ -338,18 +332,8 @@ void ElectrodeSimulationRegion::DDM2_Time_Dependent_Function(PetscScalar * x, Ve
 
 
 
-void ElectrodeSimulationRegion::DDM2_Time_Dependent_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_value_flag)
+void ElectrodeSimulationRegion::DDM2_Time_Dependent_Jacobian(PetscScalar * x, SparseMatrix<PetscScalar> *jac, InsertMode &add_value_flag)
 {
-
-  // note, we will use ADD_VALUES to set values of matrix J
-  // if the previous operator is not ADD_VALUES, we should flush the matrix
-  if( (add_value_flag != ADD_VALUES) && (add_value_flag != NOT_SET_VALUES) )
-  {
-    MatAssemblyBegin(*jac, MAT_FLUSH_ASSEMBLY);
-    MatAssemblyEnd(*jac, MAT_FLUSH_ASSEMBLY);
-  }
-
-
   //the indepedent variable number, 1 for each node
   adtl::AutoDScalar::numdir = 1;
 
@@ -376,13 +360,13 @@ void ElectrodeSimulationRegion::DDM2_Time_Dependent_Jacobian(PetscScalar * x, Ma
       AutoDScalar TT = -((2-r)/(1-r)*T - 1.0/(r*(1-r))*node_data->T() + (1-r)/r*node_data->T_last())*node_data->density()*HeatCapacity
                        / (SolverSpecify::dt_last+SolverSpecify::dt)*fvm_node->volume();
       // ADD to Jacobian matrix,
-      MatSetValue(*jac, fvm_node->global_offset()+1, fvm_node->global_offset()+1, TT.getADValue(0), ADD_VALUES);
+      jac->add( fvm_node->global_offset()+1,  fvm_node->global_offset()+1,  TT.getADValue(0) );
     }
     else //first order
     {
       AutoDScalar TT = -(T - node_data->T())*node_data->density()*HeatCapacity/SolverSpecify::dt*fvm_node->volume();
       // ADD to Jacobian matrix,
-      MatSetValue(*jac, fvm_node->global_offset()+1, fvm_node->global_offset()+1, TT.getADValue(0), ADD_VALUES);
+      jac->add( fvm_node->global_offset()+1,  fvm_node->global_offset()+1,  TT.getADValue(0) );
     }
   }
 
@@ -420,6 +404,7 @@ void ElectrodeSimulationRegion::DDM2_Update_Solution(PetscScalar *lxx)
   // however, the electrical field is always zero. We needn't do anything here.
 
 }
+
 
 
 

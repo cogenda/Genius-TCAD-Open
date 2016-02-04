@@ -19,7 +19,7 @@
 /*                                                                              */
 /********************************************************************************/
 
-#include "fvm_nonlinear_solver.h"
+#include "fvm_flex_nonlinear_solver.h"
 #include "singularvalue_hook.h"
 
 
@@ -97,7 +97,7 @@ void SingularValueHook::post_solve()
  */
 void SingularValueHook::pre_iteration()
 {
-  FVM_NonlinearSolver & nonlinear_solver = dynamic_cast<FVM_NonlinearSolver &>(_solver);
+  FVM_FlexNonlinearSolver & nonlinear_solver = dynamic_cast<FVM_FlexNonlinearSolver &>(_solver);
   const SimulationSystem &system = nonlinear_solver.get_system();
 
   // calculate the eigen value as well as the smallest eigen vector

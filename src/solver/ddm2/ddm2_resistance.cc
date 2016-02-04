@@ -93,7 +93,6 @@ void MetalSimulationRegion::DDM2_Function(PetscScalar * x, Vec f, InsertMode &ad
     VecAssemblyEnd(f);
   }
 
-  const PetscScalar sigma = mt->basic->Conductance();
 
   // set local buf here
   std::vector<int>          iy;
@@ -135,22 +134,28 @@ void MetalSimulationRegion::DDM2_Function(PetscScalar * x, Vec f, InsertMode &ad
       PetscScalar T2   =  x[n2_local_offset+1];
       PetscScalar kap2 =  mt->thermal->HeatConduction(T2);
 
+      PetscScalar E    = (V2-V1)/fvm_n1->distance(fvm_n2);
       PetscScalar kap = 0.5*(kap1+kap2);       // kapa at mid point of the edge
+            
+      PetscScalar J = mt->basic->CurrentDensity(E, 0.5*(T1+T2));
 
       // truncated to positive
       double S = std::abs(fvm_n1->cv_surface_area(fvm_n2));
 
       // "flux" from node 2 to node 1
-      PetscScalar f_psi = sigma*S*(V2 - V1)/fvm_n1->distance(fvm_n2) ;
-      PetscScalar f_q   =  kap*S*(T2 - T1)/fvm_n1->distance(fvm_n2) ;
+      PetscScalar f_psi = J*S;
+      PetscScalar f_q   = kap*S*(T2 - T1)/fvm_n1->distance(fvm_n2) ;
 
+      // joule heating
+      PetscScalar H = 0.5*(V2-V1)*J*S;
+        
       // ignore thoese ghost nodes
       if( fvm_n1->on_processor() )
       {
         iy.push_back(n1_global_offset+0);
         y.push_back(f_psi);
         iy.push_back(n1_global_offset+1);
-        y.push_back(f_q);
+        y.push_back(f_q + H);
       }
 
       if( fvm_n2->on_processor() )
@@ -158,7 +163,7 @@ void MetalSimulationRegion::DDM2_Function(PetscScalar * x, Vec f, InsertMode &ad
         iy.push_back(n2_global_offset+0);
         y.push_back(-f_psi);
         iy.push_back(n2_global_offset+1);
-        y.push_back(-f_q);
+        y.push_back(-f_q + H);
       }
     }
   }
@@ -183,24 +188,15 @@ void MetalSimulationRegion::DDM2_Function(PetscScalar * x, Vec f, InsertMode &ad
 /*---------------------------------------------------------------------
  * build function and its jacobian for DDML2 solver
  */
-void MetalSimulationRegion::DDM2_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_value_flag)
+void MetalSimulationRegion::DDM2_Jacobian(PetscScalar * x, SparseMatrix<PetscScalar> *jac, InsertMode &add_value_flag)
 {
 
-  //the indepedent variable number, since we only process edges, 2 is enough
-  adtl::AutoDScalar::numdir=2;
+  //the indepedent variable number, since we only process edges, 4 is enough
+  adtl::AutoDScalar::numdir=4;
 
   //synchronize with material database
   mt->set_ad_num(adtl::AutoDScalar::numdir);
 
-  // note, we will use ADD_VALUES to set values of matrix J
-  // if the previous operator is not ADD_VALUES, we should flush the matrix
-  if( (add_value_flag != ADD_VALUES) && (add_value_flag != NOT_SET_VALUES) )
-  {
-    MatAssemblyBegin(*jac, MAT_FLUSH_ASSEMBLY);
-    MatAssemblyEnd(*jac, MAT_FLUSH_ASSEMBLY);
-  }
-
-  const PetscScalar sigma = mt->basic->Conductance();
 
  // search all the edges of this region, do integral over control volume...
   const_edge_iterator it = edges_begin();
@@ -222,50 +218,47 @@ void MetalSimulationRegion::DDM2_Jacobian(PetscScalar * x, Mat *jac, InsertMode 
     const unsigned int n1_local_offset = fvm_n1->local_offset();
     const unsigned int n2_local_offset = fvm_n2->local_offset();
 
-    // the row/colume position of variables in the matrix
-    PetscInt row[2],col[2];
-    row[0] = col[0] = fvm_n1->global_offset();
-    row[1] = col[1] = fvm_n2->global_offset();
+    PetscInt col[4]={n1_global_offset, n1_global_offset+1, n2_global_offset, n2_global_offset+1};
 
     // here we use AD, however it is great overkill for such a simple problem.
     {
       //for node 1 of the edge
       mt->mapping(fvm_n1->root_node(), n1_data, SolverSpecify::clock);
       AutoDScalar V1   =  x[n1_local_offset+0];  V1.setADValue(0,1.0);           // electrostatic potential
-      AutoDScalar T1   =  x[n1_local_offset+1];  T1.setADValue(0,1.0);           // lattice temperature
+      AutoDScalar T1   =  x[n1_local_offset+1];  T1.setADValue(1,1.0);           // lattice temperature
       PetscScalar kap1 =  mt->thermal->HeatConduction(T1.getValue());
 
       //for node 2 of the edge
       mt->mapping(fvm_n2->root_node(), n2_data, SolverSpecify::clock);
-      AutoDScalar V2   =  x[n2_local_offset+0];  V2.setADValue(1,1.0);
-      AutoDScalar T2   =  x[n2_local_offset+1];  T2.setADValue(1,1.0);
+      AutoDScalar V2   =  x[n2_local_offset+0];  V2.setADValue(2,1.0);
+      AutoDScalar T2   =  x[n2_local_offset+1];  T2.setADValue(3,1.0);
       PetscScalar kap2 =  mt->thermal->HeatConduction(T2.getValue());
 
-      PetscScalar kap = 0.5*(kap1+kap2);       // kapa at mid point of the edge
-
+      AutoDScalar E    = (V2-V1)/fvm_n1->distance(fvm_n2);
+      PetscScalar kap  = 0.5*(kap1+kap2);       // kapa at mid point of the edge
+            
+      AutoDScalar J = mt->basic->CurrentDensity(E, 0.5*(T1+T2));
+      
       // truncated to positive
       double S = std::abs(fvm_n1->cv_surface_area(fvm_n2));
       // "flux" from node 2 to node 1
-      AutoDScalar f_psi = sigma*S*(V2 - V1)/fvm_n1->distance(fvm_n2) ;
-      AutoDScalar f_q =  kap*S*(T2 - T1)/fvm_n1->distance(fvm_n2) ;
-
+      AutoDScalar f_psi = J*S;
+      AutoDScalar f_q   = kap*S*(T2 - T1)/fvm_n1->distance(fvm_n2) ;
+      
+      // joule heating
+      AutoDScalar H = 0.5*(V2-V1)*J*S;
+      
       // ignore thoese ghost nodes
       if( fvm_n1->on_processor() )
       {
-        MatSetValue(*jac, n1_global_offset, n1_global_offset, f_psi.getADValue(0), ADD_VALUES);
-        MatSetValue(*jac, n1_global_offset, n2_global_offset, f_psi.getADValue(1), ADD_VALUES);
-
-        MatSetValue(*jac, n1_global_offset+1, n1_global_offset+1, f_q.getADValue(0), ADD_VALUES);
-        MatSetValue(*jac, n1_global_offset+1, n2_global_offset+1, f_q.getADValue(1), ADD_VALUES);
+        jac->add_row( n1_global_offset+0, 4, col,  f_psi.getADValue() );
+        jac->add_row( n1_global_offset+1, 4, col,  (f_q+H).getADValue() );
       }
 
       if( fvm_n2->on_processor() )
       {
-        MatSetValue(*jac, n2_global_offset, n1_global_offset, -f_psi.getADValue(0), ADD_VALUES);
-        MatSetValue(*jac, n2_global_offset, n2_global_offset, -f_psi.getADValue(1), ADD_VALUES);
-
-        MatSetValue(*jac, n2_global_offset+1, n1_global_offset+1, -f_q.getADValue(0), ADD_VALUES);
-        MatSetValue(*jac, n2_global_offset+1, n2_global_offset+1, -f_q.getADValue(1), ADD_VALUES);
+        jac->add_row( n2_global_offset+0,  4, col,  (-f_psi).getADValue() );
+        jac->add_row( n2_global_offset+1,  4, col,  (-f_q+H).getADValue() );
       }
     }
   }
@@ -342,18 +335,8 @@ void MetalSimulationRegion::DDM2_Time_Dependent_Function(PetscScalar * x, Vec f,
 
 
 
-void MetalSimulationRegion::DDM2_Time_Dependent_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_value_flag)
+void MetalSimulationRegion::DDM2_Time_Dependent_Jacobian(PetscScalar * x, SparseMatrix<PetscScalar> *jac, InsertMode &add_value_flag)
 {
-
-  // note, we will use ADD_VALUES to set values of matrix J
-  // if the previous operator is not ADD_VALUES, we should flush the matrix
-  if( (add_value_flag != ADD_VALUES) && (add_value_flag != NOT_SET_VALUES) )
-  {
-    MatAssemblyBegin(*jac, MAT_FLUSH_ASSEMBLY);
-    MatAssemblyEnd(*jac, MAT_FLUSH_ASSEMBLY);
-  }
-
-
   //the indepedent variable number, 1 for each node
   adtl::AutoDScalar::numdir = 1;
 
@@ -380,13 +363,13 @@ void MetalSimulationRegion::DDM2_Time_Dependent_Jacobian(PetscScalar * x, Mat *j
       AutoDScalar TT = -((2-r)/(1-r)*T - 1.0/(r*(1-r))*node_data->T() + (1-r)/r*node_data->T_last())*node_data->density()*HeatCapacity
                        / (SolverSpecify::dt_last+SolverSpecify::dt)*fvm_node->volume();
       // ADD to Jacobian matrix,
-      MatSetValue(*jac, fvm_node->global_offset()+1, fvm_node->global_offset()+1, TT.getADValue(0), ADD_VALUES);
+      jac->add( fvm_node->global_offset()+1,  fvm_node->global_offset()+1,  TT.getADValue(0) );
     }
     else //first order
     {
       AutoDScalar TT = -(T - node_data->T())*node_data->density()*HeatCapacity/SolverSpecify::dt*fvm_node->volume();
       // ADD to Jacobian matrix,
-      MatSetValue(*jac, fvm_node->global_offset()+1, fvm_node->global_offset()+1, TT.getADValue(0), ADD_VALUES);
+      jac->add( fvm_node->global_offset()+1,  fvm_node->global_offset()+1,  TT.getADValue(0) );
     }
   }
 
@@ -439,16 +422,8 @@ void MetalSimulationRegion::DDM2_Pseudo_Time_Step_Function(PetscScalar * x, Vec 
 }
 
 
-void MetalSimulationRegion::DDM2_Pseudo_Time_Step_Jacobian(PetscScalar * x, Mat *jac, InsertMode &add_value_flag)
+void MetalSimulationRegion::DDM2_Pseudo_Time_Step_Jacobian(PetscScalar * x, SparseMatrix<PetscScalar> *jac, InsertMode &add_value_flag)
 {
-  // note, we will use ADD_VALUES to set values of matrix J
-  // if the previous operator is not ADD_VALUES, we should flush the matrix
-  if( (add_value_flag != ADD_VALUES) && (add_value_flag != NOT_SET_VALUES) )
-  {
-    MatAssemblyBegin(*jac, MAT_FLUSH_ASSEMBLY);
-    MatAssemblyEnd(*jac, MAT_FLUSH_ASSEMBLY);
-  }
-
   if(this->connect_to_low_resistance_solderpad()) return;
 
   //the indepedent variable number, 1 for each node
@@ -475,7 +450,7 @@ void MetalSimulationRegion::DDM2_Pseudo_Time_Step_Jacobian(PetscScalar * x, Mat 
     AutoDScalar V(x[local_offset]);   V.setADValue(0, 1.0);              // psi
     AutoDScalar f_V = -cap*(V-node_data->psi())/SolverSpecify::PseudoTimeStepMetal;
 
-    MatSetValue(*jac, global_offset, global_offset, f_V.getADValue(0), ADD_VALUES);
+    jac->add( global_offset,  global_offset,  f_V.getADValue(0) );
   }
 
   // the last operator is ADD_VALUES
@@ -537,10 +512,28 @@ void MetalSimulationRegion::DDM2_Update_Solution(PetscScalar *lxx)
     node_data->T()   = lxx[fvm_node->local_offset()+1];
   }
 
-  // addtional work: compute electrical field for all the node.
-  // however, the electrical field is always zero. We needn't do anything here.
+  // addtional work: compute electrical field for all the cell.
+  // Since this value is only used for reference.
+  // It can be done simply by weighted average of cell's electrical field
+  for(unsigned int n=0; n<n_cell(); ++n)
+  {
+    const Elem * elem = this->get_region_elem(n);
+    FVM_CellData * elem_data = this->get_region_elem_data(n);
+
+    std::vector<PetscScalar> psi_vertex;
+
+    for(unsigned int nd=0; nd<elem->n_nodes(); ++nd)
+    {
+      const FVM_Node * fvm_node = elem->get_fvm_node(nd);
+      const FVM_NodeData * fvm_node_data = fvm_node->node_data();
+      psi_vertex.push_back  ( fvm_node_data->psi() );
+    }
+    // compute the gradient in the cell
+    elem_data->E()  = - elem->gradient(psi_vertex);  // E = - grad(psi)
+  }
 
 }
+
 
 
 

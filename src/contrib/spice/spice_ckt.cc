@@ -21,6 +21,7 @@
 
 #include <cmath>
 #include <cassert>
+#include <algorithm>
 
 #include "genius_env.h"
 #include "genius_common.h"
@@ -96,7 +97,7 @@ SPICE_CKT::SPICE_CKT(const std::string & ckt_file)
   assert(get_nodal_info);
 
   _node_ptrs.resize(_n_nodes);
-  get_nodal_info(&_node_ptrs[0]);
+  get_nodal_info(&(_node_ptrs[0]));
   for(unsigned int n=0; n<_n_nodes; ++n)
   {
     SPICE_NODE node;
@@ -108,6 +109,8 @@ SPICE_CKT::SPICE_CKT(const std::string & ckt_file)
     node.ic_given      = _node_ptrs[n]->icGiven;
     node.nodeset_given = _node_ptrs[n]->nsGiven;
     node.is_electrode  = 0;
+    
+    _spice_node_name_to_spice_node_map.insert(std::make_pair(node.name, _node_info_array.size()));
     _node_info_array.push_back(node);
   }
   _solution.resize(_n_nodes, 0.0);
@@ -293,6 +296,16 @@ void SPICE_CKT::sync()
 }
 
 
+unsigned int SPICE_CKT::ckt_node_index(const std::string &name)
+{
+  std::string name_lower_cast = name;
+  std::transform(name_lower_cast.begin(), name_lower_cast.end(), name_lower_cast.begin(), ::tolower);
+  
+  if(_spice_node_name_to_spice_node_map.find(name_lower_cast) != _spice_node_name_to_spice_node_map.end())
+    return  _spice_node_name_to_spice_node_map.find(name_lower_cast)->second;
+  return invalid_uint;
+}
+
 
 void SPICE_CKT::set_ckt_mode(long mode, bool reset)
 {
@@ -321,6 +334,130 @@ void SPICE_CKT::print_ckt_mode() const
 
   std::cout<<std::endl;
 }
+
+
+void SPICE_CKT::export_solution(const std::string &file) const
+{
+  if(Genius::is_last_processor())
+  {
+    std::ofstream fout(file.c_str());
+    // export nodal value
+    fout<<"* nodal voltage and branch current"<<std::endl;
+    fout<<this->n_ckt_nodes()<<std::endl;
+    for(unsigned int n=0; n<this->n_ckt_nodes(); ++n)
+    {
+      fout << std::left << std::setw(30) << this->ckt_node_name(n)  << std::setw(15) << this->rhs_old(n) << std::endl;
+    }
+    // export state 
+    fout<<"* state"<<std::endl;
+    fout<<n_state()<<std::endl;
+    
+    std::vector<double> state0;
+    get_state_vector(0, state0);
+    
+    std::vector<double> state1;
+    get_state_vector(1, state1);
+    
+    std::vector<double> state2;
+    get_state_vector(2, state2);
+    
+    for(unsigned int n=0; n<state0.size(); ++n)
+    {
+      fout << std::setw(15) << state0[n] 
+           << std::setw(15) << state1[n] 
+           << std::setw(15) << state2[n] 
+           << std::endl;
+    }
+    
+    fout.close();
+  }
+}
+
+
+void SPICE_CKT::import_solution(const std::string &file)
+{
+  if(Genius::is_last_processor())
+  {
+    void (*set_nodal_value)(char *, double);
+    set_nodal_value = (void (*)(char *, double))LDFUN(dll_file,"ngspice_set_nodal_value");
+    assert(set_nodal_value);
+    
+    std::ifstream fin(file.c_str());
+    if(!fin.good()) return;
+    
+    std::stringstream ss; 
+    
+    while (!fin.eof())
+    {
+      std::string line;
+      std::getline(fin, line);
+      
+      if(line.empty()) continue;
+    
+      size_t pos = line.find('*');
+      if( pos != std::string::npos )
+        line = line.substr(0, pos);
+      
+      ss << line << ' ';
+    }
+   
+    fin.close();
+    
+    std::map<std::string, double> nodal_value;
+    std::vector<double> state0,state1,state2;
+    
+    int solution_num;
+    ss >> solution_num;
+    for(int i=0; i<solution_num; i++)
+    {
+      std::string node_name;
+      double value;
+      ss >> node_name >> value;
+      nodal_value[node_name] = value;
+    }
+    
+    int state_num;
+    ss >> state_num;
+    for(int i=0; i<state_num; i++)
+    {
+      double s0, s1, s2;
+      ss >> s0 >> s1 >> s2;
+      state0.push_back(s0);
+      state1.push_back(s1);
+      state2.push_back(s2);
+    }
+
+    
+    for(std::map<std::string, double>::const_iterator it=nodal_value.begin(); it!=nodal_value.end(); it++)
+    {
+      std::string node_name = it->first;
+      double value = it->second;
+      
+      if(_spice_node_name_to_spice_node_map.find(node_name) != _spice_node_name_to_spice_node_map.end())
+      {
+    
+        unsigned int index = _spice_node_name_to_spice_node_map.find(node_name)->second;
+
+        SPICE_NODE & node = _node_info_array[index]; 
+        node.nodeset_given = true;
+        node.nodeset = value;
+        (*_p_rhs_old)[index] = value;
+        
+        CKTnode * ckt_node = _node_ptrs[index];
+        ckt_node->nsGiven = 1 ;
+        ckt_node->nodeset = value;
+      }
+    }
+    
+    if(n_state() == state_num)
+    {
+      set_state_vector(0, state0);
+      set_state_vector(1, state1);
+      set_state_vector(2, state2);
+    }
+  }
+}
+
 
 
 void SPICE_CKT::update_rhs_old(const std::vector<double> &rhs)
@@ -679,12 +816,17 @@ void SPICE_CKT::set_integrate_method(int method)
 }
 
 
-void SPICE_CKT::get_state_vector(int i, std::vector<double> &state) const
+unsigned int SPICE_CKT::n_state() const
 {
   unsigned int (*n_state)();
   n_state = (unsigned int (*)())LDFUN(dll_file,"ngspice_n_state");
   assert(n_state);
+  return n_state();
+}
 
+
+void SPICE_CKT::get_state_vector(int i, std::vector<double> &state) const
+{
   state.resize(n_state());
 
   double ** (*get_state)(int);
@@ -694,6 +836,20 @@ void SPICE_CKT::get_state_vector(int i, std::vector<double> &state) const
   double * state_array = *(get_state(i));
   for(unsigned int n=0; n<state.size(); ++n)
     state[n] = state_array[n];
+}
+
+
+void SPICE_CKT::set_state_vector(int i, const std::vector<double> &state)
+{
+  assert(state.size() == n_state());
+
+  double ** (*get_state)(int);
+  get_state = (double ** (*)(int))LDFUN(dll_file,"ngspice_get_state");
+  assert(get_state);
+
+  double * state_array = *(get_state(i));
+  for(unsigned int n=0; n<state.size(); ++n)
+    state_array[n] = state[n];
 }
 
 
@@ -717,12 +873,9 @@ void SPICE_CKT::do_node_set(bool flag)
     if(flag)
     {
       ckt_node->nsGiven = node.nodeset_given ? 1:0;
+      ckt_node->nodeset = node.nodeset;
       if(node.nodeset_given)
         (*_p_rhs_old)[n] = node.nodeset;
-    }
-    else
-    {
-      ckt_node->nsGiven = 0;
     }
   }
 }
@@ -737,12 +890,9 @@ void SPICE_CKT::do_ic(bool flag)
     if(flag)
     {
       ckt_node->icGiven = node.ic_given ? 1:0;
+      ckt_node->ic = node.ic;
       if(node.ic_given)
         (*_p_rhs_old)[n] = node.ic;
-    }
-    else
-    {
-      ckt_node->icGiven = 0;
     }
   }
 }
@@ -792,18 +942,28 @@ void SPICE_CKT::build_schur_solver()
 {
   std::vector<unsigned int> schur_block;
   std::vector<unsigned int> non_schur_block;
-
+  
   for(unsigned int n=0; n<_node_info_array.size(); ++n)
   {
     if(_node_info_array[n].is_electrode)
       schur_block.push_back(n);
-    else
+    else  
       non_schur_block.push_back(n);
   }
   assert( schur_block.size() + non_schur_block.size() == _n_nodes );
   _schur_solver.build(_n_nodes,schur_block,non_schur_block);
+ 
 }
 
+
+int SPICE_CKT::circuit_load()
+{ 
+  int res = _circuit_load(); 
+  //print_ckt_matrix();
+  return res;
+}
+  
+  
 
 int SPICE_CKT::circuit_load_schur()
 {
@@ -823,8 +983,7 @@ int SPICE_CKT::circuit_load_schur()
     {
       _schur_solver.MatSetValue(n, col[c], values[c]);
     }
-    double r;
-    ckt_residual(n, r);
+    double r = ckt_residual(n);
     _schur_solver.RHSSetValue(n, r);
   }
 
@@ -849,8 +1008,11 @@ void SPICE_CKT::update_rhs_old_schur(const std::vector<double> &x)
   std::vector<double> rhs_x;
   _schur_solver.XGetValue(rhs_x);
 
+
   // do damping here?
   std::vector<double> rhs(_n_nodes, 0.0);
+   
+  
   for(unsigned int n=1; n<_n_nodes; ++n)
   {
     double f = 1.0;
@@ -929,6 +1091,17 @@ void SPICE_CKT::ckt_matrix_row(unsigned int row, std::vector<int> & col, std::ve
 
 void SPICE_CKT::print_ckt_matrix() const
 {
+  std::cout<< std::left << std::setw(32) << "Spice node" << std::setw(20) << "solution" << std::setw(20) << "residual" << std::endl;
+  for(unsigned int n=1; n<_n_nodes; n++)
+  {
+    double r = ckt_residual(n);
+    double x = (*_p_rhs_old)[n];
+    
+    std::cout<< std::left << std::setw(32) << _node_info_array[n].name << std::setw(20) << x << std::setw(20) << r << std::endl;
+  }
+  std::cout<<std::endl;
+  
+  
   std::cout<<"spice M"<<std::endl;
   std::cout<<"(0, 0, 1.0)" << std::endl;
   for(unsigned int n=1; n<_n_nodes; n++)
@@ -942,23 +1115,6 @@ void SPICE_CKT::print_ckt_matrix() const
     }
     std::cout<<std::endl;
   }
-
-  std::cout<<"spice r"<<std::endl;
-  for(unsigned int n=0; n<_n_nodes; n++)
-  {
-    double r;
-    ckt_residual(n, r);
-    std::cout<<r << " ";
-  }
-  std::cout<<std::endl;
-
-
-  std::cout<<"spice x"<<std::endl;
-  for(unsigned int n=0; n<_n_nodes; n++)
-  {
-    std::cout<<(*_p_rhs_old)[n] << " ";
-  }
-  std::cout<<std::endl;
 }
 
 
@@ -987,10 +1143,10 @@ void SPICE_CKT::ckt_residual(unsigned int n, int & global_index, double & value)
 }
 
 
-void SPICE_CKT::ckt_residual(unsigned int n, double & value) const
+double SPICE_CKT::ckt_residual(unsigned int n) const
 {
   if(n==0)
-    value = 0.0;
+    return 0.0;
   else
   {
     const std::vector<int> & col = _matrix_nonzero_pattern[n].first;
@@ -1003,8 +1159,9 @@ void SPICE_CKT::ckt_residual(unsigned int n, double & value) const
       v += (*col_value[i])*(*_p_rhs_old)[col_index];
     }
     v -= (*_p_rhs)[n];
-    value = v;
+    return v;
   }
+  return 0.0;
 }
 
 

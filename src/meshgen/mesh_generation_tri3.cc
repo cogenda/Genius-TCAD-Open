@@ -30,6 +30,9 @@
 #include "genius_env.h"
 #include "log.h"
 #include "unstructured_mesh.h"
+#include "mesh_refinement.h"
+#include "mesh_tools.h"
+#include "mesh_modification.h"
 #include "mesh_generation_tri3.h"
 
 #include "mathfunc.h" //for Erfc
@@ -206,30 +209,32 @@ void MeshGeneratorTri3::make_node_index()
 /* ----------------------------------------------------------------------------
  * this function do 2D spread on xy plane. copied from Pisces code
  */
-int MeshGeneratorTri3::make_spread(  const std::string &location, double width,
+int MeshGeneratorTri3::make_spread(  double xc, double width,
                                      unsigned int upperline,unsigned int lowerline,
-                                     double yuploc,double yloloc,double encroach,double grading)
+                                     double yuploc,double yloloc,double y_undisturbed,double encroach,double grading)
 {
-  double xloc,yupold,yloold,ybot;
-  if(location == "left")
-    xloc = point_array3d[0][0][0].x + width;
-  else
-    xloc = point_array3d[0][0][IX-1].x - width;
-
-  double  erfarg,erfar2,erfval,erfvl2;
+  double yupold,yloold,ybot;
+  double erfarg,erfar2,erfval,erfvl2;
 
   //proc colume by colume
   for(unsigned int i=0;i<IX;i++)
   {
-    double xco = point_array3d[0][0][i].x;
+    double x = point_array3d[0][0][i].x;
+
+    double xloc;
+
+    if(x > xc)
+      xloc = xc + width;
+    else
+      xloc = xc - width;
 
     //evaluate error function for this coord.
-    erfarg=(xco-xloc)*encroach;
-    if (location== "right")
-      erfar2=1.5*(erfarg+0.6);
-    else
+    erfarg=(x-xloc)*encroach;
+    if(x > xc)
       erfar2=1.5*(erfarg-0.6);
-    if (location== "left")
+    else
+      erfar2=1.5*(erfarg+0.6);
+    if(x > xc)
     {
 #ifdef WINDOWS
       erfval=Erfc(erfarg);
@@ -260,7 +265,7 @@ int MeshGeneratorTri3::make_spread(  const std::string &location, double width,
     //  get upper, lower, bottom current loc.
     yupold = point_array3d[0][upperline][i].y;
     yloold = point_array3d[0][lowerline][i].y;
-    ybot = point_array3d[0][IY-1][i].y;
+    ybot = y_undisturbed;
 
     // compute upward shift and downward
     double deltup=erfval*(yupold-yuploc);
@@ -300,8 +305,11 @@ int MeshGeneratorTri3::make_spread(  const std::string &location, double width,
       // bottom region, spread proportionally
       else if (j>=lowerline)
       {
-        double rat=(yco-yloold)/spbtol;
-        yco=ylonew+rat*spbtnw;
+        if(yco < ybot )
+        {
+          double rat=(yco-yloold)/spbtol;
+          yco=ylonew+rat*spbtnw;
+        }
       }
       // middle region spread proportionally unless new grading
       // is requested.
@@ -537,41 +545,45 @@ int MeshGeneratorTri3::set_spread(const Parser::Card &c)
   // get parameter value from command structure
 
   // get x location of distorted region.
-  int xpoint;
-
-  if( ! c.is_parameter_exist("location") )
-  {
-    MESSAGE<<"ERROR at " <<c.get_fileline()<< " SPREAD: you must give location of spread region!\n";
-    RECORD();
-    return 1;
-  }
-
-  std::string location = c.get_string("location","");
-
-  if( location == "left" )
-  { xpoint=0; }
-  else if( location == "right" )
-  { xpoint=IX-1; }
-  else
-  {
-    MESSAGE<<"ERROR at " <<c.get_fileline()<< " SPREAD: you must give correct location of spread region!\n";
-    RECORD();
-    return 1;
-  }
+  double xpoint = c.get_real("center",0.0);
   double width = c.get_real("width",0.0);
+
+  if( c.is_parameter_exist("location") )
+  {
+    std::string location = c.get_string("location","");
+
+    if( location == "left" )
+      xpoint=point_array3d[0][0][0].x;
+    else if( location == "right" )
+      xpoint=point_array3d[0][0][IX-1].x;
+    else
+    {
+      MESSAGE<<"ERROR at " <<c.get_fileline()<< " SPREAD: you must give correct location of spread region!\n";
+      RECORD();
+      return 1;
+    }
+  }
+
+  if(c.is_parameter_exist("x.min", "x.left") && c.is_parameter_exist("x.max", "x.right"))
+  {
+    double xmin = c.get_real("x.min",0.0, "x.left");
+    double xmax = c.get_real("x.max",0.0, "x.right");
+    xpoint = 0.5*(xmax + xmin);
+    width  = 0.5*(xmax - xmin);
+  }
 
   // the upper and lower grid line of distorted region
   int  upperline = c.get_int("upper",0);
   int  lowerline = c.get_int("lower",0);
-
+  int  ixpoint   = find_skeleton_line_x(xpoint);
   // current thickness
-  double cthick = point_array3d[0][upperline][xpoint].y - point_array3d[0][lowerline][xpoint].y;
+  double cthick = point_array3d[0][upperline][ixpoint].y - point_array3d[0][lowerline][ixpoint].y;
 
   // get the new location of upper and lower y grid line
   double yuploc,yloloc,thick;
   if(c.is_parameter_exist("y.lower"))
   {
-    yuploc = point_array3d[0][upperline][xpoint].y;
+    yuploc = point_array3d[0][upperline][ixpoint].y;
     yloloc = c.get_real("y.lower",0.0);
     thick = yloloc - yuploc ;
   }
@@ -581,8 +593,8 @@ int MeshGeneratorTri3::set_spread(const Parser::Card &c)
     double vol_rat = c.get_real("vol.ratio",0.44);
     double dthick = vol_rat*(thick-cthick);
     double uthick = thick-dthick-cthick;
-    yuploc = point_array3d[0][upperline][xpoint].y - uthick;
-    yloloc = point_array3d[0][lowerline][xpoint].y + dthick;
+    yuploc = point_array3d[0][upperline][ixpoint].y - uthick;
+    yloloc = point_array3d[0][lowerline][ixpoint].y + dthick;
   }
 
   // this parameter give the transition between distorted and undistorted grid. in x direction.
@@ -599,7 +611,9 @@ int MeshGeneratorTri3::set_spread(const Parser::Card &c)
   // get grading parameter(s)
   double grading =  c.get_real("grading",1.0);
 
-  make_spread(location,width,upperline,lowerline,yuploc,yloloc,encroach,grading);
+  double y_undisturbed =c.get_real("y.undisturbed", point_array3d[0][IY-1][0].y);
+
+  make_spread(xpoint,width,upperline,lowerline,yuploc,yloloc,y_undisturbed, encroach,grading);
 
   return 0;
 }
@@ -707,15 +721,15 @@ int MeshGeneratorTri3::set_region_rectangle(const Parser::Card &c)
   }
 
 
-  if( static_cast<int>(region.ixmin) < 0  ||  region.ixmax > (IX-1) || region.ixmin > region.ixmax )
+  if( static_cast<int>(region.ixmin) < 0  ||  region.ixmax > (IX-1) || region.ixmin >= region.ixmax )
   {
-    MESSAGE<<"ERROR at " <<c.get_fileline()<< " REGION: Can't locate left/right boundary of region!\n";
+    MESSAGE<<"ERROR at " <<c.get_fileline()<< " REGION " << region.label << ": Can't locate left/right boundary of region!\n";
     RECORD();
     return 1;
   }
-  if( static_cast<int>(region.iymin) < 0  ||  region.iymax > (IY-1) || region.iymin > region.iymax )
+  if( static_cast<int>(region.iymin) < 0  ||  region.iymax > (IY-1) || region.iymin >= region.iymax )
   {
-    MESSAGE<<"ERROR at " <<c.get_fileline()<< " REGION: Can't locate top/bottom boundary of region!\n";
+    MESSAGE<<"ERROR at " <<c.get_fileline()<< " REGION " << region.label << ": Can't locate top/bottom boundary of region!\n";
     RECORD();
     return 1;
   }
@@ -866,6 +880,14 @@ int MeshGeneratorTri3::set_face(const Parser::Card &c)
     RECORD();
     return 1;
   }
+
+  if( ixmin == ixmax && iymin == iymax )
+  {
+    MESSAGE<<"ERROR at " <<c.get_fileline()<< " FACE: face degradated to a point!\n";
+    RECORD();
+    return 1;
+  }
+
 
   make_face(ixmin,ixmax,iymin,iymax,label);
 
@@ -1024,7 +1046,7 @@ int MeshGeneratorTri3::do_mesh()
     Parser::Card c = _decks.get_current_card();
 
     if(c.key() == "MESH")      // It's a MESH card
-      tri_cmd = c.get_string("triangle", "pzADq30Q");
+      tri_cmd = c.get_string("triangle", "pzADYQ");
 
     if(c.key() == "X.MESH")   // It's a X.MESH card
       if(set_x_line(c)) return 1;
