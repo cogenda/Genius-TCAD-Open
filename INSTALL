@@ -16,15 +16,15 @@ efficient pow(x,y) function.
 2. Flex (>=2.5.4a) and Bison (>=2.0) are required.
 
 3. Petsc
-	the latest petsc-3.1 version is recommended.
-        petsc-3.2 works, but not fully tested.
+        Petsc 3.1 to 3.6 should work. And petsc-3.5 version is recommended.
+        The latest petsc-3.6 works, but not fully tested.
 
 The compiling of PETSC requires you to set two system variables:
 'PETSC_DIR' point to the directory of PETSC.
 'PETSC_ARCH' to give a tag of PETSC configuation.
 
 For MPI version of petsc, both MPICH2 and OpenMPI works well.
-The recommended configure arguments for petsc-3.1 are
+The recommended configure arguments for petsc are
   ./configure --download-mpich=1 \
   --with-debugging=0 --with-shared=0 --with-x=0 --with-pic=1 \
   --download-f-blas-lapack=1 \
@@ -34,7 +34,7 @@ The recommended configure arguments for petsc-3.1 are
   --COPTFLAGS="-O2" --CXXOPTFLAGS="-O2" --FOPTFLAGS="-O2"
 
 For serial version of petsc
-The recommended configure arguments for petsc-3.1 are
+The recommended configure arguments for petsc are
   ./configure --with-mpi=0 \
   --with-debugging=0 --with-shared=0 --with-x=0 --with-pic=1 \
   --download-f-blas-lapack=1 \
@@ -56,7 +56,7 @@ Note: cgns 3.0 is not tested, and probably will not work.
 By default, the headers and libraries are installed installed in
 /usr/local/include/vtk-5.4 and /usr/local/lib/vtk-5.4, respectively.
 
-Note: VTK 5.6.x also works, but not fully tested.
+Note: VTK 5.6 and 5.8 also works, others not tested.
 
 6. Configure and build Genius
   ./waf --prefix=$PWD --with-petsc-dir=$PETSC_DIR \
@@ -73,7 +73,7 @@ following options:
                                 /usr/local will be automatically searched).
   --with-vtk-dir=<dir>          Directory to VTK installation (/usr and
                                 /usr/local will be automatically searched).
-  --with-vtk-ver=<str>          Version of VTK (vtk-5.4 or vtk-5.2, etc.).
+  --with-vtk-ver=<str>          Version of VTK (vtk-5.4 or vtk-5.6, etc.).
 
 Further options:
   --version=<str>               Version string for the build
@@ -88,7 +88,17 @@ To get a complete list of options, run
 
 7. Start using Genius
 export GENIUS_DIR=<path/to/genius/>
+export LD_LIBRARY_PATH=$LD_LIBRARY_PATH/:$GENIUS_DIR/lib
 cd examples/PN_Diode/2D
 $GENIUS_DIR/bin/genius.LINUX -i pn2d.inp
+
+8. Solve cannot open shared object file problem
+Genius dependent on some third part libraries, some of them may be shared object file (libxxx.so). If genius executable code report i.e.:
+error while loading shared libraries: libpetsc.so.3.5: cannot open shared object file: No such file or directory 
+Please set environment variable LD_LIBRARY_PATH point to the directory which contains the shared library file libpetsc.so.3.5, which is the directory contains library file of petsc.
+Also, genius may report can't file shared libraries of VTK,please also point LD_LIBRARY_PATH to the directory contains library file of VTK.
+
+Here is my environment variable LD_LIBRARY_PATH
+LD_LIBRARY_PATH=/usr/local/petsc/arch-linux2-c-opt/lib:/usr/local/slepc/arch-linux2-c-opt/lib:/usr/local/vtk-5.8/lib/vtk-5.8:/usr/local/mpich-3.1.4/lib:/home/gdiso/develop/genius/lib
 
 
