@@ -26,18 +26,19 @@ The compiling of PETSC requires you to set two system variables:
 For MPI version of petsc, both MPICH2 and OpenMPI works well.
 The recommended configure arguments for petsc are
   ./configure --download-mpich=1 \
-  --with-debugging=0 --with-shared=0 --with-x=0 --with-pic=1 \
-  --download-f-blas-lapack=1 \
+  --with-debugging=0 --with-shared-libraries=0 --with-x=0 --with-pic=1 \
+  --download-fblaslapack=1 \
   --download-superlu=1 --download-superlu_dist=1  \
   --download-blacs=1 --download-scalapack=1 \
+  --download-metis=1 \
   --download-parmetis=1 --download-mumps=1 \
   --COPTFLAGS="-O2" --CXXOPTFLAGS="-O2" --FOPTFLAGS="-O2"
 
 For serial version of petsc
 The recommended configure arguments for petsc are
   ./configure --with-mpi=0 \
-  --with-debugging=0 --with-shared=0 --with-x=0 --with-pic=1 \
-  --download-f-blas-lapack=1 \
+  --with-debugging=0 --with-shared-libraries=0 --with-x=0 --with-pic=1 \
+  --download-fblaslapack=1 \
   --download-metis=1 \
   --download-superlu=1 \
   --COPTFLAGS="-O2" --CXXOPTFLAGS="-O2" --FOPTFLAGS="-O2"
@@ -52,11 +53,17 @@ By default, the headers and libraries are installed installed in
 
 Note: cgns 3.0 is not tested, and probably will not work.
 
+Compile cgnslib from source with
+  ./configure --enable-shared
+
 5. VTK-5.4.x.
 By default, the headers and libraries are installed installed in
 /usr/local/include/vtk-5.4 and /usr/local/lib/vtk-5.4, respectively.
 
 Note: VTK 5.6 and 5.8 also works, others not tested.
+
+CCmake is required to build VTK from source.
+When configuring VTK with CCmake before building, turn on Shared Libraries
 
 6. Configure and build Genius
   ./waf --prefix=$PWD --with-petsc-dir=$PETSC_DIR \
